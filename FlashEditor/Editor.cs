@@ -365,9 +365,6 @@ namespace FlashEditor {
             ItemListView.Refresh();
         }
 
-        private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
-        }
-
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
             string dir = getCacheDir() + "\\sprites";
             Directory.CreateDirectory(dir);
@@ -390,8 +387,11 @@ namespace FlashEditor {
         private void saveToolStripMenuItem_Click(object sender, EventArgs e) {
             int selectedTab = EditorTabControl.SelectedIndex;
             int container = editorTypes[selectedTab];
-
             cache.WriteContainer(container);
+        }
+
+        private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
+            //Nothing yet bro
         }
     }
 }

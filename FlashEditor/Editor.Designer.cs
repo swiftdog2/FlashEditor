@@ -84,13 +84,13 @@
             this.NPCListView = new BrightIdeasSoftware.FastObjectListView();
             this.idColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.nameColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.sizeColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.levelColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ObjectEditorTab = new System.Windows.Forms.TabPage();
             this.InterfaceEditorTab = new System.Windows.Forms.TabPage();
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.sizeColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.levelColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
@@ -160,13 +160,13 @@
             // reloadToolStripMenuItem
             // 
             this.reloadToolStripMenuItem.Name = "reloadToolStripMenuItem";
-            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
+            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
             this.reloadToolStripMenuItem.Text = "Reload";
             // 
             // saveToolStripMenuItem
             // 
             this.saveToolStripMenuItem.Name = "saveToolStripMenuItem";
-            this.saveToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
+            this.saveToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
             this.saveToolStripMenuItem.Text = "Save";
             this.saveToolStripMenuItem.Click += new System.EventHandler(this.saveToolStripMenuItem_Click);
             // 
@@ -648,6 +648,7 @@
             // 
             // Image
             // 
+            this.Image.AspectName = "sprite";
             this.Image.FillsFreeSpace = true;
             this.Image.ImageAspectName = "thumb";
             this.Image.IsEditable = false;
@@ -797,6 +798,18 @@
             this.nameColumn.Text = "Name";
             this.nameColumn.Width = 191;
             // 
+            // sizeColumn
+            // 
+            this.sizeColumn.AspectName = "size";
+            this.sizeColumn.Text = "Size";
+            this.sizeColumn.Width = 87;
+            // 
+            // levelColumn
+            // 
+            this.levelColumn.AspectName = "level";
+            this.levelColumn.Text = "Level";
+            this.levelColumn.Width = 86;
+            // 
             // ObjectEditorTab
             // 
             this.ObjectEditorTab.Location = new System.Drawing.Point(4, 31);
@@ -824,18 +837,6 @@
             this.EditButton.DisplayIndex = 2;
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
-            // 
-            // sizeColumn
-            // 
-            this.sizeColumn.AspectName = "size";
-            this.sizeColumn.Text = "Size";
-            this.sizeColumn.Width = 87;
-            // 
-            // levelColumn
-            // 
-            this.levelColumn.AspectName = "level";
-            this.levelColumn.Text = "Level";
-            this.levelColumn.Width = 86;
             // 
             // Editor
             // 

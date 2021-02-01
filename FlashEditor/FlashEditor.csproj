@@ -168,6 +168,7 @@
     <Compile Include="Cache\RSIndex.cs" />
     <Compile Include="Cache\RSReferenceTable.cs" />
     <Compile Include="Cache\RSSector.cs" />
+    <Compile Include="Cache\Util\DirectBitmap.cs" />
     <Compile Include="Definitions\NPCDefinition.cs" />
     <Compile Include="Definitions\SpriteDefinition.cs" />
     <Compile Include="Cache\Util\RSBufferedImage.cs" />

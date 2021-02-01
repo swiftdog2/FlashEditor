@@ -37,6 +37,7 @@ namespace FlashEditor {
             }
         }
 
+        //Figuring this shit out took weeks fml
         public static byte[] Bunzip2(byte[] bytes, int decompressedLength) {
             //Prepare a new byte array with the bzip2 header at the start
             byte[] bzip2 = new byte[bytes.Length + 4];

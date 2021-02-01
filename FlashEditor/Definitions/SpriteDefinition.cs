@@ -21,6 +21,7 @@
 */
 
 using FlashEditor.cache.util;
+using FlashEditor.Cache.Util;
 using FlashEditor.Collections;
 using FlashEditor.utils;
 using java.lang;
@@ -100,7 +101,7 @@ namespace FlashEditor.cache.sprites {
             DebugUtil.Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length);
 
             //And allocate an object for this sprite set
-            SpriteDefinition set = new SpriteDefinition(width, height, size);
+            SpriteDefinition sprite = new SpriteDefinition(width, height, size);
 
             //Read the offsets and dimensions of the individual sprites
             /*
@@ -143,8 +144,9 @@ namespace FlashEditor.cache.sprites {
                 DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
 
                 //Create a BufferedImage to store the resulting image
-                util.RSBufferedImage image = new RSBufferedImage(id, size, java.lang.Math.max(width, subWidth), java.lang.Math.max(height, subHeight), java.awt.image.BufferedImage.TYPE_INT_ARGB);
-                set.frames.Add(image);
+                util.RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
+
+                sprite.frames.Add(image);
 
                 //Allocate an array for the palette indices
                 int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
@@ -200,12 +202,11 @@ namespace FlashEditor.cache.sprites {
                     }
                 }
 
+                //First frame in the sprite is the thumb image
                 if(id == 0)
-                    set.thumb = image.getBitmap();
-                else
-                    image.setThumb(image.getBitmap());
+                    sprite.thumb = image.getSprite().Bitmap;
             }
-            return set;
+            return sprite;
         }
 
         /// <summary>
@@ -213,7 +214,7 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <param name="id"></param>
         /// <returns>The frame.</returns>
-        public java.awt.image.BufferedImage getFrame(int id) {
+        public RSBufferedImage getFrame(int id) {
             return frames[id];
         }
 
