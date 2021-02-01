@@ -36,8 +36,32 @@ namespace FlashEditor {
             return (byte) (ReadByte() & 0xFF);
         }
 
+        internal int[] ReadUnsignedByteArray(int size) {
+            byte[] byteBuffer = new byte[size];
+            Read(byteBuffer, 0, byteBuffer.Length);
+            return Array.ConvertAll(byteBuffer, Convert.ToInt32);
+        }
+
         internal int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
+        }
+
+        internal int[] ReadUnsignedShortArray(int size) {
+            //Read 2x length contiguous block of bytes
+            byte[] byteBuffer = new byte[size * 2];
+            Read(byteBuffer, 0, byteBuffer.Length);
+
+            int[] shortBuffer = new int[size];
+
+            int k = 0;
+
+            //Recombine into shorts
+            for(int i = 0; i < size; i++) {
+                shortBuffer[i] = (byteBuffer[k] << 8) | byteBuffer[k + 1];
+                k += 2;
+            }
+
+            return shortBuffer;
         }
 
         internal string ReadString() {

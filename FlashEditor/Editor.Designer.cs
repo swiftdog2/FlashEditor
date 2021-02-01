@@ -30,6 +30,9 @@
             this.openToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.setDirectoryToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.openDirectoryToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.indexToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.reloadToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.EditorTabControl = new System.Windows.Forms.TabControl();
             this.Console = new System.Windows.Forms.TabPage();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
@@ -79,16 +82,15 @@
             this.groupBox7 = new System.Windows.Forms.GroupBox();
             this.checkBox3 = new System.Windows.Forms.CheckBox();
             this.NPCListView = new BrightIdeasSoftware.FastObjectListView();
-            this.olvColumn1 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.olvColumn2 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.idColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.nameColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ObjectEditorTab = new System.Windows.Forms.TabPage();
             this.InterfaceEditorTab = new System.Windows.Forms.TabPage();
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.indexToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.reloadToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.sizeColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.levelColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
@@ -144,6 +146,29 @@
             this.openDirectoryToolStripMenuItem.Size = new System.Drawing.Size(212, 30);
             this.openDirectoryToolStripMenuItem.Text = "Open Directory";
             this.openDirectoryToolStripMenuItem.Click += new System.EventHandler(this.openDirectoryToolStripMenuItem_Click);
+            // 
+            // indexToolStripMenuItem
+            // 
+            this.indexToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.reloadToolStripMenuItem,
+            this.saveToolStripMenuItem});
+            this.indexToolStripMenuItem.Font = new System.Drawing.Font("Segoe UI", 14.25F);
+            this.indexToolStripMenuItem.Name = "indexToolStripMenuItem";
+            this.indexToolStripMenuItem.Size = new System.Drawing.Size(107, 29);
+            this.indexToolStripMenuItem.Text = "Container";
+            // 
+            // reloadToolStripMenuItem
+            // 
+            this.reloadToolStripMenuItem.Name = "reloadToolStripMenuItem";
+            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
+            this.reloadToolStripMenuItem.Text = "Reload";
+            // 
+            // saveToolStripMenuItem
+            // 
+            this.saveToolStripMenuItem.Name = "saveToolStripMenuItem";
+            this.saveToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
+            this.saveToolStripMenuItem.Text = "Save";
+            this.saveToolStripMenuItem.Click += new System.EventHandler(this.saveToolStripMenuItem_Click);
             // 
             // EditorTabControl
             // 
@@ -727,8 +752,10 @@
             // 
             // NPCListView
             // 
-            this.NPCListView.AllColumns.Add(this.olvColumn1);
-            this.NPCListView.AllColumns.Add(this.olvColumn2);
+            this.NPCListView.AllColumns.Add(this.idColumn);
+            this.NPCListView.AllColumns.Add(this.nameColumn);
+            this.NPCListView.AllColumns.Add(this.sizeColumn);
+            this.NPCListView.AllColumns.Add(this.levelColumn);
             this.NPCListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -736,8 +763,10 @@
             this.NPCListView.CellEditUseWholeCell = false;
             this.NPCListView.CheckBoxes = true;
             this.NPCListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.olvColumn1,
-            this.olvColumn2});
+            this.idColumn,
+            this.nameColumn,
+            this.sizeColumn,
+            this.levelColumn});
             this.NPCListView.Cursor = System.Windows.Forms.Cursors.Default;
             this.NPCListView.Font = new System.Drawing.Font("Consolas", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.NPCListView.FullRowSelect = true;
@@ -754,19 +783,19 @@
             this.NPCListView.View = System.Windows.Forms.View.Details;
             this.NPCListView.VirtualMode = true;
             // 
-            // olvColumn1
+            // idColumn
             // 
-            this.olvColumn1.AspectName = "id";
-            this.olvColumn1.Groupable = false;
-            this.olvColumn1.Searchable = false;
-            this.olvColumn1.Text = "ID";
-            this.olvColumn1.Width = 78;
+            this.idColumn.AspectName = "id";
+            this.idColumn.Groupable = false;
+            this.idColumn.Searchable = false;
+            this.idColumn.Text = "ID";
+            this.idColumn.Width = 78;
             // 
-            // olvColumn2
+            // nameColumn
             // 
-            this.olvColumn2.AspectName = "name";
-            this.olvColumn2.Text = "Name";
-            this.olvColumn2.Width = 191;
+            this.nameColumn.AspectName = "name";
+            this.nameColumn.Text = "Name";
+            this.nameColumn.Width = 191;
             // 
             // ObjectEditorTab
             // 
@@ -796,28 +825,17 @@
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
             // 
-            // indexToolStripMenuItem
+            // sizeColumn
             // 
-            this.indexToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.reloadToolStripMenuItem,
-            this.saveToolStripMenuItem});
-            this.indexToolStripMenuItem.Font = new System.Drawing.Font("Segoe UI", 14.25F);
-            this.indexToolStripMenuItem.Name = "indexToolStripMenuItem";
-            this.indexToolStripMenuItem.Size = new System.Drawing.Size(107, 29);
-            this.indexToolStripMenuItem.Text = "Container";
+            this.sizeColumn.AspectName = "size";
+            this.sizeColumn.Text = "Size";
+            this.sizeColumn.Width = 87;
             // 
-            // reloadToolStripMenuItem
+            // levelColumn
             // 
-            this.reloadToolStripMenuItem.Name = "reloadToolStripMenuItem";
-            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
-            this.reloadToolStripMenuItem.Text = "Reload";
-            // 
-            // saveToolStripMenuItem
-            // 
-            this.saveToolStripMenuItem.Name = "saveToolStripMenuItem";
-            this.saveToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
-            this.saveToolStripMenuItem.Text = "Save";
-            this.saveToolStripMenuItem.Click += new System.EventHandler(this.saveToolStripMenuItem_Click);
+            this.levelColumn.AspectName = "level";
+            this.levelColumn.Text = "Level";
+            this.levelColumn.Width = 86;
             // 
             // Editor
             // 
@@ -920,8 +938,8 @@
         private System.Windows.Forms.GroupBox groupBox7;
         private System.Windows.Forms.CheckBox checkBox3;
         private BrightIdeasSoftware.FastObjectListView NPCListView;
-        private BrightIdeasSoftware.OLVColumn olvColumn1;
-        private BrightIdeasSoftware.OLVColumn olvColumn2;
+        private BrightIdeasSoftware.OLVColumn idColumn;
+        private BrightIdeasSoftware.OLVColumn nameColumn;
         private BrightIdeasSoftware.OLVColumn Rotate1;
         private BrightIdeasSoftware.OLVColumn Rotate2;
         private System.Windows.Forms.ToolStripMenuItem setDirectoryToolStripMenuItem;
@@ -929,6 +947,8 @@
         private System.Windows.Forms.ToolStripMenuItem indexToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem reloadToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem saveToolStripMenuItem;
+        private BrightIdeasSoftware.OLVColumn sizeColumn;
+        private BrightIdeasSoftware.OLVColumn levelColumn;
     }
 }
 
