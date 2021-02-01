@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.ComponentModel;
 using System.Diagnostics;
 using FlashEditor.utils;
+using System.Drawing;
 
 namespace FlashEditor {
     public partial class Editor : Form {
@@ -236,8 +237,9 @@ namespace FlashEditor {
 
                                 bgw.ReportProgress(100);
 
-                                List<RSBufferedImage> frames;
+                                List<Bitmap> frames;
 
+                                /*
                                 SpriteListView.CanExpandGetter = delegate (object x) {
                                     if(x is SpriteDefinition)
                                         if(((SpriteDefinition) x).GetFrameCount() > 1)
@@ -245,9 +247,12 @@ namespace FlashEditor {
                                     return false;
                                 };
 
+                                
                                 SpriteListView.ChildrenGetter = delegate (object x) {
-                                    return frames = ((SpriteDefinition) x).GetFrames();
-                                };
+                                    return frames = ((SpriteDefinition) x).GetFrames().ConvertAll(
+                                        y => y.getSprite().Bitmap
+                                    );
+                                };*/
                             };
                             bgw.RunWorkerAsync();
                             break;

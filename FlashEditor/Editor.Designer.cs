@@ -160,13 +160,13 @@
             // reloadToolStripMenuItem
             // 
             this.reloadToolStripMenuItem.Name = "reloadToolStripMenuItem";
-            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
+            this.reloadToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
             this.reloadToolStripMenuItem.Text = "Reload";
             // 
             // saveToolStripMenuItem
             // 
             this.saveToolStripMenuItem.Name = "saveToolStripMenuItem";
-            this.saveToolStripMenuItem.Size = new System.Drawing.Size(180, 30);
+            this.saveToolStripMenuItem.Size = new System.Drawing.Size(141, 30);
             this.saveToolStripMenuItem.Text = "Save";
             this.saveToolStripMenuItem.Click += new System.EventHandler(this.saveToolStripMenuItem_Click);
             // 
@@ -648,10 +648,12 @@
             // 
             // Image
             // 
-            this.Image.AspectName = "sprite";
+            this.Image.AspectName = "";
             this.Image.FillsFreeSpace = true;
             this.Image.ImageAspectName = "thumb";
             this.Image.IsEditable = false;
+            this.Image.Searchable = false;
+            this.Image.Sortable = false;
             this.Image.Text = "Sprite";
             this.Image.Width = 350;
             // 
