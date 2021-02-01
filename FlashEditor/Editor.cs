@@ -83,9 +83,6 @@ namespace FlashEditor {
             SpriteListView.ClearObjects();
             SpriteListView.Refresh();
 
-            NPCListView.ClearObjects();
-            NPCListView.Refresh();
-
             //Release the resources of the prior cache if necessary
             if(cache != null)
                 cache.GetStore().DisposeAll();
@@ -252,6 +249,8 @@ namespace FlashEditor {
                             bgw.RunWorkerAsync();
                             break;
                         case RSConstants.NPC_DEFINITIONS_INDEX:
+                            return;
+
                             NPCLoadingLabel.Visible = true;
                             NPCProgressBar.Visible = true;
 
@@ -266,7 +265,7 @@ namespace FlashEditor {
                                 }
                             });
 
-                            bgw.DoWork += async delegate {
+                            bgw.DoWork += delegate {
                                 List<NPCDefinition> npcs = new List<NPCDefinition>();
 
                                 int done = 0;
@@ -275,12 +274,10 @@ namespace FlashEditor {
 
                                 bgw.ReportProgress(0, "Loading NPCs");
 
-                                DebugUtil.Debug("Loading NPC shit xxxx");
-
                                 foreach(KeyValuePair<int, RSEntry> archive in table.GetEntries()) {
                                     int archiveId = archive.Key;
 
-                                    DebugUtil.Debug("Loading archive " + archiveId);
+                                    DebugUtil.Debug("Loading archive " + archive);
                                     for(int file = 0; file < 128; file++) {
                                         try {
                                             DebugUtil.Debug("Loading file " + file);

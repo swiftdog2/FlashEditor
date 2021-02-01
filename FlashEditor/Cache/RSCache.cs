@@ -217,7 +217,7 @@ namespace FlashEditor.cache {
         }
 
         internal NPCDefinition GetNPCDefinition(int archive, int file) {
-            JagStream npcStream = ReadEntry(RSConstants.NPC_DEFINITIONS_INDEX, archive, file);
+            JagStream npcStream = ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
             NPCDefinition def = new NPCDefinition(npcStream);
             def.setId(archive * 256 + file);
             npcStream.Clear();

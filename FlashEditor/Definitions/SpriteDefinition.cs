@@ -103,7 +103,6 @@ namespace FlashEditor.cache.sprites {
             SpriteDefinition set = new SpriteDefinition(width, height, size);
 
             //Read the offsets and dimensions of the individual sprites
-            /*
             for(int i = 0; i < size; i++)
                 offsetsX[i] = stream.ReadUnsignedShort();
 
@@ -115,13 +114,6 @@ namespace FlashEditor.cache.sprites {
 
             for(int i = 0; i < size; i++)
                 subHeights[i] = stream.ReadUnsignedShort();
-            */
-
-            offsetsX = stream.ReadUnsignedShortArray(size);
-            offsetsY = stream.ReadUnsignedShortArray(size);
-            subWidths = stream.ReadUnsignedShortArray(size);
-            subHeights = stream.ReadUnsignedShortArray(size);
-
 
             //Read the palette
             stream.Seek(stream.Length - size * 8 - 7 - (palette.Length - 1) * 3);
@@ -140,7 +132,7 @@ namespace FlashEditor.cache.sprites {
                 int subWidth = subWidths[id], subHeight = subHeights[id];
                 int offsetX = offsetsX[id], offsetY = offsetsY[id];
 
-                DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
+                //DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
 
                 //Create a BufferedImage to store the resulting image
                 util.RSBufferedImage image = new RSBufferedImage(id, size, java.lang.Math.max(width, subWidth), java.lang.Math.max(height, subHeight), java.awt.image.BufferedImage.TYPE_INT_ARGB);
