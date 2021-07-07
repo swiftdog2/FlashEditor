@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FlashEditor.utils;
+using System;
 using System.IO;
 using System.Text;
 
@@ -146,10 +147,11 @@ namespace FlashEditor {
         /// <param name="stream">The stream to write to file</param>
         /// <param name="directory">The directory to write the file to</param>
         public static void Save(JagStream stream, string directory) {
+            DebugUtil.Debug("Saving to --" + directory + "--");
+
             using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
                 byte[] bytes = new byte[stream.Length];
                 file.Write(stream.ToArray(), 0, (int) stream.Length);
-                stream.Close();
             }
         }
 
@@ -158,7 +160,6 @@ namespace FlashEditor {
         }
 
         public static JagStream Load(string directory) {
-            byte[] bytes;
             using(FileStream file = new FileStream(directory, FileMode.Open, FileAccess.Read)) {
                 byte[] stream = new byte[file.Length];
                 file.Read(stream, 0, (int) file.Length);

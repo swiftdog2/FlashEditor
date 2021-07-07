@@ -1,6 +1,7 @@
 ﻿using System;
 
 namespace FlashEditor.cache {
+    //RsIndex is simply the raw data that was read from disk in to a stream
     class RSIndex {
         public const int SIZE = 6;
 
@@ -21,8 +22,8 @@ namespace FlashEditor.cache {
         }
 
         public void ReadHeader() {
-            this.size = GetStream().ReadMedium();
-            this.sector = GetStream().ReadMedium();
+            size = GetStream().ReadMedium();
+            sector = GetStream().ReadMedium();
         }
 
         public ref JagStream GetStream() {
@@ -39,6 +40,20 @@ namespace FlashEditor.cache {
 
         internal void SetStream(JagStream stream) {
             this.stream = stream;
+        }
+
+        /// <summary>
+        /// Read the index data
+        /// </summary>
+        /// <param name="indexId">The index type</param>
+        /// <param name="containerId">The container index</param>
+        /// <returns>A <c>JagStream</c> containing the container data</returns>
+        internal JagStream Encode() {
+            JagStream s = new JagStream();
+            s.WriteMedium(size);
+            s.WriteMedium(sector);
+            s.Write(stream.ToArray(), 0, stream.ToArray().Length);
+            return stream.Flip();
         }
     }
 }

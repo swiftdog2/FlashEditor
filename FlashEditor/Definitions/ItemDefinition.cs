@@ -292,8 +292,10 @@ namespace FlashEditor {
             stream.WriteByte(1);
             stream.WriteShort(inventoryModelId);
 
-            stream.WriteByte(2);
-            stream.WriteString(name);
+            if(name != null) {
+                stream.WriteByte(2);
+                stream.WriteString(name);
+            }
 
             stream.WriteByte(4);
             stream.WriteShort(modelZoom);
@@ -351,24 +353,28 @@ namespace FlashEditor {
             }
 
             for(int opcode = 35; opcode < 40; opcode++) {
-                if(groundOptions[opcode - 35] != null) {
+                if(inventoryOptions[opcode - 35] != null) {
                     stream.WriteByte((byte) opcode);
                     stream.WriteString(inventoryOptions[opcode - 35]);
                 }
             }
 
-            stream.WriteByte(40);
-            stream.WriteByte((byte) originalModelColors.Length);
-            for(int k = 0; k < originalModelColors.Length; k++) {
-                stream.WriteShort(originalModelColors[k]);
-                stream.WriteShort(modifiedModelColors[k]);
+            if(originalModelColors != null) {
+                stream.WriteByte(40);
+                stream.WriteByte((byte) originalModelColors.Length);
+                for(int k = 0; k < originalModelColors.Length; k++) {
+                    stream.WriteShort(originalModelColors[k]);
+                    stream.WriteShort(modifiedModelColors[k]);
+                }
             }
 
-            stream.WriteByte(41);
-            stream.WriteByte((byte) textureColour1.Length);
-            for(int k = 0; k < originalModelColors.Length; k++) {
-                stream.WriteShort(textureColour1[k]);
-                stream.WriteShort(textureColour2[k]);
+            if(textureColour1 != null && textureColour2 != null) {
+                stream.WriteByte(41);
+                stream.WriteByte((byte) textureColour1.Length);
+                for(int k = 0; k < textureColour1.Length; k++) {
+                    stream.WriteShort(textureColour1[k]);
+                    stream.WriteShort(textureColour2[k]);
+                }
             }
 
             /*

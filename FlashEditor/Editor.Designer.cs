@@ -30,19 +30,19 @@
             this.openToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.setDirectoryToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.openDirectoryToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.saveAllToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.indexToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.reloadToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.EditorTabControl = new System.Windows.Forms.TabControl();
             this.Console = new System.Windows.Forms.TabPage();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.button1 = new System.Windows.Forms.Button();
             this.DebugConsole = new System.Windows.Forms.ListBox();
             this.ItemEditorTab = new System.Windows.Forms.TabPage();
-            this.ItemLoadingLabel = new System.Windows.Forms.Label();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
+            this.ItemLoadingLabel = new System.Windows.Forms.Label();
             this.ItemProgressBar = new System.Windows.Forms.ProgressBar();
-            this.button8 = new System.Windows.Forms.Button();
+            this.ExportItemDatBtn = new System.Windows.Forms.Button();
             this.button9 = new System.Windows.Forms.Button();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
             this.checkBox2 = new System.Windows.Forms.CheckBox();
@@ -94,7 +94,6 @@
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
-            this.groupBox1.SuspendLayout();
             this.ItemEditorTab.SuspendLayout();
             this.groupBox4.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -127,7 +126,8 @@
             // 
             this.openToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.setDirectoryToolStripMenuItem,
-            this.openDirectoryToolStripMenuItem});
+            this.openDirectoryToolStripMenuItem,
+            this.saveAllToolStripMenuItem});
             this.openToolStripMenuItem.Font = new System.Drawing.Font("Segoe UI", 14.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.openToolStripMenuItem.Name = "openToolStripMenuItem";
             this.openToolStripMenuItem.Size = new System.Drawing.Size(76, 29);
@@ -146,6 +146,13 @@
             this.openDirectoryToolStripMenuItem.Size = new System.Drawing.Size(212, 30);
             this.openDirectoryToolStripMenuItem.Text = "Open Directory";
             this.openDirectoryToolStripMenuItem.Click += new System.EventHandler(this.openDirectoryToolStripMenuItem_Click);
+            // 
+            // saveAllToolStripMenuItem
+            // 
+            this.saveAllToolStripMenuItem.Name = "saveAllToolStripMenuItem";
+            this.saveAllToolStripMenuItem.Size = new System.Drawing.Size(212, 30);
+            this.saveAllToolStripMenuItem.Text = "Save All";
+            this.saveAllToolStripMenuItem.Click += new System.EventHandler(this.saveAllToolStripMenuItem_Click);
             // 
             // indexToolStripMenuItem
             // 
@@ -205,22 +212,12 @@
             this.groupBox1.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox1.BackColor = System.Drawing.Color.White;
-            this.groupBox1.Controls.Add(this.button1);
             this.groupBox1.Location = new System.Drawing.Point(890, 3);
             this.groupBox1.Name = "groupBox1";
             this.groupBox1.Size = new System.Drawing.Size(336, 498);
             this.groupBox1.TabIndex = 5;
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Cache Tests";
-            // 
-            // button1
-            // 
-            this.button1.Location = new System.Drawing.Point(16, 38);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(303, 33);
-            this.button1.TabIndex = 0;
-            this.button1.Text = "Refresh Reference Tables";
-            this.button1.UseVisualStyleBackColor = true;
             // 
             // DebugConsole
             // 
@@ -238,7 +235,6 @@
             // 
             // ItemEditorTab
             // 
-            this.ItemEditorTab.Controls.Add(this.ItemLoadingLabel);
             this.ItemEditorTab.Controls.Add(this.groupBox4);
             this.ItemEditorTab.Controls.Add(this.groupBox5);
             this.ItemEditorTab.Controls.Add(this.ItemListView);
@@ -250,26 +246,14 @@
             this.ItemEditorTab.Text = "Items";
             this.ItemEditorTab.UseVisualStyleBackColor = true;
             // 
-            // ItemLoadingLabel
-            // 
-            this.ItemLoadingLabel.AutoSize = true;
-            this.ItemLoadingLabel.BackColor = System.Drawing.Color.Transparent;
-            this.ItemLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.ItemLoadingLabel.Location = new System.Drawing.Point(300, 220);
-            this.ItemLoadingLabel.Name = "ItemLoadingLabel";
-            this.ItemLoadingLabel.Size = new System.Drawing.Size(135, 38);
-            this.ItemLoadingLabel.TabIndex = 12;
-            this.ItemLoadingLabel.Text = "Loading Items,\r\nplease wait...\r\n";
-            this.ItemLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            this.ItemLoadingLabel.Visible = false;
-            // 
             // groupBox4
             // 
             this.groupBox4.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox4.BackColor = System.Drawing.Color.White;
+            this.groupBox4.Controls.Add(this.ItemLoadingLabel);
             this.groupBox4.Controls.Add(this.ItemProgressBar);
-            this.groupBox4.Controls.Add(this.button8);
+            this.groupBox4.Controls.Add(this.ExportItemDatBtn);
             this.groupBox4.Controls.Add(this.button9);
             this.groupBox4.Font = new System.Drawing.Font("Consolas", 14.25F);
             this.groupBox4.Location = new System.Drawing.Point(973, 183);
@@ -279,6 +263,18 @@
             this.groupBox4.TabStop = false;
             this.groupBox4.Text = "Editor Controls";
             // 
+            // ItemLoadingLabel
+            // 
+            this.ItemLoadingLabel.AutoSize = true;
+            this.ItemLoadingLabel.BackColor = System.Drawing.Color.Transparent;
+            this.ItemLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.ItemLoadingLabel.Location = new System.Drawing.Point(2, 237);
+            this.ItemLoadingLabel.Name = "ItemLoadingLabel";
+            this.ItemLoadingLabel.Size = new System.Drawing.Size(117, 19);
+            this.ItemLoadingLabel.TabIndex = 12;
+            this.ItemLoadingLabel.Text = "Status: IDLE";
+            this.ItemLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            // 
             // ItemProgressBar
             // 
             this.ItemProgressBar.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
@@ -287,17 +283,17 @@
             this.ItemProgressBar.Name = "ItemProgressBar";
             this.ItemProgressBar.Size = new System.Drawing.Size(250, 60);
             this.ItemProgressBar.TabIndex = 8;
-            this.ItemProgressBar.Visible = false;
             // 
-            // button8
+            // ExportItemDatBtn
             // 
-            this.button8.BackColor = System.Drawing.Color.White;
-            this.button8.Location = new System.Drawing.Point(6, 70);
-            this.button8.Name = "button8";
-            this.button8.Size = new System.Drawing.Size(238, 35);
-            this.button8.TabIndex = 1;
-            this.button8.Text = "Export Selected (.dat)";
-            this.button8.UseVisualStyleBackColor = false;
+            this.ExportItemDatBtn.BackColor = System.Drawing.Color.White;
+            this.ExportItemDatBtn.Location = new System.Drawing.Point(6, 70);
+            this.ExportItemDatBtn.Name = "ExportItemDatBtn";
+            this.ExportItemDatBtn.Size = new System.Drawing.Size(238, 35);
+            this.ExportItemDatBtn.TabIndex = 1;
+            this.ExportItemDatBtn.Text = "Export Selected (.dat)";
+            this.ExportItemDatBtn.UseVisualStyleBackColor = false;
+            this.ExportItemDatBtn.Click += new System.EventHandler(this.ExportItemDatBtn_Click);
             // 
             // button9
             // 
@@ -349,6 +345,7 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.ItemListView.BackColor = System.Drawing.Color.White;
+            this.ItemListView.CellEditActivation = BrightIdeasSoftware.ObjectListView.CellEditActivateMode.DoubleClick;
             this.ItemListView.CellEditUseWholeCell = false;
             this.ItemListView.CheckBoxes = true;
             this.ItemListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
@@ -376,11 +373,13 @@
             this.ItemListView.UseCompatibleStateImageBehavior = false;
             this.ItemListView.View = System.Windows.Forms.View.Details;
             this.ItemListView.VirtualMode = true;
+            this.ItemListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ItemListView_CellEditFinished);
             // 
             // ItemID
             // 
             this.ItemID.AspectName = "id";
             this.ItemID.Groupable = false;
+            this.ItemID.IsEditable = false;
             this.ItemID.Searchable = false;
             this.ItemID.Text = "ID";
             this.ItemID.Width = 78;
@@ -458,7 +457,6 @@
             this.SpriteLoadingLabel.TabIndex = 10;
             this.SpriteLoadingLabel.Text = "Loading Sprites,\r\nplease wait...";
             this.SpriteLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            this.SpriteLoadingLabel.Visible = false;
             // 
             // groupBox3
             // 
@@ -486,7 +484,6 @@
             this.SpriteProgressBar.Name = "SpriteProgressBar";
             this.SpriteProgressBar.Size = new System.Drawing.Size(250, 60);
             this.SpriteProgressBar.TabIndex = 8;
-            this.SpriteProgressBar.Visible = false;
             // 
             // ExportSpriteBmpBtn
             // 
@@ -681,7 +678,6 @@
             this.NPCLoadingLabel.TabIndex = 17;
             this.NPCLoadingLabel.Text = "Loading NPCs,\r\nplease wait...\r\n";
             this.NPCLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            this.NPCLoadingLabel.Visible = false;
             // 
             // groupBox6
             // 
@@ -707,7 +703,6 @@
             this.NPCProgressBar.Name = "NPCProgressBar";
             this.NPCProgressBar.Size = new System.Drawing.Size(250, 60);
             this.NPCProgressBar.TabIndex = 8;
-            this.NPCProgressBar.Visible = false;
             // 
             // button2
             // 
@@ -859,10 +854,9 @@
             this.menuStrip1.PerformLayout();
             this.EditorTabControl.ResumeLayout(false);
             this.Console.ResumeLayout(false);
-            this.groupBox1.ResumeLayout(false);
             this.ItemEditorTab.ResumeLayout(false);
-            this.ItemEditorTab.PerformLayout();
             this.groupBox4.ResumeLayout(false);
+            this.groupBox4.PerformLayout();
             this.groupBox5.ResumeLayout(false);
             this.groupBox5.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.ItemListView)).EndInit();
@@ -894,9 +888,7 @@
         private System.Windows.Forms.TabPage SpriteEditorTab;
         private System.Windows.Forms.TabPage Console;
         private System.Diagnostics.EventLog eventLog1;
-        private System.Windows.Forms.ListBox DebugConsole;
         private System.Windows.Forms.GroupBox groupBox1;
-        private System.Windows.Forms.Button button1;
         private BrightIdeasSoftware.TreeListView SpriteListView;
         private BrightIdeasSoftware.OLVColumn ID;
         private BrightIdeasSoftware.OLVColumn Frames;
@@ -916,7 +908,7 @@
         private System.Windows.Forms.ProgressBar SpriteProgressBar;
         private System.Windows.Forms.GroupBox groupBox4;
         private System.Windows.Forms.ProgressBar ItemProgressBar;
-        private System.Windows.Forms.Button button8;
+        private System.Windows.Forms.Button ExportItemDatBtn;
         private System.Windows.Forms.Button button9;
         private System.Windows.Forms.GroupBox groupBox5;
         private System.Windows.Forms.CheckBox checkBox2;
@@ -952,6 +944,8 @@
         private System.Windows.Forms.ToolStripMenuItem saveToolStripMenuItem;
         private BrightIdeasSoftware.OLVColumn sizeColumn;
         private BrightIdeasSoftware.OLVColumn levelColumn;
+        public System.Windows.Forms.ListBox DebugConsole;
+        private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
     }
 }
 

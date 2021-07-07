@@ -1,4 +1,6 @@
-﻿namespace FlashEditor.cache {
+﻿using System;
+
+namespace FlashEditor.cache {
     public static class RSConstants {
         /*
          * Compression constants
@@ -11,43 +13,92 @@
          * Index Constants
          */
         public const int FRAMES_INDEX = 0,
-            //SKINS/BASES = 1,
-            //CONFIG = 2, 
+            SKINS = 1, //not done
+            CONFIG = 2,  //not done
             INTERFACE_DEFINITIONS_INDEX = 3,
-            //SOUND_EFFECTS = 4,
+            SOUND_EFFECTS = 4, //not done
             MAPS_INDEX = 5,
             MUSIC_INDEX = 6,
             MODELS_INDEX = 7,
             SPRITES_INDEX = 8,
-            //TEXTURES = 9,
+            TEXTURES = 9, //not done
             HUFFMAN_INDEX = 10,
-            //MUSIC_2 = 11,
+            MUSIC_2 = 11, //not done
             CLIENT_SCRIPTS_INDEX = 12,
-            //FONTS_INDEX = 13,
-            //SFX2_INDEX/VORBIS/midi instruments = 14,
-            //SFX3_INDEX = 15,
+            FONTS_INDEX = 13, //not done
+            SFX2_INDEX = 14, //VORBIS/midi instruments, not done
+            SFX3_INDEX = 15, //not done
             OBJECTS_DEFINITIONS_INDEX = 16,
-            //CLIENTSCRIPT_SETTINGS = 17,
+            CLIENTSCRIPT_SETTINGS = 17, //not done
             NPC_DEFINITIONS_INDEX = 18,
             ITEM_DEFINITIONS_INDEX = 19,
             ANIMATIONS_INDEX = 20,
             GRAPHICS_INDEX = 21,
-            //SCRIPT_CONFIGS/aka varbits = 22,
-            //WORLD_MAP = 23,
-            //QUICK_CHAT_MESSAGES = 24,
-            //QUICK_CHAT_MENU = 25,
-            //MATERIALS = 26,
-            //CONFIG_PARTICLES/map effects = 27,
-            //DEFAULTS/fonts? = 28,
-            //CONFIG_BILLBOARD = 29,
-            //NATIVE_LIBRARIES = 30,
-            //GRAPHICS_SHADERS = 31,
+            SCRIPT_CONFIGS = 22, //aka varbits, not done
+            WORLD_MAP = 23, //not done
+            QUICK_CHAT_MESSAGES = 24, //not done
+            QUICK_CHAT_MENU = 25, //not done
+            MATERIALS = 26, //not done
+            CONFIG_PARTICLES = 27, //map effects, not done
+            DEFAULTS = 28, //fonts?, not done
+            CONFIG_BILLBOARD = 29, //not done
+            NATIVE_LIBRARIES = 30, //not done
+            GRAPHICS_SHADERS = 31, //not done
             LOADING_SPRITES = 32, //in jpg format
-            //GAME_TIPS/loading screens = 33,
+            GAME_TIPS = 33, //loading screens, not done
             LOADING_SPRITES_RAW = 34, //in jagex format
-            //THEORA_AKA_CUTSCENES = 35,
-            //VORBIS = 36,
+            THEORA_AKA_CUTSCENES = 35, //not done
+            VORBIS = 36, //not done
             CRCTABLE_INDEX = 255;
+
+        public static string[] containerNames = new [] {"FRAMES",
+            "SKINS",
+            "CONFIG",
+            "INTERFACE_DEFINITIONS",
+            "SOUND_EFFECTS",
+            "MAPS",
+            "MUSIC",
+            "MODELS",
+            "SPRITES",
+            "TEXTURES",
+            "HUFFMAN",
+            "MUSIC_2",
+            "CLIENT_SCRIPTS",
+            "FONTS",
+            "SFX2",
+            "SFX3",
+            "OBJECTS_DEFINITIONS",
+            "CLIENTSCRIPT_SETTINGS",
+            "NPC_DEFINITIONS",
+            "ITEM_DEFINITIONS",
+            "ANIMATIONS",
+            "GRAPHICS",
+            "SCRIPT_CONFIGS",
+            "WORLD_MAP",
+            "QUICK_CHAT_MESSAGES",
+            "QUICK_CHAT_MENU",
+            "MATERIALS",
+            "CONFIG_PARTICLES",
+            "DEFAULTS",
+            "CONFIG_BILLBOARD",
+            "NATIVE_LIBRARIES",
+            "GRAPHICS_SHADERS",
+            "LOADING_SPRITES",
+            "GAME_TIPS",
+            "LOADING_SPRITES_RAW",
+            "THEORA_AKA_CUTSCENES",
+            "VORBIS"};
+
+        internal static string getContainerNameForType(int type) {
+            if(type >= containerNames.Length) {
+                if(type == 255)
+                    return "CRCTABLE";
+                else
+                    return "NULL";
+            } else {
+                return containerNames[type];
+            }
+        }
 
         /*
          * General constants
@@ -55,7 +106,8 @@
         public const int CLIENT_BUILD = 639;
         public const bool ENCRYPTED_CACHE = true;
         public const int MAX_VALID_ARCHIVE_LENGTH = 1000000;
-        public const string CACHE_DIRECTORY = "C:/Users/CJ/Desktop/Hydra/cache";
+        public const string CACHE_DIRECTORY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";
+        public static string CACHE_OUTPUT_DIRECTORY  =  "C:/Users/CJ/Desktop/RSPS/Hydra/cache2/";
 
         /*
          * Some spooky level shit

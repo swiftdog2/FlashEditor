@@ -18,30 +18,39 @@ namespace FlashEditor.cache {
             this.length = length;
         }
 
-        internal static JagStream Encode(RSContainer container) {
+        public void UpdateStream(JagStream stream) {
+            this.stream = stream;
+        }
+
+        internal JagStream Encode() {
+            DebugUtil.Debug("Encoding RSContainer... type " + type + " file " + file  + ", length " + length);
+
             JagStream stream = new JagStream();
 
             //Write out the compression type
-            stream.WriteByte(container.GetCompressionType());
+            stream.WriteByte(GetCompressionType());
 
             //Write out the (compressed) data length
             stream.WriteInteger(stream.Length);
 
             //Write out the (compressed) data
-            if(container.GetCompressionType() == RSConstants.NO_COMPRESSION) {
-                stream.Write(container.GetStream().ToArray(), 0, container.GetLength());
+            if(GetCompressionType() == RSConstants.NO_COMPRESSION) {
+                stream.Write(GetStream().ToArray(), 0, GetLength());
             } else {
                 //Write out the decompressed length
-                stream.WriteInteger(container.GetLength());
+                stream.WriteInteger(GetLength());
 
-                byte[] compressedData = CompressionUtils.Gzip(container.GetStream().ToArray());
-                stream.Write(compressedData, 0, container.GetLength());
+                byte[] compressedData = CompressionUtils.Gzip(GetStream().ToArray());
+                stream.Write(compressedData, 0, GetLength());
             }
 
             //Write out the version
-            stream.WriteShort(container.GetVersion());
+            stream.WriteShort(GetVersion());
 
-            return stream;
+            //Optionally, encrypt with XTEAS
+
+            //Finally, flip the buffer and return it (flip from OpenCSRS)
+            return stream.Flip();
         }
 
         /// <summary>
@@ -98,7 +107,13 @@ namespace FlashEditor.cache {
                 if(stream.Remaining() >= 2)
                     containerVersion = stream.ReadUnsignedShort();
 
-                DebugUtil.Debug("\t\t\tCompression type: " + compressType + ", length: " + length + ", full length: " + decompressedLength + ", version: " + containerVersion);
+                string compressionName = "none";
+                if(compressType == RSConstants.BZIP2_COMPRESSION)
+                    compressionName = "BZIP2";
+                else if(compressType == RSConstants.GZIP_COMPRESSION)
+                    compressionName = "GZIP";
+
+                DebugUtil.Debug("\t\t\tCompression type: " + compressionName + ", length: " + length + ", full length: " + decompressedLength + ", version: " + containerVersion);
 
                 //And return the decoded container
                 return new RSContainer(compressType, new JagStream(data), containerVersion, length);

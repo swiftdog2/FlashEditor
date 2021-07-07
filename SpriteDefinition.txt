@@ -1,4 +1,4 @@
-﻿/**
+/**
 * Copyright (c) OpenRS
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -52,8 +52,6 @@ namespace FlashEditor.cache.sprites {
         public int frameCount;
         public Bitmap thumb;
 
-        private Editor editor;
-
         /// <summary>
         /// Creates a new sprite with one frame.
         /// </summary>
@@ -102,10 +100,9 @@ namespace FlashEditor.cache.sprites {
             DebugUtil.Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length);
 
             //And allocate an object for this sprite set
-            SpriteDefinition sprite = new SpriteDefinition(width, height, size);
+            SpriteDefinition set = new SpriteDefinition(width, height, size);
 
             //Read the offsets and dimensions of the individual sprites
-            /*
             for(int i = 0; i < size; i++)
                 offsetsX[i] = stream.ReadUnsignedShort();
 
@@ -117,13 +114,6 @@ namespace FlashEditor.cache.sprites {
 
             for(int i = 0; i < size; i++)
                 subHeights[i] = stream.ReadUnsignedShort();
-            */
-
-            offsetsX = stream.ReadUnsignedShortArray(size);
-            offsetsY = stream.ReadUnsignedShortArray(size);
-            subWidths = stream.ReadUnsignedShortArray(size);
-            subHeights = stream.ReadUnsignedShortArray(size);
-
 
             //Read the palette
             stream.Seek(stream.Length - size * 8 - 7 - (palette.Length - 1) * 3);
@@ -142,12 +132,11 @@ namespace FlashEditor.cache.sprites {
                 int subWidth = subWidths[id], subHeight = subHeights[id];
                 int offsetX = offsetsX[id], offsetY = offsetsY[id];
 
-                DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
+                //DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
 
                 //Create a BufferedImage to store the resulting image
-                util.RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
-
-                sprite.frames.Add(image);
+                util.RSBufferedImage image = new RSBufferedImage(id, size, java.lang.Math.max(width, subWidth), java.lang.Math.max(height, subHeight), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                set.frames.Add(image);
 
                 //Allocate an array for the palette indices
                 int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
@@ -203,11 +192,12 @@ namespace FlashEditor.cache.sprites {
                     }
                 }
 
-                //First frame in the sprite is the thumb image
                 if(id == 0)
-                    sprite.thumb = image.getSprite().Bitmap;
+                    set.thumb = image.getBitmap();
+                else
+                    image.setThumb(image.getBitmap());
             }
-            return sprite;
+            return set;
         }
 
         /// <summary>
@@ -215,7 +205,7 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <param name="id"></param>
         /// <returns>The frame.</returns>
-        public RSBufferedImage getFrame(int id) {
+        public java.awt.image.BufferedImage getFrame(int id) {
             return frames[id];
         }
 

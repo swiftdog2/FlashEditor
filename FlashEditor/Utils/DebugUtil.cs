@@ -7,15 +7,15 @@ namespace FlashEditor.utils {
         /// </summary>
         /// <param name="output">The debug message</param>
         public static void Debug(string output) {
-            //System.Console.WriteLine(output);
-            //System.Console.ReadLine();
+            System.Console.WriteLine(output);
+            System.Console.ReadLine();
         }
 
         /// <summary>
         /// Prints out the entire byte array separated by spaces
         /// </summary>
         /// <param name="buffer">The byte buffer to print</param>
-        internal static void PrintByteArray(byte[] buffer) {
+        internal void PrintByteArray(byte[] buffer) {
             PrintByteArray(buffer, buffer.Length);
         }
 
@@ -24,7 +24,7 @@ namespace FlashEditor.utils {
         /// </summary>
         /// <param name="buffer">The byte buffer to print</param>
         /// <param name="length">The number of bytes to print from the beginning and end of the buffer</param>
-        internal static void PrintByteArray(byte[] buffer, int length) {
+        internal void PrintByteArray(byte[] buffer, int length) {
             //We cannot print more than max bytes on either side
             int max = buffer.Length / 2;
 
@@ -32,13 +32,16 @@ namespace FlashEditor.utils {
             length = Math.Min(length, max);
 
             //Print out the left side (from 0 to length)
-            for(int k = 0; k < length; k++)
+            for(int k = 0; k < length; k++) {
                 System.Console.Write("{0} ", (int) (buffer[k] & 0xFF));
+            }
+
             System.Console.Write("...");
 
             //Print out the right side (from length + 1 to end)
-            for(int k = buffer.Length - length; k < buffer.Length; k++)
+            for(int k = buffer.Length - length; k < buffer.Length; k++) {
                 System.Console.Write("{0} ", (int) (buffer[k] & 0xFF));
+            }
         }
     }
 }

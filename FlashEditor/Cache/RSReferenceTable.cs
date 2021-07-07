@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using FlashEditor.utils;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace FlashEditor.cache {
@@ -20,22 +21,31 @@ namespace FlashEditor.cache {
         public bool named;
         public bool usesWhirlpool;
 
+        internal JagStream stream;
+
         /// <summary>
         /// Constructs a reference table from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the reference table Container data</param>
         /// <returns>The reference table</returns>
         internal static RSReferenceTable Decode(JagStream stream) {
+            DebugUtil.Debug("Decoding reference table");
+
             //Create a new Reference Table
-            RSReferenceTable table = new RSReferenceTable {
-                format = stream.ReadUnsignedByte()
-            };
+            RSReferenceTable table = new RSReferenceTable();
+
+            table.format = stream.ReadUnsignedByte();
+
             if(table.format >= 6)
                 table.version = stream.ReadInt();
+
             table.flags = stream.ReadUnsignedByte();
             int validArchivesCount = stream.ReadUnsignedShort();
             table.named = (FLAG_IDENTIFIERS & table.flags) != 0;
             table.usesWhirlpool = (FLAG_WHIRLPOOL & table.flags) != 0;
+
+            DebugUtil.Debug("Table version: " + table.version + " | Flags: " + (table.flags == 1 ? "Y" : "N") + " | Archives: " + validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"));
+
             int[] validArchiveIds = new int[validArchivesCount];
 
             int k = 0, lastArchiveId = 0;
@@ -95,26 +105,33 @@ namespace FlashEditor.cache {
             return table;
         }
 
+        internal void UpdateStream(JagStream stream) {
+            this.stream = stream;
+        }
+
         /// <summary>
         /// Writes the RSReferenceTable
         /// </summary>
         /// <returns>The reference table</returns>
-        internal JagStream Encode(RSReferenceTable table) {
+        internal JagStream Encode() {
             JagStream stream = new JagStream();
+
             stream.WriteByte((byte) format);
+
             if(format >= 6)
                 stream.WriteInteger(version);
+
             stream.WriteByte((byte) flags);
             stream.WriteShort(entries.Count);
 
             foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 stream.WriteShort(kvp.Key);
 
-            if(table.named)
+            if(named)
                 foreach(KeyValuePair<int, RSEntry> kvp in entries)
                     stream.WriteInteger(kvp.Value.GetNameHash());
 
-            if(table.usesWhirlpool)
+            if(usesWhirlpool)
                 foreach(KeyValuePair<int, RSEntry> kvp in entries)
                     stream.Write(kvp.Value.GetWhirlpool(), 0, 64);
 
@@ -134,12 +151,26 @@ namespace FlashEditor.cache {
                 for(int k = 0; k < kvp.Value.GetValidFileIds().Length; k++)
                     stream.WriteShort(kvp.Value.GetValidFileIds()[k]);
 
-            if(table.named)
+            if(named)
                 foreach(KeyValuePair<int, RSEntry> kvp in entries)
-                    for(int index2 = 0; index2 < kvp.Value.GetValidFileIds().Length; index2++)
+                    for(int index2 = 0; index2 < kvp.Value.GetValidFileIds().Length; index2++) {
+                        //Should actually recalculate the name hash when entries are edited
                         stream.WriteInteger(kvp.Value.GetNameHash());
-
+                    }
             return stream;
+        }
+
+        //TBH not sure how to do this
+        //Pretty sure this is for naming shit so you can find it in the cache editor tho lol sneaky jagex
+        internal int hashEntryName(RSEntry entry) {
+            byte[] bytes = null;
+
+            int h = 0;
+
+            foreach(byte b in bytes)
+                h = h * 31 + b;
+
+            return h;
         }
 
         /// <summary>

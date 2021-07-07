@@ -23,10 +23,10 @@ namespace FlashEditor {
             RSConstants.OBJECTS_DEFINITIONS_INDEX,
             RSConstants.INTERFACE_DEFINITIONS_INDEX,
         };
+
         bool[] loaded = new bool[editorTypes.Length];
 
         List<BackgroundWorker> workers = new List<BackgroundWorker>();
-
         public Editor() {
             InitializeComponent();
         }
@@ -44,7 +44,6 @@ namespace FlashEditor {
                 Properties.Settings.Default.cacheDir = directory;
                 Properties.Settings.Default.Save();
                 Properties.Settings.Default.Reload();
-
             }
         }
 
@@ -87,13 +86,10 @@ namespace FlashEditor {
             NPCListView.ClearObjects();
             NPCListView.Refresh();
 
-            //Release the resources of the prior cache if necessary
-            if(cache != null)
-                cache.GetStore().DisposeAll();
-
             try {
                 //Load the cache and the reference tables
-                cache = new RSCache(new RSFileStore(directory));
+                RSFileStore store = new RSFileStore(directory);
+                cache = new RSCache(store);
                 sw.Stop();
 
                 DebugConsole.Items.Add("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -115,7 +111,7 @@ namespace FlashEditor {
             if(type == -1)
                 return;
 
-            RSReferenceTable table;
+            RSReferenceTable refTable;
 
             if(cache != null) {
                 if(!loaded[editorIndex]) {
@@ -135,34 +131,29 @@ namespace FlashEditor {
                     workers.Add(bgw);
 
                     //Set the reference table to the one we're loading
-                    table = cache.GetReferenceTable(type);
+                    refTable = cache.GetReferenceTable(type);
 
                     switch(type) {
                         case RSConstants.ITEM_DEFINITIONS_INDEX:
-                            ItemLoadingLabel.Visible = true;
-                            ItemProgressBar.Visible = true;
-
                             //When an item is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 ItemProgressBar.Value = e.ProgressPercentage;
 
                                 //Once it's complete, hide the progress bar
                                 if(e.ProgressPercentage == 100) {
-                                    ItemLoadingLabel.Visible = false;
-                                    ItemProgressBar.Visible = false;
+                                    ItemLoadingLabel.Text = "Status: IDLE";
+                                    ItemProgressBar.Value = 0;
                                 }
                             });
 
-                            bgw.DoWork += delegate {
-                                List<ItemDefinition> items = new List<ItemDefinition>();
+                            ItemLoadingLabel.Text = "Status: Loading Items";
 
+                            bgw.DoWork += delegate {
                                 int done = 0;
-                                int total = table.GetEntryTotal() * 256;
+                                int total = refTable.GetEntryTotal() * 256;
                                 int percentile = total / 100;
 
-                                bgw.ReportProgress(0, "Loading Items");
-
-                                foreach(KeyValuePair<int, RSEntry> archive in table.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archive);
@@ -170,7 +161,7 @@ namespace FlashEditor {
                                         try {
                                             ItemDefinition item = cache.GetItemDefinition(archiveId, file);
                                             item.setId(archiveId * 256 + file); //Set the item ID
-                                            items.Add(item);
+                                            cache.items.Add(item);
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
                                         } finally {
@@ -185,7 +176,7 @@ namespace FlashEditor {
                                     }
                                 }
 
-                                ItemListView.SetObjects(items);
+                                ItemListView.SetObjects(cache.items);
                             };
 
                             bgw.Disposed += delegate {
@@ -195,30 +186,27 @@ namespace FlashEditor {
                             bgw.RunWorkerAsync();
                             break;
                         case RSConstants.SPRITES_INDEX:
-                            SpriteProgressBar.Visible = true;
-                            SpriteLoadingLabel.Visible = true;
-
                             //When a sprite is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 SpriteProgressBar.Value = e.ProgressPercentage;
 
                                 //Once it's complete, hide the progress bar
                                 if(e.ProgressPercentage == 100) {
-                                    SpriteProgressBar.Visible = false;
-                                    SpriteLoadingLabel.Visible = false;
+                                    SpriteProgressBar.Value = 0;
+                                    SpriteLoadingLabel.Text = "Status: IDLE";
                                 }
                             });
 
                             bgw.DoWork += async delegate {
                                 List<SpriteDefinition> sprites = new List<SpriteDefinition>();
-                                table = cache.GetReferenceTable(RSConstants.SPRITES_INDEX);
+                                refTable = cache.GetReferenceTable(RSConstants.SPRITES_INDEX);
 
                                 int done = 0;
-                                int total = table.GetEntryTotal();
+                                int total = refTable.GetEntryTotal();
                                 int percentile = total / 100;
 
                                 bgw.ReportProgress(0, "Loading Sprites");
-                                foreach(KeyValuePair<int, RSEntry> entry in table.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> entry in refTable.GetEntries()) {
                                     DebugUtil.Debug("Loading sprite: " + entry.Key);
 
                                     SpriteDefinition sprite = cache.GetSprite(entry.Key);
@@ -257,17 +245,14 @@ namespace FlashEditor {
                             bgw.RunWorkerAsync();
                             break;
                         case RSConstants.NPC_DEFINITIONS_INDEX:
-                            NPCLoadingLabel.Visible = true;
-                            NPCProgressBar.Visible = true;
-
                             //When an NPC is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 NPCProgressBar.Value = e.ProgressPercentage;
 
                                 //Once it's complete, hide the progress bar
                                 if(e.ProgressPercentage == 100) {
-                                    NPCLoadingLabel.Visible = false;
-                                    NPCProgressBar.Visible = false;
+                                    NPCLoadingLabel.Text = "Status: IDLE";
+                                    NPCProgressBar.Value = 0;
                                 }
                             });
 
@@ -275,14 +260,14 @@ namespace FlashEditor {
                                 List<NPCDefinition> npcs = new List<NPCDefinition>();
 
                                 int done = 0;
-                                int total = table.GetEntryTotal() * 128;
+                                int total = refTable.GetEntryTotal() * 128;
                                 int percentile = total / 100;
 
                                 bgw.ReportProgress(0, "Loading NPCs");
 
                                 DebugUtil.Debug("Loading NPC shit xxxx");
 
-                                foreach(KeyValuePair<int, RSEntry> archive in table.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archiveId);
@@ -392,11 +377,100 @@ namespace FlashEditor {
         private void saveToolStripMenuItem_Click(object sender, EventArgs e) {
             int selectedTab = EditorTabControl.SelectedIndex;
             int container = editorTypes[selectedTab];
-            cache.WriteContainer(container);
+            cache.Encode(container);
         }
 
         private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
             //Nothing yet bro
+            MessageBox.Show("Sorry doesn't work");
+        }
+
+        /// <summary>
+        /// This is where the magic gets done.
+        /// And I really mean magic, because if this works then I am a literal god.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+
+        private void saveAllToolStripMenuItem_Click(object sender, EventArgs e) {
+            //Saves the stream as-is
+            cache.WriteCache();
+        }
+
+        //Finished editing a definition
+        private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
+            //Get the object represented by the ListView
+            ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
+
+            //Update the cache definition
+            //cache.items[newDefinition.id] = newDefinition;
+
+            int archiveId = newDefinition.id / 256;
+            int entryId = newDefinition.id % 256;
+            DebugUtil.Debug("Updated items archive " + archiveId + " entry " + entryId);
+
+            //Encode the new item definition, and replace the archive entry stream
+            RSArchive archive = cache.archives[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
+
+            //Update the archive stream to reflect current entries
+            archive.UpdateEntry(entryId, newDefinition.Encode());
+
+            //Update the reference table
+            cache.UpdateIndex(RSConstants.ITEM_DEFINITIONS_INDEX);
+            cache.UpdateReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
+        }
+
+        private void ExportItemDatBtn_Click(object sender, EventArgs e) {
+            ItemLoadingLabel.Text = "Status: Dumping " + ItemListView.SelectedObjects.Count + " Items...";
+
+            //Creates a new background worker
+            BackgroundWorker itemDumper = new BackgroundWorker {
+                WorkerReportsProgress = true,
+                WorkerSupportsCancellation = true
+            };
+            workers.Add(itemDumper);
+
+            //When an item is loaded, update the progress bar
+            itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) => {
+                ItemProgressBar.Value = e2.ProgressPercentage;
+
+                //Once it's complete, hide the progress bar
+                if(e2.ProgressPercentage == 100) {
+                    ItemLoadingLabel.Text = "Status: IDLE";
+                    ItemProgressBar.Value = 0;
+                }
+            });
+
+            ItemDefinition[] items = new ItemDefinition[ItemListView.SelectedObjects.Count];
+            ItemListView.SelectedObjects.CopyTo(items, 0);
+            DebugUtil.Debug(items[0].name);
+
+            itemDumper.DoWork += delegate {
+                if(items.Length > 0) {
+                    //Ensures that the directory exists
+                    Directory.CreateDirectory(RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/");
+
+                    int done = 0;
+
+                    foreach(ItemDefinition def in items) {
+                        DebugUtil.Debug("Exporting Item " + def.getId() + " name is " + def.name);
+                        JagStream.Save(def.Encode(), RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
+                        done++;
+                        itemDumper.ReportProgress(done * 100 / items.Length);
+                    }
+                }
+            };
+
+            itemDumper.Disposed += delegate {
+                workers.Remove(itemDumper);
+            };
+
+            itemDumper.RunWorkerCompleted += (sender2, e2) => {
+                if(e2.Error != null)
+                    DebugUtil.Debug("error: " + e2.Error.ToString());
+            };
+
+            itemDumper.RunWorkerAsync();
         }
     }
 }

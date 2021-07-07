@@ -1,8 +1,10 @@
 ﻿using FlashEditor.Collections;
+using FlashEditor.utils;
+using System;
 
 namespace FlashEditor.cache {
     class RSArchive {
-        private readonly JagStream[] entries;
+        private JagStream[] entries;
 
         /// <summary>
         /// Create a new Archive with <paramref name="size"/> entries
@@ -86,13 +88,13 @@ namespace FlashEditor.cache {
         }
 
         public virtual JagStream Encode() {
-            JagStream os = new JagStream();
+            JagStream stream = new JagStream();
 
             try {
                 //Add the data for each entry
                 for(int id = 0; id < entries.Length; id++) {
                     entries[id].Seek0();
-                    entries[id].WriteTo(os);
+                    entries[id].WriteTo(stream);
                     entries[id].Seek0();
                 }
 
@@ -104,16 +106,16 @@ namespace FlashEditor.cache {
                      * just write the delta-encoded file size
                      */
                     long chunkSize = entries[id].Length;
-                    os.WriteInteger(chunkSize - prev);
+                    stream.WriteInteger(chunkSize - prev);
                     prev = (int) chunkSize;
                 }
 
                 //We only used one chunk due to a limitation of the implementation
-                os.WriteByte(1);
+                stream.WriteByte(1);
 
-                return os.Flip();
+                return stream.Flip();
             } finally {
-                os.Close();
+                stream.Close();
             }
         }
 
@@ -124,6 +126,11 @@ namespace FlashEditor.cache {
         /// <returns></returns>
         public virtual JagStream GetEntry(int id) {
             return entries[id];
+        }
+
+        internal void UpdateEntry(int entryId, JagStream entryStream) {
+            DebugUtil.Debug("Updating archive entry " + entryId);
+            entries[entryId] = entryStream;
         }
     }
 }
