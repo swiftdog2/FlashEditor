@@ -91,7 +91,7 @@ namespace FlashEditor.cache {
 
         internal static string getContainerNameForType(int type) {
             if(type >= containerNames.Length) {
-                if(type == 255)
+                if(type == CRCTABLE_INDEX)
                     return "CRCTABLE";
                 else
                     return "NULL";

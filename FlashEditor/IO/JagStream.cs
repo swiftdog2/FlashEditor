@@ -34,6 +34,31 @@ namespace FlashEditor {
          * Methods for reading data from the stream
          */
 
+        /// <summary>
+        /// Read's smart_v1 from buffer.
+        /// </summary>
+        /// <returns></returns>
+        public int ReadSmart() {
+            int first = ReadUnsignedByte();
+            Position -= 1; // go back a one.
+            if(first < 128)
+                return ReadUnsignedByte();
+            return ReadUnsignedShort() - 32768;
+        }
+        public int ReadUnsignedSmart() {
+            int first = ReadUnsignedByte();
+            Position -= 1; // go back a one.
+            return first < 128 ? ReadUnsignedByte() - 64
+                    : ReadUnsignedShort() - 49152;
+        }
+        public int ReadSpecialSmart() {
+            int first = ReadUnsignedByte();
+            Position -= 1; // go back a one.
+            if(first < 128)
+                return ReadUnsignedByte() - 1;
+            return ReadUnsignedShort() - 32769;
+        }
+
         internal int ReadInt() {
             return (ReadUnsignedByte() << 24) + (ReadUnsignedByte() << 16) + (ReadUnsignedByte() << 8) + ReadUnsignedByte();
         }

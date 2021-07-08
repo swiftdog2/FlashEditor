@@ -26,7 +26,7 @@ namespace FlashEditor.cache {
             sector = GetStream().ReadMedium();
         }
 
-        public Index Decode(JagStream stream) {
+        public static Index Decode(JagStream stream) {
             Index index = new Index();
             index.SetStream(stream);
             index.ReadHeader();

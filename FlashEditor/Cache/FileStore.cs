@@ -49,10 +49,10 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>The number of files</returns>
         public int GetFileCount(int type) {
-            if((type < 0 || type >= indexChannels.Length) && type != 255)
+            if((type < 0 || type >= indexChannels.Length) && type != Constants.CRCTABLE_INDEX)
                 throw new FileNotFoundException("Unable to get file count for type " + type);
 
-            return (int) ((type == 255 ? metaChannel : indexChannels[type]).GetStream().Length / Index.SIZE);
+            return (int) ((type == Constants.CRCTABLE_INDEX ? metaChannel : indexChannels[type]).GetStream().Length / Index.SIZE);
         }
 
         /// <summary>
@@ -99,33 +99,32 @@ namespace FlashEditor.cache {
         */
 
         public void Write(int type, int id, JagStream data, bool overwrite) {
-            /*
             if((type < 0 || type >= indexChannels.Length) && type != 255)
                 throw new FileNotFoundException();
 
-            Index indexChannel = type == 255 ? metaChannel : indexChannels[type];
+            Index indexChannel = type == Constants.CRCTABLE_INDEX ? metaChannel : indexChannels[type];
 
             int nextSector = 0;
-            long ptr = id * (long) Index.SIZE;
+            long ptr = id * Index.SIZE;
 
             JagStream buf;
+            Index index;
 
             if(overwrite) {
                 if(ptr < 0)
                     throw new IOException();
-                else if(ptr >= indexChannel.GetStream().Length)
+                else if(ptr >= indexChannel.GetSize())
                     return;
 
                 buf = new JagStream(Index.SIZE);
+                buf.Read(indexChannel.GetStream().ToArray(), (int) ptr, Index.SIZE);
 
-
-                indexChannel.GetStream().Write()
-                FileChannelUtils.readFully(indexChannel, buf, ptr);
-
-                Index index = Index.Decode((JagStream) buf.Flip());
+                index = Index.Decode(buf.Flip());
                 nextSector = index.GetSectorID();
+
                 if(nextSector <= 0 || nextSector > dataChannel.GetSize() * (long) Sector.SIZE)
                     return;
+
             } else {
                 nextSector = (int) ((dataChannel.GetSize() + Sector.SIZE - 1) / (long) Sector.SIZE);
                 if(nextSector == 0)
@@ -133,61 +132,160 @@ namespace FlashEditor.cache {
             }
 
             bool extended = id > 0xFFFF;
-            Index index = new Index(data.remaining(), nextSector);
-            indexChannel.write(index.Encode(), ptr);
+            index = new Index(data.Remaining(), nextSector);
+            JagStream newIndexStream = index.Encode();
+
+            indexChannel.GetStream().Write(newIndexStream.ToArray(), (int) ptr, newIndexStream.ToArray().Length);
 
             buf = new JagStream(Sector.SIZE);
 
             int chunk = 0, remaining = index.GetSize();
             do {
                 int curSector = nextSector;
-                ptr = (long) curSector * (long) Sector.SIZE;
+                ptr = curSector * Sector.SIZE;
                 nextSector = 0;
 
+                Sector sector;
+
                 if(overwrite) {
-                    buf.clear();
-                    FileChannelUtils.readFully(dataChannel, buf, ptr);
+                    buf.Clear();
 
-                    Sector sector = extended ? Sector.decodeExtended((ByteBuffer) buf.flip())
-                        : Sector.decode((ByteBuffer) buf.flip());
+                    buf.Read(dataChannel.GetStream().ToArray(), (int) ptr, Sector.SIZE);
 
-                    if(sector.getType() != type)
-                        return false;
+                    sector = Sector.Decode(buf.Flip());
 
-                    if(sector.getId() != id)
-                        return false;
+                    if(sector.GetType() != type)
+                        return;
 
-                    if(sector.getChunk() != chunk)
-                        return false;
+                    if(sector.GetId() != id)
+                        return;
 
-                    nextSector = sector.getNextSector();
-                    if(nextSector < 0 || nextSector > dataChannel.size() / (long) Sector.SIZE)
-                        return false;
+                    if(sector.GetChunk() != chunk)
+                        return;
+
+                    nextSector = sector.GetNextSector();
+                    if(nextSector < 0 || nextSector > dataChannel.GetSize() / (long) Sector.SIZE)
+                        return;
                 }
 
                 if(nextSector == 0) {
                     overwrite = false;
-                    nextSector = (int) ((dataChannel.size() + Sector.SIZE - 1) / (long) Sector.SIZE);
+                    nextSector = (int) ((dataChannel.GetSize() + Sector.SIZE - 1) / (long) Sector.SIZE);
                     if(nextSector == 0)
                         nextSector++;
                     if(nextSector == curSector)
                         nextSector++;
                 }
-                int dataSize = extended ? Sector.EXTENDED_DATA_SIZE : Sector.DATA_SIZE;
+
+                int dataSize = Sector.DATA_LEN;
+
                 byte[] bytes = new byte[dataSize];
                 if(remaining < dataSize) {
-                    data.get(bytes, 0, remaining);
+                    data.Read(bytes, 0, remaining);
                     nextSector = 0; // mark as EOF
                     remaining = 0;
                 } else {
                     remaining -= dataSize;
-                    data.get(bytes, 0, dataSize);
+                    data.Read(bytes, 0, dataSize);
                 }
 
-                Sector sector = new Sector(type, id, chunk++, nextSector, bytes);
-                dataChannel.write(sector.encode(), ptr);
+                sector = new Sector(type, id, chunk++, nextSector, bytes);
+
+                JagStream sectorData = sector.Encode();
+
+                dataChannel.GetStream().Write(sectorData.ToArray(), (int) ptr, sectorData.ToArray().Length);
             } while(remaining > 0);
-        */
         }
+
+
+        /*
+        if((type < 0 || type >= indexChannels.Length) && type != Constants.CRCTABLE_INDEX)
+            throw new FileNotFoundException();
+
+        Index indexChannel = type == Constants.CRCTABLE_INDEX ? metaChannel : indexChannels[type];
+
+        int nextSector = 0;
+        long ptr = id * (long) Index.SIZE;
+
+        JagStream buf;
+
+        if(overwrite) {
+            if(ptr < 0)
+                throw new IOException();
+            else if(ptr >= indexChannel.GetStream().Length)
+                return;
+
+            buf = new JagStream(Index.SIZE);
+
+
+            indexChannel.GetStream().Write()
+            FileChannelUtils.readFully(indexChannel, buf, ptr);
+
+            Index index = Index.Decode((JagStream) buf.Flip());
+            nextSector = index.GetSectorID();
+            if(nextSector <= 0 || nextSector > dataChannel.GetSize() * (long) Sector.SIZE)
+                return;
+        } else {
+            nextSector = (int) ((dataChannel.GetSize() + Sector.SIZE - 1) / (long) Sector.SIZE);
+            if(nextSector == 0)
+                nextSector = 1;
+        }
+
+        bool extended = id > 0xFFFF;
+        Index index = new Index(data.remaining(), nextSector);
+        indexChannel.write(index.Encode(), ptr);
+
+        buf = new JagStream(Sector.SIZE);
+
+        int chunk = 0, remaining = index.GetSize();
+        do {
+            int curSector = nextSector;
+            ptr = (long) curSector * (long) Sector.SIZE;
+            nextSector = 0;
+
+            if(overwrite) {
+                buf.clear();
+                FileChannelUtils.readFully(dataChannel, buf, ptr);
+
+                Sector sector = extended ? Sector.decodeExtended((ByteBuffer) buf.flip())
+                    : Sector.decode((ByteBuffer) buf.flip());
+
+                if(sector.getType() != type)
+                    return false;
+
+                if(sector.getId() != id)
+                    return false;
+
+                if(sector.getChunk() != chunk)
+                    return false;
+
+                nextSector = sector.getNextSector();
+                if(nextSector < 0 || nextSector > dataChannel.size() / (long) Sector.SIZE)
+                    return false;
+            }
+
+            if(nextSector == 0) {
+                overwrite = false;
+                nextSector = (int) ((dataChannel.size() + Sector.SIZE - 1) / (long) Sector.SIZE);
+                if(nextSector == 0)
+                    nextSector++;
+                if(nextSector == curSector)
+                    nextSector++;
+            }
+            int dataSize = extended ? Sector.EXTENDED_DATA_SIZE : Sector.DATA_SIZE;
+            byte[] bytes = new byte[dataSize];
+            if(remaining < dataSize) {
+                data.get(bytes, 0, remaining);
+                nextSector = 0; // mark as EOF
+                remaining = 0;
+            } else {
+                remaining -= dataSize;
+                data.get(bytes, 0, dataSize);
+            }
+
+            Sector sector = new Sector(type, id, chunk++, nextSector, bytes);
+            dataChannel.write(sector.encode(), ptr);
+        } while(remaining > 0);
+    */
     }
 }

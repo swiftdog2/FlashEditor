@@ -176,6 +176,7 @@
     <Compile Include="Cache\Util\DirectBitmap.cs" />
     <Compile Include="Cache\Util\NameHasher.cs" />
     <Compile Include="Cache\Util\Whirlpool.cs" />
+    <Compile Include="Definitions\Model\ModelDefinition.cs" />
     <Compile Include="Definitions\NPCDefinition.cs" />
     <Compile Include="Definitions\SpriteDefinition.cs" />
     <Compile Include="Cache\Util\RSBufferedImage.cs" />

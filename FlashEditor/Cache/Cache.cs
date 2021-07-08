@@ -67,36 +67,20 @@ namespace FlashEditor.cache {
             //WriteIndex(index, RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.idx" + index);
         }
 
-        ///Indexes are comprised of container data
-        ///Containers are made up of archives
-        ///Archives contain entries
+        /**
+        * Writes a file to the cache and updates the ReferenceTable that it is associated with.
+        */
         internal void WriteIndex(int indexId, int containerId, Container container) {
-            /*
-            foreach(KeyValuePair<int, SortedDictionary<int, RSContainer>> container in containers) {
-                DebugUtil.Debug("ContainerID: " + container.Key);
-                foreach(KeyValuePair<int, RSContainer> archive in container.Value) {
-                    DebugUtil.Debug("ArchiveID: " + archive.Key);
-
-                }
-            }*/
-
-            /* decode the reference table for this index */
+            //Cecode the reference table for this index
             ReferenceTable table = GetReferenceTable(indexId);
 
-            /* grab the bytes we need for the checksum */
+            //Grab the bytes we need for the checksum
             JagStream stream = container.Encode();
 
-            /* last two bytes are the version and shouldn't be included */
-            //why not? YOLO
-            /*
-            byte[] bytes = new byte[buffer.limit() - 2];
-            buffer.mark();
-            try {
-                buffer.position(0);
-                buffer.get(bytes, 0, bytes.length);
-            } finally {
-                buffer.reset();
-            }*/
+            //Last two bytes are the version and shouldn't be included in the checksum
+            JagStream hashableStream = new JagStream();
+            stream.Write(stream.ToArray(), 0, (int) stream.Length - 2);
+            stream = hashableStream;
 
             //Calculate the new CRC checksum
             CRC32 crc = new CRC32();
@@ -112,20 +96,17 @@ namespace FlashEditor.cache {
 
             entry.SetVersion(container.GetVersion());
             entry.SetCrc(crc.GetCrc32(stream));
-
+            
             //Calculate and update the whirlpool digest if we need to
             if((table.flags & ReferenceTable.FLAG_WHIRLPOOL) != 0) {
                 byte[] whirlpool = Whirlpool.GetHash(stream.ToArray());
                 entry.SetWhirlpool(whirlpool);
             }
 
-            //Update the reference table version
-            table.version = table.GetVersion(); /* + 1 */
-
             Container c = new Container(indexId, table.Encode());
 
             //Save the reference table
-            store.Write(255, indexId, c.Encode(), false);
+            store.Write(Constants.CRCTABLE_INDEX, indexId, c.Encode(), false);
 
             //Save the file itself
             store.Write(indexId, containerId, stream, false);
@@ -250,11 +231,11 @@ namespace FlashEditor.cache {
 
         internal Index GetIndex(int type) {
             //Check if index is out of bounds
-            if((type < 0 || type >= store.indexChannels.Length) && type != 255)
+            if((type < 0 || type >= store.indexChannels.Length) && type != Constants.CRCTABLE_INDEX)
                 throw new FileNotFoundException("Index " + type + " could not be found.");
 
             //Retrieve the index channel we are looking for
-            return type == 255 ? store.metaChannel : store.indexChannels[type];
+            return type == Constants.CRCTABLE_INDEX ? store.metaChannel : store.indexChannels[type];
         }
 
         /// <summary>
@@ -292,7 +273,7 @@ namespace FlashEditor.cache {
                     throw new FileNotFoundException("ERROR - Reference table " + containerId + " out of bounds");
 
                 //Get the container for the reference table
-                Container container = GetContainer(255, containerId);
+                Container container = GetContainer(Constants.CRCTABLE_INDEX, containerId);
 
                 if(container == null)
                     throw new FileNotFoundException("ERROR - Reference table " + containerId + " is null");

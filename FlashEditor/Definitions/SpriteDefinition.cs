@@ -52,8 +52,6 @@ namespace FlashEditor.cache.sprites {
         public int frameCount;
         public Bitmap thumb;
 
-        private Editor editor;
-
         /// <summary>
         /// Creates a new sprite with one frame.
         /// </summary>
@@ -87,12 +85,6 @@ namespace FlashEditor.cache.sprites {
             stream.Seek(stream.Length - 2);
             int size = stream.ReadUnsignedShort();
 
-            //Allocate arrays to store info
-            int[] offsetsX = new int[size];
-            int[] offsetsY = new int[size];
-            int[] subWidths = new int[size];
-            int[] subHeights = new int[size];
-
             //Read the width, height and palette size
             stream.Seek(stream.Length - size * 8 - 7);
             int width = stream.ReadShort();
@@ -105,25 +97,10 @@ namespace FlashEditor.cache.sprites {
             SpriteDefinition sprite = new SpriteDefinition(width, height, size);
 
             //Read the offsets and dimensions of the individual sprites
-            /*
-            for(int i = 0; i < size; i++)
-                offsetsX[i] = stream.ReadUnsignedShort();
-
-            for(int i = 0; i < size; i++)
-                offsetsY[i] = stream.ReadUnsignedShort();
-
-            for(int i = 0; i < size; i++)
-                subWidths[i] = stream.ReadUnsignedShort();
-
-            for(int i = 0; i < size; i++)
-                subHeights[i] = stream.ReadUnsignedShort();
-            */
-
-            offsetsX = stream.ReadUnsignedShortArray(size);
-            offsetsY = stream.ReadUnsignedShortArray(size);
-            subWidths = stream.ReadUnsignedShortArray(size);
-            subHeights = stream.ReadUnsignedShortArray(size);
-
+            int[] offsetsX = stream.ReadUnsignedShortArray(size);
+            int[] offsetsY = stream.ReadUnsignedShortArray(size);
+            int[] subWidths = stream.ReadUnsignedShortArray(size);
+            int[] subHeights = stream.ReadUnsignedShortArray(size);
 
             //Read the palette
             stream.Seek(stream.Length - size * 8 - 7 - (palette.Length - 1) * 3);

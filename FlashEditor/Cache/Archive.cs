@@ -56,10 +56,7 @@ namespace FlashEditor.cache {
 
             //Allocate the buffers for the child entries
             for(int id = 0; id < size; id++)
-/*                if(sizes[id] <= 0)
-                    archive.entries[id] = new Entry();
-                else
-*/                    archive.entries[id] = new Entry(sizes[id]);
+                archive.entries[id] = new Entry(sizes[id]);
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();

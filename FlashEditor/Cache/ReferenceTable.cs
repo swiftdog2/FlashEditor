@@ -185,6 +185,8 @@ namespace FlashEditor.cache {
         /// <param name="id">The entry index</param>
         /// <returns>The entry at the index <paramref name="id"/></returns>
         internal Entry GetEntry(int id) {
+            if(!entries.ContainsKey(id))
+                return null;
             return entries[id];
         }
 

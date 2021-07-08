@@ -10,13 +10,13 @@ namespace FlashEditor.cache {
         public int hash;
         internal byte[] whirlpool = new byte[64];
         internal int version;
-        int index;
+        int id;
 
         internal SortedDictionary<int?, ChildEntry> childEntries = new SortedDictionary<int?, ChildEntry>();
         private int[] validFileIds;
 
-        public Entry(int index) {
-            this.index = index;
+        public Entry(int id) {
+            this.id = id;
         }
 
         public Entry() {
@@ -26,8 +26,8 @@ namespace FlashEditor.cache {
             this.stream = stream;
         }
 
-        public virtual int GetIndex() {
-            return index;
+        public virtual int GetId() {
+            return id;
         }
 
         public virtual int GetIdentifier() {
