@@ -1,7 +1,7 @@
 ﻿using System;
 
 namespace FlashEditor.cache {
-    public static class RSConstants {
+    public static class Constants {
         /*
          * Compression constants
          */

@@ -11,7 +11,7 @@ namespace FlashEditor {
         /// </summary>
         static void Main() {
             //Load the Hydrascape cache
-            RSCache cache = new RSCache(new RSFileStore(RSConstants.CACHE_DIRECTORY));
+            cache.Cache cache = new cache.Cache(new FileStore(Constants.CACHE_DIRECTORY));
             TestAllItems(cache);
             System.Console.ReadLine();
         }
@@ -23,10 +23,10 @@ namespace FlashEditor {
         /// <param name="archive">The archive to search</param>
         /// <param name="file">The archive entry </param>
         /// <returns>The decoded item definition</returns>
-        static ItemDefinition LoadItemDefinition(RSCache cache, int archive, int file) {
-            JagStream itemStream = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
-            ItemDefinition def = new ItemDefinition(itemStream);
-            itemStream.Clear();
+        static ItemDefinition LoadItemDefinition(cache.Cache cache, int archive, int file) {
+            Entry item = cache.ReadEntry(Constants.ITEM_DEFINITIONS_INDEX, archive, file);
+            ItemDefinition def = new ItemDefinition(item.stream);
+            item.stream.Clear();
             return def;
         }
 
@@ -34,10 +34,10 @@ namespace FlashEditor {
         /// Loads all of the items in the items definition index
         /// </summary>
         /// <param name="cache">The cache to test</param>
-        static long TestAllItems(RSCache cache) {
+        static long TestAllItems(cache.Cache cache) {
             Stopwatch sw = new Stopwatch();
             sw.Start();
-            RSReferenceTable table = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
+            ReferenceTable table = cache.GetReferenceTable(Constants.ITEM_DEFINITIONS_INDEX);
             DebugUtil.Debug("Table entry total: " + table.GetEntryTotal());
             for(int archive = 0; archive < table.GetEntryTotal(); archive++) {
                 for(int file = 0; file < 256; file++) {
@@ -60,7 +60,7 @@ namespace FlashEditor {
         /// <param name="archive"></param>
         /// <param name="file"></param>
         /// <returns></returns>
-        static long TimeItemLoad(RSCache cache, int archive, int file) {
+        static long TimeItemLoad(cache.Cache cache, int archive, int file) {
             Stopwatch sw = new Stopwatch();
             sw.Start();
             LoadItemDefinition(cache, archive, file);

@@ -3,15 +3,15 @@ using FlashEditor.utils;
 using System;
 
 namespace FlashEditor.cache {
-    class RSArchive {
-        private JagStream[] entries;
+    class Archive {
+        private Entry[] entries;
 
         /// <summary>
         /// Create a new Archive with <paramref name="size"/> entries
         /// </summary>
         /// <param name="size">The number of entries</param>
-        public RSArchive(int size) {
-            entries = new JagStream[size];
+        public Archive(int size) {
+            entries = new Entry[size];
         }
 
         /// <summary>
@@ -20,9 +20,9 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream containing the archive data</param>
         /// <param name="size">The total number of file entries</param>
         /// <returns></returns>
-        public static RSArchive Decode(JagStream stream, int size) {
+        public static Archive Decode(JagStream stream, int size) {
             //Allocate a new archive object
-            RSArchive archive = new RSArchive(size);
+            Archive archive = new Archive(size);
 
             stream.Seek0();
             byte[] data = new byte[stream.Length];
@@ -56,10 +56,10 @@ namespace FlashEditor.cache {
 
             //Allocate the buffers for the child entries
             for(int id = 0; id < size; id++)
-                if(sizes[id] <= 0)
-                    archive.entries[id] = new JagStream();
+/*                if(sizes[id] <= 0)
+                    archive.entries[id] = new Entry();
                 else
-                    archive.entries[id] = new JagStream(sizes[id]);
+*/                    archive.entries[id] = new Entry(sizes[id]);
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
@@ -75,13 +75,13 @@ namespace FlashEditor.cache {
                     stream.Read(temp, 0, temp.Length);
 
                     //Copy the temporary buffer into the file buffer
-                    archive.entries[id].Write(temp, 0, temp.Length);
+                    archive.entries[id].stream.Write(temp, 0, temp.Length);
                 }
             }
 
             //Flip all of the buffers
             for(int id = 0; id < size; id++)
-                archive.entries[id].Flip();
+                archive.entries[id].stream.Flip();
 
             //Return the archive
             return archive;
@@ -93,9 +93,8 @@ namespace FlashEditor.cache {
             try {
                 //Add the data for each entry
                 for(int id = 0; id < entries.Length; id++) {
-                    entries[id].Seek0();
-                    entries[id].WriteTo(stream);
-                    entries[id].Seek0();
+                    entries[id].stream.WriteTo(stream);
+                    entries[id].stream.Seek0(); //Make sure to return stream to origin
                 }
 
                 //Write the chunk lengths
@@ -105,7 +104,7 @@ namespace FlashEditor.cache {
                      * Since each file is stored in the only chunk,
                      * just write the delta-encoded file size
                      */
-                    long chunkSize = entries[id].Length;
+                    long chunkSize = entries[id].stream.Length;
                     stream.WriteInteger(chunkSize - prev);
                     prev = (int) chunkSize;
                 }
@@ -119,18 +118,23 @@ namespace FlashEditor.cache {
             }
         }
 
+        public void UpdateEntry(Entry entry, int id) {
+            entries[id] = entry;
+        }
+
+
         /// <summary>
         /// Returns the file at the specified index id
         /// </summary>
         /// <param name="id">The file entry eindex</param>
         /// <returns></returns>
-        public virtual JagStream GetEntry(int id) {
+        public virtual Entry GetEntry(int id) {
             return entries[id];
         }
 
-        internal void UpdateEntry(int entryId, JagStream entryStream) {
+        internal void UpdateEntry(int entryId, Entry entry) {
             DebugUtil.Debug("Updating archive entry " + entryId);
-            entries[entryId] = entryStream;
+            entries[entryId] = entry;
         }
     }
 }

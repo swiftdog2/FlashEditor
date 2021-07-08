@@ -124,11 +124,11 @@ namespace FlashEditor {
                         modelIds[k] = -1;
                 }
             } else if(opcode == 2) {
-                name = stream.ReadString();
+                name = stream.ReadJagexString();
             } else if(opcode == 12) {
                 size = stream.ReadByte();
             } else if(opcode >= 30 && opcode < 34) { //was 36 before
-                options[opcode - 30] = stream.ReadString();
+                options[opcode - 30] = stream.ReadJagexString();
                 if(options[opcode - 30] == "Hidden")
                     options[opcode - 30] = null;
             } else if(opcode == 40) {
@@ -281,7 +281,7 @@ namespace FlashEditor {
             else if(opcode == 143) {
                 invisiblePriority = true;
             } else if(opcode >= 150 && opcode < 155) {
-                options[opcode - 150] = stream.ReadString();
+                options[opcode - 150] = stream.ReadJagexString();
                 if(options[opcode - 150] == "Hidden")
                     options[opcode - 150] = null;
             } else if(opcode == 155) {
@@ -330,7 +330,7 @@ namespace FlashEditor {
 
                     object value;
                     if(stringInstance)
-                        value = stream.ReadString();
+                        value = stream.ReadJagexString();
                     else
                         value = stream.ReadInt();
 
@@ -626,7 +626,7 @@ namespace FlashEditor {
                 }
             }
 
-            return stream;
+            return stream.Flip();
         }
 
         internal void setId(int id) {

@@ -2,28 +2,35 @@
 
 namespace FlashEditor.cache {
     //RsIndex is simply the raw data that was read from disk in to a stream
-    class RSIndex {
+    class Index {
         public const int SIZE = 6;
 
         private int size;
         private int sector;
         private JagStream stream;
 
-        public RSIndex(int size, int sector) {
+        public Index(int size, int sector) {
             this.size = size;
             this.sector = sector;
         }
 
-        public RSIndex() {
+        public Index() {
         }
 
-        public RSIndex(JagStream stream) {
+        public Index(JagStream stream) {
             SetStream(stream);
         }
 
         public void ReadHeader() {
             size = GetStream().ReadMedium();
             sector = GetStream().ReadMedium();
+        }
+
+        public Index Decode(JagStream stream) {
+            Index index = new Index();
+            index.SetStream(stream);
+            index.ReadHeader();
+            return index;
         }
 
         public ref JagStream GetStream() {

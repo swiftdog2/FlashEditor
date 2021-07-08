@@ -4,10 +4,19 @@ using System.IO;
 using System.Text;
 
 namespace FlashEditor {
-    class JagStream : MemoryStream {
+    public class JagStream : MemoryStream {
         public JagStream(int size) : base(size) { }
         public JagStream(byte[] buffer) : base(buffer) { }
         public JagStream() { }
+
+        /*
+         * The modified set of 'extended ASCII' characters used by the client.
+         */
+        private static char[] CHARACTERS = { '\u20AC', '\0', '\u201A', '\u0192', '\u201E', '\u2026', '\u2020', '\u2021',
+            '\u02C6', '\u2030', '\u0160', '\u2039', '\u0152', '\0', '\u017D', '\0', '\0', '\u2018', '\u2019', '\u201C',
+            '\u201D', '\u2022', '\u2013', '\u2014', '\u02DC', '\u2122', '\u0161', '\u203A', '\u0153', '\0', '\u017E',
+            '\u0178' };
+
 
         /*
          * Stream reading utils
@@ -34,7 +43,12 @@ namespace FlashEditor {
         }
 
         internal byte ReadUnsignedByte() {
-            return (byte) (ReadByte() & 0xFF);
+            int result = ReadByte();
+            if(result == -1)
+                DebugUtil.Debug("End of stream bro");
+
+            return (byte) result;
+            //return (byte) (ReadByte() & 0xFF);
         }
 
         internal int[] ReadUnsignedByteArray(int size) {
@@ -65,22 +79,112 @@ namespace FlashEditor {
             return shortBuffer;
         }
 
-        internal string ReadString() {
+        internal string ReadString2() {
             StringBuilder sb = new StringBuilder();
             int b;
-            while((b = ReadByte()) != 0)
+
+            DebugUtil.Debug2("Name: '");
+            while((b = ReadByte()) != 0) {
+                DebugUtil.Debug2(b + " ");
                 sb.Append((char) b);
+            }
+            DebugUtil.WriteLine("'");
+            return sb.ToString();
+        }
+
+        /**
+         * Gets a null-terminated string from the specified buffer, using a
+         * modified ISO-8859-1 character set.
+         * @param buf The buffer.
+         * @return The decoded string.
+         */
+        public string ReadJagexString() {
+            StringBuilder sb = new StringBuilder();
+            int b;
+            while((b = ReadByte()) != 0) {
+                //If the byte read is between 127 and 159, it should be remapped
+                if(b >= 127 && b < 160) {
+                    char c = CHARACTERS[b - 128];
+                    if(c.Equals('\0')) { //if it needs to be remapped, as per the characters array
+                        c = '\u003F'; //replace with question mark as placeholder to avoid rendering issues
+                    }
+                    sb.Append(c);
+                } else {
+                    sb.Append((char) b);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        //Seems to work better? idk tbh my brain is fried...
+        public string ReadFlashString() {
+            StringBuilder sb = new StringBuilder();
+            int b;
+            while((b = ReadByte()) != 0) {
+                if(b >= 128 && b < 160) {
+                    char c = CHARACTERS[b - 128];
+                    sb.Append(c == (char) 0 ? (char) 63 : c);
+                } else {
+                    //Nobody seems to have this (including client, openrs, etc)
+                    //Seems to eliminate issues reading strings not terminated by 0
+                    if(b < 32) {
+                        //But also should we reduce the position because we over-read the stream?
+                        Position--;
+                        break;
+                    }
+
+                    sb.Append((char) b);
+                }
+            }
+
             return sb.ToString();
         }
 
         /*
          * Methods for writing to the JagStream
          */
+        internal void WriteUByte(byte b) {
+            WriteByte((byte) (b & 0xFF));
+        }
 
         internal void WriteString(string s) {
             foreach(char c in s.ToCharArray())
                 WriteByte((byte) c);
+            //terminate the string with 0
+            WriteByte(0);
+            //apparently 317 format is terminated with 10
         }
+
+        /**
+         * Interesting method ripped from kfricilone's openRS
+
+         
+         * Converts the contents of the specified byte buffer to a string, which is
+        * formatted similarly to the output of the {@link Arrays#toString()}
+        * method.
+        * 
+        * @param buffer
+        *            The buffer.
+        * @return The string.
+        */
+        /*
+        public static String toString(ByteBuffer buffer) {
+            StringBuilder builder = new StringBuilder("[");
+            for(int i = 0; i < buffer.limit(); i++) {
+                String hex = Integer.toHexString(buffer.get(i) & 0xFF).toUpperCase();
+                if(hex.length() == 1)
+                    hex = "0" + hex;
+
+                builder.append("0x").append(hex);
+                if(i != buffer.limit() - 1) {
+                    builder.append(", ");
+                }
+            }
+            builder.append("]");
+            return builder.toString();
+        }
+        */
 
         internal void WriteShort(short value) {
             WriteByte((byte) (value & 0xFF));

@@ -12,16 +12,16 @@ using System.Drawing;
 
 namespace FlashEditor {
     public partial class Editor : Form {
-        internal RSCache cache;
+        internal cache.Cache cache;
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
             -1,
-            RSConstants.ITEM_DEFINITIONS_INDEX,
-            RSConstants.SPRITES_INDEX,
-            RSConstants.NPC_DEFINITIONS_INDEX,
-            RSConstants.OBJECTS_DEFINITIONS_INDEX,
-            RSConstants.INTERFACE_DEFINITIONS_INDEX,
+            Constants.ITEM_DEFINITIONS_INDEX,
+            Constants.SPRITES_INDEX,
+            Constants.NPC_DEFINITIONS_INDEX,
+            Constants.OBJECTS_DEFINITIONS_INDEX,
+            Constants.INTERFACE_DEFINITIONS_INDEX,
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -88,8 +88,8 @@ namespace FlashEditor {
 
             try {
                 //Load the cache and the reference tables
-                RSFileStore store = new RSFileStore(directory);
-                cache = new RSCache(store);
+                FileStore store = new FileStore(directory);
+                cache = new cache.Cache(store);
                 sw.Stop();
 
                 DebugConsole.Items.Add("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -111,7 +111,7 @@ namespace FlashEditor {
             if(type == -1)
                 return;
 
-            RSReferenceTable refTable;
+            ReferenceTable refTable;
 
             if(cache != null) {
                 if(!loaded[editorIndex]) {
@@ -134,7 +134,7 @@ namespace FlashEditor {
                     refTable = cache.GetReferenceTable(type);
 
                     switch(type) {
-                        case RSConstants.ITEM_DEFINITIONS_INDEX:
+                        case Constants.ITEM_DEFINITIONS_INDEX:
                             //When an item is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 ItemProgressBar.Value = e.ProgressPercentage;
@@ -153,7 +153,7 @@ namespace FlashEditor {
                                 int total = refTable.GetEntryTotal() * 256;
                                 int percentile = total / 100;
 
-                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, Entry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archive);
@@ -171,10 +171,12 @@ namespace FlashEditor {
                                             if(done % percentile == 0 || done == total)
                                                 bgw.ReportProgress(done * 100 / total);
 
-                                            DebugUtil.Debug("Done: " + done + ", total: " + total);
+                                            //DebugUtil.Debug("Done: " + done + ", total: " + total);
                                         }
                                     }
                                 }
+
+                                DebugUtil.Debug("Finished loading " + total + " entries");
 
                                 ItemListView.SetObjects(cache.items);
                             };
@@ -185,7 +187,7 @@ namespace FlashEditor {
 
                             bgw.RunWorkerAsync();
                             break;
-                        case RSConstants.SPRITES_INDEX:
+                        case Constants.SPRITES_INDEX:
                             //When a sprite is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 SpriteProgressBar.Value = e.ProgressPercentage;
@@ -199,14 +201,14 @@ namespace FlashEditor {
 
                             bgw.DoWork += async delegate {
                                 List<SpriteDefinition> sprites = new List<SpriteDefinition>();
-                                refTable = cache.GetReferenceTable(RSConstants.SPRITES_INDEX);
+                                refTable = cache.GetReferenceTable(Constants.SPRITES_INDEX);
 
                                 int done = 0;
                                 int total = refTable.GetEntryTotal();
                                 int percentile = total / 100;
 
                                 bgw.ReportProgress(0, "Loading Sprites");
-                                foreach(KeyValuePair<int, RSEntry> entry in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, Entry> entry in refTable.GetEntries()) {
                                     DebugUtil.Debug("Loading sprite: " + entry.Key);
 
                                     SpriteDefinition sprite = cache.GetSprite(entry.Key);
@@ -244,7 +246,7 @@ namespace FlashEditor {
                             };
                             bgw.RunWorkerAsync();
                             break;
-                        case RSConstants.NPC_DEFINITIONS_INDEX:
+                        case Constants.NPC_DEFINITIONS_INDEX:
                             //When an NPC is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 NPCProgressBar.Value = e.ProgressPercentage;
@@ -267,7 +269,7 @@ namespace FlashEditor {
 
                                 DebugUtil.Debug("Loading NPC shit xxxx");
 
-                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, Entry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archiveId);
@@ -340,21 +342,6 @@ namespace FlashEditor {
             SpriteListView.Refresh();
         }
 
-        private void checkBox2_CheckedChanged(object sender, EventArgs e) {
-            if(checkBox2.Checked) {
-                //Set the alternating row back color
-                if(colorDialog1.ShowDialog() == DialogResult.OK)
-                    ItemListView.AlternateRowBackColor = colorDialog1.Color;
-                ItemListView.UseAlternatingBackColors = true;
-            } else {
-                //Clear the row back color
-                ItemListView.UseAlternatingBackColors = false;
-            }
-
-            //Refresh the view
-            ItemListView.Refresh();
-        }
-
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
             string dir = getCacheDir() + "\\sprites";
             Directory.CreateDirectory(dir);
@@ -377,7 +364,7 @@ namespace FlashEditor {
         private void saveToolStripMenuItem_Click(object sender, EventArgs e) {
             int selectedTab = EditorTabControl.SelectedIndex;
             int container = editorTypes[selectedTab];
-            cache.Encode(container);
+            //cache.Encode(container);
         }
 
         private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
@@ -393,7 +380,7 @@ namespace FlashEditor {
         /// <param name="e"></param>
 
         private void saveAllToolStripMenuItem_Click(object sender, EventArgs e) {
-            //Saves the stream as-is
+            //Saves the data streams
             cache.WriteCache();
         }
 
@@ -403,21 +390,26 @@ namespace FlashEditor {
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
 
             //Update the cache definition
-            //cache.items[newDefinition.id] = newDefinition;
+            cache.items[newDefinition.id] = newDefinition;
 
             int archiveId = newDefinition.id / 256;
             int entryId = newDefinition.id % 256;
-            DebugUtil.Debug("Updated items archive " + archiveId + " entry " + entryId);
 
-            //Encode the new item definition, and replace the archive entry stream
-            RSArchive archive = cache.archives[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
+            DebugUtil.Debug("Updating items archive " + archiveId + " entry " + entryId + "...");
 
-            //Update the archive stream to reflect current entries
-            archive.UpdateEntry(entryId, newDefinition.Encode());
+            //Convert Item Definition to Entry
+            Entry newEntry = new Entry(newDefinition.Encode());
+
+            //Update the entry in the archive
+            Archive archive = cache.archives[Constants.ITEM_DEFINITIONS_INDEX][archiveId];
+            archive.UpdateEntry(entryId, newEntry);
 
             //Update the reference table
-            cache.UpdateIndex(RSConstants.ITEM_DEFINITIONS_INDEX);
-            cache.UpdateReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
+            cache.UpdateReferenceTable(Constants.ITEM_DEFINITIONS_INDEX);
+
+
+            //idkk its shit
+            cache.UpdateContainer(Constants.ITEM_DEFINITIONS_INDEX);
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {
@@ -448,13 +440,13 @@ namespace FlashEditor {
             itemDumper.DoWork += delegate {
                 if(items.Length > 0) {
                     //Ensures that the directory exists
-                    Directory.CreateDirectory(RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/");
+                    Directory.CreateDirectory(Constants.CACHE_OUTPUT_DIRECTORY + "/items/");
 
                     int done = 0;
 
                     foreach(ItemDefinition def in items) {
                         DebugUtil.Debug("Exporting Item " + def.getId() + " name is " + def.name);
-                        JagStream.Save(def.Encode(), RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
+                        JagStream.Save(def.Encode(), Constants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
                         done++;
                         itemDumper.ReportProgress(done * 100 / items.Length);
                     }
@@ -471,6 +463,15 @@ namespace FlashEditor {
             };
 
             itemDumper.RunWorkerAsync();
+        }
+
+        private void button1_Click(object sender, EventArgs e) {
+            //Set the alternating row back color
+            if(colorDialog1.ShowDialog() == DialogResult.OK)
+                ItemListView.AlternateRowBackColor = colorDialog1.Color;
+
+            //Refresh the view
+            ItemListView.Refresh();
         }
     }
 }

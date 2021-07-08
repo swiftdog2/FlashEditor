@@ -45,7 +45,6 @@
             this.ExportItemDatBtn = new System.Windows.Forms.Button();
             this.button9 = new System.Windows.Forms.Button();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
-            this.checkBox2 = new System.Windows.Forms.CheckBox();
             this.ItemListView = new BrightIdeasSoftware.FastObjectListView();
             this.ItemID = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ItemName = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
@@ -57,8 +56,8 @@
             this.Rotate1 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.Rotate2 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.SpriteEditorTab = new System.Windows.Forms.TabPage();
-            this.SpriteLoadingLabel = new System.Windows.Forms.Label();
             this.groupBox3 = new System.Windows.Forms.GroupBox();
+            this.SpriteLoadingLabel = new System.Windows.Forms.Label();
             this.SpriteProgressBar = new System.Windows.Forms.ProgressBar();
             this.ExportSpriteBmpBtn = new System.Windows.Forms.Button();
             this.ExportSpriteDatBtn = new System.Windows.Forms.Button();
@@ -91,6 +90,7 @@
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.button1 = new System.Windows.Forms.Button();
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
@@ -309,7 +309,7 @@
             // 
             this.groupBox5.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox5.BackColor = System.Drawing.Color.White;
-            this.groupBox5.Controls.Add(this.checkBox2);
+            this.groupBox5.Controls.Add(this.button1);
             this.groupBox5.Font = new System.Drawing.Font("Consolas", 14.25F);
             this.groupBox5.Location = new System.Drawing.Point(973, 6);
             this.groupBox5.Name = "groupBox5";
@@ -317,18 +317,6 @@
             this.groupBox5.TabIndex = 10;
             this.groupBox5.TabStop = false;
             this.groupBox5.Text = "Layout Controls";
-            // 
-            // checkBox2
-            // 
-            this.checkBox2.AutoSize = true;
-            this.checkBox2.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.checkBox2.Location = new System.Drawing.Point(24, 29);
-            this.checkBox2.Name = "checkBox2";
-            this.checkBox2.Size = new System.Drawing.Size(199, 23);
-            this.checkBox2.TabIndex = 0;
-            this.checkBox2.Text = "Alternate Row Color";
-            this.checkBox2.UseVisualStyleBackColor = true;
-            this.checkBox2.CheckedChanged += new System.EventHandler(this.checkBox2_CheckedChanged);
             // 
             // ItemListView
             // 
@@ -341,6 +329,7 @@
             this.ItemListView.AllColumns.Add(this.Female2);
             this.ItemListView.AllColumns.Add(this.Rotate1);
             this.ItemListView.AllColumns.Add(this.Rotate2);
+            this.ItemListView.AlternateRowBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(192)))), ((int)(((byte)(255)))), ((int)(((byte)(192)))));
             this.ItemListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -363,14 +352,16 @@
             this.ItemListView.FullRowSelect = true;
             this.ItemListView.GridLines = true;
             this.ItemListView.HideSelection = false;
-            this.ItemListView.Location = new System.Drawing.Point(6, 3);
+            this.ItemListView.Location = new System.Drawing.Point(6, 6);
             this.ItemListView.Name = "ItemListView";
             this.ItemListView.RowHeight = 10;
             this.ItemListView.ShowGroups = false;
             this.ItemListView.ShowImagesOnSubItems = true;
             this.ItemListView.Size = new System.Drawing.Size(961, 498);
             this.ItemListView.TabIndex = 14;
+            this.ItemListView.UseAlternatingBackColors = true;
             this.ItemListView.UseCompatibleStateImageBehavior = false;
+            this.ItemListView.UseFilterIndicator = true;
             this.ItemListView.View = System.Windows.Forms.View.Details;
             this.ItemListView.VirtualMode = true;
             this.ItemListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ItemListView_CellEditFinished);
@@ -434,7 +425,6 @@
             // 
             // SpriteEditorTab
             // 
-            this.SpriteEditorTab.Controls.Add(this.SpriteLoadingLabel);
             this.SpriteEditorTab.Controls.Add(this.groupBox3);
             this.SpriteEditorTab.Controls.Add(this.groupBox2);
             this.SpriteEditorTab.Controls.Add(this.SpriteListView);
@@ -446,22 +436,11 @@
             this.SpriteEditorTab.Text = "Sprites";
             this.SpriteEditorTab.UseVisualStyleBackColor = true;
             // 
-            // SpriteLoadingLabel
-            // 
-            this.SpriteLoadingLabel.AutoSize = true;
-            this.SpriteLoadingLabel.BackColor = System.Drawing.Color.White;
-            this.SpriteLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.SpriteLoadingLabel.Location = new System.Drawing.Point(300, 220);
-            this.SpriteLoadingLabel.Name = "SpriteLoadingLabel";
-            this.SpriteLoadingLabel.Size = new System.Drawing.Size(153, 38);
-            this.SpriteLoadingLabel.TabIndex = 10;
-            this.SpriteLoadingLabel.Text = "Loading Sprites,\r\nplease wait...";
-            this.SpriteLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            // 
             // groupBox3
             // 
             this.groupBox3.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox3.BackColor = System.Drawing.Color.White;
+            this.groupBox3.Controls.Add(this.SpriteLoadingLabel);
             this.groupBox3.Controls.Add(this.SpriteProgressBar);
             this.groupBox3.Controls.Add(this.ExportSpriteBmpBtn);
             this.groupBox3.Controls.Add(this.ExportSpriteDatBtn);
@@ -473,6 +452,18 @@
             this.groupBox3.TabIndex = 9;
             this.groupBox3.TabStop = false;
             this.groupBox3.Text = "Editor Controls";
+            // 
+            // SpriteLoadingLabel
+            // 
+            this.SpriteLoadingLabel.AutoSize = true;
+            this.SpriteLoadingLabel.BackColor = System.Drawing.Color.White;
+            this.SpriteLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.SpriteLoadingLabel.Location = new System.Drawing.Point(2, 238);
+            this.SpriteLoadingLabel.Name = "SpriteLoadingLabel";
+            this.SpriteLoadingLabel.Size = new System.Drawing.Size(117, 19);
+            this.SpriteLoadingLabel.TabIndex = 10;
+            this.SpriteLoadingLabel.Text = "Status: IDLE";
+            this.SpriteLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // SpriteProgressBar
             // 
@@ -835,6 +826,17 @@
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
             // 
+            // button1
+            // 
+            this.button1.BackColor = System.Drawing.Color.White;
+            this.button1.Location = new System.Drawing.Point(6, 29);
+            this.button1.Name = "button1";
+            this.button1.Size = new System.Drawing.Size(238, 35);
+            this.button1.TabIndex = 1;
+            this.button1.Text = "Change Row Colour";
+            this.button1.UseVisualStyleBackColor = false;
+            this.button1.Click += new System.EventHandler(this.button1_Click);
+            // 
             // Editor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -858,11 +860,10 @@
             this.groupBox4.ResumeLayout(false);
             this.groupBox4.PerformLayout();
             this.groupBox5.ResumeLayout(false);
-            this.groupBox5.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.ItemListView)).EndInit();
             this.SpriteEditorTab.ResumeLayout(false);
-            this.SpriteEditorTab.PerformLayout();
             this.groupBox3.ResumeLayout(false);
+            this.groupBox3.PerformLayout();
             this.groupBox2.ResumeLayout(false);
             this.groupBox2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).EndInit();
@@ -911,7 +912,6 @@
         private System.Windows.Forms.Button ExportItemDatBtn;
         private System.Windows.Forms.Button button9;
         private System.Windows.Forms.GroupBox groupBox5;
-        private System.Windows.Forms.CheckBox checkBox2;
         private System.Windows.Forms.Label ItemLoadingLabel;
         private BrightIdeasSoftware.FastObjectListView ItemListView;
         private BrightIdeasSoftware.OLVColumn ItemID;
@@ -946,6 +946,7 @@
         private BrightIdeasSoftware.OLVColumn levelColumn;
         public System.Windows.Forms.ListBox DebugConsole;
         private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
+        private System.Windows.Forms.Button button1;
     }
 }
 

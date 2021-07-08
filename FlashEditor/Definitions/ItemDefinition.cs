@@ -1,9 +1,13 @@
-﻿using System;
+﻿using FlashEditor.cache;
+using FlashEditor.utils;
+using System;
+using System.Text;
 
 namespace FlashEditor {
     internal class ItemDefinition {
         public string name;
         public int id;
+        public bool[] decoded = new bool[256];
         public string[] groundOptions;
         public string[] inventoryOptions;
 
@@ -77,17 +81,36 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream"></param>
         public void Decode(JagStream stream) {
+            DebugUtil.Debug("Decoding item stream...");
+
+            int total = 0;
+
+            StringBuilder sb = new StringBuilder();
+
             if(stream != null) {
                 while(true) {
                     //Read unsigned byte
                     int opcode = stream.ReadUnsignedByte();
 
+                    //Flag that the default value was overridden
+                    decoded[opcode] = true;
+
                     if(opcode == 0)
                         break;
 
                     Decode(stream, opcode);
+
+                    //Shouldn't be necessary, but there are no more than 256 opcodes anyway so no harm
+                    if(total++ > 256)
+                        break;
+                }
+
+                for(int k = 0; k < decoded.Length; k++) {
+                    if(decoded[k])
+                        sb.Append(k + " ");
                 }
             }
+            DebugUtil.Debug(name + " OPCODEs: " + sb.ToString());
         }
 
         /// <summary>
@@ -99,7 +122,7 @@ namespace FlashEditor {
             if(opcode == 1) {
                 inventoryModelId = stream.ReadUnsignedShort();
             } else if(opcode == 2) {
-                name = stream.ReadString();
+                name = stream.ReadJagexString();
             } else if(opcode == 4) {
                 modelZoom = stream.ReadUnsignedShort();
             } else if(opcode == 5) {
@@ -139,11 +162,11 @@ namespace FlashEditor {
             } else if(opcode == 27) {
                 stream.ReadUnsignedByte();
             } else if(opcode >= 30 && opcode < 35) {
-                groundOptions[opcode - 30] = stream.ReadString();
+                groundOptions[opcode - 30] = stream.ReadJagexString();
                 if(groundOptions[opcode - 30].Equals("Hidden", StringComparison.InvariantCultureIgnoreCase))
                     groundOptions[opcode - 30] = null;
             } else if(opcode >= 35 && opcode < 40) {
-                inventoryOptions[opcode - 35] = stream.ReadString();
+                inventoryOptions[opcode - 35] = stream.ReadJagexString();
             } else if(opcode == 40) {
                 int length = stream.ReadUnsignedByte();
                 originalModelColors = new short[length];
@@ -170,7 +193,7 @@ namespace FlashEditor {
             } else if(opcode == 44) {
                 stream.ReadUnsignedShort();
                 //There's more crap but for the moment it's unnecessary
-            } else if(opcode == 45) {
+            } else if(opcode == 45) { //idk
                 stream.ReadUnsignedShort();
                 //As above
             } else if(opcode == 65) {
@@ -211,9 +234,9 @@ namespace FlashEditor {
             } else if(opcode == 112) {
                 int i = stream.ReadUnsignedShort();
             } else if(opcode == 113) {
-                ambient = stream.ReadByte();
+                ambient = stream.ReadUnsignedByte();
             } else if(opcode == 114) {
-                contrast = stream.ReadByte();
+                contrast = stream.ReadUnsignedByte();
             } else if(opcode == 115) {
                 teamId = stream.ReadUnsignedByte();
             } else if(opcode == 121) {
@@ -221,13 +244,13 @@ namespace FlashEditor {
             } else if(opcode == 122) {
                 lendTemplateId = stream.ReadUnsignedShort();
             } else if(opcode == 125) {
-                manWearXOffset = stream.ReadByte() << 2;
-                manWearYOffset = stream.ReadByte() << 2;
-                manWearZOffset = stream.ReadByte() << 2;
+                manWearXOffset = stream.ReadUnsignedByte() << 2;
+                manWearYOffset = stream.ReadUnsignedByte() << 2;
+                manWearZOffset = stream.ReadUnsignedByte() << 2;
             } else if(opcode == 126) {
-                womanWearXOffset = stream.ReadByte() << 0;
-                womanWearYOffset = stream.ReadByte() << 0;
-                womanWearZOffset = stream.ReadByte() << 0;
+                womanWearXOffset = stream.ReadUnsignedByte() << 0;
+                womanWearYOffset = stream.ReadUnsignedByte() << 0;
+                womanWearZOffset = stream.ReadUnsignedByte() << 0;
             } else if(opcode == 127) {
                 int groupCursorOp = stream.ReadUnsignedByte();
                 int groundCursor = stream.ReadUnsignedShort();
@@ -270,13 +293,13 @@ namespace FlashEditor {
                 stream.ReadUnsignedShort();
             } else if(opcode == 164) {
                 //shardName
-                stream.ReadString();
+                stream.ReadJagexString();
             } else if(opcode == 249) {
                 int length = stream.ReadUnsignedByte();
                 for(int index = 0; index < length; index++) {
                     bool stringInstance = stream.ReadUnsignedByte() == 1;
                     int key = stream.ReadMedium();
-                    var value = stringInstance ? (object) stream.ReadString() : stream.ReadInt();
+                    var value = stringInstance ? (object) stream.ReadJagexString() : stream.ReadInt();
                 }
             }
         }
@@ -388,11 +411,13 @@ namespace FlashEditor {
                 stream.WriteInteger(nameColor);
             }
 
+            /*
             stream.WriteByte(44);
             stream.WriteShort(0); //???
 
             stream.WriteByte(45);
             stream.WriteShort(0); //???
+            */
 
             if(unnoted)
                 stream.WriteByte(65);
@@ -403,6 +428,7 @@ namespace FlashEditor {
             stream.WriteByte(79);
             stream.WriteShort(colourEquip2);
 
+            /*
             stream.WriteByte(90);
             stream.WriteShort(0); //???
 
@@ -423,6 +449,7 @@ namespace FlashEditor {
 
             stream.WriteByte(96);
             stream.WriteByte(0); //???
+            */
 
             stream.WriteByte(97);
             stream.WriteShort(notedId);
@@ -437,6 +464,7 @@ namespace FlashEditor {
                 }
             }
 
+            /*
             stream.WriteByte(110);
             stream.WriteShort(0);
 
@@ -445,6 +473,7 @@ namespace FlashEditor {
 
             stream.WriteByte(112);
             stream.WriteShort(0);
+            */
 
             stream.WriteByte(113);
             stream.WriteByte((byte) ambient);
@@ -526,13 +555,12 @@ namespace FlashEditor {
             stream.WriteString("shardName");
 
             stream.WriteByte(249);
-            stream.WriteByte(0);
             //some more shit but dw about it tbh
 
             //End of stream sir
             stream.WriteByte(0);
 
-            return stream;
+            return stream.Flip();
         }
 
         internal void setId(int id) {

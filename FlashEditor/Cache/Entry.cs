@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 
 namespace FlashEditor.cache {
-    internal class RSEntry {
+    internal class Entry {
+        public JagStream stream = new JagStream(); //ensure there is a default stream
         internal int identifier = -1;
         internal int crc;
         public int hash;
@@ -11,11 +12,18 @@ namespace FlashEditor.cache {
         internal int version;
         int index;
 
-        internal SortedDictionary<int?, RSChildEntry> entries = new SortedDictionary<int?, RSChildEntry>();
+        internal SortedDictionary<int?, ChildEntry> childEntries = new SortedDictionary<int?, ChildEntry>();
         private int[] validFileIds;
 
-        public RSEntry(int index) {
+        public Entry(int index) {
             this.index = index;
+        }
+
+        public Entry() {
+        }
+
+        public Entry(JagStream stream) {
+            this.stream = stream;
         }
 
         public virtual int GetIndex() {
@@ -57,34 +65,44 @@ namespace FlashEditor.cache {
         }
 
         public virtual int Size() {
-            return entries.Count;
+            return childEntries.Count;
         }
 
         public virtual int Capacity() {
-            if(entries.Count == 0)
+            if(childEntries.Count == 0)
                 return 0;
 
-            return (int) entries.Keys.Last() + 1;
+            return (int) childEntries.Keys.Last() + 1;
         }
 
-        public virtual RSChildEntry GetEntry(int id) {
-            return entries[id];
+        public virtual ChildEntry GetEntry(int id) {
+            return childEntries[id];
         }
 
-        public virtual void PutEntry(int id, RSChildEntry entry) {
-            entries.Add(id, entry);
+        public virtual void PutEntry(int id, ChildEntry entry) {
+            childEntries.Add(id, entry);
         }
 
-        public virtual void RemoveEntry(int id, RSChildEntry entry) {
-            entries.Remove(id);
+        public virtual void RemoveEntry(int id, ChildEntry entry) {
+            childEntries.Remove(id);
         }
 
-        public virtual SortedDictionary<int?, RSChildEntry> GetEntries() {
-            return entries;
+        public virtual SortedDictionary<int?, ChildEntry> GetEntries() {
+            return childEntries;
         }
 
         internal void SetNameHash(int hash) {
             this.hash = hash;
+        }
+
+        //Pretty sure this is for naming shit so you can find it in the cache editor tho lol sneaky jagex
+        internal int CalculateNameHash() {
+            int h = 0;
+
+            foreach(byte b in stream.ToArray())
+                h = h * 31 + b;
+
+            return h;
         }
 
         internal void SetValidFileIds(int[] validFileIds) {
@@ -95,8 +113,8 @@ namespace FlashEditor.cache {
             return validFileIds;
         }
 
-        internal void SetFiles(SortedDictionary<int?, RSChildEntry> entries) {
-            this.entries = entries;
+        internal void SetFiles(SortedDictionary<int?, ChildEntry> entries) {
+            this.childEntries = entries;
         }
 
         internal long GetNameHash() {
