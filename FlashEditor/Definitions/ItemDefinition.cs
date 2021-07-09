@@ -84,8 +84,6 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream"></param>
         public void Decode(JagStream stream) {
-            DebugUtil.Debug("Decoding item stream...");
-
             int total = 0;
 
             StringBuilder sb = new StringBuilder();

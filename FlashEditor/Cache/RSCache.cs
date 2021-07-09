@@ -13,7 +13,7 @@ namespace FlashEditor.cache {
         public SortedDictionary<int, SortedDictionary<int, Container>> containers = new SortedDictionary<int, SortedDictionary<int, Container>>();
         public SortedDictionary<int, SortedDictionary<int, Archive>> archives = new SortedDictionary<int, SortedDictionary<int, Archive>>();
 
-        public List<ItemDefinition> items = new List<ItemDefinition>();
+        public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
 
         /// <summary>
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables

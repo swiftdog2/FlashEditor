@@ -160,8 +160,9 @@ namespace FlashEditor {
                                     for(int file = 0; file < 256; file++) {
                                         try {
                                             ItemDefinition item = cache.GetItemDefinition(archiveId, file);
-                                            item.SetId(archiveId * 256 + file); //Set the item ID
-                                            cache.items.Add(item);
+                                            int itemId = archiveId * 256 + file;
+                                            item.SetId(itemId); //Set the item ID
+                                            cache.items.Add(itemId, item);
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
                                         } finally {
@@ -178,7 +179,7 @@ namespace FlashEditor {
 
                                 DebugUtil.Debug("Finished loading " + total + " entries");
 
-                                ItemListView.SetObjects(cache.items);
+                                ItemListView.SetObjects(cache.items.Values);
                             };
 
                             bgw.Disposed += delegate {
@@ -379,6 +380,7 @@ namespace FlashEditor {
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
 
             //Update the cache definition
+            DebugUtil.Debug("cache item total: " + cache.items.Count + ", newdef ID : " + newDefinition.id);
             cache.items[newDefinition.id] = newDefinition;
 
             int archiveId = newDefinition.id / 256;

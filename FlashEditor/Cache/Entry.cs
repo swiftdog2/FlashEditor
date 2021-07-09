@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FlashEditor.utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -53,8 +54,10 @@ namespace FlashEditor.cache {
         }
 
         public virtual void SetWhirlpool(byte[] whirlpool) {
-            if(whirlpool.Length != 64)
-                throw new ArgumentException("Whirlpool length is not 64 bytes");
+            if(whirlpool.Length != 64) {
+                DebugUtil.Debug("Whirlpool length is not 64 bytes");
+                throw new ArgumentException();
+            }
             Array.Copy(whirlpool, 0, this.whirlpool, 0, whirlpool.Length);
         }
 

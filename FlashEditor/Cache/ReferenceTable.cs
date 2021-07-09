@@ -57,33 +57,38 @@ namespace FlashEditor.cache {
             for(int index = 0; index < table.validArchivesCount; index++) {
                 int archiveId = lastArchiveId += stream.ReadUnsignedShort();
                 table.validArchiveIds[index] = archiveId;
-                table.entries.Add(archiveId, new Entry(k++));
+                 table.entries.Add(table.validArchiveIds[index], new Entry(k++));
 
-                if(archiveId > size)
+                if(archiveId >= size)
                     size = archiveId;
             }
 
             //If named, set the name hash for the archive
+
+            /*
             if(table.named)
                 for(int index = 0; index < table.validArchivesCount; index++)
                     table.entries[table.validArchiveIds[index]].SetNameHash(stream.ReadInt());
+            */
 
             //Read the identifiers if present AKA name hashes
-            /*
-            int[] identifiersArray = new int[size];
+            //FYI this was/is? extremely fucky lol
+            int[] identifiersArray = new int[table.validArchivesCount];
             if(table.named) {
                 DebugUtil.Debug("Identifiers hash detected. archive ids: " + table.validArchiveIds.Length);
-
-                foreach(int id in table.validArchiveIds) {
+                for(int id = 0; id < table.validArchivesCount; id++) {
                     int identifier = stream.ReadInt();
+                    //DebugUtil.Debug("id: " + id + ", valid:" + table.validArchiveIds.Length + ", entries:" + table.entries.Count + ", idents:" + identifiersArray.Length);
+
                     identifiersArray[id] = identifier;
-                    DebugUtil.Debug("id: " + id + ", valid:" + table.validArchiveIds.Length + ", entries:" + table.entries.Count + ", idents:" + identifiersArray.Length);
-                    table.entries[id].identifier = identifier;
+                    if(table.entries.ContainsKey(id))
+                        table.entries[id].identifier = identifier;
+                    else
+                        DebugUtil.Debug("Missing entry " + id);
                 }
             }
             DebugUtil.Debug("Finished reading identifiers");
             table.identifiers = new Identifiers(identifiersArray);
-            */
 
             //Read the whirlpool digests if present
             if(table.usesWhirlpool) {
