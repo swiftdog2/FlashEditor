@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Util {
     //Ripped from CacheIO
+    //Straight rip no idea if it works or not lol
+
     public class CRC32Generator {
         private const uint kCrcPoly = 0xEDB88320;
         private const uint kInitial = 0xFFFFFFFF;

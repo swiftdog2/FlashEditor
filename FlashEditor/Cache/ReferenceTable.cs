@@ -1,4 +1,5 @@
-﻿using FlashEditor.utils;
+﻿using FlashEditor.Cache.CheckSum;
+using FlashEditor.utils;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -24,6 +25,7 @@ namespace FlashEditor.cache {
         public int[] validArchiveIds;
 
         internal JagStream stream;
+        private Identifiers identifiers;
 
         /// <summary>
         /// Constructs a reference table from the stream data
@@ -36,26 +38,29 @@ namespace FlashEditor.cache {
             //Create a new Reference Table
             ReferenceTable table = new ReferenceTable();
 
+            //Read header
             table.format = stream.ReadUnsignedByte();
-
             if(table.format >= 6)
                 table.version = stream.ReadInt();
-
             table.flags = stream.ReadUnsignedByte();
-            table.validArchivesCount = stream.ReadUnsignedShort();
+
             table.named = (FLAG_IDENTIFIERS & table.flags) != 0;
             table.usesWhirlpool = (FLAG_WHIRLPOOL & table.flags) != 0;
 
-            DebugUtil.Debug("Table version: " + table.version + " | Flags: " + (table.flags == 1 ? "Y" : "N") + " | Archives: " + table.validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"));
-
+            table.validArchivesCount = stream.ReadUnsignedShort(); // table.format >= 7 ? stream.ReadSmart() : stream.ReadUnsignedShort();
             table.validArchiveIds = new int[table.validArchivesCount];
 
-            int k = 0, lastArchiveId = 0;
+            DebugUtil.Debug("Table version: " + table.version + " | Flags: " + table.flags + " | Archives: " + table.validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"));
+
+            int k = 0, lastArchiveId = 0, size = -1;
 
             for(int index = 0; index < table.validArchivesCount; index++) {
                 int archiveId = lastArchiveId += stream.ReadUnsignedShort();
                 table.validArchiveIds[index] = archiveId;
                 table.entries.Add(archiveId, new Entry(k++));
+
+                if(archiveId > size)
+                    size = archiveId;
             }
 
             //If named, set the name hash for the archive
@@ -63,48 +68,91 @@ namespace FlashEditor.cache {
                 for(int index = 0; index < table.validArchivesCount; index++)
                     table.entries[table.validArchiveIds[index]].SetNameHash(stream.ReadInt());
 
-            //If the archive uses whirlpool, set the whirlpool hash
-            if(table.usesWhirlpool) {
-                for(int index = 0; index < table.validArchivesCount; index++) {
-                    byte[] whirpool = new byte[64];
-                    stream.Read(whirpool, 0, 64);
-                    table.entries[table.validArchiveIds[index]].SetWhirlpool(whirpool);
-                }
-            }
-
-            //crc
-            for(int index = 0; index < table.validArchivesCount; index++)
-                table.entries[table.validArchiveIds[index]].SetCrc(stream.ReadInt());
-
-            //versions
-            for(int index = 0; index < table.validArchivesCount; index++)
-                table.entries[table.validArchiveIds[index]].SetVersion(stream.ReadInt());
-
-            //validfileid lengths
-            for(int index = 0; index < table.validArchivesCount; index++)
-                table.entries[table.validArchiveIds[index]].SetValidFileIds(new int[stream.ReadUnsignedShort()]);
-
-
-            for(int index = 0; index < table.validArchivesCount; index++) {
-                int lastFileId = 0;
-                Entry entry = table.entries[table.validArchiveIds[index]];
-
-                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++) {
-                    int fileId = lastFileId += stream.ReadUnsignedShort();
-                    entry.GetValidFileIds()[index2] = fileId;
-                }
-
-                entry.SetFiles(new SortedDictionary<int?, ChildEntry>());
-
-                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
-                    entry.GetEntries()[entry.GetValidFileIds()[index2]] = new ChildEntry();
-            }
-
+            //Read the identifiers if present AKA name hashes
+            /*
+            int[] identifiersArray = new int[size];
             if(table.named) {
-                for(int index = 0; index < table.validArchivesCount; index++) {
-                    Entry entry = table.entries[table.validArchiveIds[index]];
-                    for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
-                        entry.GetEntries()[entry.GetValidFileIds()[index2]].SetNameHash(stream.ReadInt());
+                DebugUtil.Debug("Identifiers hash detected. archive ids: " + table.validArchiveIds.Length);
+
+                foreach(int id in table.validArchiveIds) {
+                    int identifier = stream.ReadInt();
+                    identifiersArray[id] = identifier;
+                    DebugUtil.Debug("id: " + id + ", valid:" + table.validArchiveIds.Length + ", entries:" + table.entries.Count + ", idents:" + identifiersArray.Length);
+                    table.entries[id].identifier = identifier;
+                }
+            }
+            DebugUtil.Debug("Finished reading identifiers");
+            table.identifiers = new Identifiers(identifiersArray);
+            */
+
+            //Read the whirlpool digests if present
+            if(table.usesWhirlpool) {
+                DebugUtil.Debug("Uses whirlpool...");
+                foreach(int id in table.validArchiveIds) {
+                    byte[] whirlpool = new byte[64];
+                    stream.Read(whirlpool, 0, 64);
+                    table.entries[id].SetWhirlpool(whirlpool);
+                }
+            }
+
+            //Read the CRC Checksums
+            foreach(int id in table.validArchiveIds)
+                table.entries[id].SetCrc(stream.ReadInt());
+
+            /*
+            //Read another hash if present
+           
+            if((table.flags & FLAG_HASH) != 0) {
+                DebugUtil.Debug("Special hash detected.");
+                foreach(int id in table.validArchiveIds)
+                    table.entries[id].hash = stream.ReadInt();
+            }*/
+
+            /*
+            //Read the sizes of the archive
+            if((table.flags & FLAG_SIZES) != 0) {
+                DebugUtil.Debug("Reading sizes of archives");
+                foreach(int id in table.validArchiveIds) {
+                    table.entries[id].compressed = stream.ReadInt();
+                    table.entries[id].uncompressed = stream.ReadInt();
+                }
+            }*/
+
+            //Versions
+            foreach(int id in table.validArchiveIds)
+                table.entries[id].SetVersion(stream.ReadInt());
+
+            //Read the child sizes (validfileid lengths)
+            foreach(int id in table.validArchiveIds)
+                table.entries[id].SetValidFileIds(new int[stream.ReadUnsignedShort() /*table.format >= 7 ? stream.ReadSmart() : stream.ReadUnsignedShort()*/]);
+
+            //Read the child ids
+            foreach(int id in table.validArchiveIds) {
+                int lastFileId = 0; //accumulator
+                Entry entry = table.entries[id];
+                int[] fileIds = entry.GetValidFileIds();
+
+                //
+                for(int index2 = 0; index2 < fileIds.Length; index2++) {
+                    int fileId = lastFileId += stream.ReadUnsignedShort();
+                    fileIds[index2] = fileId;
+                }
+
+                int x = 0;
+                foreach(int child in fileIds)
+                    entry.GetEntries().Add(child, new ChildEntry(x++));
+            }
+
+            //If the table is named
+            if(table.named) {
+                //Read the child identifiers (name hashes) also
+                foreach(int id in table.validArchiveIds) {
+                    Entry entry = table.entries[id];
+                    int[] fileIds = entry.GetValidFileIds();
+
+                    //Read the name hashes for the entries
+                    foreach(int fileId in fileIds)
+                        entry.GetEntries()[fileId].SetNameHash(stream.ReadInt());
                 }
             }
 
@@ -176,7 +224,7 @@ namespace FlashEditor.cache {
         public int Capacity() {
             if(entries.Count == 0)
                 return 0;
-            return (int) entries.Keys.Last() + 1;
+            return entries.Keys.Last() + 1;
         }
 
         /// <summary>

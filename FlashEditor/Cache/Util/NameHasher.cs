@@ -5,20 +5,22 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Util {
+    //Straight rip no idea if it works or not lol
+
     //Ripped from CacheIO
     public class NameHasher {
-        public static int getNameHash(string name) {
+        public static int GetNameHash(string name) {
             int hash = 0;
             name = name.ToLower();
 
             for(int i = 0; i < name.Length; i++) {
-                hash = method1258(name.ToCharArray()[i]) + ((hash << 5) - hash);
+                hash = Method1258(name.ToCharArray()[i]) + ((hash << 5) - hash);
             }
 
             return hash;
         }
 
-        private static byte method1258(char c) {
+        private static byte Method1258(char c) {
             int charByte;
             if(((c > 0) && (c < '')) || ((c >= ' ') && (c <= 'ÿ'))) {
                 charByte = c;

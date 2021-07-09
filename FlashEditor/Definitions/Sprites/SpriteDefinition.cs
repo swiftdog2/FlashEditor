@@ -21,6 +21,7 @@
 */
 
 using FlashEditor.cache.util;
+using FlashEditor.Cache.Util;
 using FlashEditor.Collections;
 using FlashEditor.utils;
 using java.lang;
@@ -58,6 +59,10 @@ namespace FlashEditor.cache.sprites {
         /// <param name="width">The width of the sprite in pixels.</param>
         /// <param name="height">The height of the sprite in pixels.</param>
         public SpriteDefinition(int width, int height) : this(width, height, 1) { }
+
+        public SpriteDefinition() {
+
+        }
 
         /// <summary>
         /// Creates a new sprite with the specified number of frames.
@@ -122,9 +127,7 @@ namespace FlashEditor.cache.sprites {
                 DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
 
                 //Create a BufferedImage to store the resulting image
-                util.RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
-
-                sprite.frames.Add(image);
+                RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
 
                 //Allocate an array for the palette indices
                 int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
@@ -151,14 +154,14 @@ namespace FlashEditor.cache.sprites {
                         for(int x = 0; x < subWidth; x++) {
                             for(int y = 0; y < subHeight; y++) {
                                 int index = indices[x][y];
-                                image.setRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
+                                image.SetRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
                             }
                         }
                     } else { //If it's vertical
                         for(int y = 0; y < subHeight; y++) {
                             for(int x = 0; x < subWidth; x++) {
                                 int index = indices[x][y];
-                                image.setRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
+                                image.SetRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
                             }
                         }
                     }
@@ -167,14 +170,14 @@ namespace FlashEditor.cache.sprites {
                         for(int x = 0; x < subWidth; x++) {
                             for(int y = 0; y < subHeight; y++) {
                                 int alpha = stream.ReadUnsignedByte();
-                                image.setRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
+                                image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
                             }
                         }
                     } else {
                         for(int y = 0; y < subHeight; y++) {
                             for(int x = 0; x < subWidth; x++) {
                                 int alpha = stream.ReadUnsignedByte();
-                                image.setRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
+                                image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
                             }
                         }
                     }
@@ -182,7 +185,10 @@ namespace FlashEditor.cache.sprites {
 
                 //First frame in the sprite is the thumb image
                 if(id == 0)
-                    sprite.thumb = image.getSprite().Bitmap;
+                    sprite.thumb = image.GetSprite();
+
+                sprite.frames.Add(image);
+
             }
             return sprite;
         }
@@ -192,7 +198,7 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <param name="id"></param>
         /// <returns>The frame.</returns>
-        public RSBufferedImage getFrame(int id) {
+        public RSBufferedImage GetFrame(int id) {
             return frames[id];
         }
 
@@ -200,7 +206,7 @@ namespace FlashEditor.cache.sprites {
         /// Gets the height of this sprite.
         /// </summary>
         /// <returns>The height of this sprite.</returns>
-        public int getHeight() {
+        public int GetHeight() {
             return height;
         }
 
@@ -222,7 +228,7 @@ namespace FlashEditor.cache.sprites {
          *            The frame.
          */
         public void SetFrame(int id, RSBufferedImage frame) {
-            if(frame.getWidth() != width || frame.getHeight() != height)
+            if(frame.GetWidth() != width || frame.GetHeight() != height)
                 throw new IllegalArgumentException("The frame's dimensions do not match with the sprite's dimensions.");
 
             frames[id] = frame;
@@ -233,14 +239,16 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <returns>The number of frames.</returns>
         public int GetFrameCount() {
-            return frames.Count;
+            if(frames != null)
+                return frames.Count;
+            return 0;
         }
 
         public List<RSBufferedImage> GetFrames() {
             return frames;
         }
 
-        internal void setIndex(int index) {
+        internal void SetIndex(int index) {
             this.index = index;
         }
     }

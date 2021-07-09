@@ -12,6 +12,8 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <TargetFrameworkProfile />
     <PublishUrl>publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Disk</InstallFrom>
@@ -24,7 +26,6 @@
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
-    <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
   </PropertyGroup>
@@ -37,6 +38,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -46,6 +48,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>FlashEditor.FlashEditorForm</StartupObject>
@@ -145,6 +148,9 @@
     <Reference Include="ObjectListView, Version=2.9.1.1072, Culture=neutral, PublicKeyToken=b1c5bf581481bcd4, processorArchitecture=MSIL">
       <HintPath>..\packages\ObjectListView.Official.2.9.1\lib\net20\ObjectListView.dll</HintPath>
     </Reference>
+    <Reference Include="OpenTK, Version=3.3.1.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL">
+      <HintPath>..\packages\OpenTK.3.3.1\lib\net20\OpenTK.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -158,12 +164,15 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Cache\CheckSum\CheckSumEntry.cs" />
+    <Compile Include="Cache\CheckSum\ChecksumTable.cs" />
+    <Compile Include="Cache\Identifiers.cs" />
     <Compile Include="Cache\Region\HeightCalc.cs" />
     <Compile Include="Cache\Region\Location.cs" />
     <Compile Include="Cache\Region\Position.cs" />
     <Compile Include="Cache\Region\Region.cs" />
     <Compile Include="Cache\Archive.cs" />
-    <Compile Include="Cache\Cache.cs" />
+    <Compile Include="Cache\RSCache.cs" />
     <Compile Include="Cache\ChildEntry.cs" />
     <Compile Include="Cache\Constants.cs" />
     <Compile Include="Cache\Container.cs" />
@@ -173,15 +182,21 @@
     <Compile Include="Cache\ReferenceTable.cs" />
     <Compile Include="Cache\Sector.cs" />
     <Compile Include="Cache\Util\CRC32Generator.cs" />
+    <Compile Include="Cache\Util\Crypto\Djb2.cs" />
+    <Compile Include="Cache\Util\Crypto\RSA.cs" />
+    <Compile Include="Cache\Util\Crypto\XTEA.cs" />
     <Compile Include="Cache\Util\DirectBitmap.cs" />
     <Compile Include="Cache\Util\NameHasher.cs" />
-    <Compile Include="Cache\Util\Whirlpool.cs" />
-    <Compile Include="Definitions\Model\ModelDefinition.cs" />
+    <Compile Include="Cache\Util\Crypto\Whirlpool.cs" />
+    <Compile Include="Definitions\Models\ModelDefinition.cs" />
     <Compile Include="Definitions\NPCDefinition.cs" />
-    <Compile Include="Definitions\SpriteDefinition.cs" />
+    <Compile Include="Definitions\Sprites\SpriteDefinition.cs" />
     <Compile Include="Cache\Util\RSBufferedImage.cs" />
     <Compile Include="Collections\ArrayUtil.cs" />
     <Compile Include="Definitions\ItemDefinition.cs" />
+    <Compile Include="Definitions\Sprites\Texture.cs" />
+    <Compile Include="Definitions\Sprites\Textures.cs" />
+    <Compile Include="Definitions\Tracks\Track.cs" />
     <Compile Include="Editor.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -207,7 +222,9 @@
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
     </Compile>
+    <None Include="OpenTK.dll.config" />
     <None Include="packages.config" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>

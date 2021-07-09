@@ -11,7 +11,7 @@ namespace FlashEditor {
         /// </summary>
         static void Main() {
             //Load the Hydrascape cache
-            cache.Cache cache = new cache.Cache(new FileStore(Constants.CACHE_DIRECTORY));
+            cache.RSCache cache = new cache.RSCache(new FileStore(Constants.CACHE_DIRECTORY));
             TestAllItems(cache);
             System.Console.ReadLine();
         }
@@ -23,7 +23,7 @@ namespace FlashEditor {
         /// <param name="archive">The archive to search</param>
         /// <param name="file">The archive entry </param>
         /// <returns>The decoded item definition</returns>
-        static ItemDefinition LoadItemDefinition(cache.Cache cache, int archive, int file) {
+        static ItemDefinition LoadItemDefinition(cache.RSCache cache, int archive, int file) {
             Entry item = cache.ReadEntry(Constants.ITEM_DEFINITIONS_INDEX, archive, file);
             ItemDefinition def = new ItemDefinition(item.stream);
             item.stream.Clear();
@@ -34,7 +34,7 @@ namespace FlashEditor {
         /// Loads all of the items in the items definition index
         /// </summary>
         /// <param name="cache">The cache to test</param>
-        static long TestAllItems(cache.Cache cache) {
+        static long TestAllItems(cache.RSCache cache) {
             Stopwatch sw = new Stopwatch();
             sw.Start();
             ReferenceTable table = cache.GetReferenceTable(Constants.ITEM_DEFINITIONS_INDEX);
@@ -60,7 +60,7 @@ namespace FlashEditor {
         /// <param name="archive"></param>
         /// <param name="file"></param>
         /// <returns></returns>
-        static long TimeItemLoad(cache.Cache cache, int archive, int file) {
+        static long TimeItemLoad(cache.RSCache cache, int archive, int file) {
             Stopwatch sw = new Stopwatch();
             sw.Start();
             LoadItemDefinition(cache, archive, file);

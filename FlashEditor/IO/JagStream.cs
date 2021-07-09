@@ -34,6 +34,16 @@ namespace FlashEditor {
          * Methods for reading data from the stream
          */
 
+        public int ReadVarInt() {
+            byte val = (byte) ReadByte();
+
+            int k;
+            for(k = 0; val < 0; val = (byte) ReadByte())
+                k = (k | val & 0x7F) << 7;
+
+            return k | val;
+        }
+
         /// <summary>
         /// Read's smart_v1 from buffer.
         /// </summary>
@@ -142,6 +152,26 @@ namespace FlashEditor {
             return sb.ToString();
         }
 
+        internal byte Get(int pos) {
+            //Remember the current position
+            long tempPosition = Position;
+
+            //Move the the desired position
+            Seek(pos);
+            //Read the byte
+            byte x = (byte) ReadByte();
+
+            //Reset the position
+            //Position = tempPosition;
+
+            //Return the byte read at position v
+            return x;
+        }
+
+        internal void Skip(int skip) {
+            Position += skip;
+        }
+
         //Seems to work better? idk tbh my brain is fried...
         public string ReadFlashString() {
             StringBuilder sb = new StringBuilder();
@@ -226,6 +256,10 @@ namespace FlashEditor {
             WriteByte((byte) value);
         }
 
+        internal void WriteVarInt(int var63) {
+            throw new NotImplementedException();
+        }
+
         internal void WriteInteger(int value) {
             WriteByte((byte) (value >> 24));
             WriteByte((byte) (value >> 16));
@@ -240,6 +274,10 @@ namespace FlashEditor {
         internal int ReadShort() {
             int i = ReadUnsignedShort();
             return i > 32767 ? i -= 0x10000 : i;
+        }
+
+        internal void PutLengthFromMark(long v) {
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -257,6 +295,10 @@ namespace FlashEditor {
         /// <returns>The number of bytes remaining left to be read</returns>
         public int Remaining() {
             return (int) (Length - Position);
+        }
+
+        internal void put(object v) {
+            throw new NotImplementedException();
         }
 
         /// <summary>

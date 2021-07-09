@@ -7,8 +7,7 @@ using System.Threading.Tasks;
 namespace FlashEditor.Tests {
     class StreamTests {
         static void Main() {
-            JagStream s = new JagStream();
-            using(s = new JagStream()) {
+            using(JagStream s = new JagStream()) {
                 Random r = new Random();
 
                 for(int k = 0; k < 50000; k++)

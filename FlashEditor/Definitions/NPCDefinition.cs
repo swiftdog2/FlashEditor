@@ -41,11 +41,11 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
         public NPCDefinition(JagStream stream) {
-            setDefaults();
+            SetDefaults();
             Decode(stream);
         }
 
-        public void setDefaults() {
+        public void SetDefaults() {
             options = new[] { null, null, null, null, null, "Examine" };
             name = "null";
             level = -1;
@@ -629,7 +629,7 @@ namespace FlashEditor {
             return stream.Flip();
         }
 
-        internal void setId(int id) {
+        internal void SetId(int id) {
             this.id = id;
         }
     }

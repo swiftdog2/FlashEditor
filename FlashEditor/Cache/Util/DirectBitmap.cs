@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Util {
+    //Ripped from stack overflow, works very well
     public class DirectBitmap : IDisposable {
         public Bitmap Bitmap { get; private set; }
         public int[] Bits { get; private set; }

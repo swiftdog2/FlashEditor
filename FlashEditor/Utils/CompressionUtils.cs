@@ -29,7 +29,7 @@ namespace FlashEditor {
 
         internal static byte[] Gzip(byte[] bytes) {
             using(var output = new JagStream()) {
-                using( var compressor = new Ionic.Zlib.GZipStream(output, Ionic.Zlib.CompressionMode.Compress, Ionic.Zlib.CompressionLevel.BestSpeed)) {
+                using(var compressor = new Ionic.Zlib.GZipStream(output, Ionic.Zlib.CompressionMode.Compress, Ionic.Zlib.CompressionLevel.BestSpeed)) {
                     compressor.Write(bytes, 0, bytes.Length);
                 }
 
@@ -54,6 +54,15 @@ namespace FlashEditor {
             inputStream.Close();
 
             return data;
+        }
+
+        public static byte[] Bzip2(byte[] bytes) {
+            using(var outStream = new JagStream(bytes.Length)) {
+                using(var bz2 = new BZip2OutputStream(outStream)) {
+                    bz2.Write(bytes, 2, bytes.Length - 2);
+                    return outStream.ToArray();
+                }
+            }
         }
     }
 }

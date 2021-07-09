@@ -14,6 +14,8 @@ namespace FlashEditor.cache {
 
         internal SortedDictionary<int?, ChildEntry> childEntries = new SortedDictionary<int?, ChildEntry>();
         private int[] validFileIds;
+        internal int compressed;
+        internal int uncompressed;
 
         public Entry(int id) {
             this.id = id;
@@ -64,7 +66,7 @@ namespace FlashEditor.cache {
             this.version = version;
         }
 
-        public virtual int Size() {
+        public virtual int GetSize() {
             return childEntries.Count;
         }
 

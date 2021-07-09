@@ -89,7 +89,7 @@ namespace FlashEditor.cache {
             "THEORA_AKA_CUTSCENES",
             "VORBIS"};
 
-        internal static string getContainerNameForType(int type) {
+        internal static string GetContainerNameForType(int type) {
             if(type >= containerNames.Length) {
                 if(type == CRCTABLE_INDEX)
                     return "CRCTABLE";
@@ -108,6 +108,7 @@ namespace FlashEditor.cache {
         public const int MAX_VALID_ARCHIVE_LENGTH = 1000000;
         public const string CACHE_DIRECTORY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";
         public static string CACHE_OUTPUT_DIRECTORY  =  "C:/Users/CJ/Desktop/RSPS/Hydra/cache2/";
+        public static int DAT2_INDEX = -1; //Doesn't really have one, not necessary anyway
 
         /*
          * Some spooky level shit

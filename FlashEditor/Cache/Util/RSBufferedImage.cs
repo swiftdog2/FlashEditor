@@ -1,33 +1,31 @@
-﻿using FlashEditor.Cache.Util;
+﻿using FlashEditor.cache.sprites;
+using FlashEditor.Cache.Util;
 using System;
 using System.Drawing;
 
 namespace FlashEditor.cache.util {
-    public class RSBufferedImage {
-        public int index;
-        public DirectBitmap sprite;
-
+    public class RSBufferedImage : SpriteDefinition {
         public RSBufferedImage(int index, int width, int height) {
             this.index = index;
-            sprite = new DirectBitmap(width, height);
+            thumb = new DirectBitmap(width, height).Bitmap;
         }
 
-        public DirectBitmap getSprite() {
-            return sprite;
+        public Bitmap GetSprite() {
+            return thumb;
         }
 
-        public void setRGB(int x, int y, int rgb) {
-            if(sprite == null)
+        public void SetRGB(int x, int y, int rgb) {
+            if(thumb == null)
                 throw new Exception();
-            sprite.SetPixel(x, y, Color.FromArgb(rgb));
+            thumb.SetPixel(x, y, Color.FromArgb(rgb));
         }
 
-        internal int getWidth() {
-            return sprite == null ? 0 : sprite.Width;
+        internal int GetWidth() {
+            return thumb == null ? 0 : thumb.Width;
         }
 
-        internal int getHeight() {
-            return sprite == null ? 0 : sprite.Height;
+        internal int GetHeight() {
+            return thumb == null ? 0 : thumb.Height;
         }
     }
 }

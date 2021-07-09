@@ -12,7 +12,7 @@ using System.Drawing;
 
 namespace FlashEditor {
     public partial class Editor : Form {
-        internal cache.Cache cache;
+        internal cache.RSCache cache;
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
@@ -31,13 +31,13 @@ namespace FlashEditor {
             InitializeComponent();
         }
 
-        public bool isCacheDirSet() {
+        public bool IsCacheDirSet() {
             if(Properties.Settings.Default.cacheDir == "")
                 return false;
             return true;
         }
 
-        public void setCacheDir() {
+        public void SetCacheDir() {
             if(folderBrowserDialog1.ShowDialog() == DialogResult.OK) {
                 string directory = folderBrowserDialog1.SelectedPath;
 
@@ -47,9 +47,9 @@ namespace FlashEditor {
             }
         }
 
-        public string getCacheDir() {
-            while(!isCacheDirSet())
-                setCacheDir();
+        public string GetCacheDir() {
+            while(!IsCacheDirSet())
+                SetCacheDir();
             return Properties.Settings.Default.cacheDir;
         }
 
@@ -59,7 +59,7 @@ namespace FlashEditor {
         }
 
         private void LoadCache() {
-            LoadCache(getCacheDir());
+            LoadCache(GetCacheDir());
         }
 
         private void LoadCache(string directory) {
@@ -89,7 +89,7 @@ namespace FlashEditor {
             try {
                 //Load the cache and the reference tables
                 FileStore store = new FileStore(directory);
-                cache = new cache.Cache(store);
+                cache = new cache.RSCache(store);
                 sw.Stop();
 
                 DebugConsole.Items.Add("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -160,7 +160,7 @@ namespace FlashEditor {
                                     for(int file = 0; file < 256; file++) {
                                         try {
                                             ItemDefinition item = cache.GetItemDefinition(archiveId, file);
-                                            item.setId(archiveId * 256 + file); //Set the item ID
+                                            item.SetId(archiveId * 256 + file); //Set the item ID
                                             cache.items.Add(item);
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
@@ -212,7 +212,7 @@ namespace FlashEditor {
                                     DebugUtil.Debug("Loading sprite: " + entry.Key);
 
                                     SpriteDefinition sprite = cache.GetSprite(entry.Key);
-                                    sprite.setIndex(entry.Key);
+                                    sprite.SetIndex(entry.Key);
                                     sprites.Add(sprite);
 
                                     done++;
@@ -227,23 +227,18 @@ namespace FlashEditor {
 
                                 bgw.ReportProgress(100);
 
-                                List<Bitmap> frames;
-
-                                /*
                                 SpriteListView.CanExpandGetter = delegate (object x) {
-                                    if(x is SpriteDefinition)
-                                        if(((SpriteDefinition) x).GetFrameCount() > 1)
+                                    if(x is SpriteDefinition definition)
+                                        if(definition.GetFrameCount() > 1)
                                             return true;
                                     return false;
                                 };
 
-                                
                                 SpriteListView.ChildrenGetter = delegate (object x) {
-                                    return frames = ((SpriteDefinition) x).GetFrames().ConvertAll(
-                                        y => y.getSprite().Bitmap
-                                    );
-                                };*/
-                            };
+                                    //Basically this rewraps the RSBufferedImage (frames) as SpriteDefinitions
+                                    return ((SpriteDefinition) x).GetFrames().ConvertAll(y => ((SpriteDefinition) y));
+                                };
+                            };  
                             bgw.RunWorkerAsync();
                             break;
                         case Constants.NPC_DEFINITIONS_INDEX:
@@ -277,7 +272,7 @@ namespace FlashEditor {
                                         try {
                                             DebugUtil.Debug("Loading file " + file);
                                             NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
-                                            npc.setId(archiveId * 128 + file); //Set the NPC ID
+                                            npc.SetId(archiveId * 128 + file); //Set the NPC ID
                                             npcs.Add(npc);
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
@@ -316,18 +311,18 @@ namespace FlashEditor {
             LoadEditorTab(EditorTabControl.SelectedIndex);
         }
 
-        public int getEditorType() {
+        public int GetEditorType() {
             int editorIndex = EditorTabControl.SelectedIndex;
             if(editorIndex > 0 & editorIndex < editorTypes.Length)
                 return editorTypes[editorIndex];
             return -1;
         }
 
-        private void numericUpDown1_ValueChanged(object sender, EventArgs e) {
+        private void NumericUpDown1_ValueChanged(object sender, EventArgs e) {
             SpriteListView.RowHeight = (int) numericUpDown1.Value;
         }
 
-        private void checkBox1_CheckedChanged(object sender, EventArgs e) {
+        private void CheckBox1_CheckedChanged(object sender, EventArgs e) {
             if(checkBox1.Checked) {
                 //Set the alternating row back color
                 if(colorDialog1.ShowDialog() == DialogResult.OK)
@@ -343,7 +338,7 @@ namespace FlashEditor {
         }
 
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
-            string dir = getCacheDir() + "\\sprites";
+            string dir = GetCacheDir() + "\\sprites";
             Directory.CreateDirectory(dir);
 
             foreach(SpriteDefinition sprite in SpriteListView.SelectedObjects)
@@ -351,20 +346,14 @@ namespace FlashEditor {
                     sprite.thumb.Save(dir + "\\" + sprite.index + ".png");
         }
 
-        private void setDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
-            setCacheDir();
+        private void SetDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
+            SetCacheDir();
             LoadCache();
         }
 
-        private void openDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
-            if(isCacheDirSet())
-                Process.Start(getCacheDir());
-        }
-
-        private void saveToolStripMenuItem_Click(object sender, EventArgs e) {
-            int selectedTab = EditorTabControl.SelectedIndex;
-            int container = editorTypes[selectedTab];
-            //cache.Encode(container);
+        private void OpenDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
+            if(IsCacheDirSet())
+                Process.Start(GetCacheDir());
         }
 
         private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
@@ -379,7 +368,7 @@ namespace FlashEditor {
         /// <param name="sender"></param>
         /// <param name="e"></param>
 
-        private void saveAllToolStripMenuItem_Click(object sender, EventArgs e) {
+        private void SaveAllToolStripMenuItem_Click(object sender, EventArgs e) {
             //Saves the data streams
             cache.WriteCache();
         }
@@ -445,7 +434,7 @@ namespace FlashEditor {
                     int done = 0;
 
                     foreach(ItemDefinition def in items) {
-                        DebugUtil.Debug("Exporting Item " + def.getId() + " name is " + def.name);
+                        DebugUtil.Debug("Exporting Item " + def.GetId() + " name is " + def.name);
                         JagStream.Save(def.Encode(), Constants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
                         done++;
                         itemDumper.ReportProgress(done * 100 / items.Length);
@@ -465,7 +454,7 @@ namespace FlashEditor {
             itemDumper.RunWorkerAsync();
         }
 
-        private void button1_Click(object sender, EventArgs e) {
+        private void Button1_Click(object sender, EventArgs e) {
             //Set the alternating row back color
             if(colorDialog1.ShowDialog() == DialogResult.OK)
                 ItemListView.AlternateRowBackColor = colorDialog1.Color;

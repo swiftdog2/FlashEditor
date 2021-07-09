@@ -24,10 +24,6 @@ namespace FlashEditor.cache {
             //Allocate a new archive object
             Archive archive = new Archive(size);
 
-            stream.Seek0();
-            byte[] data = new byte[stream.Length];
-            stream.Read(data, 0, data.Length);
-
             //Read the number of chunks at the end of the archive
             stream.Seek(stream.Length - 1);
             int chunks = stream.ReadUnsignedByte();
@@ -36,8 +32,7 @@ namespace FlashEditor.cache {
             int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(chunks, size);
             int[] sizes = new int[size];
 
-            long ptr = stream.Length - 1 - chunks * size * 4;
-            stream.Seek(ptr);
+            stream.Seek(stream.Length - 1 - chunks * size * 4);
 
             for(int chunk = 0; chunk < chunks; chunk++) {
                 int chunkSize = 0;
@@ -73,6 +68,7 @@ namespace FlashEditor.cache {
 
                     //Copy the temporary buffer into the file buffer
                     archive.entries[id].stream.Write(temp, 0, temp.Length);
+                    //archive.entries[id].PutEntry(id, new ChildEntry(new JagStream(temp)));
                 }
             }
 

@@ -1,6 +1,7 @@
 ﻿using FlashEditor.cache;
 using FlashEditor.utils;
 using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace FlashEditor {
@@ -61,6 +62,8 @@ namespace FlashEditor {
         public int equipId;
         public int multiStackSize;
 
+        public SortedDictionary<int, object> itemParams;
+
         /// <summary>
         /// Constructs a new item definition from the stream data
         /// </summary>
@@ -72,7 +75,7 @@ namespace FlashEditor {
             Decode(stream);
         }
 
-        public int getId() {
+        public int GetId() {
             return id;
         }
 
@@ -213,9 +216,9 @@ namespace FlashEditor {
             } else if(opcode == 94) {
                 stream.ReadUnsignedShort();
             } else if(opcode == 95) {
-                int i = stream.ReadUnsignedShort();
+                stream.ReadUnsignedShort();
             } else if(opcode == 96) {
-                int i = stream.ReadUnsignedByte();
+                stream.ReadUnsignedByte();
             } else if(opcode == 97) {
                 notedId = stream.ReadUnsignedShort();
             } else if(opcode == 98) {
@@ -228,11 +231,11 @@ namespace FlashEditor {
                 stackableIds[opcode - 100] = stream.ReadUnsignedShort();
                 stackableAmounts[opcode - 100] = stream.ReadUnsignedShort();
             } else if(opcode == 110) {
-                int i = stream.ReadUnsignedShort();
+                stream.ReadUnsignedShort();
             } else if(opcode == 111) {
-                int i = stream.ReadUnsignedShort();
+                stream.ReadUnsignedShort();
             } else if(opcode == 112) {
-                int i = stream.ReadUnsignedShort();
+                stream.ReadUnsignedShort();
             } else if(opcode == 113) {
                 ambient = stream.ReadUnsignedByte();
             } else if(opcode == 114) {
@@ -296,10 +299,17 @@ namespace FlashEditor {
                 stream.ReadJagexString();
             } else if(opcode == 249) {
                 int length = stream.ReadUnsignedByte();
-                for(int index = 0; index < length; index++) {
+
+                itemParams = new SortedDictionary<int, object>();
+
+                for(int k = 0; k < length; k++) {
                     bool stringInstance = stream.ReadUnsignedByte() == 1;
                     int key = stream.ReadMedium();
-                    var value = stringInstance ? (object) stream.ReadJagexString() : stream.ReadInt();
+
+                    if(stringInstance)
+                        itemParams.Add(key, stream.ReadJagexString());
+                    else
+                        itemParams.Add(key, stream.ReadInt());
                 }
             }
         }
@@ -563,7 +573,7 @@ namespace FlashEditor {
             return stream.Flip();
         }
 
-        internal void setId(int id) {
+        internal void SetId(int id) {
             this.id = id;
         }
     }

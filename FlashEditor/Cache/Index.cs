@@ -5,11 +5,13 @@ namespace FlashEditor.cache {
     class Index {
         public const int SIZE = 6;
 
+        private int id;
         private int size;
         private int sector;
         private JagStream stream;
 
-        public Index(int size, int sector) {
+        public Index(int id, int size, int sector) {
+            this.id = id;
             this.size = size;
             this.sector = sector;
         }
@@ -17,7 +19,8 @@ namespace FlashEditor.cache {
         public Index() {
         }
 
-        public Index(JagStream stream) {
+        public Index(int id, JagStream stream) {
+            this.id = id;
             SetStream(stream);
         }
 
@@ -35,6 +38,10 @@ namespace FlashEditor.cache {
 
         public ref JagStream GetStream() {
             return ref stream;
+        }
+
+        public int GetId() {
+            return id;
         }
 
         public int GetSize() {

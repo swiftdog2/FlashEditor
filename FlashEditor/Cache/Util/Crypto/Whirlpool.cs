@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Util {
+    //Straight rip no idea if it works or not lol
     //Ripped from CacheIO
     public class Whirlpool {
         protected const int DIGESTBITS = 512;
@@ -81,7 +82,7 @@ namespace FlashEditor.Cache.Util {
             return digest;
         }
 
-        protected void processBuffer() {
+        protected void ProcessBuffer() {
             int i = 0;
             int j = 0;
             while(i < 8) {
@@ -160,7 +161,7 @@ namespace FlashEditor.Cache.Util {
                 buffer[bufferPos++] |= (byte) ((sbyte) b >> bufferRem);
                 bufferBits += 8 - bufferRem;
                 if(bufferBits == 512) {
-                    processBuffer();
+                    ProcessBuffer();
                     bufferBits = bufferPos = 0;
                 }
                 buffer[bufferPos] = (byte) (b << 8 - bufferRem & 0xff);
@@ -180,7 +181,7 @@ namespace FlashEditor.Cache.Util {
                 bufferBits += 8 - bufferRem;
                 sourceBits -= (long) (8 - bufferRem);
                 if(bufferBits == 512) {
-                    processBuffer();
+                    ProcessBuffer();
                     bufferBits = bufferPos = 0;
                 }
                 buffer[bufferPos] = (byte) (b << 8 - bufferRem & 0xff);
@@ -194,13 +195,13 @@ namespace FlashEditor.Cache.Util {
             if(bufferPos > 32) {
                 while(bufferPos < 64)
                     buffer[bufferPos++] = (byte) 0;
-                processBuffer();
+                ProcessBuffer();
                 bufferPos = 0;
             }
             while(bufferPos < 32)
                 buffer[bufferPos++] = (byte) 0;
             Array.Copy(bitLength, 0, buffer, 32, 32);
-            processBuffer();
+            ProcessBuffer();
             int i = 0;
             int j = 0;
             while(i < 8) {
@@ -216,6 +217,10 @@ namespace FlashEditor.Cache.Util {
                 i++;
                 j += 8;
             }
+        }
+
+        internal static byte[] whirlpool(byte[] bytes, int v, object length) {
+            throw new NotImplementedException();
         }
 
         protected void NESSIEadd(String source) {

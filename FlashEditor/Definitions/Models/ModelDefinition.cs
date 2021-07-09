@@ -1,9 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.IO;
 using OpenTK;
 
 namespace FlashEditor.Definitions.Model {
@@ -66,9 +61,7 @@ namespace FlashEditor.Definitions.Model {
 
                 for(int i2 = 0; i2 != 128; ++i2) {
                     float f2 = (float)i2 / 128.0F;
-                    float f3 = 0.0F;
-                    float f4 = 0.0F;
-                    float f5 = 0.0F;
+                    float f3, f4, f5;
                     float f6 = f / 60.0F;
                     int i3 = (int)f6;
                     int i4 = i3 % 6;
@@ -114,34 +107,34 @@ namespace FlashEditor.Definitions.Model {
         }
 
         public Model(sbyte[] data) {
-            if(usesNewerHeader(data) && !usesNewHeader(data)) {
+            if(UsesNewerHeader(data) && !UsesNewHeader(data)) {
                 newFormat = true;
                 if(data[0] == 1)
-                    read800Model(data);
+                    Read800Model(data);
                 else if(data[0] == 0)
-                    decodeNewOldModel(data);
+                    DecodeNewOldModel(data);
             } else {
                 newFormat = false;
-                if(this.usesNewHeader(data)) {
-                    this.decodeNew(data);
+                if(this.UsesNewHeader(data)) {
+                    this.DecodeNew(data);
                     if(this.version < 14)
-                        this.upscale();
+                        this.Upscale();
                 } else {
-                    this.decodeOld(data);
-                    this.upscale();
+                    this.DecodeOld(data);
+                    this.Upscale();
                 }
             }
         }
 
-        private bool usesNewerHeader(sbyte[] data) {
+        private bool UsesNewerHeader(sbyte[] data) {
             return data[0] == 1 || data[0] == 0;
         }
 
-        private bool usesNewHeader(sbyte[] data) {
+        private bool UsesNewHeader(sbyte[] data) {
             return data[data.Length - 2] == -1 && data[data.Length - 1] == -1;
         }
 
-        private void decodeNew(sbyte[] data) {
+        private void DecodeNew(sbyte[] data) {
             JagStream buffer = new JagStream((byte[]) (Array) data);
             JagStream buffer_25_ = new JagStream((byte[]) (Array) data);
             JagStream buffer_26_ = new JagStream((byte[]) (Array) data);
@@ -612,7 +605,7 @@ namespace FlashEditor.Definitions.Model {
 
         }
 
-        private void decodeOld(sbyte[] data) {
+        private void DecodeOld(sbyte[] data) {
             bool has_fill_attr = false;
             bool textured = false;
             JagStream buffer = new JagStream((byte[]) (Array) data);
@@ -896,7 +889,7 @@ namespace FlashEditor.Definitions.Model {
 
         }
 
-        private void upscale() {
+        private void Upscale() {
             for(int i = 0; i != this.numVertices; ++i) {
                 this.verticesX[i] <<= 2;
                 this.verticesY[i] <<= 2;
@@ -905,7 +898,7 @@ namespace FlashEditor.Definitions.Model {
 
         }
 
-        void decodeNewNewModel(sbyte[] modelData) {
+        void DecodeNewNewModel(sbyte[] modelData) {
             JagStream footer = new JagStream((byte[])(Array)modelData);
             JagStream drawTypes = new JagStream((byte[])(Array)modelData);
             JagStream priorities = new JagStream((byte[])(Array)modelData);
@@ -1152,14 +1145,14 @@ namespace FlashEditor.Definitions.Model {
                 maxDepth = -1;
                 footer.Position = triangleVertexPointOffset;
                 drawTypes.Position = triMeshLinkOffset;
-                calculateMaxDepth(footer, drawTypes, null);
+                CalculateMaxDepth(footer, drawTypes, null);
                 footer.Position = textureInfoBasePos;
                 drawTypes.Position = particleInfoBasePos;
                 priorities.Position = i_93_;
                 alphas.Position = i_94_;
                 trianglesAndVertices.Position = i_95_;
                 textures.Position = i_96_;
-                decodeTexturedTriangles(footer, drawTypes, priorities, alphas,
+                DecodeTexturedTriangles(footer, drawTypes, priorities, alphas,
                         trianglesAndVertices, textures);
                 footer.Position = footerPosition;
                 if(useEffects) {
@@ -1217,7 +1210,7 @@ namespace FlashEditor.Definitions.Model {
             }
         }
 
-        void decodeTexturedTriangles(JagStream class219_sub41,
+        void DecodeTexturedTriangles(JagStream class219_sub41,
                 JagStream class219_sub41_244_,
                 JagStream class219_sub41_245_,
                 JagStream class219_sub41_246_,
@@ -1319,7 +1312,7 @@ namespace FlashEditor.Definitions.Model {
             }
         }
 
-        void calculateMaxDepth(JagStream class219_sub41,
+        void CalculateMaxDepth(JagStream class219_sub41,
                 JagStream class219_sub41_122_, JagStream var3) {
             short functionX = 0;
             short functionY = 0;
@@ -1385,7 +1378,7 @@ namespace FlashEditor.Definitions.Model {
             maxDepth++;
         }
 
-        void decodeNewOldModel(sbyte[] instream) {
+        void DecodeNewOldModel(sbyte[] instream) {
             bool bool1 = false;
             bool bool_136_ = false;
             JagStream footer = new JagStream((byte[])(Array)instream);
@@ -1626,7 +1619,7 @@ namespace FlashEditor.Definitions.Model {
         }
 
 
-        void read800Model(sbyte[] data) {
+        void Read800Model(sbyte[] data) {
             JagStream header = new JagStream((byte[])(Array)data);
             JagStream drawTypes = new JagStream((byte[])(Array)data);
             JagStream priorities = new JagStream((byte[])(Array)data);
@@ -1966,14 +1959,14 @@ namespace FlashEditor.Definitions.Model {
                 header.Position = var41;
                 drawTypes.Position = var36;
                 priorities.Position = var56;
-                this.calculateMaxDepth(header, drawTypes, priorities);
+                this.CalculateMaxDepth(header, drawTypes, priorities);
                 header.Position = var48;
                 drawTypes.Position = var49;
                 priorities.Position = var51;
                 alphas.Position = var52;
                 var6.Position = var53;
                 var7.Position = var54;
-                this.decodeTexturedTriangles(header, drawTypes, priorities, alphas, var6, var7);
+                this.DecodeTexturedTriangles(header, drawTypes, priorities, alphas, var6, var7);
                 header.Position = triangleTextureIndex;
                 if(hasSurfaceEffects) {
                     point = header.ReadUnsignedByte();
@@ -2057,7 +2050,7 @@ namespace FlashEditor.Definitions.Model {
                 this.divisor = var4;
             }
 
-            public VertexNormal copy() {
+            public VertexNormal Copy() {
                 VertexNormal copy = new VertexNormal();
                 copy.x = this.x;
                 copy.y = this.y;

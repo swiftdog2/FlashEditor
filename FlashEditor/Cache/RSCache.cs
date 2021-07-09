@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 
 namespace FlashEditor.cache {
-    class Cache {
+    class RSCache {
         public FileStore store;
         public ReferenceTable[] referenceTables;
         public SortedDictionary<int, SortedDictionary<int, Container>> containers = new SortedDictionary<int, SortedDictionary<int, Container>>();
@@ -19,7 +19,7 @@ namespace FlashEditor.cache {
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables
         /// </summary>
         /// <param name="store">The filestore</param>
-        public Cache(FileStore store) {
+        public RSCache(FileStore store) {
             this.store = store;
             LoadReferenceTables();
         }
@@ -61,10 +61,16 @@ namespace FlashEditor.cache {
             DebugUtil.Debug("Writing meta indexes...");
 
             //Write the index channels
-            for(int index = 0; index < GetStore().indexChannels.Length; index++)
-                if(GetStore().indexChannels[index] != null)
-                    ;
-            //WriteIndex(index, RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.idx" + index);
+            for(int index = 0; index < GetStore().indexChannels.Length; index++) {
+                Index idx = GetStore().indexChannels[index];
+                if(idx != null)
+                    WriteIndex(idx, Constants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.idx" + index);
+            }
+        }
+
+        //Simply saves the index encoding to file...
+        internal void WriteIndex(Index index, string directory) {
+            JagStream.Save(index.Encode(), directory);
         }
 
         /**
@@ -96,7 +102,7 @@ namespace FlashEditor.cache {
 
             entry.SetVersion(container.GetVersion());
             entry.SetCrc(crc.GetCrc32(stream));
-            
+
             //Calculate and update the whirlpool digest if we need to
             if((table.flags & ReferenceTable.FLAG_WHIRLPOOL) != 0) {
                 byte[] whirlpool = Whirlpool.GetHash(stream.ToArray());
@@ -413,7 +419,7 @@ namespace FlashEditor.cache {
         public ItemDefinition GetItemDefinition(int archive, int entryId) {
             Entry entry = ReadEntry(Constants.ITEM_DEFINITIONS_INDEX, archive, entryId);
             ItemDefinition def = new ItemDefinition(entry.stream);
-            def.setId(archive * 256 + entryId);
+            def.SetId(archive * 256 + entryId);
             //entry.stream.Clear();
             return def;
         }
@@ -427,7 +433,7 @@ namespace FlashEditor.cache {
         internal NPCDefinition GetNPCDefinition(int archive, int entry) {
             Entry npcStream = ReadEntry(Constants.NPC_DEFINITIONS_INDEX, archive, entry);
             NPCDefinition def = new NPCDefinition(npcStream.stream);
-            def.setId(archive * 256 + entry);
+            def.SetId(archive * 256 + entry);
             npcStream.stream.Clear();
             return def;
         }
