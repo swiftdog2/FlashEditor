@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.CheckSum {
-    class Identifiers {
+    class RSIdentifiers {
         /*
          * Copyright (C) 2017 Kyle Fricilone
          *
@@ -51,12 +51,14 @@ namespace FlashEditor.Cache.CheckSum {
             }
         }
 
-        public Identifiers(int[] identifiers) {
-            /* Initial identifier sizes */
+        public RSIdentifiers(int[] identifiers) {
+            return;
+
+            //Initial identifier sizes
             int length = identifiers.Length;
             int halfLength = identifiers.Length >> 1;
 
-            /* Find maximum power of 2 below array and a half length */
+            //Find maximum power of 2 below array and a half length 
             int size = 1;
             int mask = 1;
             for(int i = 1; i <= length + (halfLength); i <<= 1) {
@@ -71,7 +73,7 @@ namespace FlashEditor.Cache.CheckSum {
             //Fill table with null values
             table = Enumerable.Repeat(-1, size).ToArray();
 
-            /* Populate table with identifiers followed by their id */
+            //Populate table with identifiers followed by their id
             for(int id = 0; id < identifiers.Length; id++) {
                 int i;
                 for(i = identifiers[id] & mask - 1; table[i + i + 1] != -1; i = i + 1 & mask - 1)

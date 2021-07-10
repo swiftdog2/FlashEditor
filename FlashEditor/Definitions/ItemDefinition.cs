@@ -304,10 +304,15 @@ namespace FlashEditor {
                     bool stringInstance = stream.ReadUnsignedByte() == 1;
                     int key = stream.ReadMedium();
 
-                    if(stringInstance)
-                        itemParams.Add(key, stream.ReadJagexString());
-                    else
-                        itemParams.Add(key, stream.ReadInt());
+                    if(stringInstance) {
+                        string s = stream.ReadJagexString();
+                        if(!itemParams.ContainsKey(key))
+                            itemParams.Add(key, s);
+                    } else {
+                        int x = stream.ReadInt();
+                        if(!itemParams.ContainsKey(key))
+                            itemParams.Add(key, x);
+                    }
                 }
             }
         }

@@ -17,11 +17,11 @@ namespace FlashEditor {
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
             -1,
-            Constants.ITEM_DEFINITIONS_INDEX,
-            Constants.SPRITES_INDEX,
-            Constants.NPC_DEFINITIONS_INDEX,
-            Constants.OBJECTS_DEFINITIONS_INDEX,
-            Constants.INTERFACE_DEFINITIONS_INDEX,
+            RSConstants.ITEM_DEFINITIONS_INDEX,
+            RSConstants.SPRITES_INDEX,
+            RSConstants.NPC_DEFINITIONS_INDEX,
+            RSConstants.OBJECTS_DEFINITIONS_INDEX,
+            RSConstants.INTERFACE_DEFINITIONS_INDEX,
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -88,7 +88,7 @@ namespace FlashEditor {
 
             try {
                 //Load the cache and the reference tables
-                FileStore store = new FileStore(directory);
+                RSFileStore store = new RSFileStore(directory);
                 cache = new cache.RSCache(store);
                 sw.Stop();
 
@@ -111,7 +111,7 @@ namespace FlashEditor {
             if(type == -1)
                 return;
 
-            ReferenceTable refTable;
+            RSReferenceTable refTable;
 
             if(cache != null) {
                 if(!loaded[editorIndex]) {
@@ -134,7 +134,7 @@ namespace FlashEditor {
                     refTable = cache.GetReferenceTable(type);
 
                     switch(type) {
-                        case Constants.ITEM_DEFINITIONS_INDEX:
+                        case RSConstants.ITEM_DEFINITIONS_INDEX:
                             //When an item is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 ItemProgressBar.Value = e.ProgressPercentage;
@@ -153,7 +153,7 @@ namespace FlashEditor {
                                 int total = refTable.GetEntryTotal() * 256;
                                 int percentile = total / 100;
 
-                                foreach(KeyValuePair<int, Entry> archive in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archive);
@@ -188,7 +188,7 @@ namespace FlashEditor {
 
                             bgw.RunWorkerAsync();
                             break;
-                        case Constants.SPRITES_INDEX:
+                        case RSConstants.SPRITES_INDEX:
                             //When a sprite is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 SpriteProgressBar.Value = e.ProgressPercentage;
@@ -202,14 +202,14 @@ namespace FlashEditor {
 
                             bgw.DoWork += async delegate {
                                 List<SpriteDefinition> sprites = new List<SpriteDefinition>();
-                                refTable = cache.GetReferenceTable(Constants.SPRITES_INDEX);
+                                refTable = cache.GetReferenceTable(RSConstants.SPRITES_INDEX);
 
                                 int done = 0;
                                 int total = refTable.GetEntryTotal();
                                 int percentile = total / 100;
 
                                 bgw.ReportProgress(0, "Loading Sprites");
-                                foreach(KeyValuePair<int, Entry> entry in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> entry in refTable.GetEntries()) {
                                     DebugUtil.Debug("Loading sprite: " + entry.Key);
 
                                     SpriteDefinition sprite = cache.GetSprite(entry.Key);
@@ -239,10 +239,10 @@ namespace FlashEditor {
                                     //Basically this rewraps the RSBufferedImage (frames) as SpriteDefinitions
                                     return ((SpriteDefinition) x).GetFrames().ConvertAll(y => ((SpriteDefinition) y));
                                 };
-                            };  
+                            };
                             bgw.RunWorkerAsync();
                             break;
-                        case Constants.NPC_DEFINITIONS_INDEX:
+                        case RSConstants.NPC_DEFINITIONS_INDEX:
                             //When an NPC is loaded, update the progress bar
                             bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                                 NPCProgressBar.Value = e.ProgressPercentage;
@@ -265,7 +265,7 @@ namespace FlashEditor {
 
                                 DebugUtil.Debug("Loading NPC shit xxxx");
 
-                                foreach(KeyValuePair<int, Entry> archive in refTable.GetEntries()) {
+                                foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
                                     DebugUtil.Debug("Loading archive " + archiveId);
@@ -362,18 +362,6 @@ namespace FlashEditor {
             MessageBox.Show("Sorry doesn't work");
         }
 
-        /// <summary>
-        /// This is where the magic gets done.
-        /// And I really mean magic, because if this works then I am a literal god.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-
-        private void SaveAllToolStripMenuItem_Click(object sender, EventArgs e) {
-            //Saves the data streams
-            cache.WriteCache();
-        }
-
         //Finished editing a definition
         private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
             //Get the object represented by the ListView
@@ -389,18 +377,33 @@ namespace FlashEditor {
             DebugUtil.Debug("Updating items archive " + archiveId + " entry " + entryId + "...");
 
             //Convert Item Definition to Entry
-            Entry newEntry = new Entry(newDefinition.Encode());
+            RSEntry newEntry = new RSEntry(newDefinition.Encode());
 
             //Update the entry in the archive
-            Archive archive = cache.archives[Constants.ITEM_DEFINITIONS_INDEX][archiveId];
+            RSArchive archive = cache.archives[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
             archive.UpdateEntry(entryId, newEntry);
 
-            //Update the reference table
-            cache.UpdateReferenceTable(Constants.ITEM_DEFINITIONS_INDEX);
+            RSContainer container = cache.containers[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
+            container.UpdateStream(archive.Encode());
 
+
+            //Encode the archive
+            JagStream newArchive = archive.Encode();
+
+
+
+
+            /*
+            RSContainer newContainer = cache.containers[Constants.ITEM_DEFINITIONS_INDEX][archiveId];
+            newContainer.UpdateStream(archive.Encode());
+            JagStream containerStream = newContainer.Encode();
+            */
+
+            //Update the reference table
+            cache.UpdateReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
 
             //idkk its shit
-            cache.UpdateContainer(Constants.ITEM_DEFINITIONS_INDEX);
+            cache.UpdateContainer(RSConstants.ITEM_DEFINITIONS_INDEX);
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {
@@ -431,13 +434,13 @@ namespace FlashEditor {
             itemDumper.DoWork += delegate {
                 if(items.Length > 0) {
                     //Ensures that the directory exists
-                    Directory.CreateDirectory(Constants.CACHE_OUTPUT_DIRECTORY + "/items/");
+                    Directory.CreateDirectory(RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/");
 
                     int done = 0;
 
                     foreach(ItemDefinition def in items) {
                         DebugUtil.Debug("Exporting Item " + def.GetId() + " name is " + def.name);
-                        JagStream.Save(def.Encode(), Constants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
+                        JagStream.Save(def.Encode(), RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
                         done++;
                         itemDumper.ReportProgress(done * 100 / items.Length);
                     }
@@ -463,6 +466,17 @@ namespace FlashEditor {
 
             //Refresh the view
             ItemListView.Refresh();
+        }
+
+        /// <summary>
+        /// This is where the magic gets done.
+        /// And I really mean magic, because if this works then I am a literal god.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void saveAllToolStripMenuItem_Click_1(object sender, EventArgs e) {
+            //Saves the data streams
+            cache.WriteCache();
         }
     }
 }

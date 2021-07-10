@@ -5,17 +5,17 @@ using System.Linq;
 
 namespace FlashEditor.cache {
     ///<summary>
-    ///A<seealso cref="ReferenceTable" /> holds details for all the files with a single type,
+    ///A<seealso cref="RSReferenceTable" /> holds details for all the files with a single type,
     ///such as checksums, versions and archive members. There are also optional
     ///fields for identifier hashes and whirlpool digests.
     /// </summary>
-    public class ReferenceTable {
+    public class RSReferenceTable {
         public const int FLAG_IDENTIFIERS = 0x01;
         public const int FLAG_WHIRLPOOL = 0x02;
         public const int FLAG_SIZES = 0x04;
         public const int FLAG_HASH = 0x08;
 
-        internal SortedDictionary<int, Entry> entries = new SortedDictionary<int, Entry>();
+        internal SortedDictionary<int, RSEntry> entries = new SortedDictionary<int, RSEntry>();
         public int version;
         public int format;
         public int flags;
@@ -25,18 +25,18 @@ namespace FlashEditor.cache {
         public int[] validArchiveIds;
 
         internal JagStream stream;
-        private Identifiers identifiers;
+        private RSIdentifiers identifiers;
 
         /// <summary>
         /// Constructs a reference table from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the reference table Container data</param>
         /// <returns>The reference table</returns>
-        internal static ReferenceTable Decode(JagStream stream) {
+        internal static RSReferenceTable Decode(JagStream stream) {
             DebugUtil.Debug("Decoding reference table");
 
             //Create a new Reference Table
-            ReferenceTable table = new ReferenceTable();
+            RSReferenceTable table = new RSReferenceTable();
 
             //Read header
             table.format = stream.ReadUnsignedByte();
@@ -57,7 +57,7 @@ namespace FlashEditor.cache {
             for(int index = 0; index < table.validArchivesCount; index++) {
                 int archiveId = lastArchiveId += stream.ReadUnsignedShort();
                 table.validArchiveIds[index] = archiveId;
-                 table.entries.Add(table.validArchiveIds[index], new Entry(k++));
+                 table.entries.Add(table.validArchiveIds[index], new RSEntry(k++));
 
                 if(archiveId >= size)
                     size = archiveId;
@@ -88,7 +88,7 @@ namespace FlashEditor.cache {
                 }
             }
             DebugUtil.Debug("Finished reading identifiers");
-            table.identifiers = new Identifiers(identifiersArray);
+            table.identifiers = new RSIdentifiers(identifiersArray);
 
             //Read the whirlpool digests if present
             if(table.usesWhirlpool) {
@@ -134,7 +134,7 @@ namespace FlashEditor.cache {
             //Read the child ids
             foreach(int id in table.validArchiveIds) {
                 int lastFileId = 0; //accumulator
-                Entry entry = table.entries[id];
+                RSEntry entry = table.entries[id];
                 int[] fileIds = entry.GetValidFileIds();
 
                 //
@@ -145,14 +145,14 @@ namespace FlashEditor.cache {
 
                 int x = 0;
                 foreach(int child in fileIds)
-                    entry.GetEntries().Add(child, new ChildEntry(x++));
+                    entry.GetEntries().Add(child, new RSChildEntry(x++));
             }
 
             //If the table is named
             if(table.named) {
                 //Read the child identifiers (name hashes) also
                 foreach(int id in table.validArchiveIds) {
-                    Entry entry = table.entries[id];
+                    RSEntry entry = table.entries[id];
                     int[] fileIds = entry.GetValidFileIds();
 
                     //Read the name hashes for the entries
@@ -183,38 +183,38 @@ namespace FlashEditor.cache {
             stream.WriteByte((byte) flags);
             stream.WriteShort(entries.Count);
 
-            foreach(KeyValuePair<int, Entry> kvp in entries)
+            foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 stream.WriteShort(kvp.Key);
 
             if(named)
-                foreach(KeyValuePair<int, Entry> kvp in entries)
+                foreach(KeyValuePair<int, RSEntry> kvp in entries)
                     stream.WriteInteger(kvp.Value.GetNameHash());
 
             if(usesWhirlpool)
-                foreach(KeyValuePair<int, Entry> kvp in entries)
+                foreach(KeyValuePair<int, RSEntry> kvp in entries)
                     stream.Write(kvp.Value.GetWhirlpool(), 0, 64);
 
-            foreach(KeyValuePair<int, Entry> kvp in entries)
+            foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 stream.WriteInteger(kvp.Value.GetCrc());
 
-            foreach(KeyValuePair<int, Entry> kvp in entries)
+            foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 stream.WriteInteger(kvp.Value.GetVersion());
 
-            foreach(KeyValuePair<int, Entry> kvp in entries)
+            foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 stream.WriteInteger(kvp.Value.GetValidFileIds().Length);
 
-            foreach(KeyValuePair<int, Entry> kvp in entries)
+            foreach(KeyValuePair<int, RSEntry> kvp in entries)
                 for(int k = 0; k < kvp.Value.GetValidFileIds().Length; k++)
                     stream.WriteShort(kvp.Value.GetValidFileIds()[k]);
 
             for(int index = 0; index < validArchivesCount; index++) {
-                Entry entry = entries[validArchiveIds[index]];
+                RSEntry entry = entries[validArchiveIds[index]];
                 for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
                     stream.WriteShort(entry.GetValidFileIds()[index2]);
             }
 
             if(named)
-                foreach(KeyValuePair<int, Entry> kvp in entries)
+                foreach(KeyValuePair<int, RSEntry> kvp in entries)
                     for(int index2 = 0; index2 < kvp.Value.GetValidFileIds().Length; index2++) {
                         //Should actually recalculate the name hash when entries are edited
                         stream.WriteInteger(kvp.Value.GetEntries()[index2].CalculateNameHash());
@@ -237,7 +237,7 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="id">The entry index</param>
         /// <returns>The entry at the index <paramref name="id"/></returns>
-        internal Entry GetEntry(int id) {
+        internal RSEntry GetEntry(int id) {
             if(!entries.ContainsKey(id))
                 return null;
             return entries[id];
@@ -259,7 +259,7 @@ namespace FlashEditor.cache {
             return version;
         }
 
-        internal SortedDictionary<int, Entry> GetEntries() {
+        internal SortedDictionary<int, RSEntry> GetEntries() {
             return entries;
         }
     }

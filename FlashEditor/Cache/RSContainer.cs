@@ -3,7 +3,7 @@ using System;
 using System.IO;
 
 namespace FlashEditor.cache {
-    internal class Container {
+    internal class RSContainer {
         private JagStream stream;
         private int index;
         private int file;
@@ -12,7 +12,7 @@ namespace FlashEditor.cache {
         private int version = -1;
         int decompressedLength = -1;
 
-        public Container(byte compressionType, JagStream stream, int version, int length, int decompressedLength) {
+        public RSContainer(byte compressionType, JagStream stream, int version, int length, int decompressedLength) {
             this.compressionType = compressionType;
             this.stream = stream;
             this.version = version;
@@ -20,7 +20,7 @@ namespace FlashEditor.cache {
             this.decompressedLength = decompressedLength;
         }
 
-        public Container(int index, JagStream stream) {
+        public RSContainer(int index, JagStream stream) {
             this.index = index;
             this.stream = stream;
         }
@@ -41,7 +41,7 @@ namespace FlashEditor.cache {
             stream.WriteInteger(stream.Length);
 
             //Write the data to the stream
-            if(GetCompressionType() == Constants.NO_COMPRESSION) {
+            if(GetCompressionType() == RSConstants.NO_COMPRESSION) {
                 stream.Write(GetStream().ToArray(), 0, GetLength());
             } else {
                 //Write the decompressed length
@@ -65,11 +65,11 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
-        /// Constructs a new <see cref="Container"/> from the stream data
+        /// Constructs a new <see cref="RSContainer"/> from the stream data
         /// </summary>
         /// <param name="stream">The raw container data</param>
         /// <returns>The new container, or null if <paramref name="stream"/> is null</returns>
-        internal static Container Decode(JagStream stream) {
+        public static RSContainer Decode(JagStream stream) {
             if(stream == null)
                 return null;
 
@@ -78,7 +78,7 @@ namespace FlashEditor.cache {
             byte compressType = stream.ReadUnsignedByte();
             int length = stream.ReadInt();
 
-            if(compressType == Constants.NO_COMPRESSION) {
+            if(compressType == RSConstants.NO_COMPRESSION) {
                 //Simply grab the data and wrap it in a buffer
                 byte[] temp = new byte[length];
                 stream.Read(temp, 0, length);
@@ -89,7 +89,7 @@ namespace FlashEditor.cache {
                 DebugUtil.Debug("\t\t\tCompression type: " + compressType + ", length: " + length + ", version: " + containerVersion);
 
                 //Return the decoded container
-                return new Container(compressType, new JagStream(temp), containerVersion, length, -1);
+                return new RSContainer(compressType, new JagStream(temp), containerVersion, length, -1);
             } else {
                 //Grab the length of the uncompressed data
                 int decompressedLength = stream.ReadInt();
@@ -104,9 +104,9 @@ namespace FlashEditor.cache {
                 stream.Read(data, 0, data.Length);
 
                 //Decompress the data
-                if(compressType == Constants.BZIP2_COMPRESSION) {
+                if(compressType == RSConstants.BZIP2_COMPRESSION) {
                     data = CompressionUtils.Bunzip2(data, decompressedLength);
-                } else if(compressType == Constants.GZIP_COMPRESSION) {
+                } else if(compressType == RSConstants.GZIP_COMPRESSION) {
                     data = CompressionUtils.Gunzip(data);
                 } else {
                     throw new IOException("Invalid compression type");
@@ -122,15 +122,15 @@ namespace FlashEditor.cache {
                     containerVersion = stream.ReadUnsignedShort();
 
                 string compressionName = "none";
-                if(compressType == Constants.BZIP2_COMPRESSION)
+                if(compressType == RSConstants.BZIP2_COMPRESSION)
                     compressionName = "BZIP2";
-                else if(compressType == Constants.GZIP_COMPRESSION)
+                else if(compressType == RSConstants.GZIP_COMPRESSION)
                     compressionName = "GZIP";
 
                 DebugUtil.Debug("\t\t\tCompression type: " + compressionName + ", length: " + length + ", full length: " + decompressedLength + ", version: " + containerVersion);
 
                 //And return the decoded container
-                return new Container(compressType, new JagStream(data), containerVersion, length, decompressedLength);
+                return new RSContainer(compressType, new JagStream(data), containerVersion, length, decompressedLength);
             }
         }
 

@@ -11,7 +11,7 @@ namespace FlashEditor {
         /// </summary>
         static void Main() {
             //Load the Hydrascape cache
-            cache.RSCache cache = new cache.RSCache(new FileStore(Constants.CACHE_DIRECTORY));
+            cache.RSCache cache = new cache.RSCache(new RSFileStore(RSConstants.CACHE_DIRECTORY));
             TestAllItems(cache);
             System.Console.ReadLine();
         }
@@ -24,7 +24,7 @@ namespace FlashEditor {
         /// <param name="file">The archive entry </param>
         /// <returns>The decoded item definition</returns>
         static ItemDefinition LoadItemDefinition(cache.RSCache cache, int archive, int file) {
-            Entry item = cache.ReadEntry(Constants.ITEM_DEFINITIONS_INDEX, archive, file);
+            RSEntry item = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
             ItemDefinition def = new ItemDefinition(item.stream);
             item.stream.Clear();
             return def;
@@ -37,7 +37,7 @@ namespace FlashEditor {
         static long TestAllItems(cache.RSCache cache) {
             Stopwatch sw = new Stopwatch();
             sw.Start();
-            ReferenceTable table = cache.GetReferenceTable(Constants.ITEM_DEFINITIONS_INDEX);
+            RSReferenceTable table = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
             DebugUtil.Debug("Table entry total: " + table.GetEntryTotal());
             for(int archive = 0; archive < table.GetEntryTotal(); archive++) {
                 for(int file = 0; file < 256; file++) {

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 namespace FlashEditor.cache {
-    internal class Entry {
+    internal class RSEntry {
         public JagStream stream = new JagStream(); //ensure there is a default stream
         internal int identifier = -1;
         internal int crc;
@@ -13,19 +13,19 @@ namespace FlashEditor.cache {
         internal int version;
         int id;
 
-        internal SortedDictionary<int?, ChildEntry> childEntries = new SortedDictionary<int?, ChildEntry>();
+        internal SortedDictionary<int?, RSChildEntry> childEntries = new SortedDictionary<int?, RSChildEntry>();
         private int[] validFileIds;
         internal int compressed;
         internal int uncompressed;
 
-        public Entry(int id) {
+        public RSEntry(int id) {
             this.id = id;
         }
 
-        public Entry() {
+        public RSEntry() {
         }
 
-        public Entry(JagStream stream) {
+        public RSEntry(JagStream stream) {
             this.stream = stream;
         }
 
@@ -80,19 +80,19 @@ namespace FlashEditor.cache {
             return (int) childEntries.Keys.Last() + 1;
         }
 
-        public virtual ChildEntry GetEntry(int id) {
+        public virtual RSChildEntry GetEntry(int id) {
             return childEntries[id];
         }
 
-        public virtual void PutEntry(int id, ChildEntry entry) {
+        public virtual void PutEntry(int id, RSChildEntry entry) {
             childEntries.Add(id, entry);
         }
 
-        public virtual void RemoveEntry(int id, ChildEntry entry) {
+        public virtual void RemoveEntry(int id, RSChildEntry entry) {
             childEntries.Remove(id);
         }
 
-        public virtual SortedDictionary<int?, ChildEntry> GetEntries() {
+        public virtual SortedDictionary<int?, RSChildEntry> GetEntries() {
             return childEntries;
         }
 
@@ -118,7 +118,7 @@ namespace FlashEditor.cache {
             return validFileIds;
         }
 
-        internal void SetFiles(SortedDictionary<int?, ChildEntry> entries) {
+        internal void SetFiles(SortedDictionary<int?, RSChildEntry> entries) {
             this.childEntries = entries;
         }
 
