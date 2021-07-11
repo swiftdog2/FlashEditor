@@ -7,8 +7,8 @@ namespace FlashEditor.utils {
         /// </summary>
         /// <param name="output">The debug message</param>
         public static void Debug(string output) {
-            //System.Console.WriteLine(output);
-            //System.Console.ReadLine();
+            System.Console.WriteLine(output);
+            System.Console.ReadLine();
         }
 
         public static void Debug2(string output) {

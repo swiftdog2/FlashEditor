@@ -89,7 +89,7 @@ namespace FlashEditor {
             try {
                 //Load the cache and the reference tables
                 RSFileStore store = new RSFileStore(directory);
-                cache = new cache.RSCache(store);
+                cache = new RSCache(store);
                 sw.Stop();
 
                 DebugConsole.Items.Add("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -163,6 +163,27 @@ namespace FlashEditor {
                                             int itemId = archiveId * 256 + file;
                                             item.SetId(itemId); //Set the item ID
                                             cache.items.Add(itemId, item);
+
+                                            DebugUtil.Debug("now doing containers");
+
+                                            foreach(KeyValuePair<int, SortedDictionary<int, RSContainer>> kvp in cache.containers) {
+                                                DebugUtil.Debug("Key: " + kvp.Key);
+                                                DebugUtil.Debug2("\t");
+                                                foreach(KeyValuePair<int, RSContainer> kvp2 in kvp.Value)
+                                                    DebugUtil.Debug2(kvp2.Key + " ");
+                                                DebugUtil.Debug("");
+                                            }
+
+                                            DebugUtil.Debug("now doing archives");
+
+                                            foreach(KeyValuePair<int, SortedDictionary<int, RSArchive>> kvp in cache.archives) {
+                                                DebugUtil.Debug("Key: " + kvp.Key);
+                                                DebugUtil.Debug2("\t");
+                                                foreach(KeyValuePair<int, RSArchive> kvp2 in kvp.Value)
+                                                    DebugUtil.Debug2(kvp2.Key + " ");
+                                                DebugUtil.Debug("");
+                                            }
+
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
                                         } finally {

@@ -10,7 +10,11 @@ namespace FlashEditor.cache {
     class RSCache {
         public RSFileStore store;
         public RSReferenceTable[] referenceTables;
+
+        //Each index has their own set of containers
         public SortedDictionary<int, SortedDictionary<int, RSContainer>> containers = new SortedDictionary<int, SortedDictionary<int, RSContainer>>();
+
+        //And archives are basically just decompressed containers that are decoded
         public SortedDictionary<int, SortedDictionary<int, RSArchive>> archives = new SortedDictionary<int, SortedDictionary<int, RSArchive>>();
 
         public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
