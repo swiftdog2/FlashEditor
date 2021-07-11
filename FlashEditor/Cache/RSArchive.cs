@@ -4,7 +4,7 @@ using System;
 
 namespace FlashEditor.cache {
     class RSArchive {
-        private RSEntry[] entries;
+        public RSEntry[] entries;
         public int chunks = 1;
 
         /// <summary>
@@ -128,8 +128,11 @@ namespace FlashEditor.cache {
         }
 
         internal void UpdateEntry(int entryId, RSEntry entry) {
-            DebugUtil.Debug("Updating archive entry " + entryId);
+            if(entryId < 0 || entryId >= entries.Length)
+                throw new ArgumentException("Entry " + entryId + " is out of bounds. Entry Total: " + entries.Length);
+
             entries[entryId] = entry;
+            DebugUtil.Debug("Updated archive entry " + entryId + ", len: " + entry.stream.Length);
         }
     }
 }

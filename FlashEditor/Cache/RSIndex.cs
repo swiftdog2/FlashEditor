@@ -37,8 +37,8 @@ namespace FlashEditor.cache {
             return index;
         }
 
-        public ref JagStream GetStream() {
-            return ref stream;
+        public JagStream GetStream() {
+            return stream;
         }
 
         public int GetId() {
@@ -63,7 +63,7 @@ namespace FlashEditor.cache {
         /// <param name="indexId">The index type</param>
         /// <param name="containerId">The container index</param>
         /// <returns>A <c>JagStream</c> containing the container data</returns>
-        internal JagStream Encode() {
+        public JagStream Encode() {
             JagStream s = new JagStream();
             s.WriteMedium((int) stream.Length);
             s.WriteMedium(sector);

@@ -33,7 +33,7 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream containing the reference table Container data</param>
         /// <returns>The reference table</returns>
         internal static RSReferenceTable Decode(JagStream stream) {
-            DebugUtil.Debug("Decoding reference table");
+            DebugUtil.Debug("Decoding reference table...");
 
             //Create a new Reference Table
             RSReferenceTable table = new RSReferenceTable();

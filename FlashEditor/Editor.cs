@@ -12,7 +12,7 @@ using System.Drawing;
 
 namespace FlashEditor {
     public partial class Editor : Form {
-        internal cache.RSCache cache;
+        internal RSCache cache;
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
@@ -153,37 +153,25 @@ namespace FlashEditor {
                                 int total = refTable.GetEntryTotal() * 256;
                                 int percentile = total / 100;
 
+                                DebugUtil.Debug(@"  _                     _ _               _ _                     ");
+                                DebugUtil.Debug(@" | |                   | (_)             (_) |                    ");
+                                DebugUtil.Debug(@" | |     ___   __ _  __| |_ _ __   __ _   _| |_ ___ _ __ ___  ___ ");
+                                DebugUtil.Debug(@" | |    / _ \ / _` |/ _` | | '_ \ / _` | | | __/ _ \ '_ ` _ \/ __|");
+                                DebugUtil.Debug(@" | |___| (_) | (_| | (_| | | | | | (_| | | | ||  __/ | | | | \__ \");
+                                DebugUtil.Debug(@" |______\___/ \__,_|\__,_|_|_| |_|\__, | |_|\__\___|_| |_| |_|___/");
+                                DebugUtil.Debug(@"                                   __/ |                          ");
+                                DebugUtil.Debug(@"                                  |___/                           ");
+
                                 foreach(KeyValuePair<int, RSEntry> archive in refTable.GetEntries()) {
                                     int archiveId = archive.Key;
 
-                                    DebugUtil.Debug("Loading archive " + archive);
+                                    DebugUtil.Debug("Loading archive " + archive.Key);
                                     for(int file = 0; file < 256; file++) {
                                         try {
                                             ItemDefinition item = cache.GetItemDefinition(archiveId, file);
                                             int itemId = archiveId * 256 + file;
                                             item.SetId(itemId); //Set the item ID
                                             cache.items.Add(itemId, item);
-
-                                            DebugUtil.Debug("now doing containers");
-
-                                            foreach(KeyValuePair<int, SortedDictionary<int, RSContainer>> kvp in cache.containers) {
-                                                DebugUtil.Debug("Key: " + kvp.Key);
-                                                DebugUtil.Debug2("\t");
-                                                foreach(KeyValuePair<int, RSContainer> kvp2 in kvp.Value)
-                                                    DebugUtil.Debug2(kvp2.Key + " ");
-                                                DebugUtil.Debug("");
-                                            }
-
-                                            DebugUtil.Debug("now doing archives");
-
-                                            foreach(KeyValuePair<int, SortedDictionary<int, RSArchive>> kvp in cache.archives) {
-                                                DebugUtil.Debug("Key: " + kvp.Key);
-                                                DebugUtil.Debug2("\t");
-                                                foreach(KeyValuePair<int, RSArchive> kvp2 in kvp.Value)
-                                                    DebugUtil.Debug2(kvp2.Key + " ");
-                                                DebugUtil.Debug("");
-                                            }
-
                                         } catch(Exception ex) {
                                             DebugUtil.Debug(ex.Message);
                                         } finally {
@@ -198,7 +186,7 @@ namespace FlashEditor {
                                     }
                                 }
 
-                                DebugUtil.Debug("Finished loading " + total + " entries");
+                                DebugUtil.Debug("Finished loading " + total + " items");
 
                                 ItemListView.SetObjects(cache.items.Values);
                             };
@@ -385,46 +373,40 @@ namespace FlashEditor {
 
         //Finished editing a definition
         private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
+            DebugUtil.Debug(@"  ______    _ _ _     _____ _                 ");
+            DebugUtil.Debug(@" |  ____|  | (_) |   |_   _| |                ");
+            DebugUtil.Debug(@" | |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
+            DebugUtil.Debug(@" |  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
+            DebugUtil.Debug(@" | |___| (_| | | |_   _| |_| ||  __/ | | | | |");
+            DebugUtil.Debug(@" |______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
+            DebugUtil.Debug(@"                                              ");
+            DebugUtil.Debug(@"                                              ");
+
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
-
-            //Update the cache definition
-            DebugUtil.Debug("cache item total: " + cache.items.Count + ", newdef ID : " + newDefinition.id);
             cache.items[newDefinition.id] = newDefinition;
 
+            //Update the cache definition
             int archiveId = newDefinition.id / 256;
             int entryId = newDefinition.id % 256;
-
-            DebugUtil.Debug("Updating items archive " + archiveId + " entry " + entryId + "...");
+            DebugUtil.Debug("Updating items archive " + archiveId + " entry " + entryId + "... ");
 
             //Convert Item Definition to Entry
             RSEntry newEntry = new RSEntry(newDefinition.Encode());
 
             //Update the entry in the archive
-            RSArchive archive = cache.archives[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
+            RSArchive archive = cache.containers[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId].GetArchive();
             archive.UpdateEntry(entryId, newEntry);
 
+            //Finally, update the current container
             RSContainer container = cache.containers[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
-            container.UpdateStream(archive.Encode());
+            container.SetArchive(archive); //Don't forget to update the container archive
+            cache.containers[container.GetType()][container.GetFile()] = container;
+            DebugUtil.Debug("Updated container " + container.GetType() + " and archive: " + container.GetFile());
 
-
-            //Encode the archive
-            JagStream newArchive = archive.Encode();
-
-
-
-
-            /*
-            RSContainer newContainer = cache.containers[Constants.ITEM_DEFINITIONS_INDEX][archiveId];
-            newContainer.UpdateStream(archive.Encode());
-            JagStream containerStream = newContainer.Encode();
-            */
-
-            //Update the reference table
-            cache.UpdateReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
-
-            //idkk its shit
-            cache.UpdateContainer(RSConstants.ITEM_DEFINITIONS_INDEX);
+            //Don't forget to save!
+            DebugUtil.Debug("Updating Cache");
+            cache.Write(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newDefinition.Encode());
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {

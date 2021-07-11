@@ -99,28 +99,31 @@ namespace FlashEditor.cache {
         */
 
         public void Write(int indexId, int containerId, JagStream data, bool overwrite) {
+            DebugUtil.Debug("Writing index " + indexId + ", container " + containerId + ", data len: " + data.Length);
+
             if((indexId < 0 || indexId >= indexChannels.Length) && indexId != 255)
                 throw new FileNotFoundException();
 
             RSIndex index = indexId == RSConstants.CRCTABLE_INDEX ? metaChannel : indexChannels[indexId];
 
-            int nextSector;
+            int nextSector = 0;
             long ptr = containerId * RSIndex.SIZE;
 
             JagStream buf;
 
-            //If we are overwriting the existing sector ("filling the bucket")
+            //If we are overwriting the existing sector ("filling the bucket"?)
             if(overwrite) {
                 if(ptr < 0)
                     throw new IOException();
                 else if(ptr >= index.GetSize())
                     return;
 
+                //Seems completely useless tbh?
+                JagStream newIndex = index.Encode();
+                RSIndex x = RSIndex.Decode(newIndex);
                 nextSector = index.GetSectorID();
-
                 if(nextSector <= 0 || nextSector > dataChannel.GetSize() * (long) RSSector.SIZE)
                     return;
-
             } else {
                 //We need to make a new sector
                 nextSector = (int) ((dataChannel.GetSize() + RSSector.SIZE - 1) / (long) RSSector.SIZE);
@@ -132,7 +135,8 @@ namespace FlashEditor.cache {
 
             //Update the index
             index = new RSIndex(indexId, (int) data.Length, nextSector);
-            index.SetStream(data);
+            index.SetStream(data); //does this make sense?
+
             if(indexId == RSConstants.CRCTABLE_INDEX)
                 metaChannel = index;
             else
@@ -141,7 +145,10 @@ namespace FlashEditor.cache {
             buf = new JagStream(RSSector.SIZE);
 
             int chunk = 0, remaining = index.GetSize();
-            do {
+
+            JagStream newDataStream = new JagStream();
+
+            while(remaining > 0) {
                 int curSector = nextSector;
                 ptr = curSector * RSSector.SIZE;
                 nextSector = 0;
@@ -193,9 +200,11 @@ namespace FlashEditor.cache {
                 sector = new RSSector(indexId, containerId, chunk++, nextSector, bytes);
 
                 JagStream sectorData = sector.Encode();
-
-                dataChannel.GetStream().Write(sectorData.ToArray(), (int) ptr, sectorData.ToArray().Length);
-            } while(remaining > 0);
+                DebugUtil.Debug("Writing sector - Index: " + indexId + ", container: " + containerId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", bytes len: " + bytes.Length);
+                DebugUtil.Debug("Data stream len : " + dataChannel.GetStream().Length + ", sectorData len: " + sectorData.Length + ", ptr: " + ptr);
+                dataChannel.GetStream().Seek((int) ptr);
+                dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
+            }
         }
     }
 }

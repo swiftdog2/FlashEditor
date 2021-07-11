@@ -111,7 +111,7 @@ namespace FlashEditor {
                         sb.Append(k + " ");
                 }
             }
-            DebugUtil.Debug(name + " OPCODEs: " + sb.ToString());
+            //DebugUtil.Debug(name + " OPCODEs: " + sb.ToString());
         }
 
         /// <summary>

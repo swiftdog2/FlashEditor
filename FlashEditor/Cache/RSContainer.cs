@@ -12,12 +12,21 @@ namespace FlashEditor.cache {
         private int version = -1;
         int decompressedLength = -1;
 
+        //The archive that is represented by the container
+        public RSArchive archive;
+
         public RSContainer(byte compressionType, JagStream stream, int version, int length, int decompressedLength) {
             this.compressionType = compressionType;
             this.stream = stream;
             this.version = version;
             this.length = length;
             this.decompressedLength = decompressedLength;
+        }
+
+        public RSContainer(int index, JagStream stream, int version) {
+            this.index = index;
+            this.stream = stream;
+            this.version = version;
         }
 
         public RSContainer(int index, JagStream stream) {
@@ -34,27 +43,33 @@ namespace FlashEditor.cache {
 
             JagStream stream = new JagStream();
 
-            //Write out the compression type
-            stream.WriteByte(GetCompressionType());
-
-            //Write out the (compressed) data length
-            stream.WriteInteger(stream.Length);
+            byte[] compressed;
 
             //Write the data to the stream
             if(GetCompressionType() == RSConstants.NO_COMPRESSION) {
-                stream.Write(GetStream().ToArray(), 0, GetLength());
+                compressed = GetStream().ToArray();
             } else {
-                //Write the decompressed length
-                stream.WriteInteger(decompressedLength);
+                //TODO: add BZIP compression
+                if(GetCompressionType() == RSConstants.BZIP2_COMPRESSION)
+                    DebugUtil.Debug("BZIP2 Unavailable, GZipping instead...");
 
-                /*
-                 * TODO: add BZIP compression
-                 */
-                byte[] compressedData = CompressionUtils.Gzip(GetStream().ToArray());
-                stream.Write(compressedData, 0, GetLength());
+                compressed = CompressionUtils.Gzip(GetStream().ToArray());
             }
 
-            //Write out the version
+            //Write out the compression type
+            stream.WriteByte(GetCompressionType());
+            DebugUtil.Debug("\tCompression type: " + GetCompressionType());
+
+            //Write the compressed length
+            stream.WriteInteger(compressed.Length);
+
+            if(GetCompressionType() != RSConstants.NO_COMPRESSION)
+                stream.WriteInteger(stream.Length);
+
+            //Write the compressed data
+            stream.Write(compressed, 0, compressed.Length);
+
+            //Write out the optional version
             if(version != -1)
                 stream.WriteShort(GetVersion());
 
@@ -73,7 +88,7 @@ namespace FlashEditor.cache {
             if(stream == null)
                 return null;
 
-            DebugUtil.Debug("\t\tDecoding container, stream len: " + stream.Length + ", cap: " + stream.Capacity + ", pos: " + stream.Position);
+            DebugUtil.Debug("\tDecoding container, stream len: " + stream.Length);
             //Decode the type and length
             byte compressType = stream.ReadUnsignedByte();
             int length = stream.ReadInt();
@@ -86,8 +101,7 @@ namespace FlashEditor.cache {
                 //Decode the version if present
                 int containerVersion = stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1;
 
-                DebugUtil.Debug("\t\t\tCompression type: " + compressType + ", length: " + length + ", version: " + containerVersion);
-
+                DebugUtil.Debug("\t\tCompression type: " + compressType + ", length: " + length + ", version: " + containerVersion);
                 //Return the decoded container
                 return new RSContainer(compressType, new JagStream(temp), containerVersion, length, -1);
             } else {
@@ -176,6 +190,14 @@ namespace FlashEditor.cache {
 
         internal int GetFile() {
             return file;
+        }
+
+        internal RSArchive GetArchive() {
+            return archive;
+        }
+
+        internal void SetArchive(RSArchive archive) {
+            this.archive = archive;
         }
     }
 }
