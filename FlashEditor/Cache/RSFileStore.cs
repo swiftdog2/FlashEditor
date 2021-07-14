@@ -57,6 +57,10 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream (reference) to read the data into</param>
         /// <param name="directory">The directory of the binary file</param>
         private RSIndex LoadIndex(int id, string directory) {
+            return new RSIndex(id, LoadStream(directory));
+        }
+
+        public JagStream LoadStream(string directory) {
             if(!File.Exists(directory)) {
                 string errorMsg = "'" + directory + "' could not be found.";
                 Debug(errorMsg);
@@ -67,7 +71,7 @@ namespace FlashEditor.cache {
             if(data.Length == 0)
                 Debug("No data read for directory: " + directory);
 
-            return new RSIndex(id, new JagStream(data));
+            return new JagStream(data);
         }
 
         /// <summary>
@@ -126,20 +130,22 @@ namespace FlashEditor.cache {
                     nextSector = 1;
             }
 
-            bool extended = containerId > 0xFFFF;
+            Debug("data remaining: " + data.Remaining() + ", next sector: " + nextSector);
 
-            //Update the index
-            index = new RSIndex(data.Remaining(), nextSector);
-            if(indexId == RSConstants.META_INDEX)
-                metaChannel = index;
-            else
-                indexChannels[indexId] = index;
+            //Update the meta index with the updated size and sector ID
+            index.GetStream().Seek(ptr);
+            index.GetStream().WriteMedium(data.Remaining());
+            index.GetStream().WriteMedium(nextSector);
+
+            //No idea why, but it's necessary or multiple saves fucks shit up
+            if(indexId != RSConstants.META_INDEX)
+                index.SetStream(data);
 
             buf = new JagStream(RSSector.SIZE);
 
-            int chunk = 0, remaining = index.GetSize();
+            int chunk = 0, remaining = data.Remaining();
 
-            while(remaining > 0) {
+            do {
                 int curSector = nextSector;
                 ptr = curSector * RSSector.SIZE;
                 nextSector = 0;
@@ -195,7 +201,7 @@ namespace FlashEditor.cache {
                 Debug("data ptr: " + ptr);
                 dataChannel.GetStream().Seek((int) ptr);
                 dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
-            }
+            } while(remaining > 0);
         }
     }
 }

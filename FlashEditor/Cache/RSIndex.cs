@@ -70,10 +70,9 @@ namespace FlashEditor.cache {
         /// <returns>A <c>JagStream</c> containing the container data</returns>
         public JagStream Encode() {
             JagStream s = new JagStream();
-            s.WriteMedium((int) stream.Length);
+            s.WriteMedium(size);
             s.WriteMedium(sector);
-            s.Write(stream.ToArray(), 0, stream.ToArray().Length);
-            return stream.Flip();
+            return s.Flip();
         }
     }
 }

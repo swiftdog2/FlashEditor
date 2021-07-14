@@ -125,7 +125,7 @@ namespace FlashEditor {
              */
 
             loaded[editorIndex] = true;
-             
+
             //Creates a new background worker
             BackgroundWorker bgw = new BackgroundWorker {
                 WorkerReportsProgress = true,
@@ -583,8 +583,63 @@ namespace FlashEditor {
             cache.WriteCache();
         }
 
-        private void menuStrip1_ItemClicked(object sender, ToolStripItemClickedEventArgs e) {
+        private void button4_Click(object sender, EventArgs e) {
+            string cacheIn = RSConstants.CACHE_DIRECTORY + "/main_file_cache.";
+            string cacheOut = RSConstants.CACHE_OUTPUT_DIRECTORY + "/main_file_cache.";
 
+            //Load the cache into memory
+            JagStream dat2in = cache.GetStore().LoadStream(cacheIn + "dat2");
+            JagStream dat2out = cache.GetStore().LoadStream(cacheOut + "dat2");
+
+            StreamDifference(dat2in, dat2out, "dat2");
+
+            JagStream idx255in = cache.GetStore().LoadStream(cacheIn + "idx255");
+            JagStream idx255out = cache.GetStore().LoadStream(cacheOut + "idx255");
+
+            StreamDifference(idx255in, idx255out, "idx255");
+
+            int count = 0;
+
+            //Count how many idx files exist
+            for(int k = 0; k < 254; k++) {
+                if(!File.Exists(cacheIn + "idx" + k)) {
+                    //If we didn't read any, check the directory is set correctly
+                    if(count == 0)
+                        throw new FileNotFoundException("No index files could be found");
+                    break;
+                }
+                count++;
+            }
+
+            //Load the indexes
+            JagStream[] metaStreamsIn = new JagStream[count];
+            JagStream[] metaStreamsOut = new JagStream[count];
+
+            //And load in the data
+            for(int k = 0; k < count; k++) {
+                metaStreamsIn[k] = cache.GetStore().LoadStream(cacheIn + "idx" + k);
+                metaStreamsOut[k] = cache.GetStore().LoadStream(cacheOut + "idx" + k);
+
+                StreamDifference(metaStreamsIn[k], metaStreamsOut[k], "idx" + k);
+            }
+        }
+
+        private void StreamDifference(JagStream stream1, JagStream stream2, string v) {
+            //Rudimentary check, fast if the streams are different lengths
+            if(stream1.Length != stream2.Length) {
+                Debug("Difference in " + v + " data, len: " + (stream1.Length - stream2.Length) + " bytes");
+                return;
+            }
+
+            //Same length? Check the bytes I guess.
+            for(int k = 0; k < stream1.Length; k++) {
+                if(stream1.ReadByte() != stream2.ReadByte()) {
+                    Debug("Difference in " + v + " @ " + stream1.Position);
+                    return;
+                }
+            }
+
+            Debug("No difference found in " + v);
         }
     }
 }

@@ -36,6 +36,8 @@
             this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.EditorTabControl = new System.Windows.Forms.TabControl();
             this.Console = new System.Windows.Forms.TabPage();
+            this.tabControl1 = new System.Windows.Forms.TabControl();
+            this.tabPage1 = new System.Windows.Forms.TabPage();
             this.RefTableListView = new BrightIdeasSoftware.TreeListView();
             this.typeCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.formatCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
@@ -44,6 +46,7 @@
             this.flagsCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.namedCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.usesWhirlpoolCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.tabPage2 = new System.Windows.Forms.TabPage();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
             this.ItemEditorTab = new System.Windows.Forms.TabPage();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
@@ -81,8 +84,8 @@
             this.Height = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.Image = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.NPCEditorTab = new System.Windows.Forms.TabPage();
-            this.NPCLoadingLabel = new System.Windows.Forms.Label();
             this.groupBox6 = new System.Windows.Forms.GroupBox();
+            this.NPCLoadingLabel = new System.Windows.Forms.Label();
             this.NPCProgressBar = new System.Windows.Forms.ProgressBar();
             this.button2 = new System.Windows.Forms.Button();
             this.button3 = new System.Windows.Forms.Button();
@@ -98,13 +101,14 @@
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.tabControl1 = new System.Windows.Forms.TabControl();
-            this.tabPage1 = new System.Windows.Forms.TabPage();
-            this.tabPage2 = new System.Windows.Forms.TabPage();
+            this.button4 = new System.Windows.Forms.Button();
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
+            this.tabControl1.SuspendLayout();
+            this.tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).BeginInit();
+            this.groupBox1.SuspendLayout();
             this.ItemEditorTab.SuspendLayout();
             this.groupBox4.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -119,8 +123,6 @@
             this.groupBox7.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).BeginInit();
-            this.tabControl1.SuspendLayout();
-            this.tabPage1.SuspendLayout();
             this.SuspendLayout();
             // 
             // menuStrip1
@@ -134,7 +136,6 @@
             this.menuStrip1.Size = new System.Drawing.Size(1032, 33);
             this.menuStrip1.TabIndex = 1;
             this.menuStrip1.Text = "menuStrip1";
-            this.menuStrip1.ItemClicked += new System.Windows.Forms.ToolStripItemClickedEventHandler(this.menuStrip1_ItemClicked);
             // 
             // openToolStripMenuItem
             // 
@@ -218,6 +219,30 @@
             this.Console.Size = new System.Drawing.Size(1000, 438);
             this.Console.TabIndex = 2;
             this.Console.Text = "Meta";
+            // 
+            // tabControl1
+            // 
+            this.tabControl1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.tabControl1.Controls.Add(this.tabPage1);
+            this.tabControl1.Controls.Add(this.tabPage2);
+            this.tabControl1.Location = new System.Drawing.Point(3, 3);
+            this.tabControl1.Name = "tabControl1";
+            this.tabControl1.SelectedIndex = 0;
+            this.tabControl1.Size = new System.Drawing.Size(738, 432);
+            this.tabControl1.TabIndex = 7;
+            // 
+            // tabPage1
+            // 
+            this.tabPage1.Controls.Add(this.RefTableListView);
+            this.tabPage1.Location = new System.Drawing.Point(4, 31);
+            this.tabPage1.Name = "tabPage1";
+            this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPage1.Size = new System.Drawing.Size(730, 397);
+            this.tabPage1.TabIndex = 0;
+            this.tabPage1.Text = "Reference Tables";
+            this.tabPage1.UseVisualStyleBackColor = true;
             // 
             // RefTableListView
             // 
@@ -304,11 +329,22 @@
             this.usesWhirlpoolCol.Text = "Whirlpool";
             this.usesWhirlpoolCol.Width = 85;
             // 
+            // tabPage2
+            // 
+            this.tabPage2.Location = new System.Drawing.Point(4, 31);
+            this.tabPage2.Name = "tabPage2";
+            this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPage2.Size = new System.Drawing.Size(730, 397);
+            this.tabPage2.TabIndex = 1;
+            this.tabPage2.Text = "Containers";
+            this.tabPage2.UseVisualStyleBackColor = true;
+            // 
             // groupBox1
             // 
             this.groupBox1.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox1.BackColor = System.Drawing.Color.White;
+            this.groupBox1.Controls.Add(this.button4);
             this.groupBox1.Location = new System.Drawing.Point(747, 33);
             this.groupBox1.Name = "groupBox1";
             this.groupBox1.Size = new System.Drawing.Size(250, 402);
@@ -750,23 +786,10 @@
             this.NPCEditorTab.Controls.Add(this.NPCListView);
             this.NPCEditorTab.Location = new System.Drawing.Point(4, 31);
             this.NPCEditorTab.Name = "NPCEditorTab";
-            this.NPCEditorTab.Size = new System.Drawing.Size(1229, 510);
+            this.NPCEditorTab.Size = new System.Drawing.Size(1000, 438);
             this.NPCEditorTab.TabIndex = 3;
             this.NPCEditorTab.Text = "NPCs";
             this.NPCEditorTab.UseVisualStyleBackColor = true;
-            // 
-            // NPCLoadingLabel
-            // 
-            this.NPCLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.NPCLoadingLabel.AutoSize = true;
-            this.NPCLoadingLabel.BackColor = System.Drawing.Color.Transparent;
-            this.NPCLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.NPCLoadingLabel.Location = new System.Drawing.Point(2, 237);
-            this.NPCLoadingLabel.Name = "NPCLoadingLabel";
-            this.NPCLoadingLabel.Size = new System.Drawing.Size(117, 19);
-            this.NPCLoadingLabel.TabIndex = 17;
-            this.NPCLoadingLabel.Text = "Loading NPCs";
-            this.NPCLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // groupBox6
             // 
@@ -784,6 +807,19 @@
             this.groupBox6.TabIndex = 16;
             this.groupBox6.TabStop = false;
             this.groupBox6.Text = "Editor Controls";
+            // 
+            // NPCLoadingLabel
+            // 
+            this.NPCLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.NPCLoadingLabel.AutoSize = true;
+            this.NPCLoadingLabel.BackColor = System.Drawing.Color.Transparent;
+            this.NPCLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.NPCLoadingLabel.Location = new System.Drawing.Point(2, 237);
+            this.NPCLoadingLabel.Name = "NPCLoadingLabel";
+            this.NPCLoadingLabel.Size = new System.Drawing.Size(117, 19);
+            this.NPCLoadingLabel.TabIndex = 17;
+            this.NPCLoadingLabel.Text = "Loading NPCs";
+            this.NPCLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // NPCProgressBar
             // 
@@ -901,7 +937,7 @@
             // 
             this.ObjectEditorTab.Location = new System.Drawing.Point(4, 31);
             this.ObjectEditorTab.Name = "ObjectEditorTab";
-            this.ObjectEditorTab.Size = new System.Drawing.Size(1229, 510);
+            this.ObjectEditorTab.Size = new System.Drawing.Size(1000, 438);
             this.ObjectEditorTab.TabIndex = 4;
             this.ObjectEditorTab.Text = "Objects";
             this.ObjectEditorTab.UseVisualStyleBackColor = true;
@@ -910,7 +946,7 @@
             // 
             this.InterfaceEditorTab.Location = new System.Drawing.Point(4, 31);
             this.InterfaceEditorTab.Name = "InterfaceEditorTab";
-            this.InterfaceEditorTab.Size = new System.Drawing.Size(1229, 510);
+            this.InterfaceEditorTab.Size = new System.Drawing.Size(1000, 438);
             this.InterfaceEditorTab.TabIndex = 5;
             this.InterfaceEditorTab.Text = "Interfaces";
             this.InterfaceEditorTab.UseVisualStyleBackColor = true;
@@ -925,39 +961,16 @@
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
             // 
-            // tabControl1
+            // button4
             // 
-            this.tabControl1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.tabControl1.Controls.Add(this.tabPage1);
-            this.tabControl1.Controls.Add(this.tabPage2);
-            this.tabControl1.Location = new System.Drawing.Point(3, 3);
-            this.tabControl1.Name = "tabControl1";
-            this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(738, 432);
-            this.tabControl1.TabIndex = 7;
-            // 
-            // tabPage1
-            // 
-            this.tabPage1.Controls.Add(this.RefTableListView);
-            this.tabPage1.Location = new System.Drawing.Point(4, 31);
-            this.tabPage1.Name = "tabPage1";
-            this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(730, 397);
-            this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "Reference Tables";
-            this.tabPage1.UseVisualStyleBackColor = true;
-            // 
-            // tabPage2
-            // 
-            this.tabPage2.Location = new System.Drawing.Point(4, 31);
-            this.tabPage2.Name = "tabPage2";
-            this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(651, 407);
-            this.tabPage2.TabIndex = 1;
-            this.tabPage2.Text = "Containers";
-            this.tabPage2.UseVisualStyleBackColor = true;
+            this.button4.BackColor = System.Drawing.Color.White;
+            this.button4.Location = new System.Drawing.Point(6, 29);
+            this.button4.Name = "button4";
+            this.button4.Size = new System.Drawing.Size(238, 35);
+            this.button4.TabIndex = 2;
+            this.button4.Text = "Compare to Output";
+            this.button4.UseVisualStyleBackColor = false;
+            this.button4.Click += new System.EventHandler(this.button4_Click);
             // 
             // Editor
             // 
@@ -978,7 +991,10 @@
             this.menuStrip1.PerformLayout();
             this.EditorTabControl.ResumeLayout(false);
             this.Console.ResumeLayout(false);
+            this.tabControl1.ResumeLayout(false);
+            this.tabPage1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).EndInit();
+            this.groupBox1.ResumeLayout(false);
             this.ItemEditorTab.ResumeLayout(false);
             this.groupBox4.ResumeLayout(false);
             this.groupBox4.PerformLayout();
@@ -998,8 +1014,6 @@
             this.groupBox7.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).EndInit();
-            this.tabControl1.ResumeLayout(false);
-            this.tabPage1.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -1082,6 +1096,7 @@
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabPage1;
         private System.Windows.Forms.TabPage tabPage2;
+        private System.Windows.Forms.Button button4;
     }
 }
 

@@ -76,7 +76,7 @@ namespace FlashEditor.cache {
 
         //Simply saves the index encoding to file...
         internal void WriteIndex(RSIndex index, string directory) {
-            JagStream.Save(index.Encode(), directory);
+            JagStream.Save(index.GetStream(), directory);
         }
 
         /**
@@ -133,15 +133,16 @@ namespace FlashEditor.cache {
 
             //Write the reference table out
             JagStream tableStream = referenceTable.Encode();
+
+            //Cache the archive
+            RSArchive arc = container.GetArchive();
+
             container = new RSContainer(index, tableStream);
 
-            store.WriteDataIndex(index, containerId, container.Encode(), true);
-
-            JagStream containerStream = container.Encode();
-
+            //store.WriteDataIndex(index, containerId, container.Encode(), true);
 
             //And write the archive back to memory
-            //container = new RSContainer(containerType, archive.Encode(), containerVersion);
+            container = new RSContainer(container.GetType(), arc.Encode(), container.GetVersion());
             WriteIndex(index, containerId, container);
         }
 
@@ -150,7 +151,8 @@ namespace FlashEditor.cache {
         */
         internal void WriteIndex(int indexId, int containerId, RSContainer container) {
             if(indexId == RSConstants.META_INDEX)
-                return;
+                throw new IOException("Reference tables can only be modified with the low level FileStore API!");
+
 
             //Get the reference table container
             RSContainer tableContainer = GetContainer(RSConstants.META_INDEX, indexId);
@@ -163,8 +165,7 @@ namespace FlashEditor.cache {
 
             //Last two bytes are the version and shouldn't be included in the checksum
             JagStream hashableStream = new JagStream();
-            stream.Write(stream.ToArray(), 0, (int) stream.Length - 2);
-            stream = hashableStream;
+            hashableStream.Write(stream.ToArray(), 0, (int) stream.Length - 2);
 
             //Calculate the new CRC checksum
             CRC32 crc = new CRC32();
@@ -179,12 +180,12 @@ namespace FlashEditor.cache {
             entry.SetVersion(container.GetVersion());
 
             //Calculate the CRC
-            int crcValue = crc.GetCrc32(stream);
+            int crcValue = crc.GetCrc32(hashableStream);
             entry.SetCrc(crcValue);
 
             //Calculate and update the whirlpool digest if we need to
             if(table.usesWhirlpool) {
-                byte[] whirlpool = Whirlpool.GetHash(stream.ToArray());
+                byte[] whirlpool = Whirlpool.GetHash(hashableStream.ToArray());
                 entry.SetWhirlpool(whirlpool);
             }
 
@@ -193,7 +194,7 @@ namespace FlashEditor.cache {
             store.WriteDataIndex(RSConstants.META_INDEX, indexId, tableContainer.Encode(), false);
 
             //Save the file itself
-            store.WriteDataIndex(indexId, containerId, stream, true);
+            store.WriteDataIndex(indexId, containerId, hashableStream, true);
         }
 
         /// <summary>

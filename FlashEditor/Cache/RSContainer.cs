@@ -59,9 +59,10 @@ namespace FlashEditor.cache {
             stream.WriteByte(GetCompressionType());
             Debug("\tCompression type: " + GetCompressionType(), LOG_DETAIL.INSANE);
 
-            //Write the compressed length
+            //Write the stored ("uncompressed") length
             stream.WriteInteger(compressed.Length);
 
+            //If compressed, write the decompressed length also
             if(GetCompressionType() != RSConstants.NO_COMPRESSION)
                 stream.WriteInteger(stream.Length);
 
@@ -91,6 +92,7 @@ namespace FlashEditor.cache {
             //Decode the type and length
             byte compressType = stream.ReadUnsignedByte();
             int length = stream.ReadInt();
+            Debug("Compression type: " + compressType + ", length: " + length);
 
             if(compressType == RSConstants.NO_COMPRESSION) {
                 //Simply grab the data and wrap it in a buffer
