@@ -17,6 +17,11 @@ namespace FlashEditor.cache {
             this.sector = sector;
         }
 
+        public RSIndex(int size, int sector) {
+            this.size = size;
+            this.sector = sector;
+        }
+
         public RSIndex() {
         }
 

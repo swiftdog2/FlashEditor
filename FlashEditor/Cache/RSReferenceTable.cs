@@ -126,6 +126,8 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <returns>The reference table</returns>
         internal JagStream Encode() {
+            Debug("Encoding RSReferenceTable " + type);
+
             JagStream stream = new JagStream();
 
             stream.WriteByte((byte) format);

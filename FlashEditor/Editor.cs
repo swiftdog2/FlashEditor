@@ -109,7 +109,7 @@ namespace FlashEditor {
 
             //Don't worry about the main menu
             if(type == -1)
-                type = RSConstants.CRCTABLE_INDEX;
+                type = RSConstants.META_INDEX;
 
             if(cache == null)
                 throw new FileNotFoundException("Cache failed to load");
@@ -137,11 +137,11 @@ namespace FlashEditor {
             RSReferenceTable referenceTable = null;
 
             //Set the reference table to the one we need for the index
-            if(type != RSConstants.CRCTABLE_INDEX)
+            if(type != RSConstants.META_INDEX)
                 referenceTable = cache.GetReferenceTable(type);
 
             switch(type) {
-                case RSConstants.CRCTABLE_INDEX:
+                case RSConstants.META_INDEX:
                     bgw.DoWork += delegate {
                         List<RSReferenceTable> refTables = new List<RSReferenceTable>();
                         for(int k = 0; k < cache.referenceTables.Length; k++)
@@ -496,22 +496,16 @@ namespace FlashEditor {
 
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
+
+            //Update the items archive with the new definition
             cache.items[newDefinition.id] = newDefinition;
 
             //Update the cache definition
             int archiveId = newDefinition.id / 256;
             int entryId = newDefinition.id % 256;
-            Debug("Updating items archive " + archiveId + " entry " + entryId + "... ", LOG_DETAIL.ADVANCED);
 
             //Update the entry in the container's archive
-            RSContainer container = cache.containers[RSConstants.ITEM_DEFINITIONS_INDEX][archiveId];
-            RSArchive archive = container.GetArchive();
-            archive.UpdateEntry(entryId, new RSEntry(newDefinition.Encode()));
-            Debug("Updated container, type " + container.GetType() + ", entry: " + container.GetFile());
-
-            //Don't forget to save!
-            Debug("Updating Cache");
-            cache.Write(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newDefinition.Encode());
+            cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newDefinition.Encode());
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {

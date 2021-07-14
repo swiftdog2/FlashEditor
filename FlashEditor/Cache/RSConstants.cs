@@ -49,7 +49,7 @@ namespace FlashEditor.cache {
             LOADING_SPRITES_RAW = 34, //in jagex format
             THEORA_AKA_CUTSCENES = 35, //not done
             VORBIS = 36, //not done
-            CRCTABLE_INDEX = 255;
+            META_INDEX = 255;
 
         public static string[] containerNames = new [] {"FRAMES",
             "SKINS",
@@ -91,7 +91,7 @@ namespace FlashEditor.cache {
 
         internal static string GetContainerNameForType(int type) {
             if(type >= containerNames.Length) {
-                if(type == CRCTABLE_INDEX)
+                if(type == META_INDEX)
                     return "CRCTABLE";
                 else
                     return "NULL";

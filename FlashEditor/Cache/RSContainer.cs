@@ -37,7 +37,7 @@ namespace FlashEditor.cache {
             this.stream = stream;
         }
 
-        internal JagStream Encode() {
+        public JagStream Encode() {
             Debug("Encoding RSContainer... type " + index + " file " + file + ", length " + length);
 
             JagStream stream = new JagStream();

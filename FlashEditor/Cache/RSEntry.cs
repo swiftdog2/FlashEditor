@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace FlashEditor.cache {
     internal class RSEntry {
-        public JagStream stream = new JagStream(); //ensure there is a default stream
+        private JagStream stream = new JagStream(); //ensure there is a default stream
         public int identifier = -1;
         public int crc;
         public int hash;
@@ -59,6 +59,10 @@ namespace FlashEditor.cache {
                 throw new ArgumentException();
             }
             Array.Copy(whirlpool, 0, this.whirlpool, 0, whirlpool.Length);
+        }
+
+        public JagStream GetStream() {
+            return stream;
         }
 
         public virtual int GetVersion() {

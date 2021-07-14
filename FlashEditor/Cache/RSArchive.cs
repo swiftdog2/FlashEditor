@@ -1,11 +1,12 @@
 ﻿using FlashEditor.Collections;
 using FlashEditor.utils;
 using System;
+using System.Collections.Generic;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
     class RSArchive {
-        public RSEntry[] entries;
+        public SortedDictionary<int, RSEntry> entries;
         public int chunks = 1;
 
         /// <summary>
@@ -13,11 +14,11 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="size">The number of entries</param>
         public RSArchive(int size) {
-            entries = new RSEntry[size];
+            entries = new SortedDictionary<int, RSEntry>();
         }
 
         /// <summary>
-        /// Constructs an Archive from a stream
+        /// Constructs an Archive from an RSContainer stream
         /// </summary>
         /// <param name="stream">The stream containing the archive data</param>
         /// <param name="size">The total number of file entries</param>
@@ -80,13 +81,13 @@ namespace FlashEditor.cache {
                     stream.Read(temp, 0, temp.Length);
 
                     //Copy the temporary buffer into the file buffer
-                    archive.entries[id].stream.Write(temp, 0, temp.Length);
+                    archive.entries[id].GetStream().Write(temp, 0, temp.Length);
                 }
             }
 
             //Flip all of the buffers
             for(int id = 0; id < size; id++)
-                archive.entries[id].stream.Flip();
+                archive.entries[id].GetStream().Flip();
 
             //Return the archive
             return archive;
@@ -102,17 +103,15 @@ namespace FlashEditor.cache {
              */
 
             //Write the chunk data for each entry stream
-            for(int id = 0; id < entries.Length; id++) {
-                JagStream chunkData = entries[id].stream;
-                chunkData.WriteTo(stream);
-            }
+            foreach(KeyValuePair<int, RSEntry> entry in entries)
+                entry.Value.GetStream().WriteTo(stream);
 
             //Write the chunk lengths
             int prev = 0;
             for(int chunk = 0; chunk < chunks; chunk++) {
-                for(int id = 0; id < entries.Length; id++) {
+                foreach(KeyValuePair<int, RSEntry> entry in entries) { 
                     //Archive is broken into chunks, which is the entry stream data
-                    long chunkSize = entries[id].stream.Length; //Therefore chunk size is entry stream length
+                    long chunkSize = entry.Value.GetStream().Length; //Therefore chunk size is entry stream length
                     stream.WriteInteger(chunkSize - prev); //So delta is the difference between the chunk sizes
                     prev = (int) chunkSize; //Store the size of the last entry
                 }
@@ -140,11 +139,11 @@ namespace FlashEditor.cache {
         }
 
         internal void UpdateEntry(int entryId, RSEntry entry) {
-            if(entryId < 0 || entryId >= entries.Length)
-                throw new ArgumentException("Entry " + entryId + " is out of bounds. Entry Total: " + entries.Length);
+            if(!entries.ContainsKey(entryId))
+                throw new ArgumentException("Entry " + entryId + " is out of bounds. Entry Total: " + entries.Count);
 
             entries[entryId] = entry;
-            Debug("Updated archive entry " + entryId + ", len: " + entry.stream.Length, LOG_DETAIL.ADVANCED);
+            Debug("Updated archive entry " + entryId + ", len: " + entry.GetStream().Length, LOG_DETAIL.ADVANCED);
         }
     }
 }
