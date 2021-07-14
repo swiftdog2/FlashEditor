@@ -1,4 +1,4 @@
-﻿using FlashEditor.utils;
+﻿using static FlashEditor.utils.DebugUtil;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,14 +6,14 @@ using System.Linq;
 namespace FlashEditor.cache {
     internal class RSEntry {
         public JagStream stream = new JagStream(); //ensure there is a default stream
-        internal int identifier = -1;
-        internal int crc;
+        public int identifier = -1;
+        public int crc;
         public int hash;
-        internal byte[] whirlpool = new byte[64];
-        internal int version;
-        int id;
+        public byte[] whirlpool = new byte[64];
+        public int version;
+        public int id;
 
-        internal SortedDictionary<int?, RSChildEntry> childEntries = new SortedDictionary<int?, RSChildEntry>();
+        private SortedDictionary<int?, RSChildEntry> childEntries = new SortedDictionary<int?, RSChildEntry>();
         private int[] validFileIds;
         internal int compressed;
         internal int uncompressed;
@@ -55,7 +55,7 @@ namespace FlashEditor.cache {
 
         public virtual void SetWhirlpool(byte[] whirlpool) {
             if(whirlpool.Length != 64) {
-                DebugUtil.Debug("Whirlpool length is not 64 bytes");
+                Debug("Whirlpool length is not 64 bytes");
                 throw new ArgumentException();
             }
             Array.Copy(whirlpool, 0, this.whirlpool, 0, whirlpool.Length);
@@ -80,7 +80,9 @@ namespace FlashEditor.cache {
             return (int) childEntries.Keys.Last() + 1;
         }
 
-        public virtual RSChildEntry GetEntry(int id) {
+        public virtual RSChildEntry GetChildEntry(int id) {
+            if(!childEntries.ContainsKey(id))
+                return null;
             return childEntries[id];
         }
 
@@ -124,6 +126,12 @@ namespace FlashEditor.cache {
 
         internal long GetNameHash() {
             return hash;
+        }
+
+        internal RSChildEntry GetEntry(int member) {
+            if(!GetEntries().ContainsKey(member))
+                return null;
+            return GetEntries()[member];
         }
     }
 }

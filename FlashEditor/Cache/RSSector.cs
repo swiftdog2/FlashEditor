@@ -1,4 +1,4 @@
-﻿using FlashEditor.utils;
+﻿using static FlashEditor.utils.DebugUtil;
 using System;
 
 namespace FlashEditor.cache {

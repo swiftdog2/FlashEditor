@@ -1,4 +1,5 @@
-﻿using FlashEditor.utils;
+﻿using static FlashEditor.utils.DebugUtil;
+using FlashEditor.utils;
 using System;
 using System.IO;
 using System.Text;
@@ -80,7 +81,7 @@ namespace FlashEditor {
         internal byte ReadUnsignedByte() {
             int result = ReadByte();
             if(result == -1)
-                DebugUtil.Debug("End of stream bro");
+                Debug("End of stream bro");
 
             return (byte) result;
             //return (byte) (ReadByte() & 0xFF);
@@ -118,9 +119,9 @@ namespace FlashEditor {
             StringBuilder sb = new StringBuilder();
             int b;
 
-            DebugUtil.Debug2("Name: '");
+            Debug2("Name: '");
             while((b = ReadByte()) != 0) {
-                DebugUtil.Debug2(b + " ");
+                Debug2(b + " ");
                 sb.Append((char) b);
             }
             DebugUtil.WriteLine("'");
@@ -318,7 +319,7 @@ namespace FlashEditor {
         /// <param name="stream">The stream to write to file</param>
         /// <param name="directory">The directory to write the file to</param>
         public static void Save(JagStream stream, string directory) {
-            DebugUtil.Debug("Saving to --" + directory + "--");
+            Debug("Saving to --" + directory + "--");
 
             using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
                 byte[] bytes = new byte[stream.Length];

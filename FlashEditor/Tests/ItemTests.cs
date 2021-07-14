@@ -1,6 +1,5 @@
 ﻿using FlashEditor.cache;
-using FlashEditor.utils;
-using java.util.zip;
+using static FlashEditor.utils.DebugUtil;
 using System;
 using System.Diagnostics;
 
@@ -38,14 +37,14 @@ namespace FlashEditor {
             Stopwatch sw = new Stopwatch();
             sw.Start();
             RSReferenceTable table = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
-            DebugUtil.Debug("Table entry total: " + table.GetEntryTotal());
+            Debug("Table entry total: " + table.GetEntryTotal());
             for(int archive = 0; archive < table.GetEntryTotal(); archive++) {
                 for(int file = 0; file < 256; file++) {
                     try {
                         LoadItemDefinition(cache, archive, file);
-                        //System.Console.WriteLine("{0}: {1}", archive * 256 + file, LoadItemDefinition(cache, archive, file).name);
+                        //Console.WriteLine("{0}: {1}", archive * 256 + file, LoadItemDefinition(cache, archive, file).name);
                     } catch(Exception ex) {
-                        DebugUtil.Debug(ex.Message);
+                        Debug(ex.Message);
                     }
                 }
             }

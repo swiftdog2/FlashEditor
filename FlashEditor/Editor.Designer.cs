@@ -36,8 +36,15 @@
             this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.EditorTabControl = new System.Windows.Forms.TabControl();
             this.Console = new System.Windows.Forms.TabPage();
+            this.RefTableListView = new BrightIdeasSoftware.TreeListView();
+            this.typeCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.formatCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.validArchiveCountCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.versionCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.flagsCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.namedCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.usesWhirlpoolCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.DebugConsole = new System.Windows.Forms.ListBox();
             this.ItemEditorTab = new System.Windows.Forms.TabPage();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
             this.ItemLoadingLabel = new System.Windows.Forms.Label();
@@ -91,9 +98,13 @@
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.tabControl1 = new System.Windows.Forms.TabControl();
+            this.tabPage1 = new System.Windows.Forms.TabPage();
+            this.tabPage2 = new System.Windows.Forms.TabPage();
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).BeginInit();
             this.ItemEditorTab.SuspendLayout();
             this.groupBox4.SuspendLayout();
             this.groupBox5.SuspendLayout();
@@ -108,6 +119,8 @@
             this.groupBox7.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).BeginInit();
+            this.tabControl1.SuspendLayout();
+            this.tabPage1.SuspendLayout();
             this.SuspendLayout();
             // 
             // menuStrip1
@@ -118,9 +131,10 @@
             this.indexToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(1261, 33);
+            this.menuStrip1.Size = new System.Drawing.Size(1032, 33);
             this.menuStrip1.TabIndex = 1;
             this.menuStrip1.Text = "menuStrip1";
+            this.menuStrip1.ItemClicked += new System.Windows.Forms.ToolStripItemClickedEventHandler(this.menuStrip1_ItemClicked);
             // 
             // openToolStripMenuItem
             // 
@@ -190,46 +204,117 @@
             this.EditorTabControl.Location = new System.Drawing.Point(12, 41);
             this.EditorTabControl.Name = "EditorTabControl";
             this.EditorTabControl.SelectedIndex = 0;
-            this.EditorTabControl.Size = new System.Drawing.Size(1237, 545);
+            this.EditorTabControl.Size = new System.Drawing.Size(1008, 473);
             this.EditorTabControl.TabIndex = 3;
             this.EditorTabControl.SelectedIndexChanged += new System.EventHandler(this.EditorTabControl_SelectedIndexChanged);
             // 
             // Console
             // 
             this.Console.BackColor = System.Drawing.Color.White;
+            this.Console.Controls.Add(this.tabControl1);
             this.Console.Controls.Add(this.groupBox1);
-            this.Console.Controls.Add(this.DebugConsole);
             this.Console.Location = new System.Drawing.Point(4, 31);
             this.Console.Name = "Console";
-            this.Console.Size = new System.Drawing.Size(1229, 510);
+            this.Console.Size = new System.Drawing.Size(1000, 438);
             this.Console.TabIndex = 2;
-            this.Console.Text = "Console";
+            this.Console.Text = "Meta";
+            // 
+            // RefTableListView
+            // 
+            this.RefTableListView.AllColumns.Add(this.typeCol);
+            this.RefTableListView.AllColumns.Add(this.formatCol);
+            this.RefTableListView.AllColumns.Add(this.validArchiveCountCol);
+            this.RefTableListView.AllColumns.Add(this.versionCol);
+            this.RefTableListView.AllColumns.Add(this.flagsCol);
+            this.RefTableListView.AllColumns.Add(this.namedCol);
+            this.RefTableListView.AllColumns.Add(this.usesWhirlpoolCol);
+            this.RefTableListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.RefTableListView.CellEditUseWholeCell = false;
+            this.RefTableListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.typeCol,
+            this.formatCol,
+            this.validArchiveCountCol,
+            this.versionCol,
+            this.flagsCol,
+            this.namedCol,
+            this.usesWhirlpoolCol});
+            this.RefTableListView.Cursor = System.Windows.Forms.Cursors.Default;
+            this.RefTableListView.Font = new System.Drawing.Font("Consolas", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.RefTableListView.HideSelection = false;
+            this.RefTableListView.Location = new System.Drawing.Point(-4, -1);
+            this.RefTableListView.Name = "RefTableListView";
+            this.RefTableListView.ShowGroups = false;
+            this.RefTableListView.Size = new System.Drawing.Size(738, 402);
+            this.RefTableListView.TabIndex = 0;
+            this.RefTableListView.UseCompatibleStateImageBehavior = false;
+            this.RefTableListView.View = System.Windows.Forms.View.Details;
+            this.RefTableListView.VirtualMode = true;
+            // 
+            // typeCol
+            // 
+            this.typeCol.AspectName = "type";
+            this.typeCol.Text = "Type";
+            this.typeCol.Width = 48;
+            // 
+            // formatCol
+            // 
+            this.formatCol.AspectName = "format";
+            this.formatCol.Text = "Format";
+            this.formatCol.Width = 64;
+            // 
+            // validArchiveCountCol
+            // 
+            this.validArchiveCountCol.AspectName = "validArchivesCount";
+            this.validArchiveCountCol.DisplayIndex = 5;
+            this.validArchiveCountCol.Text = "Archives";
+            this.validArchiveCountCol.Width = 79;
+            // 
+            // versionCol
+            // 
+            this.versionCol.AspectName = "version";
+            this.versionCol.AspectToStringFormat = "";
+            this.versionCol.DisplayIndex = 6;
+            this.versionCol.Text = "Version";
+            this.versionCol.Width = 69;
+            // 
+            // flagsCol
+            // 
+            this.flagsCol.AspectName = "flags";
+            this.flagsCol.CheckBoxes = true;
+            this.flagsCol.DisplayIndex = 2;
+            this.flagsCol.Hideable = false;
+            this.flagsCol.Text = "Flags";
+            this.flagsCol.Width = 53;
+            // 
+            // namedCol
+            // 
+            this.namedCol.AspectName = "named";
+            this.namedCol.CheckBoxes = true;
+            this.namedCol.DisplayIndex = 3;
+            this.namedCol.Text = "Named";
+            this.namedCol.Width = 53;
+            // 
+            // usesWhirlpoolCol
+            // 
+            this.usesWhirlpoolCol.AspectName = "usesWhirlpool";
+            this.usesWhirlpoolCol.CheckBoxes = true;
+            this.usesWhirlpoolCol.DisplayIndex = 4;
+            this.usesWhirlpoolCol.Text = "Whirlpool";
+            this.usesWhirlpoolCol.Width = 85;
             // 
             // groupBox1
             // 
             this.groupBox1.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox1.BackColor = System.Drawing.Color.White;
-            this.groupBox1.Location = new System.Drawing.Point(890, 3);
+            this.groupBox1.Location = new System.Drawing.Point(747, 33);
             this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(336, 498);
+            this.groupBox1.Size = new System.Drawing.Size(250, 402);
             this.groupBox1.TabIndex = 5;
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Cache Tests";
-            // 
-            // DebugConsole
-            // 
-            this.DebugConsole.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.DebugConsole.BackColor = System.Drawing.Color.White;
-            this.DebugConsole.Font = new System.Drawing.Font("Consolas", 12F);
-            this.DebugConsole.FormattingEnabled = true;
-            this.DebugConsole.ItemHeight = 19;
-            this.DebugConsole.Location = new System.Drawing.Point(3, 3);
-            this.DebugConsole.Name = "DebugConsole";
-            this.DebugConsole.Size = new System.Drawing.Size(881, 498);
-            this.DebugConsole.TabIndex = 4;
             // 
             // ItemEditorTab
             // 
@@ -239,7 +324,7 @@
             this.ItemEditorTab.Location = new System.Drawing.Point(4, 31);
             this.ItemEditorTab.Name = "ItemEditorTab";
             this.ItemEditorTab.Padding = new System.Windows.Forms.Padding(3);
-            this.ItemEditorTab.Size = new System.Drawing.Size(1229, 510);
+            this.ItemEditorTab.Size = new System.Drawing.Size(1000, 438);
             this.ItemEditorTab.TabIndex = 0;
             this.ItemEditorTab.Text = "Items";
             this.ItemEditorTab.UseVisualStyleBackColor = true;
@@ -254,30 +339,31 @@
             this.groupBox4.Controls.Add(this.ExportItemDatBtn);
             this.groupBox4.Controls.Add(this.button9);
             this.groupBox4.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox4.Location = new System.Drawing.Point(973, 183);
+            this.groupBox4.Location = new System.Drawing.Point(744, 183);
             this.groupBox4.Name = "groupBox4";
-            this.groupBox4.Size = new System.Drawing.Size(250, 321);
+            this.groupBox4.Size = new System.Drawing.Size(250, 249);
             this.groupBox4.TabIndex = 11;
             this.groupBox4.TabStop = false;
             this.groupBox4.Text = "Editor Controls";
             // 
             // ItemLoadingLabel
             // 
+            this.ItemLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.ItemLoadingLabel.AutoSize = true;
             this.ItemLoadingLabel.BackColor = System.Drawing.Color.Transparent;
             this.ItemLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.ItemLoadingLabel.Location = new System.Drawing.Point(2, 237);
+            this.ItemLoadingLabel.Location = new System.Drawing.Point(2, 165);
             this.ItemLoadingLabel.Name = "ItemLoadingLabel";
-            this.ItemLoadingLabel.Size = new System.Drawing.Size(117, 19);
+            this.ItemLoadingLabel.Size = new System.Drawing.Size(126, 19);
             this.ItemLoadingLabel.TabIndex = 12;
-            this.ItemLoadingLabel.Text = "Status: IDLE";
+            this.ItemLoadingLabel.Text = "Loading Items";
             this.ItemLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // ItemProgressBar
             // 
             this.ItemProgressBar.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.ItemProgressBar.ForeColor = System.Drawing.Color.DarkRed;
-            this.ItemProgressBar.Location = new System.Drawing.Point(0, 259);
+            this.ItemProgressBar.Location = new System.Drawing.Point(0, 187);
             this.ItemProgressBar.Name = "ItemProgressBar";
             this.ItemProgressBar.Size = new System.Drawing.Size(250, 60);
             this.ItemProgressBar.TabIndex = 8;
@@ -309,7 +395,7 @@
             this.groupBox5.BackColor = System.Drawing.Color.White;
             this.groupBox5.Controls.Add(this.button1);
             this.groupBox5.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox5.Location = new System.Drawing.Point(973, 6);
+            this.groupBox5.Location = new System.Drawing.Point(744, 6);
             this.groupBox5.Name = "groupBox5";
             this.groupBox5.Size = new System.Drawing.Size(250, 171);
             this.groupBox5.TabIndex = 10;
@@ -366,7 +452,7 @@
             this.ItemListView.RowHeight = 10;
             this.ItemListView.ShowGroups = false;
             this.ItemListView.ShowImagesOnSubItems = true;
-            this.ItemListView.Size = new System.Drawing.Size(961, 498);
+            this.ItemListView.Size = new System.Drawing.Size(732, 426);
             this.ItemListView.TabIndex = 14;
             this.ItemListView.UseAlternatingBackColors = true;
             this.ItemListView.UseCompatibleStateImageBehavior = false;
@@ -440,14 +526,15 @@
             this.SpriteEditorTab.Location = new System.Drawing.Point(4, 31);
             this.SpriteEditorTab.Name = "SpriteEditorTab";
             this.SpriteEditorTab.Padding = new System.Windows.Forms.Padding(3);
-            this.SpriteEditorTab.Size = new System.Drawing.Size(1229, 510);
+            this.SpriteEditorTab.Size = new System.Drawing.Size(1000, 438);
             this.SpriteEditorTab.TabIndex = 1;
             this.SpriteEditorTab.Text = "Sprites";
             this.SpriteEditorTab.UseVisualStyleBackColor = true;
             // 
             // groupBox3
             // 
-            this.groupBox3.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.groupBox3.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox3.BackColor = System.Drawing.Color.White;
             this.groupBox3.Controls.Add(this.SpriteLoadingLabel);
             this.groupBox3.Controls.Add(this.SpriteProgressBar);
@@ -455,23 +542,25 @@
             this.groupBox3.Controls.Add(this.ExportSpriteDatBtn);
             this.groupBox3.Controls.Add(this.ImportSpriteBtn);
             this.groupBox3.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox3.Location = new System.Drawing.Point(973, 183);
+            this.groupBox3.Location = new System.Drawing.Point(744, 183);
+            this.groupBox3.MinimumSize = new System.Drawing.Size(250, 240);
             this.groupBox3.Name = "groupBox3";
-            this.groupBox3.Size = new System.Drawing.Size(250, 321);
+            this.groupBox3.Size = new System.Drawing.Size(250, 255);
             this.groupBox3.TabIndex = 9;
             this.groupBox3.TabStop = false;
             this.groupBox3.Text = "Editor Controls";
             // 
             // SpriteLoadingLabel
             // 
+            this.SpriteLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.SpriteLoadingLabel.AutoSize = true;
             this.SpriteLoadingLabel.BackColor = System.Drawing.Color.White;
             this.SpriteLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.SpriteLoadingLabel.Location = new System.Drawing.Point(2, 238);
+            this.SpriteLoadingLabel.Location = new System.Drawing.Point(6, 167);
             this.SpriteLoadingLabel.Name = "SpriteLoadingLabel";
-            this.SpriteLoadingLabel.Size = new System.Drawing.Size(117, 19);
+            this.SpriteLoadingLabel.Size = new System.Drawing.Size(144, 19);
             this.SpriteLoadingLabel.TabIndex = 10;
-            this.SpriteLoadingLabel.Text = "Status: IDLE";
+            this.SpriteLoadingLabel.Text = "Loading Sprites";
             this.SpriteLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // SpriteProgressBar
@@ -480,9 +569,9 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.SpriteProgressBar.BackColor = System.Drawing.Color.White;
             this.SpriteProgressBar.ForeColor = System.Drawing.Color.DarkRed;
-            this.SpriteProgressBar.Location = new System.Drawing.Point(0, 260);
+            this.SpriteProgressBar.Location = new System.Drawing.Point(6, 189);
             this.SpriteProgressBar.Name = "SpriteProgressBar";
-            this.SpriteProgressBar.Size = new System.Drawing.Size(250, 60);
+            this.SpriteProgressBar.Size = new System.Drawing.Size(238, 60);
             this.SpriteProgressBar.TabIndex = 8;
             // 
             // ExportSpriteBmpBtn
@@ -525,7 +614,7 @@
             this.groupBox2.Controls.Add(this.numericUpDown1);
             this.groupBox2.Controls.Add(this.checkBox1);
             this.groupBox2.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox2.Location = new System.Drawing.Point(973, 6);
+            this.groupBox2.Location = new System.Drawing.Point(744, 6);
             this.groupBox2.Name = "groupBox2";
             this.groupBox2.Size = new System.Drawing.Size(250, 171);
             this.groupBox2.TabIndex = 8;
@@ -609,7 +698,7 @@
             this.SpriteListView.Name = "SpriteListView";
             this.SpriteListView.RowHeight = 20;
             this.SpriteListView.ShowGroups = false;
-            this.SpriteListView.Size = new System.Drawing.Size(961, 498);
+            this.SpriteListView.Size = new System.Drawing.Size(732, 432);
             this.SpriteListView.TabIndex = 6;
             this.SpriteListView.TintSortColumn = true;
             this.SpriteListView.UseAlternatingBackColors = true;
@@ -656,7 +745,6 @@
             // 
             // NPCEditorTab
             // 
-            this.NPCEditorTab.Controls.Add(this.NPCLoadingLabel);
             this.NPCEditorTab.Controls.Add(this.groupBox6);
             this.NPCEditorTab.Controls.Add(this.groupBox7);
             this.NPCEditorTab.Controls.Add(this.NPCListView);
@@ -669,14 +757,15 @@
             // 
             // NPCLoadingLabel
             // 
+            this.NPCLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.NPCLoadingLabel.AutoSize = true;
             this.NPCLoadingLabel.BackColor = System.Drawing.Color.Transparent;
             this.NPCLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.NPCLoadingLabel.Location = new System.Drawing.Point(300, 222);
+            this.NPCLoadingLabel.Location = new System.Drawing.Point(2, 237);
             this.NPCLoadingLabel.Name = "NPCLoadingLabel";
-            this.NPCLoadingLabel.Size = new System.Drawing.Size(135, 38);
+            this.NPCLoadingLabel.Size = new System.Drawing.Size(117, 19);
             this.NPCLoadingLabel.TabIndex = 17;
-            this.NPCLoadingLabel.Text = "Loading NPCs,\r\nplease wait...\r\n";
+            this.NPCLoadingLabel.Text = "Loading NPCs";
             this.NPCLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // groupBox6
@@ -684,6 +773,7 @@
             this.groupBox6.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.groupBox6.BackColor = System.Drawing.Color.White;
+            this.groupBox6.Controls.Add(this.NPCLoadingLabel);
             this.groupBox6.Controls.Add(this.NPCProgressBar);
             this.groupBox6.Controls.Add(this.button2);
             this.groupBox6.Controls.Add(this.button3);
@@ -835,12 +925,46 @@
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
             // 
+            // tabControl1
+            // 
+            this.tabControl1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.tabControl1.Controls.Add(this.tabPage1);
+            this.tabControl1.Controls.Add(this.tabPage2);
+            this.tabControl1.Location = new System.Drawing.Point(3, 3);
+            this.tabControl1.Name = "tabControl1";
+            this.tabControl1.SelectedIndex = 0;
+            this.tabControl1.Size = new System.Drawing.Size(738, 432);
+            this.tabControl1.TabIndex = 7;
+            // 
+            // tabPage1
+            // 
+            this.tabPage1.Controls.Add(this.RefTableListView);
+            this.tabPage1.Location = new System.Drawing.Point(4, 31);
+            this.tabPage1.Name = "tabPage1";
+            this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPage1.Size = new System.Drawing.Size(730, 397);
+            this.tabPage1.TabIndex = 0;
+            this.tabPage1.Text = "Reference Tables";
+            this.tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // tabPage2
+            // 
+            this.tabPage2.Location = new System.Drawing.Point(4, 31);
+            this.tabPage2.Name = "tabPage2";
+            this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPage2.Size = new System.Drawing.Size(651, 407);
+            this.tabPage2.TabIndex = 1;
+            this.tabPage2.Text = "Containers";
+            this.tabPage2.UseVisualStyleBackColor = true;
+            // 
             // Editor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.White;
-            this.ClientSize = new System.Drawing.Size(1261, 598);
+            this.ClientSize = new System.Drawing.Size(1032, 526);
             this.Controls.Add(this.EditorTabControl);
             this.Controls.Add(this.menuStrip1);
             this.DoubleBuffered = true;
@@ -854,6 +978,7 @@
             this.menuStrip1.PerformLayout();
             this.EditorTabControl.ResumeLayout(false);
             this.Console.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).EndInit();
             this.ItemEditorTab.ResumeLayout(false);
             this.groupBox4.ResumeLayout(false);
             this.groupBox4.PerformLayout();
@@ -867,12 +992,14 @@
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.SpriteListView)).EndInit();
             this.NPCEditorTab.ResumeLayout(false);
-            this.NPCEditorTab.PerformLayout();
             this.groupBox6.ResumeLayout(false);
+            this.groupBox6.PerformLayout();
             this.groupBox7.ResumeLayout(false);
             this.groupBox7.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).EndInit();
+            this.tabControl1.ResumeLayout(false);
+            this.tabPage1.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -942,9 +1069,19 @@
         private System.Windows.Forms.ToolStripMenuItem saveToolStripMenuItem;
         private BrightIdeasSoftware.OLVColumn sizeColumn;
         private BrightIdeasSoftware.OLVColumn levelColumn;
-        public System.Windows.Forms.ListBox DebugConsole;
         private System.Windows.Forms.Button button1;
         private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
+        private BrightIdeasSoftware.TreeListView RefTableListView;
+        private BrightIdeasSoftware.OLVColumn formatCol;
+        private BrightIdeasSoftware.OLVColumn flagsCol;
+        private BrightIdeasSoftware.OLVColumn namedCol;
+        private BrightIdeasSoftware.OLVColumn usesWhirlpoolCol;
+        private BrightIdeasSoftware.OLVColumn validArchiveCountCol;
+        private BrightIdeasSoftware.OLVColumn versionCol;
+        private BrightIdeasSoftware.OLVColumn typeCol;
+        private System.Windows.Forms.TabControl tabControl1;
+        private System.Windows.Forms.TabPage tabPage1;
+        private System.Windows.Forms.TabPage tabPage2;
     }
 }
 

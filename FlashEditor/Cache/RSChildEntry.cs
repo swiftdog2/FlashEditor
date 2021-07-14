@@ -2,14 +2,11 @@
 
 namespace FlashEditor.cache {
     internal class RSChildEntry : RSEntry {
-        int index;
-
-        public RSChildEntry(JagStream stream) : base(stream) {
-
+        public RSChildEntry() : base() {
         }
 
-        public RSChildEntry(int index) {
-            this.index = index;
+        public RSChildEntry(int index) : base(index) {
+
         }
     }
 }

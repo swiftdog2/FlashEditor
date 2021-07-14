@@ -1,6 +1,7 @@
 ﻿using FlashEditor.Collections;
 using FlashEditor.utils;
 using System;
+using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
     class RSArchive {
@@ -29,39 +30,50 @@ namespace FlashEditor.cache {
             stream.Seek(stream.Length - 1);
             archive.chunks = stream.ReadUnsignedByte();
 
+            Debug("Chunk count: " + archive.chunks, LOG_DETAIL.ADVANCED);
+
             //Read the sizes of the child entries and individual chunks
-            int[,] chunkSizes = new int[archive.chunks, size];
+            int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(archive.chunks, size);
             int[] entrySizes = new int[size];
+
+            Debug("Entry count: " + size, LOG_DETAIL.ADVANCED);
 
             stream.Seek(stream.Length - 1 - archive.chunks * size * 4);
 
+            //Read the chunks
             for(int chunk = 0; chunk < archive.chunks; chunk++) {
-                int chunkSize = 0;
+                Debug("chunk size: " + size, LOG_DETAIL.INSANE);
+                int cumulativeChunkSize = 0;
                 for(int id = 0; id < size; id++) {
                     //Read the delta-encoded chunk length
                     int delta = stream.ReadInt();
-                    chunkSize += delta;
+                    cumulativeChunkSize += delta;
+                    Debug("Delta: " + delta, LOG_DETAIL.INSANE);
 
                     //Store the size of this chunk
-                    chunkSizes[chunk, id] = chunkSize;
+                    chunkSizes[chunk][id] = cumulativeChunkSize;
 
                     //And add it to the size of the whole file
-                    entrySizes[id] += chunkSize;
+                    entrySizes[id] += cumulativeChunkSize;
+                    Debug("\t- Entry " + id + " size: " + cumulativeChunkSize, LOG_DETAIL.INSANE);
                 }
             }
 
             //Allocate the buffers for the child entries
             for(int id = 0; id < size; id++)
-                archive.entries[id] = new RSEntry(entrySizes[id]);
+                if(entrySizes[id] <= 0)
+                    archive.entries[id] = new RSEntry(new JagStream());
+                else
+                    archive.entries[id] = new RSEntry(new JagStream(entrySizes[id]));
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
 
-            //Read the data into the buffers
+            //Read the data into the buffers 
             for(int chunk = 0; chunk < archive.chunks; chunk++) {
                 for(int id = 0; id < size; id++) {
                     //Get the length of this chunk
-                    int chunkSize = chunkSizes[chunk, id];
+                    int chunkSize = chunkSizes[chunk][id];
 
                     //Copy this chunk into a temporary buffer
                     byte[] temp = new byte[chunkSize];
@@ -132,7 +144,7 @@ namespace FlashEditor.cache {
                 throw new ArgumentException("Entry " + entryId + " is out of bounds. Entry Total: " + entries.Length);
 
             entries[entryId] = entry;
-            DebugUtil.Debug("Updated archive entry " + entryId + ", len: " + entry.stream.Length);
+            Debug("Updated archive entry " + entryId + ", len: " + entry.stream.Length, LOG_DETAIL.ADVANCED);
         }
     }
 }

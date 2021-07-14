@@ -1,5 +1,4 @@
-﻿using FlashEditor.cache;
-using FlashEditor.utils;
+﻿using static FlashEditor.utils.DebugUtil;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -111,7 +110,7 @@ namespace FlashEditor {
                         sb.Append(k + " ");
                 }
             }
-            //DebugUtil.Debug(name + " OPCODEs: " + sb.ToString());
+            //Debug(name + " OPCODEs: " + sb.ToString());
         }
 
         /// <summary>

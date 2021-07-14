@@ -21,9 +21,8 @@
 */
 
 using FlashEditor.cache.util;
-using FlashEditor.Cache.Util;
+using static FlashEditor.utils.DebugUtil;
 using FlashEditor.Collections;
-using FlashEditor.utils;
 using java.lang;
 using System.Collections.Generic;
 using System.Drawing;
@@ -71,9 +70,6 @@ namespace FlashEditor.cache.sprites {
         /// <param name="height">The height of the sprite in pixels.</param>
         /// <param name="frameCount">The number of animation frames.</param>
         public SpriteDefinition(int width, int height, int frameCount) {
-            if(frameCount < 1)
-                throw new IllegalArgumentException();
-
             this.width = width;
             this.height = height;
             this.frameCount = frameCount;
@@ -92,11 +88,11 @@ namespace FlashEditor.cache.sprites {
 
             //Read the width, height and palette size
             stream.Seek(stream.Length - size * 8 - 7);
-            int width = stream.ReadShort();
-            int height = stream.ReadShort();
+            int width = stream.ReadUnsignedShort();
+            int height = stream.ReadUnsignedShort();
             int[] palette = new int[stream.ReadUnsignedByte() + 1];
 
-            DebugUtil.Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length);
+            Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length, LOG_DETAIL.INSANE);
 
             //And allocate an object for this sprite set
             SpriteDefinition sprite = new SpriteDefinition(width, height, size);
@@ -118,13 +114,13 @@ namespace FlashEditor.cache.sprites {
             //Read the pixels themselves
             stream.Seek(0);
             for(int id = 0; id < size; id++) {
-                //DebugUtil.Debug("\tReading frame " + id);
+                Debug("\tReading frame " + id, LOG_DETAIL.INSANE);
 
                 //Grab some frequently used values
                 int subWidth = subWidths[id], subHeight = subHeights[id];
                 int offsetX = offsetsX[id], offsetY = offsetsY[id];
 
-                DebugUtil.Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY);
+                Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY, LOG_DETAIL.INSANE);
 
                 //Create a BufferedImage to store the resulting image
                 RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
@@ -134,7 +130,7 @@ namespace FlashEditor.cache.sprites {
 
                 //Read the flags so we know whether to read horizontally or vertically
                 int flags = stream.ReadUnsignedByte();
-                //DebugUtil.Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]");
+                //Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]", LOG_DETAIL.INSANE);
 
                 //Read the palette indices
                 if((flags & FLAG_VERTICAL) != 0) {
@@ -188,8 +184,8 @@ namespace FlashEditor.cache.sprites {
                     sprite.thumb = image.GetSprite();
 
                 sprite.frames.Add(image);
-
             }
+
             return sprite;
         }
 

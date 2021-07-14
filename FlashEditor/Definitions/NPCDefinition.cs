@@ -1,6 +1,4 @@
-﻿using FlashEditor.utils;
-using java.lang;
-using System;
+﻿using static FlashEditor.utils.DebugUtil;
 using System.Collections.Generic;
 
 namespace FlashEditor {
@@ -112,7 +110,7 @@ namespace FlashEditor {
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
         private void Decode(JagStream stream, int opcode) {
-            DebugUtil.Debug("Reading opcode: " + opcode);
+            Debug("Reading opcode: " + opcode);
             //return;
 
             if(opcode == 1) {

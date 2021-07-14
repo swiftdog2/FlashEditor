@@ -1,5 +1,5 @@
 ﻿using FlashEditor.Cache.CheckSum;
-using FlashEditor.utils;
+using static FlashEditor.utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -21,8 +21,10 @@ namespace FlashEditor.cache {
         public int flags;
         public bool named;
         public bool usesWhirlpool;
+
         public int validArchivesCount;
         public int[] validArchiveIds;
+        public int type;
 
         internal JagStream stream;
         private RSIdentifiers identifiers;
@@ -33,135 +35,86 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream containing the reference table Container data</param>
         /// <returns>The reference table</returns>
         internal static RSReferenceTable Decode(JagStream stream) {
-            DebugUtil.Debug("Decoding reference table...");
+            Debug("Decoding reference table", LOG_DETAIL.ADVANCED);
 
             //Create a new Reference Table
             RSReferenceTable table = new RSReferenceTable();
 
-            //Read header
             table.format = stream.ReadUnsignedByte();
+
             if(table.format >= 6)
                 table.version = stream.ReadInt();
-            table.flags = stream.ReadUnsignedByte();
 
+            table.flags = stream.ReadUnsignedByte();
+            int validArchivesCount = stream.ReadUnsignedShort();
             table.named = (FLAG_IDENTIFIERS & table.flags) != 0;
             table.usesWhirlpool = (FLAG_WHIRLPOOL & table.flags) != 0;
 
-            table.validArchivesCount = stream.ReadUnsignedShort(); // table.format >= 7 ? stream.ReadSmart() : stream.ReadUnsignedShort();
-            table.validArchiveIds = new int[table.validArchivesCount];
+            Debug("Table version: " + table.version + " | Flags: " + (table.flags == 1 ? "Y" : "N") + " | Archives: " + validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"), LOG_DETAIL.ADVANCED);
 
-            DebugUtil.Debug("Table version: " + table.version + " | Flags: " + table.flags + " | Archives: " + table.validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"));
+            int[] validArchiveIds = new int[validArchivesCount];
 
-            int k = 0, lastArchiveId = 0, size = -1;
+            int k = 0, lastArchiveId = 0;
 
-            for(int index = 0; index < table.validArchivesCount; index++) {
+            for(int index = 0; index < validArchivesCount; index++) {
                 int archiveId = lastArchiveId += stream.ReadUnsignedShort();
-                table.validArchiveIds[index] = archiveId;
-                 table.entries.Add(table.validArchiveIds[index], new RSEntry(k++));
-
-                if(archiveId >= size)
-                    size = archiveId;
+                validArchiveIds[index] = archiveId;
+                Debug("Added table entry " + archiveId, LOG_DETAIL.INSANE);
+                table.entries.Add(archiveId, new RSEntry(k++));
             }
 
             //If named, set the name hash for the archive
-
-            /*
             if(table.named)
-                for(int index = 0; index < table.validArchivesCount; index++)
-                    table.entries[table.validArchiveIds[index]].SetNameHash(stream.ReadInt());
-            */
+                for(int index = 0; index < validArchivesCount; index++)
+                    table.entries[validArchiveIds[index]].SetNameHash(stream.ReadInt());
 
-            //Read the identifiers if present AKA name hashes
-            //FYI this was/is? extremely fucky lol
-            int[] identifiersArray = new int[table.validArchivesCount];
-            if(table.named) {
-                DebugUtil.Debug("Identifiers hash detected. archive ids: " + table.validArchiveIds.Length);
-                for(int id = 0; id < table.validArchivesCount; id++) {
-                    int identifier = stream.ReadInt();
-                    //DebugUtil.Debug("id: " + id + ", valid:" + table.validArchiveIds.Length + ", entries:" + table.entries.Count + ", idents:" + identifiersArray.Length);
-
-                    identifiersArray[id] = identifier;
-                    if(table.entries.ContainsKey(id))
-                        table.entries[id].identifier = identifier;
-                    else
-                        DebugUtil.Debug("Missing entry " + id);
-                }
-            }
-            DebugUtil.Debug("Finished reading identifiers");
-            table.identifiers = new RSIdentifiers(identifiersArray);
-
-            //Read the whirlpool digests if present
+            //If the archive uses whirlpool, set the whirlpool hash
             if(table.usesWhirlpool) {
-                DebugUtil.Debug("Uses whirlpool...");
-                foreach(int id in table.validArchiveIds) {
-                    byte[] whirlpool = new byte[64];
-                    stream.Read(whirlpool, 0, 64);
-                    table.entries[id].SetWhirlpool(whirlpool);
+                for(int index = 0; index < validArchivesCount; index++) {
+                    byte[] whirpool = new byte[64];
+                    stream.Read(whirpool, 0, 64);
+                    table.entries[validArchiveIds[index]].SetWhirlpool(whirpool);
                 }
             }
 
-            //Read the CRC Checksums
-            foreach(int id in table.validArchiveIds)
-                table.entries[id].SetCrc(stream.ReadInt());
+            for(int index = 0; index < validArchivesCount; index++)
+                table.entries[validArchiveIds[index]].SetCrc(stream.ReadInt());
 
-            /*
-            //Read another hash if present
-           
-            if((table.flags & FLAG_HASH) != 0) {
-                DebugUtil.Debug("Special hash detected.");
-                foreach(int id in table.validArchiveIds)
-                    table.entries[id].hash = stream.ReadInt();
-            }*/
+            for(int index = 0; index < validArchivesCount; index++)
+                table.entries[validArchiveIds[index]].SetVersion(stream.ReadInt());
 
-            /*
-            //Read the sizes of the archive
-            if((table.flags & FLAG_SIZES) != 0) {
-                DebugUtil.Debug("Reading sizes of archives");
-                foreach(int id in table.validArchiveIds) {
-                    table.entries[id].compressed = stream.ReadInt();
-                    table.entries[id].uncompressed = stream.ReadInt();
-                }
-            }*/
+            for(int index = 0; index < validArchivesCount; index++)
+                table.entries[validArchiveIds[index]].SetValidFileIds(new int[stream.ReadUnsignedShort()]);
 
-            //Versions
-            foreach(int id in table.validArchiveIds)
-                table.entries[id].SetVersion(stream.ReadInt());
-
-            //Read the child sizes (validfileid lengths)
-            foreach(int id in table.validArchiveIds)
-                table.entries[id].SetValidFileIds(new int[stream.ReadUnsignedShort() /*table.format >= 7 ? stream.ReadSmart() : stream.ReadUnsignedShort()*/]);
-
-            //Read the child ids
-            foreach(int id in table.validArchiveIds) {
-                int lastFileId = 0; //accumulator
-                RSEntry entry = table.entries[id];
-                int[] fileIds = entry.GetValidFileIds();
-
-                //
-                for(int index2 = 0; index2 < fileIds.Length; index2++) {
+            for(int index = 0; index < validArchivesCount; index++) {
+                int lastFileId = 0;
+                int biggestFileId = 0;
+                RSEntry entry = table.entries[validArchiveIds[index]];
+                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++) {
                     int fileId = lastFileId += stream.ReadUnsignedShort();
-                    fileIds[index2] = fileId;
+                    if(fileId > biggestFileId)
+                        biggestFileId = fileId;
+                    entry.GetValidFileIds()[index2] = fileId;
                 }
-
-                int x = 0;
-                foreach(int child in fileIds)
-                    entry.GetEntries().Add(child, new RSChildEntry(x++));
+                entry.SetFiles(new SortedDictionary<int?, RSChildEntry>());
+                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
+                    entry.GetEntries()[entry.GetValidFileIds()[index2]] = new RSChildEntry();
             }
 
-            //If the table is named
             if(table.named) {
-                //Read the child identifiers (name hashes) also
-                foreach(int id in table.validArchiveIds) {
-                    RSEntry entry = table.entries[id];
-                    int[] fileIds = entry.GetValidFileIds();
-
-                    //Read the name hashes for the entries
-                    foreach(int fileId in fileIds)
-                        entry.GetEntries()[fileId].SetNameHash(stream.ReadInt());
+                for(int index = 0; index < validArchivesCount; index++) {
+                    RSEntry entry = table.entries[validArchiveIds[index]];
+                    for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
+                        entry.GetEntries()[entry.GetValidFileIds()[index2]].SetNameHash(stream.ReadInt());
                 }
             }
 
             return table;
+        }
+
+        internal void AddEntry(int containerId, RSEntry entry) {
+            if(!entries.ContainsKey(containerId))
+                entries.Add(containerId, entry);
         }
 
         internal void UpdateStream(JagStream stream) {
@@ -261,6 +214,14 @@ namespace FlashEditor.cache {
 
         internal SortedDictionary<int, RSEntry> GetEntries() {
             return entries;
+        }
+
+        internal void SetType(int type) {
+            this.type = type;
+        }
+
+        public int GetType() {
+            return type;
         }
     }
 }

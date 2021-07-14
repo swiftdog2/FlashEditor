@@ -41,8 +41,8 @@ namespace FlashEditor {
         public static byte[] Bunzip2(byte[] bytes, int decompressedLength) {
             //Prepare a new byte array with the bzip2 header at the start
             byte[] bzip2 = new byte[bytes.Length + 4];
-            bzip2[0] = (byte) 'B'; //Huffman encoding
-            bzip2[1] = (byte) 'Z'; //Huffman encoding
+            bzip2[0] = (byte) 'B';
+            bzip2[1] = (byte) 'Z';
             bzip2[2] = (byte) 'h'; //Huffman encoding
             bzip2[3] = (byte) '1'; //100kB block size
             Array.Copy(bytes, 0, bzip2, 4, bytes.Length);

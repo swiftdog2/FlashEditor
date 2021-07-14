@@ -1,9 +1,5 @@
-﻿using FlashEditor.utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System;
+using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Tracks {
     class Track {
@@ -68,7 +64,7 @@ namespace FlashEditor.Definitions.Tracks {
                         ++keyAfterTchOpcodes;
                     } else {
                         if(opcode != 6) {
-                            DebugUtil.DebugWTF();
+                            DebugWTF();
                         }
 
                         ++progmChangeOpcodes;

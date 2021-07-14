@@ -2,17 +2,39 @@
 
 namespace FlashEditor.utils {
     class DebugUtil {
+        //Change the order of the indexes when you change the layout of the editor tabs
+        public enum LOG_DETAIL {
+            NONE = 0,
+            BASIC = 1,
+            ADVANCED = 2,
+            INSANE = 3
+        };
+
+        //The current logging detail level, change for lower/higher detailed logs
+        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.INSANE;
+
         /// <summary>
         /// Prints out the debug message and waits for user input
         /// </summary>
         /// <param name="output">The debug message</param>
         public static void Debug(string output) {
-            System.Console.WriteLine(output);
-            System.Console.ReadLine();
+            Console.WriteLine(output);
+            Console.ReadLine();
         }
 
+        public static void Debug(string output, LOG_DETAIL level) {
+            //Is logging disabled?
+            if(level == LOG_DETAIL.NONE)
+                return;
+
+            //Otherwise, log if the level is below or equal to current level
+            if(level <= LOG_LEVEL)
+                Debug(output);
+        }
+
+
         public static void Debug2(string output) {
-            System.Console.Write(output);
+            Console.Write(output);
         }
 
         /// <summary>
@@ -37,21 +59,20 @@ namespace FlashEditor.utils {
 
             //Print out the left side (from 0 to length)
             for(int k = 0; k < length; k++) {
-                System.Console.Write("{0} ", (int) (buffer[k] & 0xFF));
+                Console.Write("{0} ", (int) (buffer[k] & 0xFF));
             }
 
             System.Console.Write("...");
 
             //Print out the right side (from length + 1 to end)
-            for(int k = buffer.Length - length; k < buffer.Length; k++) {
-                System.Console.Write("{0} ", (int) (buffer[k] & 0xFF));
-            }
+            for(int k = buffer.Length - length; k < buffer.Length; k++)
+                Console.Write("{0} ", (int) (buffer[k] & 0xFF));
 
-            System.Console.WriteLine();
+            Console.WriteLine();
         }
 
         internal static void WriteLine(string output) {
-            System.Console.WriteLine("'");
+            Console.WriteLine("'");
         }
 
         internal static void DebugWTF() {

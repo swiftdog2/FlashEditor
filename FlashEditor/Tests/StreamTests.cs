@@ -23,7 +23,7 @@ namespace FlashEditor.Tests {
             /*
             JagStream stream = JagStream.Load("C:/Users/CJ/Desktop/shit.txt");
             while(stream.Remaining() > 0)
-                System.Console.WriteLine(stream.ReadInt());
+                Console.WriteLine(stream.ReadInt());
             */
 
             System.Console.ReadLine();

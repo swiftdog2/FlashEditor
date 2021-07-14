@@ -1,4 +1,4 @@
-﻿using FlashEditor.utils;
+﻿using static FlashEditor.utils.DebugUtil;
 using System.IO;
 
 namespace FlashEditor.cache {
@@ -12,15 +12,11 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="cacheDir">the base directory for the cache files</param>
         public RSFileStore(string cacheDir) {
-            //Initialise the channels
-            dataChannel = new RSIndex();
-            metaChannel = new RSIndex();
-
             cacheDir += "/main_file_cache.";
 
             //Load the cache into memory
-            dataChannel = LoadIndex(RSConstants.DAT2_INDEX, cacheDir + "dat2"); //Load the main data file
-            metaChannel = LoadIndex(RSConstants.CRCTABLE_INDEX, cacheDir + "idx255"); //Load the metadata file
+            dataChannel = LoadIndex(RSConstants.DAT2_INDEX, cacheDir + "dat2");
+            metaChannel = LoadIndex(RSConstants.CRCTABLE_INDEX, cacheDir + "idx255");
 
             int count = 0;
 
@@ -49,10 +45,10 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>The number of files</returns>
         public int GetFileCount(int type) {
-            if((type < 0 || type >= indexChannels.Length) && type != RSConstants.CRCTABLE_INDEX)
+            if((type < 0 || type >= indexChannels.Length) & type != RSConstants.CRCTABLE_INDEX)
                 throw new FileNotFoundException("Unable to get file count for type " + type);
 
-            return (int) ((type == RSConstants.CRCTABLE_INDEX ? metaChannel : indexChannels[type]).GetStream().Length / RSIndex.SIZE);
+            return (int) (type == RSConstants.CRCTABLE_INDEX ? metaChannel : indexChannels[type]).GetStream().Length / RSIndex.SIZE;
         }
 
         /// <summary>
@@ -63,13 +59,13 @@ namespace FlashEditor.cache {
         private RSIndex LoadIndex(int id, string directory) {
             if(!File.Exists(directory)) {
                 string errorMsg = "'" + directory + "' could not be found.";
-                DebugUtil.Debug(errorMsg);
+                Debug(errorMsg);
                 throw new FileNotFoundException(errorMsg);
             }
 
             byte[] data = File.ReadAllBytes(directory);
             if(data.Length == 0)
-                DebugUtil.Debug("No data read for directory: " + directory);
+                Debug("No data read for directory: " + directory);
 
             return new RSIndex(id, new JagStream(data));
         }
@@ -99,10 +95,10 @@ namespace FlashEditor.cache {
         */
 
         public void Write(int indexId, int containerId, JagStream data, bool overwrite) {
-            DebugUtil.Debug("Writing index " + indexId + ", container " + containerId + ", data len: " + data.Length);
+            Debug("Writing index " + indexId + ", container " + containerId + ", data len: " + data.Length);
 
             if((indexId < 0 || indexId >= indexChannels.Length) && indexId != 255)
-                throw new FileNotFoundException();
+                throw new FileNotFoundException("Unable to write, invalid index ID: " + indexId);
 
             RSIndex index = indexId == RSConstants.CRCTABLE_INDEX ? metaChannel : indexChannels[indexId];
 
@@ -200,8 +196,8 @@ namespace FlashEditor.cache {
                 sector = new RSSector(indexId, containerId, chunk++, nextSector, bytes);
 
                 JagStream sectorData = sector.Encode();
-                DebugUtil.Debug("Writing sector - Index: " + indexId + ", container: " + containerId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", bytes len: " + bytes.Length);
-                DebugUtil.Debug("Data stream len : " + dataChannel.GetStream().Length + ", sectorData len: " + sectorData.Length + ", ptr: " + ptr);
+                Debug("Writing sector - Index: " + indexId + ", container: " + containerId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", bytes len: " + bytes.Length);
+                Debug("Data stream len : " + dataChannel.GetStream().Length + ", sectorData len: " + sectorData.Length + ", ptr: " + ptr);
                 dataChannel.GetStream().Seek((int) ptr);
                 dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
             }

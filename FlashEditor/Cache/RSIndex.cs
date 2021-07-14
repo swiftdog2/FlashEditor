@@ -25,7 +25,7 @@ namespace FlashEditor.cache {
             SetStream(stream);
         }
 
-        public void ReadHeader() {
+        public void ReadContainerHeader() {
             size = GetStream().ReadMedium();
             sector = GetStream().ReadMedium();
         }
@@ -33,7 +33,7 @@ namespace FlashEditor.cache {
         public static RSIndex Decode(JagStream stream) {
             RSIndex index = new RSIndex();
             index.SetStream(stream);
-            index.ReadHeader();
+            index.ReadContainerHeader();
             return index;
         }
 
