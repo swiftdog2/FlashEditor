@@ -5,6 +5,7 @@ using Ionic.Crc;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
@@ -37,7 +38,6 @@ namespace FlashEditor.cache {
             Debug(@"                             |___/       ");
 
             WriteDataIndex();
-            WriteReferenceTable();
             WriteIndexes();
         }
 
@@ -47,18 +47,7 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>Whether or not the index was successfully written</returns>
         internal void WriteDataIndex() {
-            Debug("Saving Data Index...");
-            JagStream.Save(store.dataChannel.GetStream(), RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.dat2");
-        }
-
-        /// <summary>
-        /// Write the index stream to a file
-        /// </summary>
-        /// <param name="type">The index type</param>
-        /// <returns>Whether or not the index was successfully written</returns>
-        internal void WriteReferenceTable() {
-            Debug("Saving Reference Tables...");
-            WriteIndex(store.metaChannel, RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.idx255");
+            WriteIndex(store.dataChannel, "dat2");
         }
 
         /// <summary>
@@ -67,16 +56,13 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>Whether or not the index was successfully written</returns>
         internal void WriteIndexes() {
-            Debug("Saving indexes...");
-
-            //Write the index channels
-            for(int index = 0; index < GetStore().indexChannels.Length; index++)
-                WriteIndex(GetStore().indexChannels[index], RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.idx" + index);
+            foreach(KeyValuePair<int, RSIndex> index in GetStore().indexChannels)
+                WriteIndex(index.Value, "idx" + index.Key);
         }
 
-        //Simply saves the index encoding to file...
         internal void WriteIndex(RSIndex index, string directory) {
-            JagStream.Save(index.GetStream(), directory);
+            Debug("Saving " + directory + " (size: " + index.GetSize() + ", sectorId: " + index.GetSectorID() + ")");
+            JagStream.Save(index.GetStream(), RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache." + directory);
         }
 
         /**
@@ -95,70 +81,69 @@ namespace FlashEditor.cache {
          * @throws IOException
          *             if an I/O error occurs.
          */
-        public void WriteEntry(int index, int containerId, int entryId, JagStream data) {
-            Debug("Updating Index " + index + ", Archive " + containerId + ", Entry " + entryId);
+        public void WriteEntry(int type, int containerId, int entryId, JagStream data) {
+            Debug("Updating Index " + type + ", container " + containerId + ", Entry " + entryId);
 
-            RSContainer container = GetContainer(index, containerId);
-            RSReferenceTable referenceTable = GetReferenceTable(index);
+            RSReferenceTable referenceTable = GetReferenceTable(type);
             RSEntry entry;
+            int oldArchiveSize = -1;
 
             //Is there an entry in the reference table for this container?
             if(!referenceTable.entries.ContainsKey(containerId)) {
-                Debug("No Entry for RefTable(" + index + ", " + containerId, LOG_DETAIL.ADVANCED);
+                Debug("Generating entry for RefTable(" + type + ", " + containerId, LOG_DETAIL.INSANE);
 
                 //Create a new entry in the reference table, if necessary
                 entry = new RSEntry(containerId);
                 referenceTable.entries.Add(containerId, entry);
-                Debug("Created new entry " + containerId);
             } else {
                 //If there is, retrieve it
-                Debug("Found Entry for RefTable(index " + index + ", container " + containerId + ")", LOG_DETAIL.INSANE);
+                Debug("Found Entry for RefTable(index " + type + ", container " + containerId + ")", LOG_DETAIL.INSANE);
                 entry = referenceTable.entries[containerId];
+                oldArchiveSize = entry.Capacity();
             }
 
-            //Update the entry in the container archive
-            container.GetArchive().UpdateEntry(entryId, new RSEntry(data));
-
             //Add a child entry if one does not exist
-            RSChildEntry child = entry.GetEntry(entryId);
+            RSChildEntry child = entry.GetChildEntry(entryId);
             if(child == null) {
-                Debug("No ChildEntry for Entry " + entryId, LOG_DETAIL.INSANE);
                 child = new RSChildEntry(entryId);
                 entry.PutEntry(entryId, child);
                 Debug("Added new child entry " + entryId, LOG_DETAIL.INSANE);
-            } else {
-                //If there is, retrieve it
-                Debug("Found ChildEntry for Entry " + entryId, LOG_DETAIL.INSANE);
             }
 
-            //Write the reference table out
-            JagStream tableStream = referenceTable.Encode();
+            RSContainer container = GetContainer(type, containerId);
+            RSArchive archive = container.GetArchive();
 
-            //Cache the archive
-            RSArchive arc = container.GetArchive();
+            //Update the entry in the container archive
+            archive.PutEntry(entryId, new RSEntry(data));
 
-            container = new RSContainer(index, tableStream);
+            //Create 'dummy' entries
+            for(int id = 0; id < archive.EntryCount(); id++) {
+                if(archive.GetEntry(id) == null) {
+                    entry.PutEntry(id, new RSChildEntry(id));
+                    archive.PutEntry(id, new RSEntry(new JagStream(1)));
+                }
+            }
 
-            //store.WriteDataIndex(index, containerId, container.Encode(), true);
+            //Write the reference table out again
+            RSContainer tableContainer = new RSContainer(referenceTable.Encode());
+            Debug("cache.writeentry1 index " + type + ", container " + containerId);
+            store.Write(RSConstants.META_INDEX, type, tableContainer.Encode(), true);
 
             //And write the archive back to memory
-            container = new RSContainer(container.GetType(), arc.Encode(), container.GetVersion());
-            WriteIndex(index, containerId, container);
+            container = new RSContainer(archive.Encode(), container.GetVersion());
+            WriteIndex(type, containerId, container);
+            Debug("cache.writeentry2, index " + type + ", container " + containerId);
         }
 
         /**
         * Writes a file to the cache and updates the ReferenceTable that it is associated with.
         */
-        internal void WriteIndex(int indexId, int containerId, RSContainer container) {
-            if(indexId == RSConstants.META_INDEX)
+        internal void WriteIndex(int type, int containerId, RSContainer container) {
+            if(type == RSConstants.META_INDEX)
                 throw new IOException("Reference tables can only be modified with the low level FileStore API!");
 
-
-            //Get the reference table container
-            RSContainer tableContainer = GetContainer(RSConstants.META_INDEX, indexId);
-
             //Decode the reference table for this index
-            RSReferenceTable table = GetReferenceTable(indexId);
+            RSReferenceTable table = GetReferenceTable(type);
 
             //Grab the bytes we need for the checksum
             JagStream stream = container.Encode();
@@ -169,18 +154,18 @@ namespace FlashEditor.cache {
 
             //Calculate the new CRC checksum
             CRC32 crc = new CRC32();
+            int crcValue = crc.GetCrc32(hashableStream);
 
             //Update the version and checksum for this file
             RSEntry entry = table.GetEntry(containerId);
 
             //Create a new entry for the file
-            if(entry == null)
-                table.AddEntry(containerId, new RSEntry(containerId));
+            if(entry == null) {
+                entry = new RSEntry(containerId);
+                table.PutEntry(containerId, entry);
+            }
 
             entry.SetVersion(container.GetVersion());
-
-            //Calculate the CRC
-            int crcValue = crc.GetCrc32(hashableStream);
             entry.SetCrc(crcValue);
 
             //Calculate and update the whirlpool digest if we need to
@@ -190,74 +175,69 @@ namespace FlashEditor.cache {
             }
 
             //Save the reference table
-            tableContainer = new RSContainer(tableContainer.GetType(), table.Encode());
-            store.WriteDataIndex(RSConstants.META_INDEX, indexId, tableContainer.Encode(), false);
+            RSContainer tableContainer = new RSContainer(table.Encode());
+            tableContainer.SetType(type);
+
+            Debug("cache.write 1, index " + type + ", container " + containerId);
+            store.Write(RSConstants.META_INDEX, type, tableContainer.Encode(), true);
 
             //Save the file itself
-            store.WriteDataIndex(indexId, containerId, hashableStream, true);
+            Debug("cache.write 2, index " + type + ", container " + containerId);
+            store.Write(type, containerId, stream, true);
         }
 
         /// <summary>
         /// Reads the container from the index stream, decodes it,
         /// caches it for later and returns the container
         /// </summary>
-        /// <param name="index">The indice type</param>
+        /// <param name="type">The indice type</param>
         /// <param name="containerId">The container index</param>
-        /// <returns>Container with index <paramref name="containerId"/> from the specified <paramref name="index"/></returns>
-        public RSContainer GetContainer(int index, int containerId) {
-            Debug("\tLoading container index " + index + ", container " + containerId, LOG_DETAIL.ADVANCED);
+        /// <returns>Container with index <paramref name="containerId"/> from the specified <paramref name="type"/></returns>
+        public RSContainer GetContainer(int type, int containerId) {
+            if(containerId < 0 || containerId > store.GetFileCount(type))
+                throw new FileNotFoundException("Could not find container type " + type);
 
-            if(containerId < 0 || containerId > store.GetFileCount(index))
-                throw new FileNotFoundException("Could not find container type " + index);
+            //Initialise the container dictionary
+            if(!containers.ContainsKey(type))
+                containers.Add(type, new SortedDictionary<int, RSContainer>());
 
-            //If the index has not had any containers loaded yet
-            if(!containers.ContainsKey(index)) {
-                //Allocate a new dictionary of containers
-                containers.Add(index, new SortedDictionary<int, RSContainer>());
-                Debug("\tAssigned new dictionary for index " + index + " containers", LOG_DETAIL.ADVANCED);
-            }
-
-            //Has this container already been cached?
-            if(containers[index].ContainsKey(containerId)) {
-                //Return the cached container
-                Debug("\tFound   container index " + index + ", container " + containerId, LOG_DETAIL.ADVANCED);
-                return containers[index][containerId];
-            }
+            //Return the container if already cached
+            if(containers[type].ContainsKey(containerId))
+                return containers[type][containerId];
 
             //Read the data from the index
-            JagStream data = LoadContainer(index, containerId);
+            JagStream data = LoadContainer(type, containerId);
 
             //Decode the container
             RSContainer container = RSContainer.Decode(data);
 
             if(container == null)
-                throw new FileNotFoundException("Could not find container type " + index + ", file " + containerId);
+                throw new FileNotFoundException("NULL CONTAINER? (type: " + type + ", container: " + containerId + ")");
+
+            container.SetType(type);
+            container.SetId(containerId);
 
             //Cache the container for later usage
-            container.SetFile(containerId);
-            container.SetType(index);
-            containers[index].Add(containerId, container);
+            containers[type].Add(containerId, container);
 
-            return containers[index][containerId];
+            return containers[type][containerId];
         }
 
         /// <summary>
         /// Loads the container data from the RSIndex
         /// </summary>
-        /// <param name="indexId">The index type</param>
+        /// <param name="type">The index type</param>
         /// <param name="containerId">The container index</param>
         /// <returns>A <c>JagStream</c> containing the container data</returns>
-        internal JagStream LoadContainer(int indexId, int containerId) {
-            Debug("Loading index " + indexId + ", container " + containerId, LOG_DETAIL.ADVANCED);
-
-            //Get the specified index
-            RSIndex index = GetIndex(indexId);
+        internal JagStream LoadContainer(int type, int containerId) {
+            Debug("Loading type " + type + ", container " + containerId, LOG_DETAIL.ADVANCED);
+            RSIndex index = store.GetIndex(type);
 
             //Find the beginning of the index
             long pos = containerId * RSIndex.SIZE;
 
             if(pos < 0 || pos >= index.GetStream().Length)
-                throw new FileNotFoundException("Position is out of bounds for type " + indexId + ", id " + containerId);
+                throw new FileNotFoundException("Position is out of bounds for type " + type + ", id " + containerId);
 
             //Seek to the container in the index stream
             index.GetStream().Seek(pos);
@@ -302,12 +282,12 @@ namespace FlashEditor.cache {
                     remaining -= RSSector.DATA_LEN;
 
                     //Basically the cache was corrupted
-                    if(sector.GetType() != indexId)
-                        throw new IOException("File type mismatch.");
+                    if(sector.GetType() != type)
+                        throw new IOException("File type mismatch, " + sector.GetType() + ", " + type);
                     if(sector.GetId() != containerId)
-                        throw new IOException("File id mismatch.");
+                        throw new IOException("File id mismatch, " + sector.GetId() + ", " + containerId);
                     if(sector.GetChunk() != chunk++)
-                        throw new IOException("Chunk mismatch.");
+                        throw new IOException("Chunk mismatch, " + sector.GetChunk() + ", " + chunk);
 
                     //Then move the pointer to the next sector
                     pos = (sectorId = sector.GetNextSector()) * RSSector.SIZE;
@@ -323,15 +303,6 @@ namespace FlashEditor.cache {
             //Return the data stream back to it's original position
             store.dataChannel.GetStream().Seek(0);
             return containerData.Flip();
-        }
-
-        internal RSIndex GetIndex(int type) {
-            //Check if index is out of bounds
-            if((type < 0 || type >= store.indexChannels.Length) && type != RSConstants.META_INDEX)
-                throw new FileNotFoundException("Index " + type + " could not be found.");
-
-            //Retrieve the index channel we are looking for
-            return type == RSConstants.META_INDEX ? store.metaChannel : store.indexChannels[type];
         }
 
         /// <summary>
@@ -351,9 +322,10 @@ namespace FlashEditor.cache {
             Debug(@"                                  |___/                                               ");
 
             //Attempt to load all of the reference tables
-            for(int index = 0; index < store.GetTypeCount(); index++) {
+
+            for(int type = 0; type < store.GetTypeCount(); type++) {
                 try {
-                    GetReferenceTable(index);
+                    GetReferenceTable(type);
                 } catch(FileNotFoundException ex) {
                     Debug(ex.Message);
                 }
@@ -371,9 +343,7 @@ namespace FlashEditor.cache {
             if(containerId < 0 || containerId > store.GetTypeCount())
                 throw new FileNotFoundException("\tERROR - Reference table " + containerId + " out of bounds");
 
-            //If the ReferenceTable has been cached, return it
             if(referenceTables[containerId] == null) {
-                //Get the container for the reference table
                 RSContainer container = GetContainer(RSConstants.META_INDEX, containerId);
 
                 if(container == null)
@@ -382,42 +352,36 @@ namespace FlashEditor.cache {
                 //Get the stream containing the Container data
                 JagStream containerStream = container.GetStream();
 
-                //Decode and cache the reference table
-                if(containerStream.Length > 0 && containerStream.CanRead) {
-                    RSReferenceTable refTbl = RSReferenceTable.Decode(containerStream);
-                    refTbl.SetType(containerId);
-                    referenceTables[containerId] = refTbl;
-                    Debug("...Decoded reference table " + containerId, LOG_DETAIL.ADVANCED);
-                }
+                RSReferenceTable refTable = RSReferenceTable.Decode(containerStream);
+                refTable.SetType(containerId); //for the UI
+                referenceTables[containerId] = refTable;
+                Debug("...Decoded reference table " + containerId, LOG_DETAIL.ADVANCED);
             }
 
             return referenceTables[containerId];
         }
 
         /// <summary>
-        /// Retrieve the file from the <paramref name="index"/> index, entry <paramref name="file"/> in archive <paramref name="archive"/>
+        /// Retrieve the file from the <paramref name="type"/> index, entry <paramref name="file"/> in archive <paramref name="archive"/>
         /// </summary>
-        /// <param name="index">The index to search</param>
+        /// <param name="type">The index to search</param>
         /// <param name="archive">The archive index</param>
         /// <param name="file">The individual file entry index</param>
         /// <returns>The entry within the archive</returns>
-        internal RSEntry ReadEntry(int index, int archive, int file) {
+        internal RSEntry ReadEntry(int type, int archive, int file) {
             //Grab the container for the index and the reference table
-            RSContainer container = GetContainer(index, archive);
+            RSContainer container = GetContainer(type, archive);
 
             //Get the corresponding ReferenceTable for this container type
-            RSReferenceTable refTable = GetReferenceTable(index);
+            RSReferenceTable refTable = GetReferenceTable(type);
 
             //Check if the file/member are valid
             RSEntry entry = refTable.GetEntry(archive);
             if(entry == null || file < 0 || file >= entry.GetValidFileIds().Length)
-                throw new FileNotFoundException("\tUnable to find member " + file + ", in type " + index + ", file " + archive);
-
-            //Get the archive for the type, file
-            RSArchive arc = GetArchive(container, entry.GetValidFileIds().Length);
+                throw new FileNotFoundException("\tUnable to find member " + file + ", in type " + type + ", file " + archive);
 
             //Get the Entry from the Container's Archive
-            return container.GetArchive().GetEntry(file);
+            return GetArchive(container, entry.GetValidFileIds().Length).GetEntry(file);
         }
 
         /// <summary>
@@ -434,11 +398,10 @@ namespace FlashEditor.cache {
             //Otherwise, construct the archive from the container
             RSArchive archive = RSArchive.Decode(container.GetStream(), fileCount);
             if(archive == null)
-                Debug("wat the fuck");
+                throw new NullReferenceException("Archive is null");
 
             container.SetArchive(archive);
 
-            //Finally, return the archive
             return archive;
         }
 
@@ -464,7 +427,6 @@ namespace FlashEditor.cache {
             RSEntry entry = ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, entryId);
             ItemDefinition def = new ItemDefinition(entry.GetStream());
             def.SetId(archive * 256 + entryId);
-            //entry.stream.Clear();
             return def;
         }
 

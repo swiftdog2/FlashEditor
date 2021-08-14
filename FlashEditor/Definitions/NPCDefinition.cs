@@ -482,13 +482,13 @@ namespace FlashEditor {
 
             /*
             translations = new int[modelIds == null ? 0 : modelIds.Length][];
-            int length = (stream.WriteByte());
+            int length = (stream.WriteByte2());
             for(int i_62_ = 0; ((i_62_ ^ 0xffffffff) > (length ^ 0xffffffff)); i_62_++) {
-                int index = stream.WriteByte();
+                int index = stream.WriteByte2();
                 int[] nigga = (translations[index] = (new int[3]));
-                nigga[0] = stream.WriteByte();
-                nigga[1] = stream.WriteByte();
-                nigga[2] = stream.WriteByte();
+                nigga[0] = stream.WriteByte2();
+                nigga[1] = stream.WriteByte2();
+                nigga[2] = stream.WriteByte2();
             }
         } else*/
 

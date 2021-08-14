@@ -137,15 +137,15 @@ namespace FlashEditor.Cache {
             entries = new CheckSumEntry[size];
         }
 
-        public JagStream encode() {
-            return encode(false);
+        public JagStream Encode() {
+            return Encode(false);
         }
 
-        public JagStream encode(bool whirlpool) {
-            return encode(whirlpool, null, null);
+        public JagStream Encode(bool whirlpool) {
+            return Encode(whirlpool, null, null);
         }
 
-        public JagStream encode(bool whirlpool, BigInteger modulus, BigInteger privateKey) {
+        public JagStream Encode(bool whirlpool, BigInteger modulus, BigInteger privateKey) {
             /*
             JagStream os = new JagStream();
 

@@ -7,16 +7,14 @@ namespace FlashEditor.cache {
     internal class RSEntry {
         private JagStream stream = new JagStream(); //ensure there is a default stream
         public int identifier = -1;
-        public int crc;
         public int hash;
         public byte[] whirlpool = new byte[64];
+        public int crc;
         public int version;
         public int id;
 
         private SortedDictionary<int?, RSChildEntry> childEntries = new SortedDictionary<int?, RSChildEntry>();
         private int[] validFileIds;
-        internal int compressed;
-        internal int uncompressed;
 
         public RSEntry(int id) {
             this.id = id;
@@ -84,12 +82,6 @@ namespace FlashEditor.cache {
             return (int) childEntries.Keys.Last() + 1;
         }
 
-        public virtual RSChildEntry GetChildEntry(int id) {
-            if(!childEntries.ContainsKey(id))
-                return null;
-            return childEntries[id];
-        }
-
         public virtual void PutEntry(int id, RSChildEntry entry) {
             childEntries.Add(id, entry);
         }
@@ -98,7 +90,7 @@ namespace FlashEditor.cache {
             childEntries.Remove(id);
         }
 
-        public virtual SortedDictionary<int?, RSChildEntry> GetEntries() {
+        public virtual SortedDictionary<int?, RSChildEntry> GetChildEntries() {
             return childEntries;
         }
 
@@ -132,10 +124,10 @@ namespace FlashEditor.cache {
             return hash;
         }
 
-        internal RSChildEntry GetEntry(int member) {
-            if(!GetEntries().ContainsKey(member))
+        internal RSChildEntry GetChildEntry(int member) {
+            if(!GetChildEntries().ContainsKey(member))
                 return null;
-            return GetEntries()[member];
+            return GetChildEntries()[member];
         }
     }
 }

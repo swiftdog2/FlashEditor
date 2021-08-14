@@ -31,13 +31,13 @@ namespace FlashEditor.cache {
             stream.Seek(stream.Length - 1);
             archive.chunks = stream.ReadUnsignedByte();
 
-            Debug("Chunk count: " + archive.chunks, LOG_DETAIL.ADVANCED);
+            Debug("Chunk count: " + archive.chunks, LOG_DETAIL.INSANE);
 
             //Read the sizes of the child entries and individual chunks
             int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(archive.chunks, size);
             int[] entrySizes = new int[size];
 
-            Debug("Entry count: " + size, LOG_DETAIL.ADVANCED);
+            Debug("Entry count: " + size, LOG_DETAIL.INSANE);
 
             stream.Seek(stream.Length - 1 - archive.chunks * size * 4);
 
@@ -109,11 +109,11 @@ namespace FlashEditor.cache {
             //Write the chunk lengths
             int prev = 0;
             for(int chunk = 0; chunk < chunks; chunk++) {
-                foreach(KeyValuePair<int, RSEntry> entry in entries) { 
+                foreach(KeyValuePair<int, RSEntry> entry in entries) {
                     //Archive is broken into chunks, which is the entry stream data
-                    long chunkSize = entry.Value.GetStream().Length; //Therefore chunk size is entry stream length
+                    int chunkSize = (int) entry.Value.GetStream().Length; //Therefore chunk size is entry stream length
                     stream.WriteInteger(chunkSize - prev); //So delta is the difference between the chunk sizes
-                    prev = (int) chunkSize; //Store the size of the last entry
+                    prev = chunkSize; //Store the size of the last entry
                 }
             }
 
@@ -124,11 +124,6 @@ namespace FlashEditor.cache {
             return stream.Flip();
         }
 
-        public void UpdateEntry(RSEntry entry, int id) {
-            entries[id] = entry;
-        }
-
-
         /// <summary>
         /// Returns the file at the specified index id
         /// </summary>
@@ -138,11 +133,20 @@ namespace FlashEditor.cache {
             return entries[id];
         }
 
-        internal void UpdateEntry(int entryId, RSEntry entry) {
-            if(!entries.ContainsKey(entryId))
-                throw new ArgumentException("Entry " + entryId + " is out of bounds. Entry Total: " + entries.Count);
+        public int EntryCount() {
+            return entries.Count;
+        }
 
-            entries[entryId] = entry;
+        internal void PutEntry(int entryId, RSEntry entry) {
+            if(entries.ContainsKey(entryId)) {
+                //Update the entry
+                entries[entryId] = entry;
+            } else {
+                //Add a new entry to the archive, expanding it
+                entries.Add(entryId, entry);
+                Debug("New entry " + entryId + " added, new total: " + entries.Count, LOG_DETAIL.INSANE);
+            }
+
             Debug("Updated archive entry " + entryId + ", len: " + entry.GetStream().Length, LOG_DETAIL.ADVANCED);
         }
     }

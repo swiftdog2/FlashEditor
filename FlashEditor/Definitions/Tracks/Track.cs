@@ -64,7 +64,7 @@ namespace FlashEditor.Definitions.Tracks {
                         ++keyAfterTchOpcodes;
                     } else {
                         if(opcode != 6) {
-                            DebugWTF();
+                            Debug("wtf?");
                         }
 
                         ++progmChangeOpcodes;

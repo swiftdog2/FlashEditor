@@ -56,12 +56,14 @@ namespace FlashEditor {
                 return ReadUnsignedByte();
             return ReadUnsignedShort() - 32768;
         }
+
         public int ReadUnsignedSmart() {
             int first = ReadUnsignedByte();
             Position -= 1; // go back a one.
             return first < 128 ? ReadUnsignedByte() - 64
                     : ReadUnsignedShort() - 49152;
         }
+
         public int ReadSpecialSmart() {
             int first = ReadUnsignedByte();
             Position -= 1; // go back a one.
@@ -119,12 +121,10 @@ namespace FlashEditor {
             StringBuilder sb = new StringBuilder();
             int b;
 
-            Debug2("Name: '");
-            while((b = ReadByte()) != 0) {
-                Debug2(b + " ");
+            while((b = ReadByte()) != 0)
                 sb.Append((char) b);
-            }
-            DebugUtil.WriteLine("'");
+
+            WriteLine("'");
             return sb.ToString();
         }
 
@@ -200,6 +200,7 @@ namespace FlashEditor {
         /*
          * Methods for writing to the JagStream
          */
+
         internal void WriteUByte(byte b) {
             WriteByte((byte) (b & 0xFF));
         }
@@ -207,15 +208,15 @@ namespace FlashEditor {
         internal void WriteString(string s) {
             foreach(char c in s.ToCharArray())
                 WriteByte((byte) c);
+
             //terminate the string with 0
             WriteByte(0);
+
             //apparently 317 format is terminated with 10
         }
 
         /**
          * Interesting method ripped from kfricilone's openRS
-
-         
          * Converts the contents of the specified byte buffer to a string, which is
         * formatted similarly to the output of the {@link Arrays#toString()}
         * method.
@@ -243,8 +244,8 @@ namespace FlashEditor {
         */
 
         internal void WriteShort(short value) {
-            WriteByte((byte) (value & 0xFF));
-            WriteByte((byte) ((value >> 8) & 0xFF));
+            byte[] bytes = { (byte) (value & 0xFF), (byte) ((value >> 8) & 0xFF) };
+            Write(bytes, 0, 2);
         }
 
         internal void WriteShort(int value) {
@@ -252,9 +253,8 @@ namespace FlashEditor {
         }
 
         internal void WriteMedium(int value) {
-            WriteByte((byte) (value >> 16));
-            WriteByte((byte) (value >> 8));
-            WriteByte((byte) value);
+            byte[] bytes = { (byte) (value >> 16) , (byte) (value >> 8) , (byte) value };
+            Write(bytes, 0, 3);
         }
 
         internal void WriteVarInt(int var63) {
@@ -262,10 +262,8 @@ namespace FlashEditor {
         }
 
         internal void WriteInteger(int value) {
-            WriteByte((byte) (value >> 24));
-            WriteByte((byte) (value >> 16));
-            WriteByte((byte) (value >> 8));
-            WriteByte((byte) value);
+            byte[] bytes = { (byte) (value >> 24), (byte) (value >> 16), (byte) (value >> 8), (byte) value };
+            Write(bytes, 0, 4);
         }
 
         internal void WriteInteger(long value) {
@@ -319,7 +317,8 @@ namespace FlashEditor {
         /// <param name="stream">The stream to write to file</param>
         /// <param name="directory">The directory to write the file to</param>
         public static void Save(JagStream stream, string directory) {
-            Debug("Saving to --" + directory + "--");
+            if(stream == null)
+                throw new NullReferenceException("Stream was null");
 
             using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
                 byte[] bytes = new byte[stream.Length];

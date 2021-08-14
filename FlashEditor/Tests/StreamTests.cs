@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FlashEditor.utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -7,6 +8,20 @@ using System.Threading.Tasks;
 namespace FlashEditor.Tests {
     class StreamTests {
         static void Main() {
+            Idk();
+        }
+
+        static void Idk() {
+            JagStream stream = new JagStream();
+            for(int k = 0; k < 50; k++) {
+                stream.WriteByte((byte) k);
+                stream.Position++;
+            }
+
+            DebugUtil.PrintByteArray(stream.ToArray());
+        }
+
+        static void Whatever() {
             using(JagStream s = new JagStream()) {
                 Random r = new Random();
 

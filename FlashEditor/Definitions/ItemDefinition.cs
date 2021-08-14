@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 
 namespace FlashEditor {
-    internal class ItemDefinition {
+    internal class ItemDefinition : ICloneable {
         public string name;
         public int id;
         public bool[] decoded = new bool[256];
@@ -74,6 +74,9 @@ namespace FlashEditor {
             Decode(stream);
         }
 
+        public ItemDefinition Clone() { return (ItemDefinition) MemberwiseClone(); }
+        object ICloneable.Clone() { return Clone(); }
+
         public int GetId() {
             return id;
         }
@@ -110,7 +113,7 @@ namespace FlashEditor {
                         sb.Append(k + " ");
                 }
             }
-            //Debug(name + " OPCODEs: " + sb.ToString());
+            Debug((name == null ? "null" : name) + " (stream len " + stream.Length + "), OPCODEs: " + sb.ToString(), LOG_DETAIL.INSANE);
         }
 
         /// <summary>
@@ -378,7 +381,7 @@ namespace FlashEditor {
             stream.WriteShort(femaleWearModel2);
 
             //dunno what 27 is for
-            //stream.WriteByte(27);
+            //stream.WriteByte2(27);
 
             for(int opcode = 30; opcode < 35; opcode++) {
                 if(groundOptions[opcode - 30] != null) {
@@ -413,9 +416,9 @@ namespace FlashEditor {
             }
 
             /*
-            stream.WriteByte(42);
+            stream.WriteByte2(42);
             for(int k = 0; k < length; k++)
-                stream.WriteByte();
+                stream.WriteByte2();
                 */
 
             if(hasNameColor) {
@@ -424,10 +427,10 @@ namespace FlashEditor {
             }
 
             /*
-            stream.WriteByte(44);
+            stream.WriteByte2(44);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(45);
+            stream.WriteByte2(45);
             stream.WriteShort(0); //???
             */
 
@@ -441,26 +444,26 @@ namespace FlashEditor {
             stream.WriteShort(colourEquip2);
 
             /*
-            stream.WriteByte(90);
+            stream.WriteByte2(90);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(91);
+            stream.WriteByte2(91);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(92);
+            stream.WriteByte2(92);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(93);
+            stream.WriteByte2(93);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(94);
+            stream.WriteByte2(94);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(95);
+            stream.WriteByte2(95);
             stream.WriteShort(0); //???
 
-            stream.WriteByte(96);
-            stream.WriteByte(0); //???
+            stream.WriteByte2(96);
+            stream.WriteByte2(0); //???
             */
 
             stream.WriteByte(97);
@@ -477,13 +480,13 @@ namespace FlashEditor {
             }
 
             /*
-            stream.WriteByte(110);
+            stream.WriteByte2(110);
             stream.WriteShort(0);
 
-            stream.WriteByte(111);
+            stream.WriteByte2(111);
             stream.WriteShort(0);
 
-            stream.WriteByte(112);
+            stream.WriteByte2(112);
             stream.WriteShort(0);
             */
 

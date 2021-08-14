@@ -62,20 +62,19 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <returns>A buffer containing the sector header data</returns>
         public JagStream Encode() {
-            //Create a variable size JagStream
-            JagStream sector = new JagStream(SIZE);
+            JagStream stream = new JagStream(SIZE);
 
             if(id > ushort.MaxValue)
-                sector.WriteInteger(id);
+                stream.WriteInteger(id);
             else
-                sector.WriteShort(id);
+                stream.WriteShort(id);
 
-            sector.WriteShort((short) chunk);
-            sector.WriteMedium(nextSector);
-            sector.WriteByte((byte) type);
-            sector.Write(data, 0, data.Length);
+            stream.WriteShort((short) chunk);
+            stream.WriteMedium(nextSector);
+            stream.WriteByte((byte) type);
+            stream.Write(data, 0, data.Length);
 
-            return sector.Flip();
+            return stream.Flip();
         }
 
         public new int GetType() {

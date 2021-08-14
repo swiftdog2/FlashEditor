@@ -47,7 +47,15 @@
             this.namedCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.usesWhirlpoolCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.tabPage2 = new System.Windows.Forms.TabPage();
+            this.ContainerListView = new BrightIdeasSoftware.TreeListView();
+            this.olvColumn1 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumn2 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.CompressCol = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumn5 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumn3 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumn6 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.groupBox1 = new System.Windows.Forms.GroupBox();
+            this.button4 = new System.Windows.Forms.Button();
             this.ItemEditorTab = new System.Windows.Forms.TabPage();
             this.groupBox4 = new System.Windows.Forms.GroupBox();
             this.ItemLoadingLabel = new System.Windows.Forms.Label();
@@ -101,13 +109,14 @@
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
             this.EditButton = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.button4 = new System.Windows.Forms.Button();
             this.menuStrip1.SuspendLayout();
             this.EditorTabControl.SuspendLayout();
             this.Console.SuspendLayout();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).BeginInit();
+            this.tabPage2.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.ContainerListView)).BeginInit();
             this.groupBox1.SuspendLayout();
             this.ItemEditorTab.SuspendLayout();
             this.groupBox4.SuspendLayout();
@@ -331,6 +340,7 @@
             // 
             // tabPage2
             // 
+            this.tabPage2.Controls.Add(this.ContainerListView);
             this.tabPage2.Location = new System.Drawing.Point(4, 31);
             this.tabPage2.Name = "tabPage2";
             this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
@@ -338,6 +348,82 @@
             this.tabPage2.TabIndex = 1;
             this.tabPage2.Text = "Containers";
             this.tabPage2.UseVisualStyleBackColor = true;
+            // 
+            // ContainerListView
+            // 
+            this.ContainerListView.AllColumns.Add(this.olvColumn1);
+            this.ContainerListView.AllColumns.Add(this.olvColumn2);
+            this.ContainerListView.AllColumns.Add(this.CompressCol);
+            this.ContainerListView.AllColumns.Add(this.olvColumn5);
+            this.ContainerListView.AllColumns.Add(this.olvColumn3);
+            this.ContainerListView.AllColumns.Add(this.olvColumn6);
+            this.ContainerListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.ContainerListView.CellEditUseWholeCell = false;
+            this.ContainerListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.olvColumn1,
+            this.olvColumn2,
+            this.CompressCol,
+            this.olvColumn5,
+            this.olvColumn3,
+            this.olvColumn6});
+            this.ContainerListView.Cursor = System.Windows.Forms.Cursors.Default;
+            this.ContainerListView.Font = new System.Drawing.Font("Consolas", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.ContainerListView.HideSelection = false;
+            this.ContainerListView.Location = new System.Drawing.Point(-4, -1);
+            this.ContainerListView.Name = "ContainerListView";
+            this.ContainerListView.ShowGroups = false;
+            this.ContainerListView.Size = new System.Drawing.Size(738, 411);
+            this.ContainerListView.TabIndex = 1;
+            this.ContainerListView.UseCompatibleStateImageBehavior = false;
+            this.ContainerListView.View = System.Windows.Forms.View.Details;
+            this.ContainerListView.VirtualMode = true;
+            // 
+            // olvColumn1
+            // 
+            this.olvColumn1.AspectName = "type";
+            this.olvColumn1.IsEditable = false;
+            this.olvColumn1.Text = "Type";
+            this.olvColumn1.Width = 67;
+            // 
+            // olvColumn2
+            // 
+            this.olvColumn2.AspectName = "id";
+            this.olvColumn2.IsEditable = false;
+            this.olvColumn2.Text = "ID";
+            this.olvColumn2.Width = 74;
+            // 
+            // CompressCol
+            // 
+            this.CompressCol.AspectName = "compressionType";
+            this.CompressCol.AspectToStringFormat = "";
+            this.CompressCol.IsEditable = false;
+            this.CompressCol.Text = "Compression";
+            this.CompressCol.Width = 112;
+            // 
+            // olvColumn5
+            // 
+            this.olvColumn5.AspectName = "version";
+            this.olvColumn5.Hideable = false;
+            this.olvColumn5.IsEditable = false;
+            this.olvColumn5.Text = "Version";
+            this.olvColumn5.Width = 90;
+            // 
+            // olvColumn3
+            // 
+            this.olvColumn3.AspectName = "length";
+            this.olvColumn3.IsEditable = false;
+            this.olvColumn3.Text = "Length";
+            this.olvColumn3.Width = 79;
+            // 
+            // olvColumn6
+            // 
+            this.olvColumn6.AspectName = "decompressedLength";
+            this.olvColumn6.FillsFreeSpace = true;
+            this.olvColumn6.IsEditable = false;
+            this.olvColumn6.Text = "Decompressed Length";
+            this.olvColumn6.Width = 183;
             // 
             // groupBox1
             // 
@@ -351,6 +437,17 @@
             this.groupBox1.TabIndex = 5;
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Cache Tests";
+            // 
+            // button4
+            // 
+            this.button4.BackColor = System.Drawing.Color.White;
+            this.button4.Location = new System.Drawing.Point(6, 29);
+            this.button4.Name = "button4";
+            this.button4.Size = new System.Drawing.Size(238, 35);
+            this.button4.TabIndex = 2;
+            this.button4.Text = "Compare to Output";
+            this.button4.UseVisualStyleBackColor = false;
+            this.button4.Click += new System.EventHandler(this.button4_Click);
             // 
             // ItemEditorTab
             // 
@@ -496,6 +593,7 @@
             this.ItemListView.View = System.Windows.Forms.View.Details;
             this.ItemListView.VirtualMode = true;
             this.ItemListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ItemListView_CellEditFinished);
+            this.ItemListView.ItemSelectionChanged += new System.Windows.Forms.ListViewItemSelectionChangedEventHandler(this.ItemListView_ItemSelectionChanged);
             // 
             // ItemID
             // 
@@ -801,9 +899,9 @@
             this.groupBox6.Controls.Add(this.button2);
             this.groupBox6.Controls.Add(this.button3);
             this.groupBox6.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox6.Location = new System.Drawing.Point(973, 185);
+            this.groupBox6.Location = new System.Drawing.Point(750, 180);
             this.groupBox6.Name = "groupBox6";
-            this.groupBox6.Size = new System.Drawing.Size(250, 321);
+            this.groupBox6.Size = new System.Drawing.Size(250, 255);
             this.groupBox6.TabIndex = 16;
             this.groupBox6.TabStop = false;
             this.groupBox6.Text = "Editor Controls";
@@ -814,7 +912,7 @@
             this.NPCLoadingLabel.AutoSize = true;
             this.NPCLoadingLabel.BackColor = System.Drawing.Color.Transparent;
             this.NPCLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.NPCLoadingLabel.Location = new System.Drawing.Point(2, 237);
+            this.NPCLoadingLabel.Location = new System.Drawing.Point(2, 171);
             this.NPCLoadingLabel.Name = "NPCLoadingLabel";
             this.NPCLoadingLabel.Size = new System.Drawing.Size(117, 19);
             this.NPCLoadingLabel.TabIndex = 17;
@@ -825,7 +923,7 @@
             // 
             this.NPCProgressBar.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.NPCProgressBar.ForeColor = System.Drawing.Color.DarkRed;
-            this.NPCProgressBar.Location = new System.Drawing.Point(0, 259);
+            this.NPCProgressBar.Location = new System.Drawing.Point(0, 193);
             this.NPCProgressBar.Name = "NPCProgressBar";
             this.NPCProgressBar.Size = new System.Drawing.Size(250, 60);
             this.NPCProgressBar.TabIndex = 8;
@@ -856,7 +954,7 @@
             this.groupBox7.BackColor = System.Drawing.Color.White;
             this.groupBox7.Controls.Add(this.checkBox3);
             this.groupBox7.Font = new System.Drawing.Font("Consolas", 14.25F);
-            this.groupBox7.Location = new System.Drawing.Point(973, 8);
+            this.groupBox7.Location = new System.Drawing.Point(747, 3);
             this.groupBox7.Name = "groupBox7";
             this.groupBox7.Size = new System.Drawing.Size(250, 171);
             this.groupBox7.TabIndex = 15;
@@ -896,12 +994,12 @@
             this.NPCListView.FullRowSelect = true;
             this.NPCListView.GridLines = true;
             this.NPCListView.HideSelection = false;
-            this.NPCListView.Location = new System.Drawing.Point(6, 5);
+            this.NPCListView.Location = new System.Drawing.Point(-4, 0);
             this.NPCListView.Name = "NPCListView";
             this.NPCListView.RowHeight = 10;
             this.NPCListView.ShowGroups = false;
             this.NPCListView.ShowImagesOnSubItems = true;
-            this.NPCListView.Size = new System.Drawing.Size(961, 498);
+            this.NPCListView.Size = new System.Drawing.Size(748, 438);
             this.NPCListView.TabIndex = 18;
             this.NPCListView.UseCompatibleStateImageBehavior = false;
             this.NPCListView.View = System.Windows.Forms.View.Details;
@@ -961,17 +1059,6 @@
             this.EditButton.IsButton = true;
             this.EditButton.Width = 125;
             // 
-            // button4
-            // 
-            this.button4.BackColor = System.Drawing.Color.White;
-            this.button4.Location = new System.Drawing.Point(6, 29);
-            this.button4.Name = "button4";
-            this.button4.Size = new System.Drawing.Size(238, 35);
-            this.button4.TabIndex = 2;
-            this.button4.Text = "Compare to Output";
-            this.button4.UseVisualStyleBackColor = false;
-            this.button4.Click += new System.EventHandler(this.button4_Click);
-            // 
             // Editor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -994,6 +1081,8 @@
             this.tabControl1.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.RefTableListView)).EndInit();
+            this.tabPage2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.ContainerListView)).EndInit();
             this.groupBox1.ResumeLayout(false);
             this.ItemEditorTab.ResumeLayout(false);
             this.groupBox4.ResumeLayout(false);
@@ -1097,6 +1186,13 @@
         private System.Windows.Forms.TabPage tabPage1;
         private System.Windows.Forms.TabPage tabPage2;
         private System.Windows.Forms.Button button4;
+        private BrightIdeasSoftware.TreeListView ContainerListView;
+        private BrightIdeasSoftware.OLVColumn olvColumn1;
+        private BrightIdeasSoftware.OLVColumn olvColumn2;
+        private BrightIdeasSoftware.OLVColumn olvColumn3;
+        private BrightIdeasSoftware.OLVColumn CompressCol;
+        private BrightIdeasSoftware.OLVColumn olvColumn5;
+        private BrightIdeasSoftware.OLVColumn olvColumn6;
     }
 }
 

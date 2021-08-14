@@ -115,7 +115,7 @@ namespace FlashEditor {
                 throw new FileNotFoundException("Cache failed to load");
 
             //Already loaded, no need to reload
-            if(loaded[editorIndex])
+            if(loaded[editorIndex] && type != RSConstants.META_INDEX)
                 return;
 
             /*
@@ -145,11 +145,19 @@ namespace FlashEditor {
                     bgw.DoWork += delegate {
                         List<RSReferenceTable> refTables = new List<RSReferenceTable>();
                         for(int k = 0; k < cache.referenceTables.Length; k++)
-                            if(cache.referenceTables[k] != null) {
+                            if(cache.referenceTables[k] != null)
                                 refTables.Add(cache.referenceTables[k]);
 
+                        List<RSContainer> containers = new List<RSContainer>();
+                        foreach(KeyValuePair<int, SortedDictionary<int, RSContainer>> types in cache.containers) {
+                            int containerType = types.Key;
+                            foreach(KeyValuePair<int, RSContainer> container in types.Value) {
+                                RSContainer c = container.Value;
+                                containers.Add(c);
                             }
+                        }
 
+                        /*
                         RefTableListView.CanExpandGetter = delegate (object x) {
                             if(x is RSReferenceTable definition)
                                 if(definition.validArchivesCount > 0)
@@ -208,21 +216,20 @@ namespace FlashEditor {
                             if(x is RSReferenceTable refTbl)
                                 return refTbl.version;
                             return "";
-                        };
-
-
-
-                        /*
-                        column2.AspectGetter = delegate (object x) {
-                            if(x is Contract) {
-                                return ((Contract) x).Value;
-                            } else {
-                                Double d = (Double)x;
-                                return d.ToString();
-                            }
                         };*/
 
+                        CompressCol.AspectGetter = (x) => {
+                            RSContainer container = (RSContainer) x;
+                            int compressType = container.GetCompressionType();
+                            if(compressType == RSConstants.GZIP_COMPRESSION)
+                                return "GZip";
+                            else if(compressType == RSConstants.BZIP2_COMPRESSION)
+                                return "BZip";
+                            return "None";
+                        };
+
                         RefTableListView.SetObjects(refTables);
+                        ContainerListView.SetObjects(containers);
                     };
 
                     bgw.Disposed += delegate {
@@ -237,13 +244,6 @@ namespace FlashEditor {
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         ItemProgressBar.Value = e.ProgressPercentage;
                         ItemLoadingLabel.Text = e.UserState.ToString();
-
-                        //Once it's complete, hide the progress bar
-                        /*
-                        if(e.ProgressPercentage == 100) {
-                            ItemLoadingLabel.Text = "Status: IDLE";
-                            ItemProgressBar.Value = 0;
-                        }*/
                     });
 
                     bgw.DoWork += delegate {
@@ -251,7 +251,7 @@ namespace FlashEditor {
                         int total = referenceTable.GetEntryTotal() * 256;
                         int percentile = total / 100;
 
-                        Debug(@"  _                     _ _               _ _                     ");
+                        Debug(@"  _  Loading Items      _ _               _ _                     ");
                         Debug(@" | |                   | (_)             (_) |                    ");
                         Debug(@" | |     ___   __ _  __| |_ _ __   __ _   _| |_ ___ _ __ ___  ___ ");
                         Debug(@" | |    / _ \ / _` |/ _` | | '_ \ / _` | | | __/ _ \ '_ ` _ \/ __|");
@@ -299,17 +299,10 @@ namespace FlashEditor {
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         SpriteProgressBar.Value = e.ProgressPercentage;
                         SpriteLoadingLabel.Text = e.UserState.ToString();
-
-                        //Once it's complete, hide the progress bar
-                        /*
-                        if(e.ProgressPercentage == 100) {
-                            SpriteProgressBar.Value = 0;
-                            SpriteLoadingLabel.Text = "Status: IDLE";
-                        }*/
                     });
 
                     bgw.DoWork += async delegate {
-                        Debug(@" _                     _ _                _____            _ _           ");
+                        Debug(@" _  Loading sprites    _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
                         Debug(@"| |     ___   __ _  __| |_ _ __   __ _  | (___  _ __  _ __ _| |_ ___ ___ ");
                         Debug(@"| |    / _ \ / _` |/ _` | | '_ \ / _` |  \___ \| '_ \| '__| | __/ _ / __|");
@@ -317,7 +310,6 @@ namespace FlashEditor {
                         Debug(@"|______\___/ \__,_|\__,_|_|_| |_|\__, | |_____/| .__/|_|  |_|\__\___|___/");
                         Debug(@"                                  __/ |        | |                       ");
                         Debug(@"                                 |___/         |_|                       ");
-
                         List<SpriteDefinition> sprites = new List<SpriteDefinition>();
 
                         int done = 0;
@@ -364,17 +356,19 @@ namespace FlashEditor {
                     bgw.RunWorkerAsync();
                     break;
                 case RSConstants.NPC_DEFINITIONS_INDEX:
+                    Debug(@" _  Loading NPCs       _ _               _   _ _____   _____     ");
+                    Debug(@"| |                   | (_)             | \ | |  __ \ / ____|    ");
+                    Debug(@"| |     ___   __ _  __| |_ _ __   __ _  |  \| | |__) | |     ___ ");
+                    Debug(@"| |    / _ \ / _` |/ _` | | '_ \ / _` | | . ` |  ___/| |    / __|");
+                    Debug(@"| |___| (_) | (_| | (_| | | | | | (_| | | |\  | |    | |____\__ \");
+                    Debug(@"|______\___/ \__,_|\__,_|_|_| |_|\__, | |_| \_|_|     \_____|___/");
+                    Debug(@"                                  __/ |                          ");
+                    Debug(@"                                 |___/                           ");
+
                     //When an NPC is loaded, update the progress bar
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         NPCProgressBar.Value = e.ProgressPercentage;
                         NPCLoadingLabel.Text = e.UserState.ToString();
-
-                        //Once it's complete, hide the progress bar
-                        /*
-                        if(e.ProgressPercentage == 100) {
-                            NPCLoadingLabel.Text = "Status: IDLE";
-                            NPCProgressBar.Value = 0;
-                        }*/
                     });
 
                     bgw.DoWork += async delegate {
@@ -483,7 +477,7 @@ namespace FlashEditor {
 
         //Finished editing a definition
         private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
-            Debug(@"  ______    _ _ _     _____ _                 ");
+            Debug(@"  ______    _ _ _     _____ _   Edit Item     ");
             Debug(@" |  ____|  | (_) |   |_   _| |                ");
             Debug(@" | |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
             Debug(@" |  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
@@ -492,7 +486,7 @@ namespace FlashEditor {
             Debug(@"                                              ");
             Debug(@"                                              ");
 
-            Debug("Edit Item");
+            Debug("itemdef name: " + currentItem.name);
 
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
@@ -505,7 +499,11 @@ namespace FlashEditor {
             int entryId = newDefinition.id % 256;
 
             //Update the entry in the container's archive
-            cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newDefinition.Encode());
+            JagStream newItemStream = newDefinition.Encode();
+            Debug("New item stream len: " + newItemStream.Length.ToString() + ", ptr: " + newItemStream.Position.ToString() + ", rem: " + newItemStream.Remaining().ToString());
+            cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
+
+            PrintDifferences(newDefinition, currentItem);
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {
@@ -522,13 +520,6 @@ namespace FlashEditor {
             itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) => {
                 ItemProgressBar.Value = e2.ProgressPercentage;
                 ItemLoadingLabel.Text = e2.UserState.ToString();
-
-                //Once it's complete, hide the progress bar
-                /*
-                if(e2.ProgressPercentage == 100) {
-                    ItemLoadingLabel.Text = "Status: IDLE";
-                    ItemProgressBar.Value = 0;
-                }*/
             });
 
             ItemDefinition[] items = new ItemDefinition[ItemListView.SelectedObjects.Count];
@@ -563,8 +554,8 @@ namespace FlashEditor {
             itemDumper.RunWorkerAsync();
         }
 
+        //Set the alternating row back color
         private void Button1_Click(object sender, EventArgs e) {
-            //Set the alternating row back color
             if(colorDialog1.ShowDialog() == DialogResult.OK)
                 ItemListView.AlternateRowBackColor = colorDialog1.Color;
 
@@ -584,62 +575,74 @@ namespace FlashEditor {
         }
 
         private void button4_Click(object sender, EventArgs e) {
+            AnalyseCaches();
+        }
+
+        public void AnalyseCaches() {
+            Debug(@"                      _           _             ");
+            Debug(@"    /\               | |         (_)            ");
+            Debug(@"   /  \   _ __   __ _| |_   _ ___ _ _ __   __ _ ");
+            Debug(@"  / /\ \ | '_ \ / _` | | | | / __| | '_ \ / _` |");
+            Debug(@" / ____ \| | | | (_| | | |_| \__ \ | | | | (_| |");
+            Debug(@"/_/    \_\_| |_|\__,_|_|\__, |___/_|_| |_|\__, |");
+            Debug(@"                         __/ |             __/ |");
+            Debug(@"                        |___/             |___/ ");
+
+            int diff = AnalyseCache("dat2");
+            foreach(KeyValuePair<int, RSIndex> index in cache.GetStore().indexChannels)
+                diff += AnalyseCache("idx" + index.Key);
+
+            Debug("Analysis complete, " + (diff > 0 ? diff + " differences found" : "no differences found"));
+        }
+
+        public int AnalyseCache(string file) {
             string cacheIn = RSConstants.CACHE_DIRECTORY + "/main_file_cache.";
             string cacheOut = RSConstants.CACHE_OUTPUT_DIRECTORY + "/main_file_cache.";
 
-            //Load the cache into memory
-            JagStream dat2in = cache.GetStore().LoadStream(cacheIn + "dat2");
-            JagStream dat2out = cache.GetStore().LoadStream(cacheOut + "dat2");
-
-            StreamDifference(dat2in, dat2out, "dat2");
-
-            JagStream idx255in = cache.GetStore().LoadStream(cacheIn + "idx255");
-            JagStream idx255out = cache.GetStore().LoadStream(cacheOut + "idx255");
-
-            StreamDifference(idx255in, idx255out, "idx255");
-
-            int count = 0;
-
-            //Count how many idx files exist
-            for(int k = 0; k < 254; k++) {
-                if(!File.Exists(cacheIn + "idx" + k)) {
-                    //If we didn't read any, check the directory is set correctly
-                    if(count == 0)
-                        throw new FileNotFoundException("No index files could be found");
-                    break;
-                }
-                count++;
+            try {
+                //Load the two caches into a stream
+                JagStream inputCache = cache.GetStore().LoadStream(cacheIn + file);
+                JagStream outputCache = cache.GetStore().LoadStream(cacheOut + file);
+                if(StreamDifference(inputCache, outputCache, file))
+                    return 1;
+            } catch(Exception ex) {
+                Debug(ex.Message);
             }
 
-            //Load the indexes
-            JagStream[] metaStreamsIn = new JagStream[count];
-            JagStream[] metaStreamsOut = new JagStream[count];
-
-            //And load in the data
-            for(int k = 0; k < count; k++) {
-                metaStreamsIn[k] = cache.GetStore().LoadStream(cacheIn + "idx" + k);
-                metaStreamsOut[k] = cache.GetStore().LoadStream(cacheOut + "idx" + k);
-
-                StreamDifference(metaStreamsIn[k], metaStreamsOut[k], "idx" + k);
-            }
+            return 0;
         }
 
-        private void StreamDifference(JagStream stream1, JagStream stream2, string v) {
+        private bool StreamDifference(JagStream stream1, JagStream stream2, string stream) {
+            if(stream1 == null || stream2 == null)
+                throw new NullReferenceException("Error, stream(s) are null");
+
+            bool diff = false;
+
             //Rudimentary check, fast if the streams are different lengths
             if(stream1.Length != stream2.Length) {
-                Debug("Difference in " + v + " data, len: " + (stream1.Length - stream2.Length) + " bytes");
-                return;
+                long delta = stream2.Length - stream1.Length;
+                Debug("Difference in " + stream + " data, len: " + delta + " bytes");
+                diff = true;
             }
 
             //Same length? Check the bytes I guess.
-            for(int k = 0; k < stream1.Length; k++) {
+            for(int k = 0; k < Math.Max(stream1.Length, stream2.Length); k++) {
                 if(stream1.ReadByte() != stream2.ReadByte()) {
-                    Debug("Difference in " + v + " @ " + stream1.Position);
-                    return;
+                    Debug("Difference in " + stream + " @ " + k);
+                    diff = true;
+                    break;
                 }
             }
 
-            Debug("No difference found in " + v);
+            return diff;
+        }
+
+        internal ItemDefinition currentItem;
+
+        private void ItemListView_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e) {
+            //cache the item definition prior to editing
+            currentItem = (ItemDefinition) ItemListView.SelectedObject;
+            currentItem = currentItem.Clone();
         }
     }
 }

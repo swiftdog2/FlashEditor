@@ -29,9 +29,8 @@ namespace FlashEditor {
 
         internal static byte[] Gzip(byte[] bytes) {
             using(var output = new JagStream()) {
-                using(var compressor = new Ionic.Zlib.GZipStream(output, Ionic.Zlib.CompressionMode.Compress, Ionic.Zlib.CompressionLevel.BestSpeed)) {
+                using(var compressor = new Ionic.Zlib.GZipStream(output, Ionic.Zlib.CompressionMode.Compress, Ionic.Zlib.CompressionLevel.BestCompression))
                     compressor.Write(bytes, 0, bytes.Length);
-                }
 
                 return output.ToArray();
             }

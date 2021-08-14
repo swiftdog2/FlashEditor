@@ -1,11 +1,13 @@
 ﻿using static FlashEditor.utils.DebugUtil;
 using System.IO;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace FlashEditor.cache {
     public class RSFileStore {
         internal RSIndex dataChannel;
-        internal RSIndex metaChannel;
-        internal RSIndex[] indexChannels;
+        internal SortedDictionary<int, RSIndex> indexChannels = new SortedDictionary<int, RSIndex>();
 
         /// <summary>
         /// Loads the main data, metadata, and indice files into a corresponding <c>JagStream</c>
@@ -16,27 +18,11 @@ namespace FlashEditor.cache {
 
             //Load the cache into memory
             dataChannel = LoadIndex(RSConstants.DAT2_INDEX, cacheDir + "dat2");
-            metaChannel = LoadIndex(RSConstants.META_INDEX, cacheDir + "idx255");
 
-            int count = 0;
-
-            //Count how many idx files exist
-            for(int k = 0; k < 254; k++) {
-                if(!File.Exists(cacheDir + "idx" + k)) {
-                    //If we didn't read any, check the directory is set correctly
-                    if(count == 0)
-                        throw new FileNotFoundException("No index files could be found");
-                    break;
-                }
-                count++;
-            }
-
-            //Load the indexes
-            indexChannels = new RSIndex[count];
-
-            //And load in the data
-            for(int k = 0; k < count; k++)
-                indexChannels[k] = LoadIndex(k, cacheDir + "idx" + k);
+            //And load in the data from the meta indexes, including reference tables
+            for(int k = 0; k <= RSConstants.META_INDEX; k++)
+                if(File.Exists(cacheDir + "idx" + k))
+                    indexChannels.Add(k, LoadIndex(k, cacheDir + "idx" + k));
         }
 
         /// <summary>
@@ -45,10 +31,10 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>The number of files</returns>
         public int GetFileCount(int type) {
-            if((type < 0 || type >= indexChannels.Length) & type != RSConstants.META_INDEX)
-                throw new FileNotFoundException("Unable to get file count for type " + type);
+            if(!indexChannels.ContainsKey(type))
+                throw new FileNotFoundException("Index " + type + " invalid");
 
-            return (int) (type == RSConstants.META_INDEX ? metaChannel : indexChannels[type]).GetStream().Length / RSIndex.SIZE;
+            return (int) (indexChannels[type].GetStream().Length / RSIndex.SIZE);
         }
 
         /// <summary>
@@ -57,21 +43,21 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream (reference) to read the data into</param>
         /// <param name="directory">The directory of the binary file</param>
         private RSIndex LoadIndex(int id, string directory) {
-            return new RSIndex(id, LoadStream(directory));
+            return new RSIndex(LoadStream(directory));
         }
 
         public JagStream LoadStream(string directory) {
-            if(!File.Exists(directory)) {
-                string errorMsg = "'" + directory + "' could not be found.";
-                Debug(errorMsg);
-                throw new FileNotFoundException(errorMsg);
-            }
+            if(!File.Exists(directory))
+                throw new FileNotFoundException("'" + directory + "' could not be found.");
 
             byte[] data = File.ReadAllBytes(directory);
             if(data.Length == 0)
                 Debug("No data read for directory: " + directory);
 
-            return new JagStream(data);
+            //We initialise it like this to ensure the stream is expandable
+            JagStream stream = new JagStream();
+            stream.Write(data, 0, data.Length);
+            return stream;
         }
 
         /// <summary>
@@ -79,7 +65,18 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <returns>The length of the <param name="indexChannels"> array</returns>
         internal int GetTypeCount() {
-            return indexChannels.Length;
+            if(indexChannels == null)
+                throw new NullReferenceException("IndexChannels is null");
+
+            //Don't include the meta index as a type, of course
+            return indexChannels.Keys.Where(x => x < RSConstants.META_INDEX).Max();
+        }
+
+        internal RSIndex GetIndex(int type) {
+            if(!indexChannels.ContainsKey(type))
+                throw new FileNotFoundException("Index " + type + " could not be found.");
+
+            return indexChannels[type];
         }
 
         /**
@@ -98,36 +95,49 @@ namespace FlashEditor.cache {
         *             if an I/O error occurs.
         */
 
-        public void WriteDataIndex(int indexId, int containerId, JagStream data, bool overwrite) {
+        public void Write(int indexId, int containerId, JagStream data, bool overwrite) {
             Debug("Writing index " + indexId + ", container " + containerId + ", data len: " + data.Length);
 
-            if((indexId < 0 || indexId >= indexChannels.Length) && indexId != RSConstants.META_INDEX)
+            if((indexId < 0 || indexId >= indexChannels.Keys.Max()) && indexId != RSConstants.META_INDEX)
                 throw new FileNotFoundException("Unable to write, invalid index ID: " + indexId);
 
-            RSIndex index = indexId == RSConstants.META_INDEX ? metaChannel : indexChannels[indexId];
+            RSIndex index = GetIndex(indexId);
 
-            int nextSector;
+            int nextSector = 0;
             long ptr = containerId * RSIndex.SIZE;
 
             JagStream buf;
+            RSIndex newIndex;
+
+            Debug("Total sectors: " + (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / (long) RSSector.SIZE));
 
             //If we are overwriting an existing sector
             if(overwrite) {
-                if(ptr < 0)
+                Debug("Overwriting existing sector...", LOG_DETAIL.ADVANCED);
+                if(ptr < 0) {
+                    Debug("Error, ptr " + ptr + " out of bounds " + index.GetStream().Length);
                     throw new IOException();
-                else if(ptr >= index.GetSize())
+                } else if(ptr >= index.GetStream().Length) { //previously was GetSize())
+                    Debug("Error, ptr " + ptr + " out of bounds " + index.GetStream().Length);
                     return;
+                }
 
-                index.ReadContainerHeader();
+                index.GetStream().Seek(ptr);
+                index.GetStream().ReadMedium(); //size
+                nextSector = index.GetStream().ReadMedium();
 
-                nextSector = index.GetSectorID();
-                if(nextSector <= 0 || nextSector > dataChannel.GetSize() * (long) RSSector.SIZE)
+                Debug("Next sector: " + nextSector);
+
+                if(nextSector <= 0 || nextSector > dataChannel.GetStream().Length * RSSector.SIZE) {
+                    Debug("ERROR!!!! s1, sector " + nextSector.ToString() + " / " + (dataChannel.GetStream().Length * (long) RSSector.SIZE).ToString() + " out of bounds", LOG_DETAIL.INSANE);
                     return;
+                }
             } else {
-                //We need to make a new sector
-                nextSector = (int) ((dataChannel.GetSize() + RSSector.SIZE - 1) / (long) RSSector.SIZE);
+                //We need to make a new sector?
+                nextSector = (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / RSSector.SIZE);
                 if(nextSector == 0)
                     nextSector = 1;
+                Debug("Creating new sector, nextSector: " + nextSector, LOG_DETAIL.INSANE);
             }
 
             Debug("data remaining: " + data.Remaining() + ", next sector: " + nextSector);
@@ -136,10 +146,6 @@ namespace FlashEditor.cache {
             index.GetStream().Seek(ptr);
             index.GetStream().WriteMedium(data.Remaining());
             index.GetStream().WriteMedium(nextSector);
-
-            //No idea why, but it's necessary or multiple saves fucks shit up
-            if(indexId != RSConstants.META_INDEX)
-                index.SetStream(data);
 
             buf = new JagStream(RSSector.SIZE);
 
@@ -155,27 +161,36 @@ namespace FlashEditor.cache {
                 if(overwrite) {
                     buf.Clear();
 
-                    buf.Read(dataChannel.GetStream().ToArray(), (int) ptr, RSSector.SIZE);
+                    buf.Write(dataChannel.GetStream().ToArray(), (int) ptr, RSSector.SIZE);
+                    PrintByteArray(buf.ToArray());
 
                     sector = RSSector.Decode(buf.Flip());
 
-                    if(sector.GetType() != indexId)
+                    if(sector.GetType() != indexId) {
+                        Debug("ERROR!!!! s2, mismatching sector type " + sector.GetType() + ", index: " + indexId, LOG_DETAIL.INSANE);
                         return;
+                    }
 
-                    if(sector.GetId() != containerId)
+                    if(sector.GetId() != containerId) {
+                        Debug("ERROR!!!! s3, mismatching sector id " + sector.GetId() + ", containerId: " + containerId, LOG_DETAIL.INSANE);
                         return;
+                    }
 
-                    if(sector.GetChunk() != chunk)
+                    if(sector.GetChunk() != chunk) {
+                        Debug("ERROR!!!! s4, mismatching sector chunk " + sector.GetChunk() + ", chunk: " + chunk, LOG_DETAIL.INSANE);
                         return;
+                    }
 
                     nextSector = sector.GetNextSector();
-                    if(nextSector < 0 || nextSector > dataChannel.GetSize() / (long) RSSector.SIZE)
+                    if(nextSector < 0 || nextSector > dataChannel.GetStream().Length / RSSector.SIZE) {
+                        Debug("ERROR!!!! s5, sector out of bounds.", LOG_DETAIL.INSANE);
                         return;
+                    }
                 }
 
                 if(nextSector == 0) {
                     overwrite = false;
-                    nextSector = (int) ((dataChannel.GetSize() + RSSector.SIZE - 1) / (long) RSSector.SIZE);
+                    nextSector = (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / RSSector.SIZE);
                     if(nextSector == 0)
                         nextSector++;
                     if(nextSector == curSector)
@@ -195,10 +210,8 @@ namespace FlashEditor.cache {
                 }
 
                 sector = new RSSector(indexId, containerId, chunk++, nextSector, bytes);
-
                 JagStream sectorData = sector.Encode();
                 Debug("Writing sector - Index: " + indexId + ", container: " + containerId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", bytes len: " + bytes.Length);
-                Debug("data ptr: " + ptr);
                 dataChannel.GetStream().Seek((int) ptr);
                 dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
             } while(remaining > 0);
