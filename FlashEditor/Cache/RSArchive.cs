@@ -6,15 +6,14 @@ using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
     class RSArchive {
-        public SortedDictionary<int, RSEntry> entries;
+        public SortedDictionary<int, RSEntry> entries = new SortedDictionary<int, RSEntry>();
         public int chunks = 1;
 
         /// <summary>
         /// Create a new Archive with <paramref name="size"/> entries
         /// </summary>
         /// <param name="size">The number of entries</param>
-        public RSArchive(int size) {
-            entries = new SortedDictionary<int, RSEntry>();
+        public RSArchive() {
         }
 
         /// <summary>
@@ -25,7 +24,7 @@ namespace FlashEditor.cache {
         /// <returns></returns>
         public static RSArchive Decode(JagStream stream, int size) {
             //Allocate a new archive object
-            RSArchive archive = new RSArchive(size);
+            RSArchive archive = new RSArchive();
 
             //Read the number of chunks at the end of the archive
             stream.Seek(stream.Length - 1);

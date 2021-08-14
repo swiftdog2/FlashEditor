@@ -141,9 +141,8 @@ namespace FlashEditor {
                 //If the byte read is between 127 and 159, it should be remapped
                 if(b >= 127 && b < 160) {
                     char c = CHARACTERS[b - 128];
-                    if(c.Equals('\0')) { //if it needs to be remapped, as per the characters array
+                    if(c.Equals('\0')) //if it needs to be remapped, as per the characters array
                         c = '\u003F'; //replace with question mark as placeholder to avoid rendering issues
-                    }
                     sb.Append(c);
                 } else {
                     sb.Append((char) b);
@@ -275,6 +274,31 @@ namespace FlashEditor {
             return i > 32767 ? i -= 0x10000 : i;
         }
 
+        //Returns a substream starting at ptr with length bytes
+        internal JagStream GetSubStream(int length, int ptr) {
+            Seek(ptr);
+            return GetSubStream(length);
+        }
+
+        internal JagStream GetSubStream(int length, long ptr) {
+            return GetSubStream(length, (int) ptr);
+        }
+
+        internal JagStream GetSubStream(int length) {
+            return new JagStream(ToBuffer(length));
+        }
+
+        internal byte[] ToBuffer(int length) {
+            if(Remaining() < length)
+                throw new IOException("Stream cannot fulfill target buffer");
+
+            byte[] buf = new byte[length];
+            for(int k = 0; k < length; k++)
+                buf[k] = (byte) ReadByte();
+
+            return buf;
+        }
+
         internal void PutLengthFromMark(long v) {
             throw new NotImplementedException();
         }
@@ -306,6 +330,8 @@ namespace FlashEditor {
         /// </summary>
         /// <returns>The buffer</returns>
         internal JagStream Flip() {
+            if(Position == 0)
+                throw new IOException("Idiot you're destroying the stream");
             SetLength(Position);
             Seek0();
             return this;

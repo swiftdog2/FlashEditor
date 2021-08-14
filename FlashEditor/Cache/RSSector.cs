@@ -35,7 +35,7 @@ namespace FlashEditor.cache {
         /// <returns></returns>
         public static RSSector Decode(JagStream stream) {
             if(stream.Length < SIZE)
-                throw new ArgumentException("Invalid sector length : " + stream.Remaining() + "/" + RSSector.SIZE);
+                throw new ArgumentException("Invalid sector length : " + stream.Length + "/" + RSSector.SIZE);
 
             /*
              * Information  Type	            Description
@@ -64,9 +64,9 @@ namespace FlashEditor.cache {
         public JagStream Encode() {
             JagStream stream = new JagStream(SIZE);
 
-            if(id > ushort.MaxValue)
-                stream.WriteInteger(id);
-            else
+            //if(id > ushort.MaxValue)
+                //stream.WriteInteger(id);
+            //else
                 stream.WriteShort(id);
 
             stream.WriteShort((short) chunk);

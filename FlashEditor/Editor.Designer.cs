@@ -374,7 +374,7 @@
             this.ContainerListView.Location = new System.Drawing.Point(-4, -1);
             this.ContainerListView.Name = "ContainerListView";
             this.ContainerListView.ShowGroups = false;
-            this.ContainerListView.Size = new System.Drawing.Size(738, 411);
+            this.ContainerListView.Size = new System.Drawing.Size(738, 420);
             this.ContainerListView.TabIndex = 1;
             this.ContainerListView.UseCompatibleStateImageBehavior = false;
             this.ContainerListView.View = System.Windows.Forms.View.Details;
@@ -593,7 +593,7 @@
             this.ItemListView.View = System.Windows.Forms.View.Details;
             this.ItemListView.VirtualMode = true;
             this.ItemListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ItemListView_CellEditFinished);
-            this.ItemListView.ItemSelectionChanged += new System.Windows.Forms.ListViewItemSelectionChangedEventHandler(this.ItemListView_ItemSelectionChanged);
+            this.ItemListView.CellEditStarting += new BrightIdeasSoftware.CellEditEventHandler(this.ItemListView_CellEditStarting);
             // 
             // ItemID
             // 

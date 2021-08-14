@@ -42,8 +42,8 @@ namespace FlashEditor.Cache {
          * @throws IOException
          *             if an I/O error occurs.
          */
-        public static ChecksumTable decode(JagStream buffer) {
-            return decode(buffer, false);
+        public static ChecksumTable Decode(JagStream buffer) {
+            return Decode(buffer, false);
         }
 
         /**
@@ -57,8 +57,8 @@ namespace FlashEditor.Cache {
          * @throws IOException
          *             if an I/O error occurs.
          */
-        public static ChecksumTable decode(JagStream buffer, bool whirlpool) {
-            return decode(buffer, whirlpool, null, null);
+        public static ChecksumTable Decode(JagStream buffer, bool whirlpool) {
+            return Decode(buffer, whirlpool, null, null);
         }
 
         /**
@@ -77,7 +77,7 @@ namespace FlashEditor.Cache {
          * @throws IOException
          *             if an I/O error occurs.
          */
-        public static ChecksumTable decode(JagStream buffer, bool whirlpool, BigInteger modulus, BigInteger publicKey) {
+        public static ChecksumTable Decode(JagStream buffer, bool whirlpool, BigInteger modulus, BigInteger publicKey) {
             //Find out how many entries there are and allocate a new table
             int size = whirlpool ? buffer.ReadUnsignedByte() : ((int) buffer.Length / 8);
             ChecksumTable table = new ChecksumTable(size);
@@ -195,7 +195,7 @@ namespace FlashEditor.Cache {
             return null;
         }
 
-        public int getSize() {
+        public int GetSize() {
             return entries.Length;
         }
 

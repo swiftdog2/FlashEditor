@@ -158,13 +158,6 @@ namespace FlashEditor {
                         }
 
                         /*
-                        RefTableListView.CanExpandGetter = delegate (object x) {
-                            if(x is RSReferenceTable definition)
-                                if(definition.validArchivesCount > 0)
-                                    return true;
-                            return false;
-                        };
-
                         RefTableListView.ChildrenGetter = delegate (object x) {
                             //Reference table object
                             RSReferenceTable tbl = (RSReferenceTable) x;
@@ -174,48 +167,6 @@ namespace FlashEditor {
                             idList.AddRange(tbl.validArchiveIds);
 
                             return idList;
-                        };
-
-                        typeCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.type;
-                            return (int) x;
-                        };
-
-                        formatCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.format;
-                            return "";
-                        };
-
-                        flagsCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.flags;
-                            return "";
-                        };
-
-                        namedCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.named;
-                            return "";
-                        };
-
-                        usesWhirlpoolCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.usesWhirlpool;
-                            return "";
-                        };
-
-                        validArchiveCountCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.validArchivesCount;
-                            return "";
-                        };
-
-                        versionCol.AspectGetter = delegate (object x) {
-                            if(x is RSReferenceTable refTbl)
-                                return refTbl.version;
-                            return "";
                         };*/
 
                         CompressCol.AspectGetter = (x) => {
@@ -251,7 +202,7 @@ namespace FlashEditor {
                         int total = referenceTable.GetEntryTotal() * 256;
                         int percentile = total / 100;
 
-                        Debug(@"  _  Loading Items      _ _               _ _                     ");
+                        Debug(@"  _                     _ _               _ _                     ");
                         Debug(@" | |                   | (_)             (_) |                    ");
                         Debug(@" | |     ___   __ _  __| |_ _ __   __ _   _| |_ ___ _ __ ___  ___ ");
                         Debug(@" | |    / _ \ / _` |/ _` | | '_ \ / _` | | | __/ _ \ '_ ` _ \/ __|");
@@ -259,6 +210,7 @@ namespace FlashEditor {
                         Debug(@" |______\___/ \__,_|\__,_|_|_| |_|\__, | |_|\__\___|_| |_| |_|___/");
                         Debug(@"                                   __/ |                          ");
                         Debug(@"                                  |___/                           ");
+                        Debug(@"Loading Items");
 
                         foreach(KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
                             int archiveId = archive.Key;
@@ -302,7 +254,7 @@ namespace FlashEditor {
                     });
 
                     bgw.DoWork += async delegate {
-                        Debug(@" _  Loading sprites    _ _                _____            _ _           ");
+                        Debug(@" _                     _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
                         Debug(@"| |     ___   __ _  __| |_ _ __   __ _  | (___  _ __  _ __ _| |_ ___ ___ ");
                         Debug(@"| |    / _ \ / _` |/ _` | | '_ \ / _` |  \___ \| '_ \| '__| | __/ _ / __|");
@@ -310,6 +262,8 @@ namespace FlashEditor {
                         Debug(@"|______\___/ \__,_|\__,_|_|_| |_|\__, | |_____/| .__/|_|  |_|\__\___|___/");
                         Debug(@"                                  __/ |        | |                       ");
                         Debug(@"                                 |___/         |_|                       ");
+                        Debug(@"Loading Sprites");
+
                         List<SpriteDefinition> sprites = new List<SpriteDefinition>();
 
                         int done = 0;
@@ -356,7 +310,7 @@ namespace FlashEditor {
                     bgw.RunWorkerAsync();
                     break;
                 case RSConstants.NPC_DEFINITIONS_INDEX:
-                    Debug(@" _  Loading NPCs       _ _               _   _ _____   _____     ");
+                    Debug(@" _                     _ _               _   _ _____   _____     ");
                     Debug(@"| |                   | (_)             | \ | |  __ \ / ____|    ");
                     Debug(@"| |     ___   __ _  __| |_ _ __   __ _  |  \| | |__) | |     ___ ");
                     Debug(@"| |    / _ \ / _` |/ _` | | '_ \ / _` | | . ` |  ___/| |    / __|");
@@ -364,6 +318,7 @@ namespace FlashEditor {
                     Debug(@"|______\___/ \__,_|\__,_|_|_| |_|\__, | |_| \_|_|     \_____|___/");
                     Debug(@"                                  __/ |                          ");
                     Debug(@"                                 |___/                           ");
+                    Debug(@"Loading NPCs");
 
                     //When an NPC is loaded, update the progress bar
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
@@ -477,14 +432,13 @@ namespace FlashEditor {
 
         //Finished editing a definition
         private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
-            Debug(@"  ______    _ _ _     _____ _   Edit Item     ");
-            Debug(@" |  ____|  | (_) |   |_   _| |                ");
-            Debug(@" | |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
-            Debug(@" |  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
-            Debug(@" | |___| (_| | | |_   _| |_| ||  __/ | | | | |");
-            Debug(@" |______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
-            Debug(@"                                              ");
-            Debug(@"                                              ");
+            Debug(@" ______    _ _ _     _____ _                ");
+            Debug(@"|  ____|  | (_) |   |_   _| |                ");
+            Debug(@"| |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
+            Debug(@"|  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
+            Debug(@"| |___| (_| | | |_   _| |_| ||  __/ | | | | |");
+            Debug(@"|______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
+            Debug(@"Edit Item                                    ");
 
             Debug("itemdef name: " + currentItem.name);
 
@@ -498,7 +452,7 @@ namespace FlashEditor {
             int archiveId = newDefinition.id / 256;
             int entryId = newDefinition.id % 256;
 
-            //Update the entry in the container's archive
+            //Update the entry in the container's archive   
             JagStream newItemStream = newDefinition.Encode();
             Debug("New item stream len: " + newItemStream.Length.ToString() + ", ptr: " + newItemStream.Position.ToString() + ", rem: " + newItemStream.Remaining().ToString());
             cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
@@ -587,6 +541,7 @@ namespace FlashEditor {
             Debug(@"/_/    \_\_| |_|\__,_|_|\__, |___/_|_| |_|\__, |");
             Debug(@"                         __/ |             __/ |");
             Debug(@"                        |___/             |___/ ");
+            Debug(@"Analysing");
 
             int diff = AnalyseCache("dat2");
             foreach(KeyValuePair<int, RSIndex> index in cache.GetStore().indexChannels)
@@ -639,7 +594,7 @@ namespace FlashEditor {
 
         internal ItemDefinition currentItem;
 
-        private void ItemListView_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e) {
+        private void ItemListView_CellEditStarting(object sender, CellEditEventArgs e) {
             //cache the item definition prior to editing
             currentItem = (ItemDefinition) ItemListView.SelectedObject;
             currentItem = currentItem.Clone();

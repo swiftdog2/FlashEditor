@@ -70,19 +70,19 @@ namespace FlashEditor.utils {
 
             //Print out the left side (from 0 to length)
             for(int k = 0; k < length; k++)
-                Console.Write("{0} ", (int) (buffer[k] & 0xFF));
+                Console.Write("{0} ", buffer[k] & 0xFF);
 
             System.Console.Write("...");
 
             //Print out the right side (from length + 1 to end)
             for(int k = buffer.Length - length; k < buffer.Length; k++)
-                Console.Write("{0} ", (int) (buffer[k] & 0xFF));
+                Console.Write("{0} ", buffer[k] & 0xFF);
 
             Console.WriteLine();
         }
 
         internal static void WriteLine(string output) {
-            Console.WriteLine("'");
+            Console.WriteLine(output);
         }
 
         public static void PrintDifferences(object a, object b) {
@@ -118,10 +118,10 @@ namespace FlashEditor.utils {
                         //Unknown type, further investigation required
                         Debug(propName + " type is " + pA.GetType().Name);
                     }
-
-                    if(!equal)
-                        Debug("\t" + propName + ": " + propsA[propName] + " != " + propsB[propName]);
                 }
+
+                if(!equal)
+                    Debug("\t" + propName + ": " + propsA[propName] + " != " + propsB[propName]);
             }
         }
     }

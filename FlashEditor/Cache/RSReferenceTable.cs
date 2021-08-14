@@ -59,7 +59,6 @@ namespace FlashEditor.cache {
             for(int index = 0; index < table.validArchivesCount; index++) {
                 int archiveId = lastArchiveId += stream.ReadUnsignedShort();
                 table.validArchiveIds[index] = archiveId;
-                //Debug("Added table entry " + archiveId, LOG_DETAIL.INSANE);
                 table.entries.Add(archiveId, new RSEntry(k++));
             }
 
