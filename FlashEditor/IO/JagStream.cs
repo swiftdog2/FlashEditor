@@ -18,6 +18,68 @@ namespace FlashEditor {
             '\u201D', '\u2022', '\u2013', '\u2014', '\u02DC', '\u2122', '\u0161', '\u203A', '\u0153', '\0', '\u017E',
             '\u0178' };
 
+        /*
+         * Loading stream from file
+         */
+        public static JagStream LoadStream(string directory) {
+            if(!File.Exists(directory))
+                throw new FileNotFoundException("'" + directory + "' could not be found.");
+
+            byte[] data = File.ReadAllBytes(directory);
+            if(data.Length == 0)
+                Debug("No data read for directory: " + directory);
+
+            //We initialise it like this to ensure the stream is expandable
+            JagStream stream = new JagStream();
+            stream.Write(data, 0, data.Length);
+            return stream;
+        }
+
+        /// <summary>
+        /// The limit is set to the current position and then the position is set to zero.
+        /// If the mark is defined then it is discarded.
+        /// </summary>
+        /// <returns>The buffer</returns>
+        internal JagStream Flip() {
+            if(Position == 0 && Length > 0)
+                throw new IOException("Idiot you're destroying the stream");
+            SetLength(Position);
+            Seek0();
+            return this;
+        }
+
+        ///<summary>
+        ///Writes binary data from a JagStream to a file
+        /// </summary>
+        /// <param name="stream">The stream to write to file</param>
+        /// <param name="directory">The directory to write the file to</param>
+        public static void Save(JagStream stream, string directory) {
+            if(stream == null)
+                throw new NullReferenceException("Stream was null");
+
+            using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
+                byte[] bytes = new byte[stream.Length];
+                file.Write(stream.ToArray(), 0, (int) stream.Length);
+            }
+
+            using(stream) {
+                StreamWriter writer = new StreamWriter(stream);
+
+                writer.Flush();
+
+                //You have to rewind the MemoryStream before copying
+                stream.Seek0();
+
+                using(FileStream fs = new FileStream(directory, FileMode.OpenOrCreate)) {
+                    stream.CopyTo(fs);
+                    fs.Flush();
+                }
+            }
+        }
+
+        public void Save(string directory) {
+            Save(this, directory);
+        }
 
         /*
          * Stream reading utils
@@ -77,16 +139,15 @@ namespace FlashEditor {
         }
 
         internal int ReadMedium() {
-            return (ReadUnsignedByte() << 16) | (ReadUnsignedByte() << 8) | ReadUnsignedByte();
+            return (ReadUnsignedByte() << 16) + (ReadUnsignedByte() << 8) + ReadUnsignedByte();
         }
 
         internal byte ReadUnsignedByte() {
             int result = ReadByte();
             if(result == -1)
-                Debug("End of stream bro");
+                throw new EndOfStreamException("End of stream bro");
 
             return (byte) result;
-            //return (byte) (ReadByte() & 0xFF);
         }
 
         internal int[] ReadUnsignedByteArray(int size) {
@@ -98,7 +159,6 @@ namespace FlashEditor {
         internal int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
         }
-
         internal int[] ReadUnsignedShortArray(int size) {
             //Read 2x length contiguous block of bytes
             byte[] byteBuffer = new byte[size * 2];
@@ -153,18 +213,17 @@ namespace FlashEditor {
         }
 
         internal byte Get(int pos) {
-            //Remember the current position
+            //Store the current position
             long tempPosition = Position;
 
             //Move the the desired position
             Seek(pos);
-            //Read the byte
+
             byte x = (byte) ReadByte();
 
             //Reset the position
-            //Position = tempPosition;
+            Position = tempPosition;
 
-            //Return the byte read at position v
             return x;
         }
 
@@ -199,10 +258,6 @@ namespace FlashEditor {
         /*
          * Methods for writing to the JagStream
          */
-
-        internal void WriteUByte(byte b) {
-            WriteByte((byte) (b & 0xFF));
-        }
 
         internal void WriteString(string s) {
             foreach(char c in s.ToCharArray())
@@ -242,9 +297,25 @@ namespace FlashEditor {
         }
         */
 
+        internal void WriteBytes(int bytes, object value) {
+            byte[] data = new byte[bytes];
+
+            if(value is int)
+                data = BitConverter.GetBytes((int) value);
+            if(value is short)
+                data = BitConverter.GetBytes((short) value);
+
+            //Write these in the correct endian!
+            for(int k = bytes - 1; k >= 0; k--) {
+                if(Position == 973)
+                    Debug("973: " + data[k]);
+                WriteByte(data[k]);
+            }
+
+        }
+
         internal void WriteShort(short value) {
-            byte[] bytes = { (byte) (value & 0xFF), (byte) ((value >> 8) & 0xFF) };
-            Write(bytes, 0, 2);
+            WriteBytes(2, value);
         }
 
         internal void WriteShort(int value) {
@@ -252,8 +323,7 @@ namespace FlashEditor {
         }
 
         internal void WriteMedium(int value) {
-            byte[] bytes = { (byte) (value >> 16) , (byte) (value >> 8) , (byte) value };
-            Write(bytes, 0, 3);
+            WriteBytes(3, value);
         }
 
         internal void WriteVarInt(int var63) {
@@ -261,8 +331,7 @@ namespace FlashEditor {
         }
 
         internal void WriteInteger(int value) {
-            byte[] bytes = { (byte) (value >> 24), (byte) (value >> 16), (byte) (value >> 8), (byte) value };
-            Write(bytes, 0, 4);
+            WriteBytes(4, value);
         }
 
         internal void WriteInteger(long value) {
@@ -275,23 +344,17 @@ namespace FlashEditor {
         }
 
         //Returns a substream starting at ptr with length bytes
-        internal JagStream GetSubStream(int length, int ptr) {
+
+        internal JagStream GetSubStream(int length, long ptr) {
             Seek(ptr);
             return GetSubStream(length);
         }
 
-        internal JagStream GetSubStream(int length, long ptr) {
-            return GetSubStream(length, (int) ptr);
-        }
-
         internal JagStream GetSubStream(int length) {
-            return new JagStream(ToBuffer(length));
+            return new JagStream(ReadBytes(length));
         }
 
-        internal byte[] ToBuffer(int length) {
-            if(Remaining() < length)
-                throw new IOException("Stream cannot fulfill target buffer");
-
+        internal byte[] ReadBytes(int length) {
             byte[] buf = new byte[length];
             for(int k = 0; k < length; k++)
                 buf[k] = (byte) ReadByte();
@@ -318,50 +381,6 @@ namespace FlashEditor {
         /// <returns>The number of bytes remaining left to be read</returns>
         public int Remaining() {
             return (int) (Length - Position);
-        }
-
-        internal void put(object v) {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// The limit is set to the current position and then the position is set to zero.
-        /// If the mark is defined then it is discarded.
-        /// </summary>
-        /// <returns>The buffer</returns>
-        internal JagStream Flip() {
-            if(Position == 0)
-                throw new IOException("Idiot you're destroying the stream");
-            SetLength(Position);
-            Seek0();
-            return this;
-        }
-
-        ///<summary>
-        ///Writes binary data from a JagStream to a file
-        /// </summary>
-        /// <param name="stream">The stream to write to file</param>
-        /// <param name="directory">The directory to write the file to</param>
-        public static void Save(JagStream stream, string directory) {
-            if(stream == null)
-                throw new NullReferenceException("Stream was null");
-
-            using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
-                byte[] bytes = new byte[stream.Length];
-                file.Write(stream.ToArray(), 0, (int) stream.Length);
-            }
-        }
-
-        public void Save(string directory) {
-            Save(this, directory);
-        }
-
-        public static JagStream Load(string directory) {
-            using(FileStream file = new FileStream(directory, FileMode.Open, FileAccess.Read)) {
-                byte[] stream = new byte[file.Length];
-                file.Read(stream, 0, (int) file.Length);
-                return new JagStream(stream);
-            }
         }
     }
 }

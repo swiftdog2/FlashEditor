@@ -8,8 +8,8 @@ namespace FlashEditor {
         public string name;
         public int id;
         public bool[] decoded = new bool[256];
-        public string[] groundOptions;
-        public string[] inventoryOptions;
+        public string[] groundOptions = new[] { null, null, "take", null, null };
+        public string[] inventoryOptions = new[] { null, null, null, null, "drop" };
 
         public int inventoryModelId;
 
@@ -63,17 +63,6 @@ namespace FlashEditor {
 
         public SortedDictionary<int, object> itemParams;
 
-        /// <summary>
-        /// Constructs a new item definition from the stream data
-        /// </summary>
-        /// <param name="stream">The stream containing the encoded item data</param>
-        public ItemDefinition(JagStream stream) {
-            groundOptions = new[] { null, null, "take", null, null };
-            inventoryOptions = new[] { null, null, null, null, "drop" };
-
-            Decode(stream);
-        }
-
         public ItemDefinition Clone() { return (ItemDefinition) MemberwiseClone(); }
         object ICloneable.Clone() { return Clone(); }
 
@@ -85,10 +74,11 @@ namespace FlashEditor {
         /// Overrides defaults from the stream
         /// </summary>
         /// <param name="stream"></param>
-        public void Decode(JagStream stream) {
+        public static ItemDefinition Decode(JagStream stream) {
             int total = 0;
 
             StringBuilder sb = new StringBuilder();
+            ItemDefinition def = new ItemDefinition();
 
             if(stream != null) {
                 while(true) {
@@ -96,24 +86,26 @@ namespace FlashEditor {
                     int opcode = stream.ReadUnsignedByte();
 
                     //Flag that the default value was overridden
-                    decoded[opcode] = true;
+                    def.decoded[opcode] = true;
 
                     if(opcode == 0)
                         break;
 
-                    Decode(stream, opcode);
+                    def.Decode(stream, opcode);
 
                     //Shouldn't be necessary, but there are no more than 256 opcodes anyway so no harm
                     if(total++ > 256)
                         break;
                 }
 
-                for(int k = 0; k < decoded.Length; k++) {
-                    if(decoded[k])
+                for(int k = 0; k < def.decoded.Length; k++) {
+                    if(def.decoded[k])
                         sb.Append(k + " ");
                 }
             }
-            Debug((name == null ? "null" : name) + " (stream len " + stream.Length + "), OPCODEs: " + sb.ToString(), LOG_DETAIL.INSANE);
+
+            Debug((def.name ?? "null") + " (stream len " + stream.Length + "), OPCODEs: " + sb.ToString(), LOG_DETAIL.INSANE);
+            return def;
         }
 
         /// <summary>

@@ -43,21 +43,7 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream (reference) to read the data into</param>
         /// <param name="directory">The directory of the binary file</param>
         private RSIndex LoadIndex(string directory) {
-            return new RSIndex(LoadStream(directory));
-        }
-
-        public JagStream LoadStream(string directory) {
-            if(!File.Exists(directory))
-                throw new FileNotFoundException("'" + directory + "' could not be found.");
-
-            byte[] data = File.ReadAllBytes(directory);
-            if(data.Length == 0)
-                Debug("No data read for directory: " + directory);
-
-            //We initialise it like this to ensure the stream is expandable
-            JagStream stream = new JagStream();
-            stream.Write(data, 0, data.Length);
-            return stream;
+            return new RSIndex(JagStream.LoadStream(directory));
         }
 
         /// <summary>
@@ -142,15 +128,22 @@ namespace FlashEditor.cache {
 
             Debug("data remaining: " + data.Remaining() + ", next sector: " + nextSector);
 
-            //Update the meta index with the updated size and sector ID
-            index.GetStream().Seek(ptr);
-            index.GetStream().WriteMedium(data.Remaining());
-            index.GetStream().WriteMedium(nextSector);
+            RSIndex ix = RSIndex.Decode(index.GetStream().GetSubStream(RSIndex.SIZE, ptr));
 
-            int chunk = 0, remaining = data.Remaining();
+            //Update the meta index with the updated size and sector ID
+
+            Console.WriteLine("index size: " + index.GetSize() + ", nextSector: " + index.GetSectorID());
+
+            index.GetStream().Seek(ptr);
+            index.GetStream().Write(ix.Encode().ToArray(), 0, RSIndex.SIZE);
+
+            Debug("Writing @" + ptr + ": " + data.Remaining() + ", next sector: " + nextSector, LOG_DETAIL.ADVANCED);
+
+            int chunk = 0, remaining = ix.GetSize();
 
             do {
                 int curSector = nextSector;
+                Debug("cursector: " + curSector + ", nex: " + nextSector);
                 ptr = curSector * RSSector.SIZE;
                 nextSector = 0;
 

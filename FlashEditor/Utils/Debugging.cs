@@ -61,7 +61,7 @@ namespace FlashEditor.utils {
         /// <param name="length">The number of bytes to print from the beginning and end of the buffer</param>
         public static void PrintByteArray(byte[] buffer, int length) {
             //We cannot print more than max bytes on either side
-            int max = buffer.Length / 2;
+            int max = buffer.Length;/// 2;
 
             Console.Write(length + "/" + buffer.Length + ": ");
 
@@ -81,8 +81,21 @@ namespace FlashEditor.utils {
             Console.WriteLine();
         }
 
-        internal static void WriteLine(string output) {
+        public static void WriteLine(string output) {
             Console.WriteLine(output);
+        }
+
+        public static string ToBitString(byte b) {
+            return Convert.ToString(b, 2).PadLeft(8, '0');
+        }
+
+        public static string ToBitString(short s) {
+            return Convert.ToString(s, 2).PadLeft(16, '0');
+        }
+
+        //Also used for medium values
+        public static string ToBitString(int i) {
+            return Convert.ToString(i, 2).PadLeft(32, '0');
         }
 
         public static void PrintDifferences(object a, object b) {

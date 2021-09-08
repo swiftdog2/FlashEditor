@@ -42,5 +42,12 @@ namespace FlashEditor.cache {
         internal void SetStream(JagStream stream) {
             this.stream = stream;
         }
+
+        internal JagStream Encode() {
+            JagStream stream = new JagStream(SIZE);
+            stream.WriteMedium(size);
+            stream.WriteMedium(sector);
+            return stream.Flip();
+        }
     }
 }

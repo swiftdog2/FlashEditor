@@ -24,7 +24,7 @@ namespace FlashEditor {
         /// <returns>The decoded item definition</returns>
         static ItemDefinition LoadItemDefinition(cache.RSCache cache, int archive, int file) {
             RSEntry item = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
-            ItemDefinition def = new ItemDefinition(item.GetStream());
+            ItemDefinition def = ItemDefinition.Decode(item.GetStream());
             return def;
         }
 

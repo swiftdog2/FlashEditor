@@ -14,11 +14,11 @@ namespace FlashEditor.cache {
         public const int HEADER_LEN = 8;
         public const int DATA_LEN = 512;
         public static readonly int SIZE = HEADER_LEN + DATA_LEN;
-        private readonly int chunk;
-        private readonly byte[] data;
-        private readonly int id;
-        private readonly int nextSector;
-        private readonly int type;
+        private int chunk;
+        private byte[] data;
+        private int id;
+        private int nextSector;
+        private int type;
 
         public RSSector(int type, int id, int chunk, int nextSector, byte[] data) {
             this.type = type;
@@ -35,7 +35,7 @@ namespace FlashEditor.cache {
         /// <returns></returns>
         public static RSSector Decode(JagStream stream) {
             if(stream.Length < SIZE)
-                throw new ArgumentException("Invalid sector length : " + stream.Length + "/" + RSSector.SIZE);
+                throw new ArgumentException("Invalid sector length : " + stream.Length + "/" + SIZE);
 
             /*
              * Information  Type	            Description
@@ -49,11 +49,11 @@ namespace FlashEditor.cache {
             int id = stream.ReadUnsignedShort();
             int chunk = stream.ReadUnsignedShort();
             int nextSector = stream.ReadMedium();
-            int index = stream.ReadUnsignedByte();
+            int type = stream.ReadUnsignedByte();
             byte[] data = new byte[DATA_LEN];
             stream.Read(data, 0, data.Length);
 
-            return new RSSector(index, id, chunk, nextSector, data);
+            return new RSSector(type, id, chunk, nextSector, data);
         }
 
 
@@ -63,17 +63,11 @@ namespace FlashEditor.cache {
         /// <returns>A buffer containing the sector header data</returns>
         public JagStream Encode() {
             JagStream stream = new JagStream(SIZE);
-
-            //if(id > ushort.MaxValue)
-                //stream.WriteInteger(id);
-            //else
-                stream.WriteShort(id);
-
-            stream.WriteShort((short) chunk);
+            stream.WriteShort(id);
+            stream.WriteShort(chunk);
             stream.WriteMedium(nextSector);
             stream.WriteByte((byte) type);
             stream.Write(data, 0, data.Length);
-
             return stream.Flip();
         }
 

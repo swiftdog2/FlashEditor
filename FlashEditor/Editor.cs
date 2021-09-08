@@ -10,6 +10,7 @@ using System.Diagnostics;
 using FlashEditor.utils;
 using System.Drawing;
 using BrightIdeasSoftware;
+using FlashEditor.Tests;
 
 namespace FlashEditor {
     public partial class Editor : Form {
@@ -39,13 +40,14 @@ namespace FlashEditor {
         }
 
         public void SetCacheDir() {
-            if(folderBrowserDialog1.ShowDialog() == DialogResult.OK) {
-                string directory = folderBrowserDialog1.SelectedPath;
+            if(folderBrowserDialog1.ShowDialog() == DialogResult.OK)
+                SetCacheDir(folderBrowserDialog1.SelectedPath);
+        }
 
-                Properties.Settings.Default.cacheDir = directory;
-                Properties.Settings.Default.Save();
-                Properties.Settings.Default.Reload();
-            }
+        public void SetCacheDir(string directory) {
+            Properties.Settings.Default.cacheDir = directory;
+            Properties.Settings.Default.Save();
+            Properties.Settings.Default.Reload();
         }
 
         public string GetCacheDir() {
@@ -57,9 +59,14 @@ namespace FlashEditor {
         private void Editor_Load(object sender, EventArgs e) {
             if(Properties.Settings.Default.cacheDir != "")
                 LoadCache(Properties.Settings.Default.cacheDir);
+            NPCListView.AlwaysGroupByColumn = npcIdColumn;
+            ItemListView.AlwaysGroupByColumn = ItemID;
+            SpriteListView.AlwaysGroupByColumn = ID;
         }
 
         private void LoadCache() {
+            workers.ForEach(w => w.CancelAsync());
+            loaded = new bool[editorTypes.Length];
             LoadCache(GetCacheDir());
         }
 
@@ -169,15 +176,7 @@ namespace FlashEditor {
                             return idList;
                         };*/
 
-                        CompressCol.AspectGetter = (x) => {
-                            RSContainer container = (RSContainer) x;
-                            int compressType = container.GetCompressionType();
-                            if(compressType == RSConstants.GZIP_COMPRESSION)
-                                return "GZip";
-                            else if(compressType == RSConstants.BZIP2_COMPRESSION)
-                                return "BZip";
-                            return "None";
-                        };
+                        CompressCol.AspectGetter = (x) => ((RSContainer) x).GetCompressionString();
 
                         RefTableListView.SetObjects(refTables);
                         ContainerListView.SetObjects(containers);
@@ -253,7 +252,7 @@ namespace FlashEditor {
                         SpriteLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += async delegate {
+                    bgw.DoWork += delegate {
                         Debug(@" _                     _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
                         Debug(@"| |     ___   __ _  __| |_ _ __   __ _  | (___  _ __  _ __ _| |_ ___ ___ ");
@@ -343,7 +342,6 @@ namespace FlashEditor {
                             Debug("Loading archive " + archiveId);
                             for(int file = 0; file < 128; file++) {
                                 try {
-                                    Debug("Loading file " + file);
                                     NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
                                     npc.SetId(archiveId * 128 + file); //Set the NPC ID
                                     npcs.Add(npc);
@@ -385,25 +383,6 @@ namespace FlashEditor {
             if(editorIndex > 0 & editorIndex < editorTypes.Length)
                 return editorTypes[editorIndex];
             return -1;
-        }
-
-        private void NumericUpDown1_ValueChanged(object sender, EventArgs e) {
-            SpriteListView.RowHeight = (int) numericUpDown1.Value;
-        }
-
-        private void CheckBox1_CheckedChanged(object sender, EventArgs e) {
-            if(checkBox1.Checked) {
-                //Set the alternating row back color
-                if(colorDialog1.ShowDialog() == DialogResult.OK)
-                    SpriteListView.AlternateRowBackColor = colorDialog1.Color;
-                SpriteListView.UseAlternatingBackColors = true;
-            } else {
-                //Clear the row back color
-                SpriteListView.UseAlternatingBackColors = false;
-            }
-
-            //Refresh the view
-            SpriteListView.Refresh();
         }
 
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
@@ -458,6 +437,22 @@ namespace FlashEditor {
             cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
 
             PrintDifferences(newDefinition, currentItem);
+
+            //Compares the old and new reference table and item definitions
+            RSReferenceTable refTable = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
+            JagStream refEncoded = refTable.Encode();
+            RSReferenceTable refTable2 = RSReferenceTable.Decode(refEncoded);
+            JagStream encoded2 = refTable2.Encode();
+
+            ItemDefinition itemDef = cache.GetItemDefinition(archiveId, entryId);
+            JagStream itemDefEncoded = itemDef.Encode();
+            ItemDefinition itemDef2 = ItemDefinition.Decode(itemDefEncoded);
+            JagStream itemDefEncoded2 = itemDef2.Encode();
+
+            PrintByteArray(refEncoded.ToArray());
+            PrintByteArray(encoded2.ToArray());
+            StreamTests.StreamDifference(refEncoded, encoded2, "item reftables");
+            StreamTests.StreamDifference(itemDefEncoded, itemDefEncoded2, "item defs");
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {
@@ -508,15 +503,6 @@ namespace FlashEditor {
             itemDumper.RunWorkerAsync();
         }
 
-        //Set the alternating row back color
-        private void Button1_Click(object sender, EventArgs e) {
-            if(colorDialog1.ShowDialog() == DialogResult.OK)
-                ItemListView.AlternateRowBackColor = colorDialog1.Color;
-
-            //Refresh the view
-            ItemListView.Refresh();
-        }
-
         /// <summary>
         /// This is where the magic gets done.
         /// And I really mean magic, because if this works then I am a literal god.
@@ -551,14 +537,16 @@ namespace FlashEditor {
         }
 
         public int AnalyseCache(string file) {
+            Debug("Analysing " + file);
+
             string cacheIn = RSConstants.CACHE_DIRECTORY + "/main_file_cache.";
             string cacheOut = RSConstants.CACHE_OUTPUT_DIRECTORY + "/main_file_cache.";
 
             try {
                 //Load the two caches into a stream
-                JagStream inputCache = cache.GetStore().LoadStream(cacheIn + file);
-                JagStream outputCache = cache.GetStore().LoadStream(cacheOut + file);
-                if(StreamDifference(inputCache, outputCache, file))
+                JagStream inputCache = JagStream.LoadStream(cacheIn + file);
+                JagStream outputCache = JagStream.LoadStream(cacheOut + file);
+                if(StreamTests.StreamDifference(inputCache, outputCache, file))
                     return 1;
             } catch(Exception ex) {
                 Debug(ex.Message);
@@ -567,37 +555,46 @@ namespace FlashEditor {
             return 0;
         }
 
-        private bool StreamDifference(JagStream stream1, JagStream stream2, string stream) {
-            if(stream1 == null || stream2 == null)
-                throw new NullReferenceException("Error, stream(s) are null");
-
-            bool diff = false;
-
-            //Rudimentary check, fast if the streams are different lengths
-            if(stream1.Length != stream2.Length) {
-                long delta = stream2.Length - stream1.Length;
-                Debug("Difference in " + stream + " data, len: " + delta + " bytes");
-                diff = true;
-            }
-
-            //Same length? Check the bytes I guess.
-            for(int k = 0; k < Math.Max(stream1.Length, stream2.Length); k++) {
-                if(stream1.ReadByte() != stream2.ReadByte()) {
-                    Debug("Difference in " + stream + " @ " + k);
-                    diff = true;
-                    break;
-                }
-            }
-
-            return diff;
-        }
-
         internal ItemDefinition currentItem;
 
         private void ItemListView_CellEditStarting(object sender, CellEditEventArgs e) {
             //cache the item definition prior to editing
             currentItem = (ItemDefinition) ItemListView.SelectedObject;
             currentItem = currentItem.Clone();
+        }
+
+        private void button5_Click(object sender, EventArgs e) {
+            SetCacheDir(RSConstants.CACHE_ORIGINAL_COPY);
+            LoadCache(GetCacheDir());
+        }
+
+        private void button6_Click(object sender, EventArgs e) {
+            SetCacheDir(RSConstants.CACHE_OUTPUT_DIRECTORY);
+            LoadCache(GetCacheDir());
+        }
+
+        //Set the alternating row back color
+        private void alternateRowsToolStripMenuItem_Click(object sender, EventArgs e) {
+            TreeListView[] tlvs = {RefTableListView, ContainerListView, SpriteListView };
+            FastObjectListView[] olvs = {ItemListView, NPCListView };
+            DialogResult result = colorDialog1.ShowDialog();
+
+            foreach(TreeListView tlv in tlvs) {
+                tlv.UseAlternatingBackColors = result == DialogResult.OK;
+                tlv.AlternateRowBackColor = colorDialog1.Color;
+                tlv.Refresh();
+            }
+
+            foreach(FastObjectListView olv in olvs) {
+                olv.UseAlternatingBackColors = result == DialogResult.OK;
+                olv.AlternateRowBackColor = colorDialog1.Color;
+                olv.Refresh();
+            }
+
+        }
+
+        private void numericUpDown1_ValueChanged_1(object sender, EventArgs e) {
+            SpriteListView.RowHeight = (int) numericUpDown1.Value;
         }
     }
 }

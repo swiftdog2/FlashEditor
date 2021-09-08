@@ -21,27 +21,38 @@ namespace FlashEditor.Tests {
             DebugUtil.PrintByteArray(stream.ToArray());
         }
 
-        static void Whatever() {
-            using(JagStream s = new JagStream()) {
-                Random r = new Random();
+        public static bool StreamDifference(JagStream stream1, JagStream stream2, string stream) {
+            if(stream1 == null || stream2 == null)
+                throw new NullReferenceException("Error, stream(s) are null");
 
-                for(int k = 0; k < 50000; k++)
-                    s.WriteInteger(r.Next(1000));
+            bool diff = false;
 
-                JagStream.Save(s, "C:/Users/CJ/Desktop/gzip/shit.txt");
+            //Rewind the streams before comparing dumbass
+            stream1.Seek0();
+            stream2.Seek0();
 
-                byte[] compressedData = CompressionUtils.Gzip(s.ToArray());
-                JagStream.Save(new JagStream(compressedData), "C:/Users/CJ/Desktop/gzip/compressed.txt");
+            //Rudimentary check, fast if the streams are different lengths
+            if(stream1.Length != stream2.Length) {
+                long delta = stream2.Length - stream1.Length;
+                DebugUtil.Debug("Difference x in " + stream + " data, len: " + delta + " bytes");
+                diff = true;
             }
 
+            //Same length? Check the bytes I guess.
+            for(int k = 0; k < Math.Min(stream1.Length, stream2.Length); k++) {
+                int x = stream1.ReadByte();
+                int y = stream2.ReadByte();
+                if(x != y) {
+                    DebugUtil.Debug("Difference y in " + stream + " @ " + k + " -- x: " + x + ", y: " + y);
+                    diff = true;
+                    break;
+                }
+            }
 
-            /*
-            JagStream stream = JagStream.Load("C:/Users/CJ/Desktop/shit.txt");
-            while(stream.Remaining() > 0)
-                Console.WriteLine(stream.ReadInt());
-            */
+            if(!diff)
+                DebugUtil.Debug(stream + " streams are equal!");
 
-            System.Console.ReadLine();
+            return diff;
         }
     }
 }

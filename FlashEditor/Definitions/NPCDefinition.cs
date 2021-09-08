@@ -3,34 +3,88 @@ using System.Collections.Generic;
 
 namespace FlashEditor {
     internal class NPCDefinition {
-        public string[] options;
-        public string name;
+        byte primaryShadowModifier = 223;
+        byte respawnDirection = 7;
+        byte secondaryShadowModifier = 143;
+        byte walkMask;
 
-        public bool clickable, isVisible, drawMinimapDot, visiblePriority, slowWalk, invisiblePriority, animateIdle;
+        int hue;
+        int lightness;
+        int opacity;
+        int saturation;
+
+        int[] campaigns;
+        int[] dialogueModels;
+        int[] modelIds;
+        int[] recolorDst;
+        int[] recolorSrc;
+        int[] retextureDst;
+        int[] retextureSrc;
+
+        public bool animateIdle = true;
+        public bool clickable = true;
+        public bool drawMinimapDot = true;
+        public bool hasRenderPriority;
+        public bool invisiblePriority;
+        public bool slowWalk = true;
+        public bool visiblePriority;
+        public byte mainOptionIndex;
+        public byte[] recolorDstPalette;
+        public int ambient;
+        public int ambientSoundVolume = 255;
+        public int armyIcon = -1;
+        public int attackOpCursor = -1;
+        public int contrast;
+        public int crawlSound = -1;
+        public int headIcon = -1;
+        public int height = -1;
+        public int hitbarSprite = -1;
+        public int id;
+        public int idleSound = -1;
+        public int last;
+        public int level = -1;
+        public int mapIcon = -1;
+        public int movementType;
+        public int primaryCursor = -1;
+        public int primaryCursorOp = -1;
+        public int renderTypeID = -1;
+        public int rotation = 32;
+        public int runSound = -1;
+        public int scaleXY = 128;
+        public int scaleZ = 128;
+        public int secondaryCursor = -1;
+        public int secondaryCursorOp = -1;
+        public int size = 1;
+        public int soundDistance;
+        public int spriteId = -1;
+        public int varbit = -1;
+        public int varp = -1;
+        public int walkSound = -1;
+        public int[] cursorOps;
+        public int[] morphs;
+        public int[][] translations;
+        public string name = "null";
+        public string[] options = new[] { null, null, null, null, null, "Examine" };
+        short primaryShadowColour;
+        short secondaryShadowColour;
+
+        int anInt828;
+        int anInt837;
+        int anInt847;
+        int anInt848;
+        int anInt864;
+
+        int[][] anIntArrayArray882;
 
         public bool unknownBoolean7;
-        public int[] cursorOps;
-        private int movementType;
-        private byte[] aByteArray8445, aByteArray8446;
+        public byte[] aByteArray8445, aByteArray8446;
 
-        public int[][] translations, anIntArrayArray882;
-        public int[] morphs, recolorDst, retextureDst, modelIds, retextureSrc, campaigns, dialogueModels, recolorSrc;
+        public int op44;
+        public int op45;
+        public int unknownByte1, unknownByte2, unknownByte3, unknownByte4, unknownByte5, unknownByte6;
 
-        public int id, primaryCursorOp, hitbarSprite, secondaryCursorOp, size = 1, crawlSound, varbit, height, renderTypeID, ambientSoundVolume,
-            rotation, level, scaleXY, ambient, mapIcon, runSound, attackOpCursor, primaryCursor, soundDistance, idleSound,
-            headIcon, spriteId, walkSound, varp, contrast, scaleZ, armyIcon, secondaryCursor;
+        public int[] unknownOptions = {-1, -1, -1, -1, -1, -1 };
 
-        int hue, saturation, lightness, opacity, anInt864, anInt848, anInt837, anInt847, anInt828;
-
-        public short primaryShadowColour, secondaryShadowColour;
-
-        public byte[] recolorDstPalette;
-        public byte mainOptionIndex, primaryShadowModifier, secondaryShadowModifier, walkMask, respawnDirection;
-        private int op44;
-        private int op45;
-        private int last;
-        private int[] unknownOptions = {-1, -1, -1, -1, -1, -1 };
-        private int unknownByte1, unknownByte2, unknownByte3, unknownByte4, unknownByte5, unknownByte6;
 
         private SortedDictionary<int, object> config;
 
@@ -39,52 +93,7 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
         public NPCDefinition(JagStream stream) {
-            SetDefaults();
             Decode(stream);
-        }
-
-        public void SetDefaults() {
-            options = new[] { null, null, null, null, null, "Examine" };
-            name = "null";
-            level = -1;
-            drawMinimapDot = true;
-            renderTypeID = -1;
-            respawnDirection = 7;
-            size = 1;
-            crawlSound = -1;
-            varbit = -1;
-            secondaryCursorOp = -1;
-            height = -1;
-            rotation = 32;
-            hitbarSprite = -1;
-            ambient = 0;
-            walkMask = 0;
-            ambientSoundVolume = 255;
-            runSound = -1;
-            slowWalk = true;
-            primaryShadowColour = 0;
-            idleSound = -1;
-            primaryShadowModifier = 223;
-            soundDistance = 0;
-            attackOpCursor = -1;
-            animateIdle = true;
-            mapIcon = -1;
-            primaryCursor = -1;
-            primaryCursorOp = -1;
-            scaleXY = 128;
-            headIcon = -1;
-            invisiblePriority = false;
-            varp = -1;
-            secondaryShadowModifier = 143;
-            isVisible = false;
-            secondaryCursor = -1;
-            walkSound = -1;
-            clickable = true;
-            spriteId = -1;
-            scaleZ = 128;
-            secondaryShadowColour = 0;
-            contrast = 0;
-            armyIcon = -1;
         }
 
         /// <summary>
@@ -110,9 +119,6 @@ namespace FlashEditor {
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
         private void Decode(JagStream stream, int opcode) {
-            Debug("Reading opcode: " + opcode);
-            //return;
-
             if(opcode == 1) {
                 int length = stream.ReadByte();
                 modelIds = new int[length];
@@ -171,7 +177,7 @@ namespace FlashEditor {
             } else if(opcode == 98) {
                 scaleZ = stream.ReadShort();
             } else if(opcode == 99) {
-                isVisible = true;
+                hasRenderPriority = true;
             } else if(opcode == 100) {
                 ambient = stream.ReadByte();
             } else if(opcode == 101) {
@@ -332,7 +338,10 @@ namespace FlashEditor {
                     else
                         value = stream.ReadInt();
 
-                    config.Add(key, value);
+                    if(config.ContainsKey(key))
+                        config[key] = value;
+                    else
+                        config.Add(key, value);
                 }
             }
         }
@@ -410,7 +419,7 @@ namespace FlashEditor {
             stream.WriteByte(98);
             stream.WriteShort((byte) scaleZ);
 
-            if(this.isVisible)
+            if(this.hasRenderPriority)
                 stream.WriteByte(99);
 
             stream.WriteByte(100);

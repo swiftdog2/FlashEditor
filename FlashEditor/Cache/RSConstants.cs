@@ -108,6 +108,7 @@ namespace FlashEditor.cache {
         public const int MAX_VALID_ARCHIVE_LENGTH = 1000000;
         public const string CACHE_DIRECTORY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";
         public static string CACHE_OUTPUT_DIRECTORY  =  "C:/Users/CJ/Desktop/RSPS/Hydra/cache2/";
+        public const string CACHE_ORIGINAL_COPY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache0/";
 
         /*
          * Some spooky level shit

@@ -16,6 +16,7 @@ namespace FlashEditor.cache {
         //Each index has their own set of containers
         public SortedDictionary<int, SortedDictionary<int, RSContainer>> containers = new SortedDictionary<int, SortedDictionary<int, RSContainer>>();
 
+        //Better to make generic type Definition and store each of them under their respective indexes but that's for later anyway
         public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
 
         /// <summary>
@@ -121,12 +122,13 @@ namespace FlashEditor.cache {
             }
 
             //Write the reference table out again
-            tableContainer = new RSContainer(tableContainer.GetCompressionType(), table.Encode());
+            tableContainer.SetStream(table.Encode());
+
             Debug("cache.writeentry1 index " + type + ", container " + containerId);
             store.Write(RSConstants.META_INDEX, type, tableContainer.Encode());
 
             //And write the archive back to memory
-            container = new RSContainer(container.GetCompressionType(), archive.Encode(), container.GetVersion());
+            container.SetStream(archive.Encode());
             WriteIndex(type, containerId, container);
             Debug("cache.writeentry2, index " + type + ", container " + containerId);
         }
@@ -171,7 +173,7 @@ namespace FlashEditor.cache {
             }
 
             //Save the reference table
-            tableContainer = new RSContainer(tableContainer.GetCompressionType(), table.Encode());
+            tableContainer.SetStream(table.Encode());
             store.Write(RSConstants.META_INDEX, type, tableContainer.Encode(), true);
 
             //Save the file itself
@@ -214,6 +216,23 @@ namespace FlashEditor.cache {
             containers[type].Add(containerId, container);
 
             return containers[type][containerId];
+        }
+
+        public void UpdateRSContainer(int type, int containerId, RSContainer container) {
+            if(!containers.ContainsKey(type))
+                containers.Add(type, new SortedDictionary<int, RSContainer>());
+
+            //Return the container if already cached
+            if(containers[type].ContainsKey(containerId))
+                containers[type][containerId] = container;
+            else
+                containers[type].Add(containerId, container);
+        }
+
+        public void UpdateReferenceTable(int type, RSReferenceTable refTable) {
+            if(type < 0 || type > referenceTables.Length)
+                throw new IndexOutOfRangeException("Invalid type when updating reference table cache");
+            referenceTables[type] = refTable;
         }
 
         /// <summary>
@@ -264,8 +283,7 @@ namespace FlashEditor.cache {
 
                 Debug("\tReading sector " + sectorId + " @ " + pos, LOG_DETAIL.INSANE);
 
-                byte[] sectorData = new byte[RSSector.SIZE];
-                store.dataChannel.GetStream().Read(sectorData, 0, RSSector.SIZE);
+                byte[] sectorData = store.dataChannel.GetStream().ReadBytes(RSSector.SIZE);
 
                 //Read in the sector from the data channel
                 RSSector sector = RSSector.Decode(new JagStream(sectorData));
@@ -318,7 +336,6 @@ namespace FlashEditor.cache {
             Debug(@"                                  |___/                                               ");
 
             //Attempt to load all of the reference tables
-
             for(int type = 0; type < store.GetTypeCount(); type++) {
                 try {
                     GetReferenceTable(type);
@@ -345,11 +362,10 @@ namespace FlashEditor.cache {
                 if(container == null)
                     throw new FileNotFoundException("\tERROR - Reference table " + type + " is null");
 
-                //Get the stream containing the Container data
+                //Decode the reference table from the container stream and cache it
                 JagStream containerStream = container.GetStream();
-
                 RSReferenceTable refTable = RSReferenceTable.Decode(containerStream);
-                refTable.SetType(type); //for the UI
+                refTable.SetType(type); //For the UI
                 referenceTables[type] = refTable;
                 Debug("...Decoded reference table " + type, LOG_DETAIL.ADVANCED);
             }
@@ -369,7 +385,7 @@ namespace FlashEditor.cache {
             RSEntry entry = GetReferenceTable(type).GetEntry(archive);
 
             if(entry == null || file < 0 || file >= entry.GetValidFileIds().Length)
-                throw new FileNotFoundException("\tUnable to find member " + file + ", in type " + type + ", file " + archive);
+                throw new FileNotFoundException("\tUnable to find member " + file + ", in type " + type + ", archive " + archive + ", len: " + entry.GetValidFileIds().Length);
 
             //Get the Entry from the Container's Archive
             return GetArchive(GetContainer(type, archive), entry.GetValidFileIds().Length).GetEntry(file);
@@ -416,7 +432,7 @@ namespace FlashEditor.cache {
 
         public ItemDefinition GetItemDefinition(int archive, int entryId) {
             RSEntry entry = ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, entryId);
-            ItemDefinition def = new ItemDefinition(entry.GetStream());
+            ItemDefinition def = ItemDefinition.Decode(entry.GetStream());
             def.SetId(archive * 256 + entryId);
             return def;
         }

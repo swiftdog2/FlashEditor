@@ -2,19 +2,24 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FlashEditor.Cache.CheckSum;
 
 namespace FlashEditor.cache {
     internal class RSEntry {
         private JagStream stream = new JagStream(); //ensure there is a default stream
         public int identifier = -1;
+        public RSIdentifiers identifiers;
         public int hash;
         public byte[] whirlpool = new byte[64];
         public int crc;
         public int version;
         public int id;
 
-        private SortedDictionary<int?, RSChildEntry> childEntries = new SortedDictionary<int?, RSChildEntry>();
+        private SortedDictionary<int, RSChildEntry> childEntries = new SortedDictionary<int, RSChildEntry>();
         private int[] validFileIds;
+
+        public int compressed;
+        public int uncompressed;
 
         public RSEntry(int id) {
             this.id = id;
@@ -90,22 +95,25 @@ namespace FlashEditor.cache {
             childEntries.Remove(id);
         }
 
-        public virtual SortedDictionary<int?, RSChildEntry> GetChildEntries() {
+        public virtual SortedDictionary<int, RSChildEntry> GetChildEntries() {
             return childEntries;
         }
 
-        internal void SetNameHash(int hash) {
+        internal void SetHash(int hash) {
             this.hash = hash;
         }
 
         //Pretty sure this is for naming shit so you can find it in the cache editor tho lol sneaky jagex
-        internal int CalculateNameHash() {
+        internal int CalculateHash() {
             int h = 0;
 
             foreach(byte b in stream.ToArray())
                 h = h * 31 + b;
 
             return h;
+        }
+        internal long GetHash() {
+            return hash;
         }
 
         internal void SetValidFileIds(int[] validFileIds) {
@@ -116,12 +124,8 @@ namespace FlashEditor.cache {
             return validFileIds;
         }
 
-        internal void SetFiles(SortedDictionary<int?, RSChildEntry> entries) {
-            this.childEntries = entries;
-        }
-
-        internal long GetNameHash() {
-            return hash;
+        internal void SetChildEntries(SortedDictionary<int, RSChildEntry> childEntries) {
+            this.childEntries = childEntries;
         }
 
         internal RSChildEntry GetChildEntry(int member) {
