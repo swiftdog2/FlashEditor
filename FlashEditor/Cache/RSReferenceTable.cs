@@ -156,11 +156,11 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <returns>The reference table</returns>
         internal JagStream Encode() {
-            Debug("Encoding RSReferenceTable " + type);
+            Debug("Encoding Reference Table " + type);
 
             JagStream stream = new JagStream();
 
-            Debug("OUT Table version: " + version + " | Format: " + format + " | Flags: " + (flags == 1 ? "Y" : "N") + " | Archives: " + validArchivesCount + " | Whirl: " + (usesWhirlpool ? "Y" : "N"), LOG_DETAIL.ADVANCED);
+            Debug("\tOUT Table version: " + version + " | Format: " + format + " | Flags: " + (flags == 1 ? "Y" : "N") + " | Archives: " + validArchivesCount + " | Whirl: " + (usesWhirlpool ? "Y" : "N"), LOG_DETAIL.ADVANCED);
 
             stream.WriteByte((byte) format);
 
@@ -179,57 +179,82 @@ namespace FlashEditor.cache {
             }
 
             if(hasIdentifiers) {
-                foreach(KeyValuePair<int, RSEntry> kvp in entries)
-                    stream.WriteInteger(kvp.Value.GetIdentifier());
-                Debug("Writing identifiers");
+                Debug("Writing identifiers", LOG_DETAIL.INSANE);
+                foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                    int ident = kvp.Value.GetIdentifier();
+                    Debug("\t-" + ident);
+                    stream.WriteInteger(ident);
+                }
             }
 
-            Debug("Writing CRCs");
-            foreach(KeyValuePair<int, RSEntry> kvp in entries)
+            Debug("Writing CRCs", LOG_DETAIL.INSANE);
+            foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                int crc = kvp.Value.GetCrc();
+                Debug("\t|" + crc);
                 stream.WriteInteger(kvp.Value.GetCrc());
+            }
 
             if(entryHashes)
-                foreach(KeyValuePair<int, RSEntry> kvp in entries)
-                    stream.WriteInteger(kvp.Value.CalculateHash());
+                foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                    int hash = kvp.Value.CalculateHash();
+                    stream.WriteInteger(hash);
+                    Debug("\t|" + hash);
+                }
 
             if(usesWhirlpool) {
-                Debug("Writing whirlpool hash");
-                foreach(KeyValuePair<int, RSEntry> kvp in entries)
+                Debug("Writing whirlpool hash", LOG_DETAIL.INSANE);
+                foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                    byte[] whirl = kvp.Value.GetWhirlpool();
+                    PrintByteArray(whirl);
                     stream.Write(kvp.Value.GetWhirlpool(), 0, 64);
+                }
             }
 
             //The sizes of the archive
             if(sizes) {
                 foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                     //Needs to be updated to recalculate these values!!
+                    int comp = kvp.Value.compressed;
+                    int uncomp = kvp.Value.uncompressed;
                     stream.WriteInteger(kvp.Value.compressed);
                     stream.WriteInteger(kvp.Value.uncompressed);
+                    Debug("\t|comp: " + comp + ", uncomp: " + uncomp);
                 }
             }
 
-            Debug("Writing versions");
-            foreach(KeyValuePair<int, RSEntry> kvp in entries)
+            Debug("Writing versions", LOG_DETAIL.INSANE);
+            foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                int version = kvp.Value.GetVersion();
                 stream.WriteInteger(kvp.Value.GetVersion());
+                Debug("\t|" + version);
+            }
 
-            Debug("Writing number of non-null child entries");
-            foreach(KeyValuePair<int, RSEntry> kvp in entries)
-                stream.WriteShort(kvp.Value.GetChildEntries().Count);
+            Debug("Writing number of non-null child entries", LOG_DETAIL.INSANE);
+            foreach(KeyValuePair<int, RSEntry> kvp in entries) {
+                int nnce = kvp.Value.GetChildEntries().Count;
+                stream.WriteShort(nnce);
+                Debug("\t|" + nnce);
+            }
 
-            Debug("Writing child IDs");
+            Debug("Writing child IDs", LOG_DETAIL.INSANE);
             foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                 last = 0;
                 for(int id = 0; id < kvp.Value.GetChildEntries().Count; id++) {
                     int delta = id - last;
                     stream.WriteShort(delta);
+                    //Debug("\t|" + delta, LOG_DETAIL.INSANE);
                     last = id;
                 }
             }
 
             if(hasIdentifiers) {
-                Debug("Writing identifiers");
+                Debug("Writing identifiers", LOG_DETAIL.INSANE);
                 foreach(KeyValuePair<int, RSEntry> kvp in entries)
-                    foreach(KeyValuePair<int, RSChildEntry> child in kvp.Value.GetChildEntries())
-                        stream.WriteInteger(child.Value.GetIdentifier());
+                    foreach(KeyValuePair<int, RSChildEntry> child in kvp.Value.GetChildEntries()) {
+                        int childIdent = child.Value.GetIdentifier();
+                        stream.WriteInteger(childIdent);
+                        Debug("\t|" + childIdent);
+                    }
             }
 
             Debug("...finished, stream len: " + stream.Length);

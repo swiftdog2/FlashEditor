@@ -3,10 +3,6 @@ using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
 using java.math;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace FlashEditor.Cache {
     class ChecksumTable {

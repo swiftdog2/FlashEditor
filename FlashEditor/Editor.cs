@@ -7,8 +7,6 @@ using System.IO;
 using System.Windows.Forms;
 using System.ComponentModel;
 using System.Diagnostics;
-using FlashEditor.utils;
-using System.Drawing;
 using BrightIdeasSoftware;
 using FlashEditor.Tests;
 
@@ -410,14 +408,14 @@ namespace FlashEditor {
         }
 
         //Finished editing a definition
-        private void ItemListView_CellEditFinished(object sender, BrightIdeasSoftware.CellEditEventArgs e) {
+        private void ItemListView_CellEditFinished(object sender, CellEditEventArgs e) {
             Debug(@" ______    _ _ _     _____ _                ");
             Debug(@"|  ____|  | (_) |   |_   _| |                ");
             Debug(@"| |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
             Debug(@"|  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
             Debug(@"| |___| (_| | | |_   _| |_| ||  __/ | | | | |");
             Debug(@"|______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
-            Debug(@"Edit Item                                    ");
+            Debug("Edit Item");
 
             Debug("itemdef name: " + currentItem.name);
 
@@ -433,26 +431,10 @@ namespace FlashEditor {
 
             //Update the entry in the container's archive   
             JagStream newItemStream = newDefinition.Encode();
-            Debug("New item stream len: " + newItemStream.Length.ToString() + ", ptr: " + newItemStream.Position.ToString() + ", rem: " + newItemStream.Remaining().ToString());
+
             cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
 
             PrintDifferences(newDefinition, currentItem);
-
-            //Compares the old and new reference table and item definitions
-            RSReferenceTable refTable = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
-            JagStream refEncoded = refTable.Encode();
-            RSReferenceTable refTable2 = RSReferenceTable.Decode(refEncoded);
-            JagStream encoded2 = refTable2.Encode();
-
-            ItemDefinition itemDef = cache.GetItemDefinition(archiveId, entryId);
-            JagStream itemDefEncoded = itemDef.Encode();
-            ItemDefinition itemDef2 = ItemDefinition.Decode(itemDefEncoded);
-            JagStream itemDefEncoded2 = itemDef2.Encode();
-
-            PrintByteArray(refEncoded.ToArray());
-            PrintByteArray(encoded2.ToArray());
-            StreamTests.StreamDifference(refEncoded, encoded2, "item reftables");
-            StreamTests.StreamDifference(itemDefEncoded, itemDefEncoded2, "item defs");
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {
@@ -537,8 +519,6 @@ namespace FlashEditor {
         }
 
         public int AnalyseCache(string file) {
-            Debug("Analysing " + file);
-
             string cacheIn = RSConstants.CACHE_DIRECTORY + "/main_file_cache.";
             string cacheOut = RSConstants.CACHE_OUTPUT_DIRECTORY + "/main_file_cache.";
 

@@ -219,6 +219,7 @@
     <Compile Include="FlashEditorForm.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Tests\BitShifting.cs" />
+    <Compile Include="Tests\CodecTests.cs" />
     <Compile Include="Tests\CompressionTests.cs" />
     <Compile Include="Tests\ItemTests.cs" />
     <Compile Include="Tests\StreamTests.cs" />

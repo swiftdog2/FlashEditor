@@ -1,5 +1,4 @@
-﻿using static FlashEditor.utils.DebugUtil;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace FlashEditor {
     internal class NPCDefinition {

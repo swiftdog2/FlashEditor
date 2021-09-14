@@ -16,7 +16,7 @@ namespace FlashEditor.utils {
         };
 
         //The current logging detail level, change for lower/higher detailed logs
-        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.ADVANCED;
+        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.INSANE;
 
         /// <summary>
         /// Prints out the debug message and waits for user input
@@ -61,7 +61,7 @@ namespace FlashEditor.utils {
         /// <param name="length">The number of bytes to print from the beginning and end of the buffer</param>
         public static void PrintByteArray(byte[] buffer, int length) {
             //We cannot print more than max bytes on either side
-            int max = buffer.Length;/// 2;
+            int max = 20; //buffer.Length;
 
             Console.Write(length + "/" + buffer.Length + ": ");
 
@@ -72,7 +72,7 @@ namespace FlashEditor.utils {
             for(int k = 0; k < length; k++)
                 Console.Write("{0} ", buffer[k] & 0xFF);
 
-            System.Console.Write("...");
+            Console.Write("...");
 
             //Print out the right side (from length + 1 to end)
             for(int k = buffer.Length - length; k < buffer.Length; k++)

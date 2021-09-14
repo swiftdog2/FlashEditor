@@ -23,8 +23,8 @@ namespace FlashEditor {
         /// <param name="file">The archive entry </param>
         /// <returns>The decoded item definition</returns>
         static ItemDefinition LoadItemDefinition(cache.RSCache cache, int archive, int file) {
-            RSEntry item = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
-            ItemDefinition def = ItemDefinition.Decode(item.GetStream());
+            JagStream item = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
+            ItemDefinition def = ItemDefinition.Decode(item);
             return def;
         }
 

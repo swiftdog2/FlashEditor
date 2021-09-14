@@ -57,24 +57,8 @@ namespace FlashEditor {
             if(stream == null)
                 throw new NullReferenceException("Stream was null");
 
-            using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write)) {
-                byte[] bytes = new byte[stream.Length];
+            using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write))
                 file.Write(stream.ToArray(), 0, (int) stream.Length);
-            }
-
-            using(stream) {
-                StreamWriter writer = new StreamWriter(stream);
-
-                writer.Flush();
-
-                //You have to rewind the MemoryStream before copying
-                stream.Seek0();
-
-                using(FileStream fs = new FileStream(directory, FileMode.OpenOrCreate)) {
-                    stream.CopyTo(fs);
-                    fs.Flush();
-                }
-            }
         }
 
         public void Save(string directory) {
@@ -305,13 +289,9 @@ namespace FlashEditor {
             if(value is short)
                 data = BitConverter.GetBytes((short) value);
 
-            //Write these in the correct endian!
-            for(int k = bytes - 1; k >= 0; k--) {
-                if(Position == 973)
-                    Debug("973: " + data[k]);
+            //Backwards to maintain the correct endianness!
+            for(int k = bytes - 1; k >= 0; k--)
                 WriteByte(data[k]);
-            }
-
         }
 
         internal void WriteShort(short value) {
@@ -324,6 +304,10 @@ namespace FlashEditor {
 
         internal void WriteMedium(int value) {
             WriteBytes(3, value);
+        }
+
+        internal void WriteMedium(long value) {
+            WriteBytes(3, (int) value);
         }
 
         internal void WriteVarInt(int var63) {
@@ -352,6 +336,10 @@ namespace FlashEditor {
 
         internal JagStream GetSubStream(int length) {
             return new JagStream(ReadBytes(length));
+        }
+
+        internal byte[] ReadBytes(long length) {
+            return ReadBytes((int) length);
         }
 
         internal byte[] ReadBytes(int length) {

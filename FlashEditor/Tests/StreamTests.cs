@@ -45,7 +45,6 @@ namespace FlashEditor.Tests {
                 if(x != y) {
                     DebugUtil.Debug("Difference y in " + stream + " @ " + k + " -- x: " + x + ", y: " + y);
                     diff = true;
-                    break;
                 }
             }
 

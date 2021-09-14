@@ -6,7 +6,7 @@ using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
     class RSArchive {
-        public SortedDictionary<int, RSEntry> entries = new SortedDictionary<int, RSEntry>();
+        public SortedDictionary<int, JagStream> entries = new SortedDictionary<int, JagStream>();
         public int chunks = 1;
 
         /// <summary>
@@ -48,7 +48,7 @@ namespace FlashEditor.cache {
                     //Read the delta-encoded chunk length
                     int delta = stream.ReadInt();
                     cumulativeChunkSize += delta;
-                    Debug("Delta: " + delta, LOG_DETAIL.INSANE);
+                    Debug(" " + delta, LOG_DETAIL.INSANE);
 
                     //Store the size of this chunk
                     chunkSizes[chunk][id] = cumulativeChunkSize;
@@ -61,7 +61,7 @@ namespace FlashEditor.cache {
 
             //Allocate the buffers for the child entries
             for(int id = 0; id < size; id++)
-                    archive.entries[id] = new RSEntry(new JagStream(entrySizes[id]));
+                archive.entries[id] = new JagStream(entrySizes[id]);
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
@@ -77,13 +77,13 @@ namespace FlashEditor.cache {
                     stream.Read(temp, 0, temp.Length);
 
                     //Copy the temporary buffer into the file buffer
-                    archive.entries[id].GetStream().Write(temp, 0, temp.Length);
+                    archive.entries[id].Write(temp, 0, temp.Length);
                 }
             }
 
             //Flip all of the buffers
             for(int id = 0; id < size; id++)
-                archive.entries[id].GetStream().Flip();
+                archive.entries[id].Flip();
 
             //Return the archive
             return archive;
@@ -99,15 +99,15 @@ namespace FlashEditor.cache {
              */
 
             //Write the chunk data for each entry stream
-            foreach(KeyValuePair<int, RSEntry> entry in entries)
-                entry.Value.GetStream().WriteTo(stream);
+            foreach(KeyValuePair<int, JagStream> entry in entries)
+                entry.Value.WriteTo(stream);
 
             //Write the chunk lengths
             int prev = 0;
             for(int chunk = 0; chunk < chunks; chunk++) {
-                foreach(KeyValuePair<int, RSEntry> entry in entries) {
+                foreach(KeyValuePair<int, JagStream> entry in entries) {
                     //Archive is broken into chunks, which is the entry stream data
-                    int chunkSize = (int) entry.Value.GetStream().Length; //Therefore chunk size is entry stream length
+                    int chunkSize = (int) entry.Value.Length; //Therefore chunk size is entry stream length
                     stream.WriteInteger(chunkSize - prev); //So delta is the difference between the chunk sizes
                     prev = chunkSize; //Store the size of the last entry
                 }
@@ -125,7 +125,7 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="id">The file entry eindex</param>
         /// <returns></returns>
-        public virtual RSEntry GetEntry(int id) {
+        public virtual JagStream GetEntry(int id) {
             return entries[id];
         }
 
@@ -133,17 +133,16 @@ namespace FlashEditor.cache {
             return entries.Count;
         }
 
-        internal void PutEntry(int entryId, RSEntry entry) {
+        internal void PutEntry(int entryId, JagStream entry) {
             if(entries.ContainsKey(entryId)) {
                 //Update the entry
                 entries[entryId] = entry;
+                Debug("Updated archive entry " + entryId + ", len: " + entry.Length, LOG_DETAIL.ADVANCED);
             } else {
                 //Add a new entry to the archive, expanding it
                 entries.Add(entryId, entry);
-                Debug("New entry " + entryId + " added, new total: " + entries.Count, LOG_DETAIL.INSANE);
+                Debug("Added new entry " + entryId + ", len: " + entry.Length + ", total: " + entries.Count, LOG_DETAIL.INSANE);
             }
-
-            Debug("Updated archive entry " + entryId + ", len: " + entry.GetStream().Length, LOG_DETAIL.ADVANCED);
         }
     }
 }

@@ -6,7 +6,7 @@ using FlashEditor.utils;
 namespace FlashEditor.cache {
     internal class RSContainer {
         private JagStream stream; //the archive stream
-        public int indexType;
+        public int type;
         public int id;
         public int length;
         public byte compressionType = 0;
@@ -21,7 +21,7 @@ namespace FlashEditor.cache {
         }
 
         public RSContainer(RSContainer container) {
-            indexType = container.GetIndexType();
+            type = container.GetIndexType();
             id = container.GetId();
             length = container.GetLength();
             compressionType = container.GetCompressionType();
@@ -29,11 +29,13 @@ namespace FlashEditor.cache {
             decompressedLength = container.GetDecompressedLength();
         }
 
-        public RSContainer(byte compressionType, JagStream stream, int version) {
+        public RSContainer(int type, int id, byte compressionType, JagStream stream, int version) {
+            this.type = type;
+            this.id = id;
             this.compressionType = compressionType;
             this.stream = stream;
             this.version = version;
-        }
+    }
 
         public JagStream Encode() {
             Debug("Encoding RSContainer " + id + ", length " + GetStream().Length);
@@ -59,6 +61,7 @@ namespace FlashEditor.cache {
 
             //Write the stored ("compressed") length
             stream.WriteInteger(data.Length);
+            SetDataLength(data.Length);
 
             //If compressed, write the decompressed length also
             if(compressionType != RSConstants.NO_COMPRESSION)
@@ -80,8 +83,8 @@ namespace FlashEditor.cache {
             }
             */
 
+            Debug("\t\t\tENCODED Container, stream len: " + stream.Length);
             PrintInfo();
-            Debug("\t\t\tENCODED Container");
 
             //Finally, flip the buffer and return it
             return stream.Flip();
@@ -119,8 +122,6 @@ namespace FlashEditor.cache {
                 //Read the data from the stream into a buffer
                 byte[] data = new byte[container.GetDataLength()];
                 stream.Read(data, 0, data.Length);
-
-                container.PrintInfo();
 
                 //Decompress the data
                 if(container.GetCompressionType() == RSConstants.BZIP2_COMPRESSION)
@@ -174,7 +175,6 @@ namespace FlashEditor.cache {
             Debug("\t\t\tCompression type: " + GetCompressionString()
                 + (stream == null ? "" : ", streamlen: " + stream.Length)
                 + ", datalen: " + GetDataLength()
-                + ", decompressedLength: " + GetDecompressedLength()
                 + ", version: " + GetVersion(),
             LOG_DETAIL.ADVANCED);
         }
@@ -220,7 +220,7 @@ namespace FlashEditor.cache {
         }
 
         internal void SetType(int type) {
-            this.indexType = type;
+            this.type = type;
         }
 
         internal void SetId(int id) {
@@ -228,7 +228,7 @@ namespace FlashEditor.cache {
         }
 
         public int GetIndexType() {
-            return indexType;
+            return type;
         }
 
         public int GetId() {

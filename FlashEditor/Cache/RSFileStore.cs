@@ -81,132 +81,102 @@ namespace FlashEditor.cache {
         *             if an I/O error occurs.
         */
 
-        public void Write(int type, int containerId, JagStream data) {
-            if(!Write(type, containerId, data, true)) {
-                data.Seek0();
-                Write(type, containerId, data, false);
-            }
-        }
+        /*
+         * Imagine, hypothetically, there is an index with 3 container headers as such:
+         * Container 0  Container 1 Container 2
+         * [med,med]    [med,med]   [med,med]
+         * If containerID = 3, that will be index 18 ie equal to length of the index stream
+         * This means we are required to expand the index
+         * However, if containerID = 4, this means we would be skipping 3 which is dumb af
+         */
 
-        public bool Write(int type, int containerId, JagStream data, bool overwrite) {
+        public void Write(int type, int containerId, JagStream data) {
             Debug("Writing index " + type + ", container " + containerId + ", data len: " + data.Length);
 
-            if((type < 0 || type >= indexChannels.Keys.Max()) && type != RSConstants.META_INDEX)
-                throw new FileNotFoundException("Unable to write, invalid index ID: " + type);
+            if(!indexChannels.ContainsKey(type))
+                throw new FileNotFoundException("Unable to write, invalid type: " + type);
 
+            //The index for which to update the container header
             RSIndex index = GetIndex(type);
 
-            int nextSector;
             long ptr = containerId * RSIndex.SIZE;
+            if(ptr > index.GetStream().Length)
+                throw new ArgumentOutOfRangeException("Container IDs must be contiguous -- " + containerId + " @ " + ptr);
 
-            Debug("Total sectors: " + (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / (long) RSSector.SIZE));
+            //By default, appends the sectors to the end of the data stream
+            int curSector = (int) dataChannel.GetStream().Length / RSSector.SIZE;
 
-            //If we are overwriting an existing sector
-            if(overwrite) {
-                if(ptr < 0)
-                    throw new IOException("Pointer out of bounds");
-                else if(ptr >= index.GetStream().Length)
-                    return false;
+            //Are we adding a completely new container?
+            bool newContainer = ptr == index.GetStream().Length;
+            int oldSectorCount = 0;
 
+            //Overwrite any existing container headers first
+            if(!newContainer) {
+                Debug("**Overwriting container header**");
+                index.ReadContainerHeader(containerId);
+                curSector = index.GetSectorID(); //Find the first sector
+                int oldSize = index.GetSize(); //Get the current sector size
                 index.GetStream().Seek(ptr);
-                index.GetStream().ReadMedium(); //size
-                nextSector = index.GetStream().ReadMedium(); //sectorId
-
-                Debug("Next sector: " + nextSector);
-
-                if(nextSector <= 0 || nextSector > dataChannel.GetStream().Length * RSSector.SIZE) {
-                    Debug("ERROR!!!! s1, sector " + nextSector.ToString() + " / " + (dataChannel.GetStream().Length * (long) RSSector.SIZE).ToString() + " out of bounds", LOG_DETAIL.INSANE);
-                    return false;
-                }
-            } else {
-                //We need to make a new sector?
-                nextSector = (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / RSSector.SIZE);
-                if(nextSector == 0)
-                    nextSector = 1;
-                Debug("Creating new sector, nextSector: " + nextSector, LOG_DETAIL.INSANE);
+                oldSectorCount = oldSize / 512 + (oldSize % 512 > 0 ? 1 : 0);
             }
 
-            Debug("data remaining: " + data.Remaining() + ", next sector: " + nextSector);
+            //Update the container header
+            Debug("Updating container header with size: " + data.Length + ", curSector: " + curSector);
+            index.GetStream().WriteMedium(data.Length); //Write the container size
+            index.GetStream().WriteMedium(curSector); //Write the new sector ID
 
-            RSIndex ix = RSIndex.Decode(index.GetStream().GetSubStream(RSIndex.SIZE, ptr));
+            //Prepare the sectors to overwrite
+            List<int> sectors = new List<int>();
 
-            //Update the meta index with the updated size and sector ID
-
-            Console.WriteLine("index size: " + index.GetSize() + ", nextSector: " + index.GetSectorID());
-
-            index.GetStream().Seek(ptr);
-            index.GetStream().Write(ix.Encode().ToArray(), 0, RSIndex.SIZE);
-
-            Debug("Writing @" + ptr + ": " + data.Remaining() + ", next sector: " + nextSector, LOG_DETAIL.ADVANCED);
-
-            int chunk = 0, remaining = ix.GetSize();
-
-            do {
-                int curSector = nextSector;
-                Debug("cursector: " + curSector + ", nex: " + nextSector);
+            for(int k = 0; k < oldSectorCount; k++) {
+                sectors.Add(curSector);
+                Debug("Overwriting sector: " + curSector);
                 ptr = curSector * RSSector.SIZE;
-                nextSector = 0;
+                JagStream overwriteSector = dataChannel.GetStream().GetSubStream(RSSector.SIZE, ptr);
+                curSector = RSSector.Decode(overwriteSector).GetNextSector();
+            }
 
-                RSSector sector;
+            int newSectorCount = (int) data.Length / 512 + (data.Length % 512 > 0 ? 1 : 0);
+            if(newSectorCount > oldSectorCount) {
+                Debug("**Expanding the index**");
 
-                if(overwrite) {
-                    JagStream buf = dataChannel.GetStream().GetSubStream(RSSector.SIZE, ptr);
-
-                    PrintByteArray(buf.ToArray());
-
-                    sector = RSSector.Decode(buf);
-
-                    if(sector.GetType() != type) {
-                        Debug("ERROR!!!! s2, mismatching sector type " + sector.GetType() + ", index: " + type, LOG_DETAIL.INSANE);
-                        return false;
-                    }
-
-                    if(sector.GetId() != containerId) {
-                        Debug("ERROR!!!! s3, mismatching sector id " + sector.GetId() + ", containerId: " + containerId, LOG_DETAIL.INSANE);
-                        return false;
-                    }
-
-                    if(sector.GetChunk() != chunk) {
-                        Debug("ERROR!!!! s4, mismatching sector chunk " + sector.GetChunk() + ", chunk: " + chunk, LOG_DETAIL.INSANE);
-                        return false;
-                    }
-
-                    nextSector = sector.GetNextSector();
-                    if(nextSector < 0 || nextSector > dataChannel.GetStream().Length / RSSector.SIZE) {
-                        Debug("ERROR!!!! s5, sector out of bounds.", LOG_DETAIL.INSANE);
-                        return false;
-                    }
+                for(int k = 0; k < newSectorCount - oldSectorCount; k++) {
+                    sectors.Add(++curSector);
+                    Debug("New sector: " + curSector);
                 }
+            }
 
-                if(nextSector == 0) {
-                    overwrite = false;
-                    nextSector = (int) ((dataChannel.GetStream().Length + RSSector.SIZE - 1) / RSSector.SIZE);
-                    if(nextSector == 0)
-                        nextSector++;
-                    if(nextSector == curSector)
-                        nextSector++;
-                }
+            int remaining = (int) data.Length;
+            int chunk = 0; //The relative sector index for the container data, actually
 
-                int dataSize = RSSector.DATA_LEN;
+            data.Seek0();
 
-                byte[] bytes = new byte[dataSize];
-                if(remaining < dataSize) {
-                    data.Read(bytes, 0, remaining);
-                    nextSector = 0; // mark as EOF
-                    remaining = 0;
-                } else {
-                    remaining -= dataSize;
-                    data.Read(bytes, 0, dataSize);
-                }
+            Debug("Beginning write of " + data.Length + " bytes...", LOG_DETAIL.ADVANCED);
 
-                sector = new RSSector(type, containerId, chunk++, nextSector, bytes);
-                JagStream sectorData = sector.Encode();
+            for(int k = 0; k < sectors.Count; k++) {
+                curSector = sectors[k];
+
+                ptr = curSector * RSSector.SIZE;
+
+                Debug("\tSector " + curSector + " @ " + ptr + ", chunk " + chunk + ": " + remaining + " bytes remaining", LOG_DETAIL.ADVANCED);
+
+                //Read up to DATA_LEN bytes, or the remainder of, the container data
+                byte[] chunkData = new byte[RSSector.DATA_LEN];
+                int bytesToRead = Math.Min(remaining, RSSector.DATA_LEN);
+                data.Read(chunkData, 0, bytesToRead);
+                PrintByteArray(chunkData);
+                remaining -= bytesToRead;
+
+                //For the last sector, mark as EOF
+                int nextSector = (k == sectors.Count - 1) ? 0 : sectors[k + 1];
+                //If we just read the last sector, mark as EOF
+
                 Debug("Writing sector - Index: " + type + ", container: " + containerId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", remaining: " + remaining);
-                dataChannel.GetStream().Seek((int) ptr);
-                dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
-            } while(remaining > 0);
+                JagStream sectorData = new RSSector(type, containerId, chunk++, nextSector, chunkData).Encode();
 
-            return true;
+                dataChannel.GetStream().Seek(ptr);
+                dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
+            }
         }
     }
 }

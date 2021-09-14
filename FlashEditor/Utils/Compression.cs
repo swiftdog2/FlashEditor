@@ -13,7 +13,6 @@ namespace FlashEditor {
         //Took way too long to realise that shit lmfao
         //Then as you copy the data back out it is decompressed/inflated
         public static byte[] Gunzip(byte[] bytes) {
-            DebugUtil.Debug("gunzipping " + bytes.Length + " bytes");
             DebugUtil.PrintByteArray(bytes);
             MemoryStream inflateStream = new MemoryStream();
             using(GZipInputStream gz = new GZipInputStream(new JagStream(bytes), 4096))
@@ -23,7 +22,6 @@ namespace FlashEditor {
         }
 
         public static byte[] Gzip(byte[] bytes) {
-            DebugUtil.Debug("gzipping " + bytes.Length + " bytes");
             MemoryStream deflateStream = new MemoryStream();
             using(GZipOutputStream gz = new GZipOutputStream(deflateStream, 4096)) {
                 using(MemoryStream js = new MemoryStream(bytes)) {
@@ -47,7 +45,6 @@ namespace FlashEditor {
 
             DebugUtil.PrintByteArray(bzip2);
             BZip2InputStream inputStream = new BZip2InputStream(new JagStream(bzip2));
-            DebugUtil.Debug("len x: " + inputStream.Length);
 
             byte[] data = new byte[decompressedLength];
 

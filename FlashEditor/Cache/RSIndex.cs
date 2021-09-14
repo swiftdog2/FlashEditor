@@ -3,7 +3,12 @@ using System;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
-    //RsIndex is simply the raw data that was read from disk in to a stream
+    /// <summary>
+    /// An RSIndex represents a series of container headers
+    /// Sector is the ID of the first sector that stores the container data in the dat2
+    /// The stream is simply the raw data read in from the disk from one of the idx files
+    /// </summary>
+
     class RSIndex {
         public const int SIZE = 6;
 
@@ -12,35 +17,14 @@ namespace FlashEditor.cache {
         private JagStream stream;
 
         public RSIndex(JagStream stream) {
-            SetStream(stream);
+            this.stream = stream;
         }
 
-        public void ReadContainerHeader() {
-            Debug("Reading container header...", LOG_DETAIL.INSANE);
+        public void ReadContainerHeader(int containerId) {
+            stream.Seek(containerId * SIZE); //seek to the container header position
             size = GetStream().ReadMedium();
             sector = GetStream().ReadMedium();
-        }
-
-        public static RSIndex Decode(JagStream stream) {
-            RSIndex index = new RSIndex(stream);
-            index.ReadContainerHeader();
-            return index;
-        }
-
-        public JagStream GetStream() {
-            return stream;
-        }
-
-        public int GetSize() {
-            return size;
-        }
-
-        public int GetSectorID() {
-            return sector;
-        }
-
-        internal void SetStream(JagStream stream) {
-            this.stream = stream;
+            Debug("Read container " + containerId + " header... size: " + size + ", sector: " + sector, LOG_DETAIL.ADVANCED);
         }
 
         internal JagStream Encode() {
@@ -48,6 +32,20 @@ namespace FlashEditor.cache {
             stream.WriteMedium(size);
             stream.WriteMedium(sector);
             return stream.Flip();
+        }
+
+        public JagStream GetStream() {
+            return stream;
+        }
+
+        //The size of the container stream (in bytes)
+        public int GetSize() {
+            return size;
+        }
+
+        //The first sector in the dat2 in which the container data is stored
+        public int GetSectorID() {
+            return sector;
         }
     }
 }
