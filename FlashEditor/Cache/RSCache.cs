@@ -128,7 +128,7 @@ namespace FlashEditor.cache {
             }
 
             //Grab the bytes we need for the checksum
-            JagStream stream = container.Encode();
+            JagStream stream = container.Encode(); //already checked definitely correct upto this point
 
             //Last two bytes are the version and shouldn't be included in the checksum
             JagStream hashableStream = new JagStream(stream.ReadBytes(stream.Length - 2));
@@ -146,11 +146,11 @@ namespace FlashEditor.cache {
             table.PutEntry(containerId, entry);
 
             //Update the reference table stream
-            RSContainer tableContainer = GetContainer(RSConstants.META_INDEX, type);
-            tableContainer.SetStream(table.Encode());
+            //RSContainer tableContainer = GetContainer(RSConstants.META_INDEX, type);
+            //tableContainer.SetStream(table.Encode());
 
             //Write out the reference table
-            //tableContainer = new RSContainer(RSConstants.META_INDEX, type, RSConstants.GZIP_COMPRESSION, table.Encode(), 1337);
+            RSContainer tableContainer = new RSContainer(RSConstants.META_INDEX, type, RSConstants.GZIP_COMPRESSION, table.Encode(), 1337);
             store.Write(RSConstants.META_INDEX, type, tableContainer.Encode());
             store.Write(type, containerId, stream);
         }
