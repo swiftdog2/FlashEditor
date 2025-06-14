@@ -1,7 +1,7 @@
-using FlashEditor.Cache.CheckSum;
+﻿using FlashEditor.Cache.CheckSum;
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
-using System.Numerics;
+using java.math;
 using System;
 
 namespace FlashEditor.Cache {
