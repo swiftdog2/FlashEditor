@@ -268,7 +268,7 @@ namespace FlashEditor {
                         int percentile = total / 100;
 
                         bgw.ReportProgress(0, "Loading " + total + " Sprites");
-                        System.Console.WriteLine("Loading " + total + " Sprites");
+                        Debug("Loading " + total + " Sprites");
                         foreach(KeyValuePair<int, RSEntry> entry in referenceTable.GetEntries()) {
                             try {
                                 Debug("Loading sprite: " + entry.Key, LOG_DETAIL.ADVANCED);

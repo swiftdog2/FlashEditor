@@ -1,5 +1,6 @@
 ﻿using System;
 using OpenTK;
+using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Model {
 
@@ -916,7 +917,7 @@ namespace FlashEditor.Definitions.Model {
 
             int i = footer.ReadUnsignedByte();
             if(i != 1)
-                Console.WriteLine(i);
+                Debug(i.ToString());
             else {
                 footer.ReadUnsignedByte();// dummy read in
                 version = footer.ReadUnsignedByte();// version now reads here instead
@@ -1395,7 +1396,7 @@ namespace FlashEditor.Definitions.Model {
             JagStream class219_sub41_140_ = new JagStream((byte[])(Array)instream);
             int i = footer.ReadUnsignedByte();
             if(i != 0)
-                Console.WriteLine(i);
+                Debug(i.ToString());
             else {
                 footer.Position = (instream.Length - 18);
                 numVertices = footer.ReadUnsignedShort();
@@ -1636,7 +1637,7 @@ namespace FlashEditor.Definitions.Model {
             JagStream var8 = new JagStream((byte[])(Array)data);
             int modelType = header.ReadUnsignedByte();
             if(modelType != 1) {
-                Console.WriteLine("" + modelType);
+                Debug("" + modelType);
             } else {
                 header.ReadUnsignedByte();
                 this.version = header.ReadUnsignedByte();

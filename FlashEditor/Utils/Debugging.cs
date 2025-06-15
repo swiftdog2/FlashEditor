@@ -23,6 +23,9 @@ namespace FlashEditor.utils {
         /// </summary>
         /// <param name="output">The debug message</param>
         public static void Debug(string output) {
+            if(LOG_LEVEL == LOG_DETAIL.NONE)
+                return;
+
             Console.WriteLine(output);
         }
 
@@ -59,6 +62,9 @@ namespace FlashEditor.utils {
         /// <param name="buffer">The byte buffer to print</param>
         /// <param name="length">The number of bytes to print from the beginning and end of the buffer</param>
         public static void PrintByteArray(byte[] buffer, int length) {
+            if(LOG_LEVEL == LOG_DETAIL.NONE)
+                return;
+
             //We cannot print more than max bytes on either side
             int max = 20; //buffer.Length;
 
@@ -81,6 +87,9 @@ namespace FlashEditor.utils {
         }
 
         public static void WriteLine(string output) {
+            if(LOG_LEVEL == LOG_DETAIL.NONE)
+                return;
+
             Console.WriteLine(output);
         }
 
