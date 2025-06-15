@@ -13,9 +13,10 @@ Follow these steps to create and configure the test projects for this solution.
    - Open the Package Manager Console and run:
      ```
      Install-Package xunit
-     Install-Package xunit.runner.visualstudio
-     Install-Package Moq
-     ```
+    Install-Package xunit.runner.visualstudio
+    Install-Package Moq
+    Install-Package Microsoft.NETFramework.ReferenceAssemblies.net472
+    ```
 
 4. **Organise folders and namespaces**
    - Mirror the source structure inside the test project under folders such as `Utils/`, `IO/`, and `Cache/Util/`.
@@ -25,6 +26,9 @@ Follow these steps to create and configure the test projects for this solution.
    - Build the solution and open the **Test Explorer** window.
    - All tests should appear automatically thanks to the xUnit Visual Studio runner.
    - Use `dotnet test` or `vstest.console.exe` if executing from command line.
+   - If building on a machine without the .NET Framework developer packs, the
+     `Microsoft.NETFramework.ReferenceAssemblies.net472` package provides the
+     reference assemblies so `dotnet test` can compile the projects.
 
 6. **CI Integration**
    - In your pipeline add a task similar to:
