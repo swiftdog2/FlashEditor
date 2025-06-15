@@ -1,5 +1,6 @@
 ﻿using System;
 using OpenTK;
+using System.Threading.Tasks;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Model {
@@ -54,9 +55,8 @@ namespace FlashEditor.Definitions.Model {
         static Model() {
             int[] out1 = hsl2rgb = new int[65536];
             double d = 0.7D;
-            int i = 0;
 
-            for(int i1 = 0; i1 != 512; ++i1) {
+            System.Threading.Tasks.Parallel.For(0, 512, i1 => {
                 float f = ((float)(i1 >> 3) / 64.0F + 0.0078125F) * 360.0F;
                 float f1 = 0.0625F + (float)(7 & i1) / 8.0F;
 
@@ -103,11 +103,12 @@ namespace FlashEditor.Definitions.Model {
                             break;
                     }
 
-                    out1[i++] = (int) ((float) Math.Pow((double) f3, d) * 256.0F) << 16
-                            | (int) ((float) Math.Pow((double) f4, d) * 256.0F) << 8
-                            | (int) ((float) Math.Pow((double) f5, d) * 256.0F);
+                    int index = i1 * 128 + i2;
+                    out1[index] = (int)((float)Math.Pow((double)f3, d) * 256.0F) << 16
+                            | (int)((float)Math.Pow((double)f4, d) * 256.0F) << 8
+                            | (int)((float)Math.Pow((double)f5, d) * 256.0F);
                 }
-            }
+            });
 
         }
 
