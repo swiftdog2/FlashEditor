@@ -3,6 +3,9 @@ using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using System.Threading;
 using System.IO;
 using System.Windows.Forms;
 using System.ComponentModel;
@@ -265,6 +268,8 @@ namespace FlashEditor
                             }
                         }
 
+                        cache.items = new System.Collections.Generic.SortedDictionary<int, ItemDefinition>(items);
+
                         Debug("Finished loading " + total + " items");
 
                         ItemListView.SetObjects(cache.items.Values);
@@ -298,7 +303,7 @@ namespace FlashEditor
                         Debug(@"                                 |___/         |_|                       ");
                         Debug(@"Loading Sprites");
 
-                        List<SpriteDefinition> sprites = new List<SpriteDefinition>();
+                        var sprites = new System.Collections.Concurrent.ConcurrentBag<SpriteDefinition>();
 
                         int done = 0;
                         int total = referenceTable.GetEntryTotal();
@@ -316,7 +321,7 @@ namespace FlashEditor
                                 sprite.SetIndex(entry.Key);
                                 sprites.Add(sprite);
 
-                                done++;
+                                int progress = System.Threading.Interlocked.Increment(ref done);
 
                                 //Only update the progress bar for each 1% completed
                                 if (done % percentile == 0 || done == total)
@@ -326,7 +331,7 @@ namespace FlashEditor
                             {
                                 Debug(ex.Message);
                             }
-                        }
+                        });
 
                         //Set the root objects for the tree
                         SpriteListView.SetObjects(sprites);
@@ -389,7 +394,7 @@ namespace FlashEditor
                                 try
                                 {
                                     NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
-                                    npc.SetId(archiveId * 128 + file); //Set the NPC ID
+                                    npc.SetId(archiveId * 128 + file);
                                     npcs.Add(npc);
                                 }
                                 catch (Exception ex)
