@@ -1,5 +1,6 @@
 using FlashEditor;
 using FlashEditor.cache;
+using FlashEditor.utils;
 using System.Collections.Generic;
 using Xunit;
 
@@ -7,6 +8,11 @@ namespace FlashEditor.Tests.Cache
 {
     public class CodecTests
     {
+        public CodecTests()
+        {
+            // Disable blocking debug prompts during test execution
+            DebugUtil.LOG_LEVEL = DebugUtil.LOG_DETAIL.NONE;
+        }
         [Fact]
         public void ReferenceTable_EncodeDecode_RoundTrips()
         {
