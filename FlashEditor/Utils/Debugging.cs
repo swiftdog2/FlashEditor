@@ -107,8 +107,19 @@ namespace FlashEditor.utils {
         }
 
         public static void PrintDifferences(object a, object b) {
+            if(a == null || b == null) {
+                if(a != b)
+                    Debug("\tObjects differ (null vs non-null)");
+                return;
+            }
+
             Dictionary<string, object> propsA = JsonConvert.DeserializeObject<Dictionary<string, object>>(JsonConvert.SerializeObject(a));
             Dictionary<string, object> propsB = JsonConvert.DeserializeObject<Dictionary<string, object>>(JsonConvert.SerializeObject(b));
+
+            if(propsA == null || propsB == null) {
+                Debug("Unable to evaluate differences - serialization failed");
+                return;
+            }
 
             Debug("Evaluating changes...");
 

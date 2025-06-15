@@ -1395,9 +1395,11 @@ namespace FlashEditor.Definitions.Model {
                         maxDepth = functionZ;
                 }
                 if(this.anInt1234 > 0 && (i_127_ & 8) != 0) {
-                    this.aByteArray1241[tri] = (byte) var3.ReadUnsignedByte();
-                    this.aByteArray1266[tri] = (byte) var3.ReadUnsignedByte();
-                    this.aByteArray1243[tri] = (byte) var3.ReadUnsignedByte();
+                    if(var3 != null) {
+                        this.aByteArray1241[tri] = (byte) var3.ReadUnsignedByte();
+                        this.aByteArray1266[tri] = (byte) var3.ReadUnsignedByte();
+                        this.aByteArray1243[tri] = (byte) var3.ReadUnsignedByte();
+                    }
                 }
             }
             maxDepth++;
