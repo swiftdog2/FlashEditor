@@ -113,224 +113,304 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
-        private void Decode(JagStream stream, int opcode) {
-            switch(opcode) {
+        private void Decode(JagStream stream, int opcode)
+        {
+            switch (opcode)
+            {
                 case 1:
                     inventoryModelId = stream.ReadUnsignedShort();
                     break;
+
                 case 2:
                     name = stream.ReadJagexString();
                     break;
+
                 case 4:
                     modelZoom = stream.ReadUnsignedShort();
                     break;
+
                 case 5:
                     modelRotation1 = stream.ReadUnsignedShort();
                     break;
+
                 case 6:
                     modelRotation2 = stream.ReadUnsignedShort();
                     break;
+
                 case 7:
                     modelOffset1 = stream.ReadUnsignedShort();
-                    if(modelOffset1 > 32767)
-                        modelOffset1 -= 65536;
+                    if (modelOffset1 > 32767) modelOffset1 -= 65536;
                     modelOffset1 <<= 0;
                     break;
+
                 case 8:
                     modelOffset2 = stream.ReadUnsignedShort();
-                    if(modelOffset2 > 32767)
-                        modelOffset2 -= 65536;
+                    if (modelOffset2 > 32767) modelOffset2 -= 65536;
                     modelOffset2 <<= 0;
                     break;
+
                 case 11:
                     stackable = 1;
                     break;
+
                 case 12:
                     value = stream.ReadInt();
                     break;
+
                 case 13:
                     equipSlotId = stream.ReadUnsignedByte();
                     break;
+
                 case 14:
                     equipId = stream.ReadUnsignedByte();
                     break;
+
                 case 16:
                     membersOnly = true;
                     break;
+
                 case 18:
                     multiStackSize = stream.ReadUnsignedShort();
                     break;
+
                 case 23:
                     maleWearModel1 = stream.ReadUnsignedShort();
                     break;
+
                 case 24:
                     femaleWearModel1 = stream.ReadUnsignedShort();
                     break;
+
                 case 25:
                     maleWearModel2 = stream.ReadUnsignedShort();
                     break;
+
                 case 26:
                     femaleWearModel2 = stream.ReadUnsignedShort();
                     break;
-                case 27:
+
+                case 27:                       // unused / legacy
                     stream.ReadUnsignedByte();
                     break;
-                default:
-                    if(opcode >= 30 && opcode < 35) {
-                        groundOptions[opcode - 30] = stream.ReadJagexString();
-                        if(groundOptions[opcode - 30].Equals("Hidden", StringComparison.InvariantCultureIgnoreCase))
-                            groundOptions[opcode - 30] = null;
-                    } else if(opcode >= 35 && opcode < 40) {
-                        inventoryOptions[opcode - 35] = stream.ReadJagexString();
-                    } else if(opcode == 40) {
-                        int length = stream.ReadUnsignedByte();
-                        originalModelColors = new short[length];
-                        modifiedModelColors = new short[length];
-                        for(int index = 0; index < length; index++) {
-                            originalModelColors[index] = unchecked((short) (stream.ReadUnsignedShort()));
-                            modifiedModelColors[index] = unchecked((short) (stream.ReadUnsignedShort()));
-                        }
-                    } else if(opcode == 41) {
-                        int length = stream.ReadUnsignedByte();
-                        textureColour1 = new short[length];
-                        textureColour2 = new short[length];
-                        for(int index = 0; index < length; index++) {
-                            textureColour1[index] = unchecked((short) (stream.ReadUnsignedShort()));
-                            textureColour2[index] = unchecked((short) (stream.ReadUnsignedShort()));
-                        }
-                    } else if(opcode == 42) {
-                        int length = stream.ReadUnsignedByte();
-                        for(int index = 0; index < length; index++)
-                            stream.ReadByte();
-                    } else if(opcode == 43) {
-                        nameColor = stream.ReadInt();
-                        hasNameColor = true;
-                    } else if(opcode == 44) {
-                        stream.ReadUnsignedShort();
-                        //There's more crap but for the moment it's unnecessary
-                    } else if(opcode == 45) { //idk
-                        stream.ReadUnsignedShort();
-                        //As above
-                    } else if(opcode == 65) {
-                        unnoted = true;
-                    } else if(opcode == 78) {
-                        colourEquip1 = stream.ReadUnsignedShort();
-                    } else if(opcode == 79) {
-                        colourEquip2 = stream.ReadUnsignedShort();
-                    } else if(opcode == 90) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 91) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 92) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 93) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 94) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 95) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 96) {
-                        stream.ReadUnsignedByte();
-                    } else if(opcode == 97) {
-                        notedId = stream.ReadUnsignedShort();
-                    } else if(opcode == 98) {
-                        notedTemplateId = stream.ReadUnsignedShort();
-                    } else if(opcode >= 100 && opcode < 110) {
-                        if(stackableIds == null) {
-                            stackableIds = new int[10];
-                            stackableAmounts = new int[10];
-                        }
-                        stackableIds[opcode - 100] = stream.ReadUnsignedShort();
-                        stackableAmounts[opcode - 100] = stream.ReadUnsignedShort();
-                    } else if(opcode == 110) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 111) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 112) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 113) {
-                        ambient = stream.ReadUnsignedByte();
-                    } else if(opcode == 114) {
-                        contrast = stream.ReadUnsignedByte();
-                    } else if(opcode == 115) {
-                        teamId = stream.ReadUnsignedByte();
-                    } else if(opcode == 121) {
-                        lendId = stream.ReadUnsignedShort();
-                    } else if(opcode == 122) {
-                        lendTemplateId = stream.ReadUnsignedShort();
-                    } else if(opcode == 125) {
-                        manWearXOffset = stream.ReadUnsignedByte() << 2;
-                        manWearYOffset = stream.ReadUnsignedByte() << 2;
-                        manWearZOffset = stream.ReadUnsignedByte() << 2;
-                    } else if(opcode == 126) {
-                        womanWearXOffset = stream.ReadUnsignedByte() << 0;
-                        womanWearYOffset = stream.ReadUnsignedByte() << 0;
-                        womanWearZOffset = stream.ReadUnsignedByte() << 0;
-                    } else if(opcode == 127) {
-                        int groupCursorOp = stream.ReadUnsignedByte();
-                        int groundCursor = stream.ReadUnsignedShort();
-                    } else if(opcode == 128) {
-                        int cursor2op = stream.ReadUnsignedByte();
-                        int cursor2 = stream.ReadUnsignedShort();
-                    } else if(opcode == 129) {
-                        int cursor2op = stream.ReadUnsignedByte();
-                        int cursor2 = stream.ReadUnsignedShort();
-                    } else if(opcode == 130) {
-                        int cursor2iop = stream.ReadUnsignedByte();
-                        int icursor2 = stream.ReadUnsignedShort();
-                    } else if(opcode == 132) {
-                        int length = stream.ReadUnsignedByte();
-                        int[] unknownArray2 = new int[length];
-                        for(int index = 0; index < length; index++)
-                            unknownArray2[index] = stream.ReadUnsignedShort();
-                    } else if(opcode == 134) {
-                        stream.ReadUnsignedByte();
-                    } else if(opcode == 139) {
-                        //bindLink
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 140) {
-                        //bindTemplate
-                        stream.ReadUnsignedShort();
-                    } else if(opcode >= 142 && opcode < 147) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode >= 150 && opcode < 155) {
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 157) {
-                        //some bool
-                    } else if(opcode == 161) {
-                        //shardLink
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 162) {
-                        //shardTemplate
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 163) {
-                        //shardCombineAmount
-                        stream.ReadUnsignedShort();
-                    } else if(opcode == 164) {
-                        //shardName
-                        stream.ReadJagexString();
-                    } else if(opcode == 249) {
-                        int length = stream.ReadUnsignedByte();
 
+                // ────────────────────────────────
+                // RANGES THAT WERE IN THE DEFAULT
+                // ────────────────────────────────
+
+                // 30–34 : ground-click options
+                case int n when n >= 30 && n < 35:
+                    groundOptions[n - 30] = stream.ReadJagexString();
+                    if ("Hidden".Equals(groundOptions[n - 30], StringComparison.InvariantCultureIgnoreCase))
+                        groundOptions[n - 30] = null;
+                    break;
+
+                // 35–39 : inventory-click options
+                case int n when n >= 35 && n < 40:
+                    inventoryOptions[n - 35] = stream.ReadJagexString();
+                    break;
+
+                case 40:
+                    {
+                        int len = stream.ReadUnsignedByte();
+                        originalModelColors = new short[len];
+                        modifiedModelColors = new short[len];
+                        for (int i = 0; i < len; i++)
+                        {
+                            originalModelColors[i] = (short)stream.ReadUnsignedShort();
+                            modifiedModelColors[i] = (short)stream.ReadUnsignedShort();
+                        }
+                        break;
+                    }
+
+                case 41:
+                    {
+                        int len = stream.ReadUnsignedByte();
+                        textureColour1 = new short[len];
+                        textureColour2 = new short[len];
+                        for (int i = 0; i < len; i++)
+                        {
+                            textureColour1[i] = (short)stream.ReadUnsignedShort();
+                            textureColour2[i] = (short)stream.ReadUnsignedShort();
+                        }
+                        break;
+                    }
+
+                case 42:
+                    {
+                        int len = stream.ReadUnsignedByte();
+                        for (int i = 0; i < len; i++) stream.ReadByte();
+                        break;
+                    }
+
+                case 43:
+                    nameColor = stream.ReadInt();
+                    hasNameColor = true;
+                    break;
+
+                case 44:
+                case 45:
+                    stream.ReadUnsignedShort();        // placeholder / “more crap”
+                    break;
+
+                case 65:
+                    unnoted = true;
+                    break;
+
+                case 78:
+                    colourEquip1 = stream.ReadUnsignedShort();
+                    break;
+
+                case 79:
+                    colourEquip2 = stream.ReadUnsignedShort();
+                    break;
+
+                case 90:
+                case 91:
+                case 92:
+                case 93:
+                case 94:
+                case 95:
+                    stream.ReadUnsignedShort();        // unused NPC/obj links
+                    break;
+
+                case 96:
+                    stream.ReadUnsignedByte();         // some flag
+                    break;
+
+                case 97:
+                    notedId = stream.ReadUnsignedShort();
+                    break;
+
+                case 98:
+                    notedTemplateId = stream.ReadUnsignedShort();
+                    break;
+
+                // 100–109 : stackable variants
+                case int n when n >= 100 && n < 110:
+                    if (stackableIds == null)
+                    {
+                        stackableIds = new int[10];
+                        stackableAmounts = new int[10];
+                    }
+                    stackableIds[n - 100] = stream.ReadUnsignedShort();
+                    stackableAmounts[n - 100] = stream.ReadUnsignedShort();
+                    break;
+
+                case 110:
+                case 111:
+                case 112:
+                    stream.ReadUnsignedShort();        // model resize XYZ
+                    break;
+
+                case 113:
+                    ambient = stream.ReadUnsignedByte();
+                    break;
+
+                case 114:
+                    contrast = stream.ReadUnsignedByte();
+                    break;
+
+                case 115:
+                    teamId = stream.ReadUnsignedByte();
+                    break;
+
+                case 121:
+                    lendId = stream.ReadUnsignedShort();
+                    break;
+
+                case 122:
+                    lendTemplateId = stream.ReadUnsignedShort();
+                    break;
+
+                case 125:
+                    manWearXOffset = stream.ReadUnsignedByte() << 2;
+                    manWearYOffset = stream.ReadUnsignedByte() << 2;
+                    manWearZOffset = stream.ReadUnsignedByte() << 2;
+                    break;
+
+                case 126:
+                    womanWearXOffset = stream.ReadUnsignedByte();
+                    womanWearYOffset = stream.ReadUnsignedByte();
+                    womanWearZOffset = stream.ReadUnsignedByte();
+                    break;
+
+                case 127:
+                case 128:
+                case 129:
+                case 130:
+                    stream.ReadUnsignedByte();  // cursor op
+                    stream.ReadUnsignedShort(); // cursor id
+                    break;
+
+                case 132:
+                    {
+                        int len = stream.ReadUnsignedByte();
+                        int[] tmp = new int[len];
+                        for (int i = 0; i < len; i++) tmp[i] = stream.ReadUnsignedShort();
+                        break;
+                    }
+
+                case 134:
+                    stream.ReadUnsignedByte();  // unknown flag
+                    break;
+
+                case 139:
+                case 140:
+                    stream.ReadUnsignedShort(); // bindLink / bindTemplate
+                    break;
+
+                // 142–146 : quest-point/item-set links
+                case int n when n >= 142 && n < 147:
+                    stream.ReadUnsignedShort();
+                    break;
+
+                // 150–154 : random placeholders
+                case int n when n >= 150 && n < 155:
+                    stream.ReadUnsignedShort();
+                    break;
+
+                case 157:
+                    /* some boolean flag */
+                    break;
+
+                case 161:
+                case 162:
+                case 163:
+                    stream.ReadUnsignedShort(); // shard linking
+                    break;
+
+                case 164:
+                    stream.ReadJagexString();   // shard name
+                    break;
+
+                case 249:                      // params map
+                    {
+                        int len = stream.ReadUnsignedByte();
                         itemParams = new SortedDictionary<int, object>();
 
-                for(int k = 0; k < length; k++) {
-                    bool stringInstance = stream.ReadUnsignedByte() == 1;
-                    int key = stream.ReadMedium();
+                        for (int i = 0; i < len; i++)
+                        {
+                            bool isString = stream.ReadUnsignedByte() == 1;
+                            int key = stream.ReadMedium();
 
-                    if(stringInstance) {
-                        string s = stream.ReadJagexString();
-                        if(!itemParams.ContainsKey(key))
-                            itemParams.Add(key, s);
-                    } else {
-                        int x = stream.ReadInt();
-                        if(!itemParams.ContainsKey(key))
-                            itemParams.Add(key, x);
+                            if (isString)
+                            {
+                                string s = stream.ReadJagexString();
+                                if (!itemParams.ContainsKey(key)) itemParams.Add(key, s);
+                            }
+                            else
+                            {
+                                int val = stream.ReadInt();
+                                if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
+                            }
+                        }
+                        break;
                     }
-                }
+
+                default:
+                    // Unknown opcode – swallow silently or log/debug as needed
                     break;
             }
-        }
         }
 
         /// <summary>
