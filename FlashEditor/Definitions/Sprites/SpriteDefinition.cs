@@ -23,9 +23,9 @@
 using FlashEditor.cache.util;
 using static FlashEditor.utils.DebugUtil;
 using FlashEditor.Collections;
-using java.lang;
 using System.Collections.Generic;
 using System.Drawing;
+using System;
 
 namespace FlashEditor.cache.sprites {
     /// <summary>
@@ -123,7 +123,7 @@ namespace FlashEditor.cache.sprites {
                 Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY, LOG_DETAIL.INSANE);
 
                 //Create a BufferedImage to store the resulting image
-                RSBufferedImage image = new RSBufferedImage(id, Math.max(width, subWidth), Math.max(height, subHeight));
+                RSBufferedImage image = new RSBufferedImage(id, Math.Max(width, subWidth), Math.Max(height, subHeight));
 
                 //Allocate an array for the palette indices
                 int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
@@ -225,7 +225,7 @@ namespace FlashEditor.cache.sprites {
          */
         public void SetFrame(int id, RSBufferedImage frame) {
             if(frame.GetWidth() != width || frame.GetHeight() != height)
-                throw new IllegalArgumentException("The frame's dimensions do not match with the sprite's dimensions.");
+                throw new ArgumentException("The frame's dimensions do not match with the sprite's dimensions.");
 
             frames[id] = frame;
         }
