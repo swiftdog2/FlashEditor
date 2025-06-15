@@ -7,6 +7,7 @@ using System.IO;
 using System.Windows.Forms;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 using BrightIdeasSoftware;
 using FlashEditor.Tests;
 
@@ -228,7 +229,7 @@ namespace FlashEditor {
 
                                     //Only update the progress bar for each 1% completed
                                     if(done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
+                                        bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));
                                 }
                             }
                         }
@@ -283,7 +284,7 @@ namespace FlashEditor {
 
                                 //Only update the progress bar for each 1% completed
                                 if(done % percentile == 0 || done == total)
-                                    bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
+                                    bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));
                             } catch(Exception ex) {
                                 Debug(ex.Message);
                             }
@@ -352,7 +353,7 @@ namespace FlashEditor {
 
                                     //Only update the progress bar for each 1% completed
                                     if(done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
+                                        bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));
                                 }
                             }
                         }
@@ -514,8 +515,13 @@ namespace FlashEditor {
             Debug(@"Analysing");
 
             int diff = AnalyseCache("dat2");
-            foreach(KeyValuePair<int, RSIndex> index in cache.GetStore().indexChannels)
-                diff += AnalyseCache("idx" + index.Key);
+            var sb = new StringBuilder();
+            foreach(KeyValuePair<int, RSIndex> index in cache.GetStore().indexChannels) {
+                sb.Clear();
+                sb.Append("idx");
+                sb.Append(index.Key);
+                diff += AnalyseCache(sb.ToString());
+            }
 
             Debug("Analysis complete, " + (diff > 0 ? diff + " differences found" : "no differences found"));
         }
@@ -577,6 +583,19 @@ namespace FlashEditor {
 
         private void numericUpDown1_ValueChanged_1(object sender, EventArgs e) {
             SpriteListView.RowHeight = (int) numericUpDown1.Value;
+        }
+
+        private static string BuildProgressMessage(int done, int total) {
+            var sb = new StringBuilder();
+            sb.Append("Loaded ");
+            sb.Append(done);
+            sb.Append('/');
+            sb.Append(total);
+            sb.Append(" (");
+            sb.Append((done + 1) * 100 / total);
+            sb.Append('%');
+            sb.Append(')');
+            return sb.ToString();
         }
     }
 }

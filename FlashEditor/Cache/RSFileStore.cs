@@ -3,6 +3,7 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace FlashEditor.cache {
     public class RSFileStore {
@@ -20,9 +21,14 @@ namespace FlashEditor.cache {
             dataChannel = LoadIndex(cacheDir + "dat2");
 
             //And load in the data from the meta indexes, including reference tables
-            for(int k = 0; k <= RSConstants.META_INDEX; k++)
-                if(File.Exists(cacheDir + "idx" + k))
-                    indexChannels.Add(k, LoadIndex(cacheDir + "idx" + k));
+            var sb = new StringBuilder();
+            for(int k = 0; k <= RSConstants.META_INDEX; k++) {
+                sb.Clear();
+                sb.Append(cacheDir).Append("idx").Append(k);
+                string path = sb.ToString();
+                if(File.Exists(path))
+                    indexChannels.Add(k, LoadIndex(path));
+            }
         }
 
         /// <summary>
