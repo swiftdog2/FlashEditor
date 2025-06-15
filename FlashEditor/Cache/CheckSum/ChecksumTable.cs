@@ -1,7 +1,7 @@
 ﻿using FlashEditor.Cache.CheckSum;
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
-using java.math;
+using System.Numerics;
 using System;
 
 namespace FlashEditor.Cache {
@@ -73,7 +73,7 @@ namespace FlashEditor.Cache {
          * @throws IOException
          *             if an I/O error occurs.
          */
-        public static ChecksumTable Decode(JagStream buffer, bool whirlpool, BigInteger modulus, BigInteger publicKey) {
+        public static ChecksumTable Decode(JagStream buffer, bool whirlpool, BigInteger? modulus, BigInteger? publicKey) {
             //Find out how many entries there are and allocate a new table
             int size = whirlpool ? buffer.ReadUnsignedByte() : ((int) buffer.Length / 8);
             ChecksumTable table = new ChecksumTable(size);
@@ -110,8 +110,8 @@ namespace FlashEditor.Cache {
                 buffer.Read(bytes, 0, bytes.Length);
                 JagStream temp = new JagStream(bytes);
 
-                if(modulus != null && publicKey != null) {
-                    temp = RSA.Crypt(buffer, modulus, publicKey);
+                if(modulus.HasValue && publicKey.HasValue) {
+                    temp = RSA.Crypt(buffer, modulus.Value, publicKey.Value);
                 }
 
                 if(temp.Length != 65)
@@ -141,7 +141,7 @@ namespace FlashEditor.Cache {
             return Encode(whirlpool, null, null);
         }
 
-        public JagStream Encode(bool whirlpool, BigInteger modulus, BigInteger privateKey) {
+        public JagStream Encode(bool whirlpool, BigInteger? modulus, BigInteger? privateKey) {
             /*
             JagStream os = new JagStream();
 
@@ -172,8 +172,8 @@ namespace FlashEditor.Cache {
                     temp.put(Whirlpool.whirlpool(bytes, 0, bytes.Length));
                     temp.Flip();
 
-                    if(modulus != null && privateKey != null) {
-                        temp = RSA.Crypt(temp, modulus, privateKey);
+                    if(modulus.HasValue && privateKey.HasValue) {
+                        temp = RSA.Crypt(temp, modulus.Value, privateKey.Value);
                     }
 
                     bytes = new byte[temp.Length];

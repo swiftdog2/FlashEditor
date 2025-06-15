@@ -1,4 +1,4 @@
-﻿using java.math;
+﻿using System.Numerics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,10 +24,23 @@ namespace FlashEditor.Cache.Util.Crypto {
             byte[] bytes = new byte[buffer.Length];
             buffer.Read(bytes, 0, bytes.Length);
 
-            BigInteger xin = new BigInteger(bytes);
-            BigInteger xout = xin.modPow(key, modulus);
+            // System.Numerics.BigInteger expects little-endian byte arrays.
+            Array.Reverse(bytes);
+            byte[] temp = new byte[bytes.Length + 1];
+            Array.Copy(bytes, 0, temp, 0, bytes.Length);
 
-            return new JagStream(xout.toByteArray());
+            BigInteger xin = new BigInteger(temp);
+            BigInteger xout = BigInteger.ModPow(xin, key, modulus);
+
+            // Convert the result back to big-endian.
+            byte[] outBytes = xout.ToByteArray();
+            int trim = outBytes.Length;
+            while(trim > 1 && outBytes[trim - 1] == 0)
+                trim--;
+            Array.Resize(ref outBytes, trim);
+            Array.Reverse(outBytes);
+
+            return new JagStream(outBytes);
         }
     }
 }
