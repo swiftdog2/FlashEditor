@@ -1,11 +1,14 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33516.290
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashEditor", "FlashEditor\FlashEditor.csproj", "{355AFED6-FE4B-4536-9587-6924BF867A4E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FlashEditor", "FlashEditor\FlashEditor.csproj", "{355AFED6-FE4B-4536-9587-6924BF867A4E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "FlashEditor.Tests", "FlashEditor.Tests", "{65B8EBD5-A154-4037-9741-EC8D6905B558}"
+	ProjectSection(SolutionItems) = preProject
+		FlashEditor.Tests\FlashEditor.runsettings = FlashEditor.Tests\FlashEditor.runsettings
+	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FlashEditor.Tests", "FlashEditor.Tests\FlashEditor.Tests.csproj", "{9BDCA815-A808-44F5-9264-D232698031EE}"
 EndProject

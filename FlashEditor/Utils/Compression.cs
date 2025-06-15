@@ -5,7 +5,6 @@ using ICSharpCode.SharpZipLib.BZip2;
 using ICSharpCode.SharpZipLib.Core;
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Zip.Compression;
-using Org.BouncyCastle.Apache.Bzip2;
 
 namespace FlashEditor {
     public static class CompressionUtils {
@@ -69,27 +68,6 @@ namespace FlashEditor {
                 return Array.Empty<byte>();
             }
         }
-
-        /*
-        public static byte[] Bzip2(byte[] bytes) {
-            JagStream compressedBytes = new JagStream();
-
-            try {
-                CBZip2OutputStream outStream = new CBZip2OutputStream(compressedBytes, 1    );
-                outStream.Write(bytes, 0, bytes.Length);
-                outStream.Close();
-                DebugUtil.PrintByteArray(compressedBytes.ToArray());
-
-                byte[] data = compressedBytes.ToArray();
-                byte[] subarr = SubArray(data, 4, data.Length - 4);
-                DebugUtil.PrintByteArray(compressedBytes.ToArray());
-                return subarr;
-
-            } catch(Exception e) {
-                DebugUtil.Debug(e.Message);
-            }
-            return null;
-        }*/
 
         public static T[] SubArray<T>(this T[] data, int index, int length) {
             T[] result = new T[length];

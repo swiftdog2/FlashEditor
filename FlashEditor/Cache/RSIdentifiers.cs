@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.CheckSum {
-    class RSIdentifiers {
+    public class RSIdentifiers {
         /*
          * Copyright (C) 2017 Kyle Fricilone
          *
