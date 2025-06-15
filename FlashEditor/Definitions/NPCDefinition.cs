@@ -1,11 +1,13 @@
 ﻿using System.Collections.Generic;
 
-namespace FlashEditor {
-    internal class NPCDefinition {
-        byte primaryShadowModifier = 223;
+namespace FlashEditor
+{
+    internal class NPCDefinition
+    {
+        sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;
-        byte secondaryShadowModifier = 143;
-        byte walkMask;
+        sbyte secondaryShadowModifier = -113;
+        sbyte walkMask;
 
         int hue;
         int lightness;
@@ -82,16 +84,23 @@ namespace FlashEditor {
         public int op45;
         public int unknownByte1, unknownByte2, unknownByte3, unknownByte4, unknownByte5, unknownByte6;
 
-        public int[] unknownOptions = {-1, -1, -1, -1, -1, -1 };
+        public int[] unknownOptions = { -1, -1, -1, -1, -1, -1 };
 
 
         private SortedDictionary<int, object> config;
+        private sbyte someField112;
+        private int someField1101;
+        private int someField1090;
+        private int anInt1101;
+        private int anInt1090;
+        private sbyte anInt1104;
 
         /// <summary>
         /// Constructs a new item definition from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
-        public NPCDefinition(JagStream stream) {
+        public NPCDefinition(JagStream stream)
+        {
             Decode(stream);
         }
 
@@ -99,12 +108,15 @@ namespace FlashEditor {
         /// Overrides defaults from the stream
         /// </summary>
         /// <param name="stream"></param>
-        public void Decode(JagStream stream) {
-            if(stream != null) {
-                while(true) {
+        public void Decode(JagStream stream)
+        {
+            if (stream != null)
+            {
+                while (true)
+                {
                     int opcode = stream.ReadUnsignedByte();
 
-                    if(opcode == 0 || opcode == 255)
+                    if (opcode == 0 || opcode == 255)
                         break;
 
                     Decode(stream, opcode);
@@ -117,525 +129,616 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
-        private void Decode(JagStream stream, int opcode) {
-            if(opcode == 1) {
-                int length = stream.ReadByte();
-                modelIds = new int[length];
-                for(int k = 0; k < length; k++) {
-                    modelIds[k] = stream.ReadShort();
-                    if((modelIds[k] ^ 0xffffffff) == -65536)
-                        modelIds[k] = -1;
-                }
-            } else if(opcode == 2) {
-                name = stream.ReadJagexString();
-            } else if(opcode == 12) {
-                size = stream.ReadByte();
-            } else if(opcode >= 30 && opcode < 36) { //was 36 before
-                options[opcode - 30] = stream.ReadJagexString();
-                if(options[opcode - 30] == "Hidden")
-                    options[opcode - 30] = null;
-            } else if(opcode == 40) {
-                //Read colours
-                int length = stream.ReadByte();
-                recolorDst = new int[length];
-                recolorSrc = new int[length];
-                for(int count = 0; (length ^ 0xffffffff) < (count ^ 0xffffffff); count++) {
-                    recolorSrc[count] = stream.ReadShort();
-                    recolorDst[count] = stream.ReadShort();
-                }
-            } else if(opcode == 41) {
-                //Read textures
-                int i = stream.ReadByte();
-                retextureSrc = new int[i];
-                retextureDst = new int[i];
-                for(int i_54_ = 0; (i_54_ ^ 0xffffffff) > (i ^ 0xffffffff); i_54_++) {
-                    retextureSrc[i_54_] = stream.ReadShort();
-                    retextureDst[i_54_] = stream.ReadShort();
-                }
-            } else if(opcode == 42) {
-                int length = stream.ReadByte();
-                recolorDstPalette = new byte[length];
-                for(int i_55_ = 0; length > i_55_; i_55_++) {
-                    recolorDstPalette[i_55_] = (byte) stream.ReadByte();
-                }
-            } else if(opcode == 44) {
-                op44 = stream.ReadShort();
-            } else if(opcode == 45) {
-                op45 = stream.ReadShort();
-            } else if(opcode == 60) {
-                int length = stream.ReadByte();
-                dialogueModels = new int[length];
-                for(int count = 0; (count ^ 0xffffffff) > (length ^ 0xffffffff); count++)
-                    dialogueModels[count] = stream.ReadShort();
-            } else if(opcode == 93) {
-                drawMinimapDot = false;
-            } else if(opcode == 95) {
-                level = stream.ReadShort();
-            } else if(opcode == 97) {
-                scaleXY = stream.ReadShort();
-            } else if(opcode == 98) {
-                scaleZ = stream.ReadShort();
-            } else if(opcode == 99) {
-                hasRenderPriority = true;
-            } else if(opcode == 100) {
-                ambient = stream.ReadByte();
-            } else if(opcode == 101) {
-                contrast = stream.ReadByte();
-            } else if(opcode == 102) {
-                headIcon = stream.ReadShort();
-            } else if(opcode == 103) {
-                rotation = stream.ReadShort();
-            } else if(opcode == 106 || opcode == 118) {
-                varbit = stream.ReadShort();
-                if(varbit == 65535)
-                    varbit = -1;
+        private void Decode(JagStream stream, int opcode)
+        {
+            switch (opcode)
+            {
+                case 1:
+                    {
+                        int length = stream.ReadByte();
+                        modelIds = new int[length];
+                        for (int k = 0; k < length; k++)
+                        {
+                            int id = stream.ReadShort();
+                            modelIds[k] = (id == 65535 ? -1 : id);
+                        }
+                        break;
+                    }
 
-                varp = stream.ReadShort();
-                if(varp == 65535)
-                    varp = -1;
+                case 2:
+                    name = stream.ReadJagexString();
+                    break;
 
-                int last = -1;
-                if(opcode == 118) {
-                    last = stream.ReadShort();
-                    if(last == 65535)
-                        last = -1;
-                }
+                case 12:
+                    size = stream.ReadByte();
+                    break;
 
-                int count = stream.ReadByte();
-                morphs = new int[2 + count];
-                for(int index = 0; count >= index; index++) {
-                    morphs[index] = stream.ReadShort();
-                    if(morphs[index] == 65535)
-                        morphs[index] = -1;
-                }
-                morphs[count + 1] = last;
-            } else if(opcode == 107)
-                clickable = false;
-            else if(opcode == 109)
-                slowWalk = false;
-            else if(opcode == 111)
-                animateIdle = false;
-            else if(opcode == 113) {
-                primaryShadowColour = (short) (stream.ReadShort());
-                secondaryShadowColour = (short) (stream.ReadShort());
-            } else if(opcode == 114) {
-                primaryShadowModifier = (byte) (stream.ReadByte());
-                secondaryShadowModifier = (byte) (stream.ReadByte());
-            } else if(opcode == 119)
-                walkMask = (byte) (stream.ReadByte());
-            else if(opcode == 121) {
-                //Translations
+                // options 30–34
+                case 30:
+                case 31:
+                case 32:
+                case 33:
+                case 34:
+                    {
+                        int idx = opcode - 30;
+                        options[idx] = stream.ReadJagexString();
+                        if (options[idx] == "Hidden")
+                            options[idx] = null;
+                        break;
+                    }
 
-                translations = new int[modelIds == null ? 0 : modelIds.Length][];
-                int length = (stream.ReadByte());
-                for(int i_62_ = 0; ((i_62_ ^ 0xffffffff) > (length ^ 0xffffffff)); i_62_++) {
-                    int index = stream.ReadByte();
-                    int[] nigga = (translations[index] = (new int[3]));
-                    nigga[0] = stream.ReadByte();
-                    nigga[1] = stream.ReadByte();
-                    nigga[2] = stream.ReadByte();
-                }
-            } else if(opcode == 122)
-                hitbarSprite = (stream.ReadShort());
-            else if(opcode == 123)
-                height = (stream.ReadShort());
-            else if(opcode == 125)
-                respawnDirection = (byte) (stream.ReadByte());
-            else if(opcode == 127)
-                renderTypeID = (stream.ReadShort());
-            else if(opcode == 128)
-                movementType = stream.ReadByte();
-            else if(opcode == 134) {
-                idleSound = stream.ReadShort();
-                if(idleSound == 65535)
-                    idleSound = -1;
+                case 40:
+                    {
+                        int length = stream.ReadByte();
+                        recolorSrc = new int[length];
+                        recolorDst = new int[length];
+                        for (int i = 0; i < length; i++)
+                        {
+                            recolorSrc[i] = stream.ReadShort();
+                            recolorDst[i] = stream.ReadShort();
+                        }
+                        break;
+                    }
 
-                crawlSound = (stream.ReadShort());
-                if(crawlSound == 65535)
-                    crawlSound = -1;
+                case 41:
+                    {
+                        int length = stream.ReadByte();
+                        retextureSrc = new int[length];
+                        retextureDst = new int[length];
+                        for (int i = 0; i < length; i++)
+                        {
+                            retextureSrc[i] = stream.ReadShort();
+                            retextureDst[i] = stream.ReadShort();
+                        }
+                        break;
+                    }
 
-                walkSound = stream.ReadShort();
-                if((walkSound ^ 0xffffffff) == -65536)
-                    walkSound = -1;
+                case 42:
+                    {
+                        int length = stream.ReadByte();
+                        recolorDstPalette = new byte[length];
+                        for (int i = 0; i < length; i++)
+                            recolorDstPalette[i] = (byte)stream.ReadByte();
+                        break;
+                    }
 
-                runSound = (stream.ReadShort());
-                if((runSound ^ 0xffffffff) == -65536)
-                    runSound = -1;
+                case 44:
+                    op44 = stream.ReadShort();
+                    break;
 
-                soundDistance = stream.ReadByte();
-            } else if(opcode == 135) {
-                primaryCursorOp = stream.ReadByte();
-                primaryCursor = stream.ReadShort();
-            } else if(opcode == 136) {
-                secondaryCursorOp = stream.ReadByte();
-                secondaryCursor = stream.ReadShort();
-            } else if(opcode == 137)
-                attackOpCursor = stream.ReadShort();
-            else if(opcode == 138)
-                armyIcon = stream.ReadShort();
-            else if(opcode == 139)
-                spriteId = stream.ReadShort();
-            else if(opcode == 140)
-                ambientSoundVolume = stream.ReadByte();
-            else if(opcode == 141)
-                visiblePriority = true;
-            else if(opcode == 142)
-                mapIcon = stream.ReadShort();
-            else if(opcode == 143) {
-                invisiblePriority = true;
-            } else if(opcode >= 150 && opcode < 155) {
-                options[opcode - 150] = stream.ReadJagexString();
-                if(options[opcode - 150] == "Hidden")
-                    options[opcode - 150] = null;
-            } else if(opcode == 155) {
-                hue = stream.ReadByte();
-                saturation = stream.ReadByte();
-                lightness = stream.ReadByte();
-                opacity = stream.ReadByte();
-            } else if(opcode == 158) {
-                mainOptionIndex = (byte) 1;
-            } else if(opcode == 159) {
-                mainOptionIndex = (byte) 0;
-            } else if(opcode == 160) {
-                int length = stream.ReadByte();
-                campaigns = new int[length];
-                for(int count = 0; length > count; count++)
-                    campaigns[count] = stream.ReadShort();
-            } else if(opcode == 162)
-                unknownBoolean7 = true;
-            else if(opcode == 163)
-                anInt864 = stream.ReadByte();
-            else if(opcode == 164) {
-                anInt848 = stream.ReadShort();
-                anInt837 = stream.ReadShort();
-            } else if(opcode == 165)
-                anInt847 = stream.ReadByte();
-            else if(opcode == 168)
-                anInt828 = stream.ReadByte();
-            else if(opcode >= 170 && opcode < 176) {
-                unknownOptions[opcode - 170] = stream.ReadShort();
-            } else if(opcode == 179) {
-                unknownByte1 = stream.ReadByte();
-                unknownByte2 = stream.ReadByte();
-                unknownByte3 = stream.ReadByte();
-                unknownByte4 = stream.ReadByte();
-                unknownByte5 = stream.ReadByte();
-                unknownByte6 = stream.ReadByte();
-            } else if(opcode == 249) {
-                int configLength = stream.ReadByte();
+                case 45:
+                    op45 = stream.ReadShort();
+                    break;
 
-                if(config == null)
-                    config = new SortedDictionary<int, object>();
+                case 60:
+                    {
+                        int length = stream.ReadByte();
+                        dialogueModels = new int[length];
+                        for (int i = 0; i < length; i++)
+                            dialogueModels[i] = stream.ReadShort();
+                        break;
+                    }
 
-                for(int k = 0; k < configLength; k++) {
-                    bool stringInstance = stream.ReadByte() == 1;
-                    int key = stream.ReadMedium();
+                case 93:
+                    drawMinimapDot = false;
+                    break;
 
-                    object value;
-                    if(stringInstance)
-                        value = stream.ReadJagexString();
-                    else
-                        value = stream.ReadInt();
+                case 95:
+                    level = stream.ReadShort();
+                    break;
 
-                    if(config.ContainsKey(key))
-                        config[key] = value;
-                    else
-                        config.Add(key, value);
-                }
+                case 97:
+                    scaleXY = stream.ReadShort();
+                    break;
+
+                case 98:
+                    scaleZ = stream.ReadShort();
+                    break;
+
+                case 99:
+                    hasRenderPriority = true;
+                    break;
+
+                case 100:
+                    ambient = stream.ReadByte();
+                    break;
+
+                case 101:
+                    contrast = stream.ReadByte();
+                    break;
+
+                case 102:
+                    headIcon = stream.ReadShort();
+                    break;
+
+                case 103:
+                    rotation = stream.ReadShort();
+                    break;
+
+                case 106:
+                case 118:
+                    {
+                        varbit = stream.ReadShort();
+                        if (varbit == 65535) varbit = -1;
+
+                        varp = stream.ReadShort();
+                        if (varp == 65535) varp = -1;
+
+                        int last = -1;
+                        if (opcode == 118)
+                        {
+                            last = stream.ReadShort();
+                            if (last == 65535) last = -1;
+                        }
+
+                        int count = stream.ReadByte();
+                        morphs = new int[count + 2];
+                        for (int i = 0; i <= count; i++)
+                        {
+                            int m = stream.ReadShort();
+                            morphs[i] = (m == 65535 ? -1 : m);
+                        }
+                        morphs[count + 1] = last;
+                        break;
+                    }
+
+                case 107:
+                    clickable = false;
+                    break;
+
+                case 109:
+                    slowWalk = false;
+                    break;
+
+                case 111:
+                    animateIdle = false;
+                    break;
+
+                case 112:
+                    anInt1104 = (sbyte)stream.ReadByte();
+                    break;
+
+                case 113:
+                    primaryShadowColour = (short)stream.ReadShort();
+                    secondaryShadowColour = (short)stream.ReadShort();
+                    break;
+
+                case 114:
+                    primaryShadowModifier = (sbyte)stream.ReadByte();
+                    secondaryShadowModifier = (sbyte)stream.ReadByte();
+                    break;
+
+                case 119:
+                    walkMask = (sbyte)stream.ReadByte();
+                    break;
+
+                // Translations (restored original logic)
+                case 121:
+                    {
+                        translations = new int[modelIds == null ? 0 : modelIds.Length][];
+                        int length = stream.ReadByte();
+                        for (int i_62_ = 0; i_62_ < length; i_62_++)
+                        {
+                            int index = stream.ReadByte();
+                            int[] translations = (this.translations[index] = new int[3]);
+                            translations[0] = stream.ReadByte();
+                            translations[1] = stream.ReadByte();
+                            translations[2] = stream.ReadByte();
+                        }
+                        break;
+                    }
+
+                case 122:
+                    hitbarSprite = stream.ReadShort();
+                    break;
+
+                case 123:
+                    height = stream.ReadShort();
+                    break;
+
+                case 125:
+                    respawnDirection = (byte)stream.ReadByte();
+                    break;
+
+                case 127:
+                    renderTypeID = stream.ReadShort();
+                    break;
+
+                case 128:
+                    movementType = stream.ReadByte();
+                    break;
+
+                case 134:
+                    {
+                        idleSound = stream.ReadShort(); if (idleSound == 65535) idleSound = -1;
+                        crawlSound = stream.ReadShort(); if (crawlSound == 65535) crawlSound = -1;
+                        walkSound = stream.ReadShort(); if (walkSound == 65535) walkSound = -1;
+                        runSound = stream.ReadShort(); if (runSound == 65535) runSound = -1;
+                        soundDistance = stream.ReadByte();
+                        break;
+                    }
+
+                case 135:
+                    primaryCursorOp = stream.ReadByte();
+                    primaryCursor = stream.ReadShort();
+                    break;
+
+                case 136:
+                    secondaryCursorOp = stream.ReadByte();
+                    secondaryCursor = stream.ReadShort();
+                    break;
+
+                case 137:
+                    attackOpCursor = stream.ReadShort();
+                    break;
+
+                case 138:
+                    armyIcon = stream.ReadShort();
+                    break;
+
+                case 139:
+                    spriteId = stream.ReadShort();
+                    break;
+
+                case 140:
+                    ambientSoundVolume = stream.ReadByte();
+                    break;
+
+                case 141:
+                    visiblePriority = true;
+                    break;
+
+                case 142:
+                    mapIcon = stream.ReadShort();
+                    break;
+
+                case 143:
+                    invisiblePriority = true;
+                    break;
+
+                case 150:
+                case 151:
+                case 152:
+                case 153:
+                case 154:
+                    {
+                        int idx = opcode - 150;
+                        options[idx] = stream.ReadJagexString();
+                        if (options[idx] == "Hidden")
+                            options[idx] = null;
+                        break;
+                    }
+
+                case 155:
+                    hue = stream.ReadByte();
+                    saturation = stream.ReadByte();
+                    lightness = stream.ReadByte();
+                    opacity = stream.ReadByte();
+                    break;
+
+                case 158:
+                    mainOptionIndex = 1;
+                    break;
+
+                case 159:
+                    mainOptionIndex = 0;
+                    break;
+
+                case 160:
+                    {
+                        int length = stream.ReadByte();
+                        campaigns = new int[length];
+                        for (int i = 0; i < length; i++)
+                            campaigns[i] = stream.ReadShort();
+                        break;
+                    }
+
+                case 162:
+                    anInt1101 = stream.ReadShort();
+                    anInt1090 = stream.ReadShort();
+                    break;
+
+                case 163:
+                    anInt864 = stream.ReadByte();
+                    break;
+
+                case 164:
+                    anInt848 = stream.ReadShort();
+                    anInt837 = stream.ReadShort();
+                    break;
+
+                case 165:
+                    anInt847 = stream.ReadByte();
+                    break;
+
+                case 168:
+                    anInt828 = stream.ReadByte();
+                    break;
+
+                case 170:
+                case 171:
+                case 172:
+                case 173:
+                case 174:
+                case 175:
+                    unknownOptions[opcode - 170] = stream.ReadShort();
+                    break;
+
+                case 179:
+                    {
+                        unknownByte1 = stream.ReadByte();
+                        unknownByte2 = stream.ReadByte();
+                        unknownByte3 = stream.ReadByte();
+                        unknownByte4 = stream.ReadByte();
+                        unknownByte5 = stream.ReadByte();
+                        unknownByte6 = stream.ReadByte();
+                        break;
+                    }
+
+                case 249:
+                    {
+                        int cfgLen = stream.ReadByte();
+                        if (config == null)
+                            config = new SortedDictionary<int, object>();
+                        for (int k = 0; k < cfgLen; k++)
+                        {
+                            bool isString = stream.ReadByte() == 1;
+                            int key = stream.ReadMedium();
+                            object val = isString
+                                ? (object)stream.ReadJagexString()
+                                : stream.ReadInt();
+                            config[key] = val;
+                        }
+                        break;
+                    }
+
+                default:
+                    // ignore unknown
+                    break;
             }
         }
+
+
 
         /// <summary>
         /// Overrides a specific property corresponding to opcode
         /// </summary>
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
-        public JagStream Encode() {
-            JagStream stream = new JagStream();
+        // --- Encode method matching above Decode ---
+        public JagStream Encode()
+        {
+            var stream = new JagStream();
 
+            // 1: modelIds
             stream.WriteByte(1);
-            stream.WriteByte((byte) modelIds.Length);
-            for(int k = 0; k < modelIds.Length; k++) {
-                if(modelIds[k] == -1)
-                    stream.WriteShort(-65536);
-                else
-                    stream.WriteShort(modelIds[k]);
-            }
+            stream.WriteByte((byte)modelIds.Length);
+            foreach (var id in modelIds)
+                stream.WriteShort(id == -1 ? 0xFFFF : id);
 
+            // 2: name
             stream.WriteByte(2);
             stream.WriteString(name);
 
+            // 12: size
             stream.WriteByte(12);
-            stream.WriteByte((byte) this.size);
+            stream.WriteByte((byte)size);
 
-            for(int k = 30; k < 34; k++) {
-                stream.WriteByte((byte) k);
-                if(options[k - 30] == null)
-                    stream.WriteString("Hidden");
-                else
-                    stream.WriteString(options[k]);
+            // 30–34: options
+            for (int opc = 30; opc <= 34; opc++)
+            {
+                stream.WriteByte((byte)opc);
+                stream.WriteString(options[opc - 30] ?? "Hidden");
             }
 
+            // 40: recolor
             stream.WriteByte(40);
-            stream.WriteByte((byte) recolorSrc.Length);
-            for(int k = 0; k < recolorSrc.Length; k++) {
-                stream.WriteShort(recolorSrc[k]);
-                stream.WriteShort(recolorDst[k]);
+            stream.WriteByte((byte)recolorSrc.Length);
+            for (int i = 0; i < recolorSrc.Length; i++)
+            {
+                stream.WriteShort(recolorSrc[i]);
+                stream.WriteShort(recolorDst[i]);
             }
 
+            // 41: retexture
             stream.WriteByte(41);
-            stream.WriteByte((byte) retextureSrc.Length);
-            for(int k = 0; k < retextureSrc.Length; k++) {
-                stream.WriteShort(retextureSrc[k]);
-                stream.WriteShort(retextureDst[k]);
+            stream.WriteByte((byte)retextureSrc.Length);
+            for (int i = 0; i < retextureSrc.Length; i++)
+            {
+                stream.WriteShort(retextureSrc[i]);
+                stream.WriteShort(retextureDst[i]);
             }
 
+            // 42: palette
             stream.WriteByte(42);
-            stream.WriteByte((byte) recolorDstPalette.Length);
-            for(int k = 0; k < recolorDstPalette.Length; k++)
-                stream.WriteByte((byte) recolorDstPalette[k]);
+            stream.WriteByte((byte)recolorDstPalette.Length);
+            foreach (var b in recolorDstPalette)
+                stream.WriteByte(b);
 
-            stream.WriteByte(44);
-            stream.WriteShort(op44);
+            // 44,45: op44/op45
+            stream.WriteByte(44); stream.WriteShort(op44);
+            stream.WriteByte(45); stream.WriteShort(op45);
 
-            stream.WriteByte(45);
-            stream.WriteShort(op45);
-
+            // 60: dialogueModels
             stream.WriteByte(60);
-            stream.WriteByte((byte) dialogueModels.Length);
-            for(int k = 0; k < dialogueModels.Length; k++)
-                stream.WriteShort(dialogueModels[k]);
+            stream.WriteByte((byte)dialogueModels.Length);
+            foreach (var m in dialogueModels)
+                stream.WriteShort(m);
 
-            if(!drawMinimapDot)
-                stream.WriteByte(93);
+            // 93: drawMinimapDot=false
+            if (!drawMinimapDot) stream.WriteByte(93);
 
-            stream.WriteByte(95);
-            stream.WriteShort((byte) level);
+            // 95,97,98
+            stream.WriteByte(95); stream.WriteShort(level);
+            stream.WriteByte(97); stream.WriteShort(scaleXY);
+            stream.WriteByte(98); stream.WriteShort(scaleZ);
 
-            stream.WriteByte(97);
-            stream.WriteShort((byte) scaleXY);
+            // 99
+            if (hasRenderPriority) stream.WriteByte(99);
 
-            stream.WriteByte(98);
-            stream.WriteShort((byte) scaleZ);
+            // 100,101
+            stream.WriteByte(100); stream.WriteByte((byte)ambient);
+            stream.WriteByte(101); stream.WriteByte((byte)contrast);
 
-            if(this.hasRenderPriority)
-                stream.WriteByte(99);
+            // 102,103
+            stream.WriteByte(102); stream.WriteShort(headIcon);
+            stream.WriteByte(103); stream.WriteShort(rotation);
 
-            stream.WriteByte(100);
-            stream.WriteByte((byte) ambient);
-
-            stream.WriteByte(101);
-            stream.WriteByte((byte) contrast);
-
-            stream.WriteByte(102);
-            stream.WriteShort(headIcon);
-
-            stream.WriteByte(103);
-            stream.WriteShort(rotation);
-
-            //same method for opcode 118...
-            stream.WriteByte(106);
-            if(varbit == -1)
-                varbit = 65535;
-            stream.WriteShort(varbit);
-
-            if(varp == -1)
-                varbit = 65535;
-            stream.WriteShort(varbit);
-
-            if(last == -1)
-                last = 65535;
-            stream.WriteShort(last);
-
-            stream.WriteByte((byte) (morphs.Length + 2));
-            for(int k = 0; morphs.Length >= k; k++) {
-                if(morphs[k] == -1)
-                    morphs[k] = 65535;
-
-                stream.WriteShort(morphs[k]);
+            // 106/118: morphs
+            int count = morphs.Length - 2;
+            bool hasLast = morphs[count + 1] != -1;
+            if (!hasLast)
+            {
+                stream.WriteByte(106);
+                stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
+                stream.WriteShort(varp == -1 ? 0xFFFF : varp);
             }
-
-            morphs = new int[2 + morphs.Length];
-            for(int k = 0; morphs.Length >= k; k++) {
-                if(morphs[k] == -1)
-                    morphs[k] = 65535;
-                stream.WriteShort(morphs[k]);
+            else
+            {
+                stream.WriteByte(118);
+                stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
+                stream.WriteShort(varp == -1 ? 0xFFFF : varp);
+                stream.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
             }
+            stream.WriteByte((byte)count);
+            for (int i = 0; i <= count; i++)
+                stream.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
 
-            if(!clickable)
-                stream.WriteByte(107);
+            // 107,109,111
+            if (!clickable) stream.WriteByte(107);
+            if (!slowWalk) stream.WriteByte(109);
+            if (!animateIdle) stream.WriteByte(111);
 
-            if(!slowWalk)
-                stream.WriteByte(109);
+            // 112
+            stream.WriteByte(112);
+            stream.WriteSignedByte(anInt1104);
 
-            if(!animateIdle)
-                stream.WriteByte(111);
-
+            // 113,114,119
             stream.WriteByte(113);
-
-            stream.WriteShort((short) primaryShadowColour);
-            stream.WriteShort((short) secondaryShadowColour);
-
+            stream.WriteShort(primaryShadowColour);
+            stream.WriteShort(secondaryShadowColour);
             stream.WriteByte(114);
-            stream.WriteByte(primaryShadowModifier);
-            stream.WriteByte(secondaryShadowModifier);
-
-
+            stream.WriteSignedByte(primaryShadowModifier);
+            stream.WriteSignedByte(secondaryShadowModifier);
             stream.WriteByte(119);
-            stream.WriteByte(walkMask);
+            stream.WriteSignedByte(walkMask);
 
+            // 121: translations
             stream.WriteByte(121);
-            //Translations
-
-
-            /*
-            translations = new int[modelIds == null ? 0 : modelIds.Length][];
-            int length = (stream.WriteByte2());
-            for(int i_62_ = 0; ((i_62_ ^ 0xffffffff) > (length ^ 0xffffffff)); i_62_++) {
-                int index = stream.WriteByte2();
-                int[] nigga = (translations[index] = (new int[3]));
-                nigga[0] = stream.WriteByte2();
-                nigga[1] = stream.WriteByte2();
-                nigga[2] = stream.WriteByte2();
+            int tlen = translations == null ? 0 : translations.Length;
+            stream.WriteByte((byte)tlen);
+            for (int idx = 0; idx < tlen; idx++)
+            {
+                var t = translations[idx];
+                if (t == null) continue;
+                stream.WriteByte((byte)idx);
+                stream.WriteByte((byte)t[0]);
+                stream.WriteByte((byte)t[1]);
+                stream.WriteByte((byte)t[2]);
             }
-        } else*/
 
-            stream.WriteByte(122);
-            stream.WriteShort(hitbarSprite);
+            // 122–128
+            stream.WriteByte(122); stream.WriteShort(hitbarSprite);
+            stream.WriteByte(123); stream.WriteShort(height);
+            stream.WriteByte(125); stream.WriteByte(respawnDirection);
+            stream.WriteByte(127); stream.WriteShort(renderTypeID);
+            stream.WriteByte(128); stream.WriteByte((byte)movementType);
 
-            stream.WriteByte(123);
-            stream.WriteShort(height);
-
-            stream.WriteByte(125);
-            stream.WriteByte(respawnDirection);
-
-            stream.WriteByte(127);
-            stream.WriteShort(renderTypeID);
-
-            stream.WriteByte(128);
-            stream.WriteByte((byte) movementType);
-
+            // 134: sounds
             stream.WriteByte(134);
-            if(idleSound == -1)
-                idleSound = 65535;
-            stream.WriteShort(idleSound);
+            stream.WriteShort(idleSound == -1 ? 0xFFFF : idleSound);
+            stream.WriteShort(crawlSound == -1 ? 0xFFFF : crawlSound);
+            stream.WriteShort(walkSound == -1 ? 0xFFFF : walkSound);
+            stream.WriteShort(runSound == -1 ? 0xFFFF : runSound);
+            stream.WriteByte((byte)soundDistance);
 
-            if(crawlSound == -1)
-                crawlSound = 65535;
-            stream.WriteShort(crawlSound);
+            // 135–143
+            stream.WriteByte(135); stream.WriteByte((byte)primaryCursorOp); stream.WriteShort(primaryCursor);
+            stream.WriteByte(136); stream.WriteByte((byte)secondaryCursorOp); stream.WriteShort(secondaryCursor);
+            stream.WriteByte(137); stream.WriteShort(attackOpCursor);
+            stream.WriteByte(138); stream.WriteShort(armyIcon);
+            stream.WriteByte(139); stream.WriteShort(spriteId);
+            stream.WriteByte(140); stream.WriteByte((byte)ambientSoundVolume);
+            if (visiblePriority) stream.WriteByte(141);
+            stream.WriteByte(142); stream.WriteShort(mapIcon);
+            if (invisiblePriority) stream.WriteByte(143);
 
-            if(walkSound == -1)
-                walkSound = 65535;
-            stream.WriteShort(walkSound);
-
-            if(runSound == -1)
-                runSound = 65536;
-            stream.WriteShort(runSound);
-
-            stream.WriteByte((byte) soundDistance);
-
-            stream.WriteByte(135);
-            stream.WriteByte((byte) primaryCursorOp);
-            stream.WriteShort(primaryCursor);
-
-            stream.WriteByte(136);
-            stream.WriteByte((byte) secondaryCursorOp);
-            stream.WriteShort(secondaryCursor);
-
-            stream.WriteByte(137);
-            stream.WriteShort(attackOpCursor);
-
-            stream.WriteByte(138);
-            stream.WriteShort(armyIcon);
-
-            stream.WriteByte(139);
-            stream.WriteShort(spriteId);
-
-            stream.WriteByte(140);
-            stream.WriteByte((byte) ambientSoundVolume);
-
-            stream.WriteByte(141);
-            visiblePriority = true;
-
-            stream.WriteByte(142);
-            stream.WriteShort(mapIcon);
-
-            stream.WriteByte(143);
-            invisiblePriority = true;
-
-            for(int k = 150; k < 155; k++) {
-                if(options[k - 150] == null)
-                    stream.WriteString("Hidden");
-                else
-                    stream.WriteString(options[k - 150]);
+            // 150–154: options
+            for (int opc = 150; opc <= 154; opc++)
+            {
+                stream.WriteByte((byte)opc);
+                stream.WriteString(options[opc - 150] ?? "Hidden");
             }
 
+            // 155
             stream.WriteByte(155);
-            stream.WriteByte((byte) hue);
-            stream.WriteByte((byte) saturation);
-            stream.WriteByte((byte) lightness);
-            stream.WriteByte((byte) opacity);
+            stream.WriteByte((byte)hue);
+            stream.WriteByte((byte)saturation);
+            stream.WriteByte((byte)lightness);
+            stream.WriteByte((byte)opacity);
 
-            stream.WriteByte(158);
-            mainOptionIndex = (byte) 1;
+            // 158/159
+            if (mainOptionIndex == 1) stream.WriteByte(158);
+            if (mainOptionIndex == 0) stream.WriteByte(159);
 
-            stream.WriteByte(159);
-            mainOptionIndex = (byte) 0;
-
+            // 160: campaigns
             stream.WriteByte(160);
-            stream.WriteByte((byte) campaigns.Length);
-            for(int k = 0; k < campaigns.Length; k++)
-                stream.WriteShort(campaigns[k]);
+            stream.WriteByte((byte)campaigns.Length);
+            foreach (var c in campaigns) stream.WriteShort(c);
 
+            // 162: anInt1101/anInt1090
             stream.WriteByte(162);
-            unknownBoolean7 = true;
+            stream.WriteShort(anInt1101);
+            stream.WriteShort(anInt1090);
 
-            stream.WriteByte(163);
-            stream.WriteByte((byte) anInt864);
+            // 163–168
+            stream.WriteByte(163); stream.WriteByte((byte)anInt864);
+            stream.WriteByte(164); stream.WriteShort(anInt848); stream.WriteShort(anInt837);
+            stream.WriteByte(165); stream.WriteByte((byte)anInt847);
+            stream.WriteByte(168); stream.WriteByte((byte)anInt828);
 
-            stream.WriteByte(164);
-            stream.WriteShort(anInt848);
-            stream.WriteShort(anInt837);
-
-
-            stream.WriteByte(165);
-            stream.WriteByte((byte) anInt847);
-
-            stream.WriteByte(168);
-            stream.WriteByte((byte) anInt828);
-
-            //May or may not exist?
-            for(int k = 0; k < 6; k++)
-                if(unknownOptions[k] != -1) {
-                    stream.WriteShort(170 + k);
-                    stream.WriteShort(unknownOptions[k]);
-                }
-
-
-            stream.WriteByte(179);
-            stream.WriteByte((byte) unknownByte1);
-            stream.WriteByte((byte) unknownByte2);
-            stream.WriteByte((byte) unknownByte3);
-            stream.WriteByte((byte) unknownByte4);
-            stream.WriteByte((byte) unknownByte5);
-            stream.WriteByte((byte) unknownByte6);
-
-            if(config != null) {
-                stream.WriteByte(249);
-                stream.WriteByte((byte) config.Count);
-
-                foreach(KeyValuePair<int, object> kvp in config) {
-                    if(kvp.Key == 1) //instance of string
-                        stream.WriteString((string) kvp.Value);
-                    else
-                        stream.WriteInteger((int) kvp.Value);
+            // 170–175: unknownOptions
+            for (int opc = 170; opc <= 175; opc++)
+            {
+                int val = unknownOptions[opc - 170];
+                if (val != -1)
+                {
+                    stream.WriteByte((byte)opc);
+                    stream.WriteShort(val);
                 }
             }
 
+            // 179
+            stream.WriteByte(179);
+            stream.WriteByte((byte)unknownByte1);
+            stream.WriteByte((byte)unknownByte2);
+            stream.WriteByte((byte)unknownByte3);
+            stream.WriteByte((byte)unknownByte4);
+            stream.WriteByte((byte)unknownByte5);
+            stream.WriteByte((byte)unknownByte6);
+
+            // 249: config
+            if (config != null && config.Count > 0)
+            {
+                stream.WriteByte(249);
+                stream.WriteByte((byte)config.Count);
+                foreach (var kv in config)
+                {
+                    bool isStr = kv.Value is string;
+                    stream.WriteByte((byte)(isStr ? 1 : 0));
+                    stream.WriteMedium(kv.Key);
+                    if (isStr) stream.WriteString((string)kv.Value);
+                    else stream.WriteInteger((int)kv.Value);
+                }
+            }
+
+            // terminator
+            stream.WriteByte(0);
             return stream.Flip();
         }
 
-        internal void SetId(int id) {
+        internal void SetId(int id)
+        {
             this.id = id;
         }
     }

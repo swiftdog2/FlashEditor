@@ -285,6 +285,15 @@ namespace FlashEditor {
         }
         */
 
+        /// <summary>
+        /// Writes a Java‐style signed byte (-128..127) into the stream.
+        /// </summary>
+        public void WriteSignedByte(sbyte value)
+        {
+            // cast to byte will wrap negative values into their two’s‐complement 0..255 form
+            WriteByte((byte)value);
+        }
+
         internal void WriteBytes(int bytes, object value) {
             byte[] data = new byte[bytes];
 
