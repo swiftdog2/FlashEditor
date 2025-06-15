@@ -49,7 +49,7 @@ namespace FlashEditor.utils {
         /// Prints out the entire byte array separated by spaces
         /// </summary>
         /// <param name="buffer">The byte buffer to print</param>
-        internal static void PrintByteArray(byte[] buffer) {
+        public static void PrintByteArray(byte[] buffer) {
             PrintByteArray(buffer, buffer.Length);
         }
 

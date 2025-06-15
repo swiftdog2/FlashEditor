@@ -116,7 +116,7 @@ namespace FlashEditor.cache {
             return hash;
         }
 
-        internal void SetValidFileIds(int[] validFileIds) {
+        public void SetValidFileIds(int[] validFileIds) {
             this.validFileIds = validFileIds;
         }
 
@@ -124,7 +124,7 @@ namespace FlashEditor.cache {
             return validFileIds;
         }
 
-        internal void SetChildEntries(SortedDictionary<int, RSChildEntry> childEntries) {
+        public void SetChildEntries(SortedDictionary<int, RSChildEntry> childEntries) {
             this.childEntries = childEntries;
         }
 
