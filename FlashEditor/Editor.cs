@@ -3,6 +3,9 @@ using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using System.Threading;
 using System.IO;
 using System.Windows.Forms;
 using System.ComponentModel;
@@ -212,16 +215,19 @@ namespace FlashEditor {
                         Debug(@"                                  |___/                           ");
                         Debug(@"Loading Items");
 
-                        foreach(KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
+                        var items = new System.Collections.Concurrent.ConcurrentDictionary<int, ItemDefinition>();
+
+                        System.Threading.Tasks.Parallel.ForEach(referenceTable.GetEntries(), archive => {
                             int archiveId = archive.Key;
 
                             Debug("Loading archive " + archive.Key);
+
                             for(int file = 0; file < 256; file++) {
                                 try {
                                     ItemDefinition item = cache.GetItemDefinition(archiveId, file);
                                     int itemId = archiveId * 256 + file;
-                                    item.SetId(itemId); //Set the item ID
-                                    cache.items.Add(itemId, item);
+                                    item.SetId(itemId);
+                                    items[itemId] = item;
                                 } catch(Exception ex) {
                                     Debug(ex.Message);
                                 } finally {
@@ -229,10 +235,16 @@ namespace FlashEditor {
 
                                     //Only update the progress bar for each 1% completed
                                     if(done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));
-                                }
+                                        bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));                                }
+
+                                int progress = System.Threading.Interlocked.Increment(ref done);
+
+                                if(progress % percentile == 0 || progress == total)
+                                    bgw.ReportProgress(progress * 100 / total, "Loaded " + progress + "/" + total + " (" + progress * 100 / total + "%)");
                             }
-                        }
+                        });
+
+                        cache.items = new System.Collections.Generic.SortedDictionary<int, ItemDefinition>(items);
 
                         Debug("Finished loading " + total + " items");
 
@@ -264,7 +276,7 @@ namespace FlashEditor {
                         Debug(@"                                 |___/         |_|                       ");
                         Debug(@"Loading Sprites");
 
-                        List<SpriteDefinition> sprites = new List<SpriteDefinition>();
+                        var sprites = new System.Collections.Concurrent.ConcurrentBag<SpriteDefinition>();
 
                         int done = 0;
                         int total = referenceTable.GetEntryTotal();
@@ -272,7 +284,8 @@ namespace FlashEditor {
 
                         bgw.ReportProgress(0, "Loading " + total + " Sprites");
                         Debug("Loading " + total + " Sprites");
-                        foreach(KeyValuePair<int, RSEntry> entry in referenceTable.GetEntries()) {
+
+                        System.Threading.Tasks.Parallel.ForEach(referenceTable.GetEntries(), entry => {
                             try {
                                 Debug("Loading sprite: " + entry.Key, LOG_DETAIL.ADVANCED);
 
@@ -280,7 +293,7 @@ namespace FlashEditor {
                                 sprite.SetIndex(entry.Key);
                                 sprites.Add(sprite);
 
-                                done++;
+                                int progress = System.Threading.Interlocked.Increment(ref done);
 
                                 //Only update the progress bar for each 1% completed
                                 if(done % percentile == 0 || done == total)
@@ -288,7 +301,7 @@ namespace FlashEditor {
                             } catch(Exception ex) {
                                 Debug(ex.Message);
                             }
-                        }
+                        });
 
                         //Set the root objects for the tree
                         SpriteListView.SetObjects(sprites);
@@ -326,8 +339,8 @@ namespace FlashEditor {
                         NPCLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += async delegate {
-                        List<NPCDefinition> npcs = new List<NPCDefinition>();
+                    bgw.DoWork += delegate {
+                        var npcs = new System.Collections.Concurrent.ConcurrentBag<NPCDefinition>();
 
                         int done = 0;
                         int total = referenceTable.GetEntryTotal() * 128;
@@ -337,14 +350,14 @@ namespace FlashEditor {
 
                         Debug("Loading NPC shit xxxx");
 
-                        foreach(KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
+                        System.Threading.Tasks.Parallel.ForEach(referenceTable.GetEntries(), archive => {
                             int archiveId = archive.Key;
 
                             Debug("Loading archive " + archiveId);
                             for(int file = 0; file < 128; file++) {
                                 try {
                                     NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
-                                    npc.SetId(archiveId * 128 + file); //Set the NPC ID
+                                    npc.SetId(archiveId * 128 + file);
                                     npcs.Add(npc);
                                 } catch(Exception ex) {
                                     Debug(ex.Message);
@@ -355,8 +368,13 @@ namespace FlashEditor {
                                     if(done % percentile == 0 || done == total)
                                         bgw.ReportProgress((done + 1) * 100 / total, BuildProgressMessage(done, total));
                                 }
+
+                                int progress = System.Threading.Interlocked.Increment(ref done);
+
+                                if(progress % percentile == 0 || progress == total)
+                                    bgw.ReportProgress(progress * 100 / total, "Loaded " + progress + "/" + total + " (" + progress * 100 / total + "%)");
                             }
-                        }
+                        });
 
                         NPCListView.SetObjects(npcs);
                     };
@@ -420,7 +438,9 @@ namespace FlashEditor {
             Debug(@"|______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
             Debug("Edit Item");
 
-            Debug("itemdef name: " + currentItem.name);
+            Debug("itemdef name: " + (currentItem != null ? currentItem.name : "<none>"));
+            if(currentItem == null)
+                currentItem = ((ItemDefinition) e.RowObject).Clone();
 
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
