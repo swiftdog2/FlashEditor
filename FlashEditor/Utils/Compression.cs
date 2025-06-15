@@ -55,11 +55,18 @@ namespace FlashEditor {
         }
 
         public static byte[] Bzip2(byte[] bytes) {
-            using(JagStream source = new JagStream(bytes)) {
-                using(JagStream target = new JagStream()) {
-                    BZip2.Compress(source, target, true, 4096);
-                    return target.ToArray();
-                }
+            using (JagStream source = new JagStream(bytes))
+            using (JagStream target = new JagStream()) {
+                // Use a block size of 1 to match Bunzip2 and then
+                // strip the BZIP2 header that the stream writes.
+                using (BZip2OutputStream bz = new BZip2OutputStream(target, 1))
+                    StreamUtils.Copy(source, bz, new byte[4096]);
+
+                byte[] data = target.ToArray();
+                // Remove the 4 byte "BZh1" header
+                if (data.Length > 4)
+                    return SubArray(data, 4, data.Length - 4);
+                return Array.Empty<byte>();
             }
         }
 
