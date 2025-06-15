@@ -2,6 +2,7 @@
 using FlashEditor.utils;
 using System;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Text;
 
 namespace FlashEditor {
@@ -25,14 +26,35 @@ namespace FlashEditor {
             if(!File.Exists(directory))
                 throw new FileNotFoundException("'" + directory + "' could not be found.");
 
-            byte[] data = File.ReadAllBytes(directory);
-            if(data.Length == 0)
+            JagStream stream = new JagStream();
+            const int BUFFER_SIZE = 64 * 1024; // 64 KB buffered reads
+            byte[] buffer = new byte[BUFFER_SIZE];
+
+            using(FileStream file = new FileStream(directory, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+                int bytesRead;
+                while((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                    stream.Write(buffer, 0, bytesRead);
+            }
+
+            if(stream.Length == 0)
                 Debug("No data read for directory: " + directory);
 
-            //We initialise it like this to ensure the stream is expandable
-            JagStream stream = new JagStream();
-            stream.Write(data, 0, data.Length);
+            stream.Seek0();
             return stream;
+        }
+
+        public static JagStream LoadMappedStream(string directory) {
+            if(!File.Exists(directory))
+                throw new FileNotFoundException("'" + directory + "' could not be found.");
+
+            using(var mmf = MemoryMappedFile.CreateFromFile(directory, FileMode.Open, null, 0, MemoryMappedFileAccess.Read)) {
+                using(var view = mmf.CreateViewStream(0, 0, MemoryMappedFileAccess.Read)) {
+                    JagStream stream = new JagStream();
+                    view.CopyTo(stream);
+                    stream.Seek0();
+                    return stream;
+                }
+            }
         }
 
         /// <summary>

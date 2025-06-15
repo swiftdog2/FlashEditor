@@ -43,7 +43,7 @@ namespace FlashEditor.cache {
         /// <param name="stream">The stream (reference) to read the data into</param>
         /// <param name="directory">The directory of the binary file</param>
         private RSIndex LoadIndex(string directory) {
-            return new RSIndex(JagStream.LoadStream(directory));
+            return new RSIndex(JagStream.LoadMappedStream(directory));
         }
 
         /// <summary>
