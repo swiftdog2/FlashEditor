@@ -165,7 +165,7 @@ namespace FlashEditor.cache {
         /// <param name="containerId">The container index</param>
         /// <returns>Container with index <paramref name="containerId"/> from the specified <paramref name="type"/></returns>
         public RSContainer GetContainer(int type, int containerId) {
-            if(containerId < 0 || containerId > store.GetFileCount(type))
+            if(containerId < 0 || containerId >= store.GetFileCount(type))
                 throw new FileNotFoundException("Could not find container type " + type);
 
             //Initialise the container dictionary
@@ -321,7 +321,7 @@ namespace FlashEditor.cache {
         /// <returns></returns>
 
         public RSReferenceTable GetReferenceTable(int type) {
-            if(type < 0 || type > store.GetTypeCount())
+            if(type < 0 || type >= store.GetTypeCount())
                 throw new FileNotFoundException("\tERROR - Reference table " + type + " out of bounds");
 
             if(referenceTables[type] == null) {

@@ -380,7 +380,7 @@ namespace FlashEditor {
 
         public int GetEditorType() {
             int editorIndex = EditorTabControl.SelectedIndex;
-            if(editorIndex > 0 & editorIndex < editorTypes.Length)
+            if(editorIndex > 0 && editorIndex < editorTypes.Length)
                 return editorTypes[editorIndex];
             return -1;
         }

@@ -49,9 +49,9 @@ namespace FlashEditor.Cache.Region {
 
         static int InterpolateNoise(int x, int y, int frequency) {
             int intX = x / frequency;
-            int fracX = x & frequency - 1;
+            int fracX = x & (frequency - 1);
             int intY = y / frequency;
-            int fracY = y & frequency - 1;
+            int fracY = y & (frequency - 1);
             int v1 = SmoothedNoise1(intX, intY);
             int v2 = SmoothedNoise1(intX + 1, intY);
             int v3 = SmoothedNoise1(intX, intY + 1);
