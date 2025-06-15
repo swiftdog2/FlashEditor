@@ -4,6 +4,7 @@ using ICSharpCode.SharpZipLib.Checksum;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
@@ -55,8 +56,13 @@ namespace FlashEditor.cache {
         /// <param name="type">The index type</param>
         /// <returns>Whether or not the index was successfully written</returns>
         internal void SaveIndexes() {
-            foreach(KeyValuePair<int, RSIndex> index in GetStore().indexChannels)
-                SaveIndex(index.Value, "idx" + index.Key);
+            var sb = new StringBuilder();
+            foreach(KeyValuePair<int, RSIndex> index in GetStore().indexChannels) {
+                sb.Clear();
+                sb.Append("idx");
+                sb.Append(index.Key);
+                SaveIndex(index.Value, sb.ToString());
+            }
         }
 
         internal void SaveIndex(RSIndex index, string directory) {

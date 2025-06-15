@@ -2,6 +2,7 @@
 using static FlashEditor.utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using FlashEditor.utils;
 
 namespace FlashEditor.cache {
@@ -160,6 +161,8 @@ namespace FlashEditor.cache {
 
             JagStream stream = new JagStream();
 
+            var sb = new StringBuilder();
+
             Debug("\tOUT Table version: " + version + " | Format: " + format + " | Flags: " + (flags == 1 ? "Y" : "N") + " | Archives: " + validArchivesCount + " | Whirl: " + (usesWhirlpool ? "Y" : "N"), LOG_DETAIL.ADVANCED);
 
             stream.WriteByte((byte) format);
@@ -182,7 +185,9 @@ namespace FlashEditor.cache {
                 Debug("Writing identifiers", LOG_DETAIL.INSANE);
                 foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                     int ident = kvp.Value.GetIdentifier();
-                    Debug("\t-" + ident);
+                    sb.Clear();
+                    sb.Append('\t').Append('-').Append(ident);
+                    Debug(sb.ToString());
                     stream.WriteInteger(ident);
                 }
             }
@@ -190,7 +195,9 @@ namespace FlashEditor.cache {
             Debug("Writing CRCs", LOG_DETAIL.INSANE);
             foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                 int crc = kvp.Value.GetCrc();
-                Debug("\t|" + crc);
+                sb.Clear();
+                sb.Append('\t').Append('|').Append(crc);
+                Debug(sb.ToString());
                 stream.WriteInteger(kvp.Value.GetCrc());
             }
 
@@ -198,7 +205,9 @@ namespace FlashEditor.cache {
                 foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                     int hash = kvp.Value.CalculateHash();
                     stream.WriteInteger(hash);
-                    Debug("\t|" + hash);
+                    sb.Clear();
+                    sb.Append('\t').Append('|').Append(hash);
+                    Debug(sb.ToString());
                 }
 
             if(usesWhirlpool) {
@@ -218,7 +227,12 @@ namespace FlashEditor.cache {
                     int uncomp = kvp.Value.uncompressed;
                     stream.WriteInteger(kvp.Value.compressed);
                     stream.WriteInteger(kvp.Value.uncompressed);
-                    Debug("\t|comp: " + comp + ", uncomp: " + uncomp);
+                    sb.Clear();
+                    sb.Append("\t|comp: ");
+                    sb.Append(comp);
+                    sb.Append(", uncomp: ");
+                    sb.Append(uncomp);
+                    Debug(sb.ToString());
                 }
             }
 
@@ -226,14 +240,18 @@ namespace FlashEditor.cache {
             foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                 int version = kvp.Value.GetVersion();
                 stream.WriteInteger(kvp.Value.GetVersion());
-                Debug("\t|" + version);
+                sb.Clear();
+                sb.Append('\t').Append('|').Append(version);
+                Debug(sb.ToString());
             }
 
             Debug("Writing number of non-null child entries", LOG_DETAIL.INSANE);
             foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                 int nnce = kvp.Value.GetChildEntries().Count;
                 stream.WriteShort(nnce);
-                Debug("\t|" + nnce);
+                sb.Clear();
+                sb.Append('\t').Append('|').Append(nnce);
+                Debug(sb.ToString());
             }
 
             Debug("Writing child IDs", LOG_DETAIL.INSANE);
@@ -253,7 +271,9 @@ namespace FlashEditor.cache {
                     foreach(KeyValuePair<int, RSChildEntry> child in kvp.Value.GetChildEntries()) {
                         int childIdent = child.Value.GetIdentifier();
                         stream.WriteInteger(childIdent);
-                        Debug("\t|" + childIdent);
+                        sb.Clear();
+                        sb.Append('\t').Append('|').Append(childIdent);
+                        Debug(sb.ToString());
                     }
             }
 
