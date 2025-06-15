@@ -105,9 +105,10 @@ namespace FlashEditor.cache {
 
             if(container.GetCompressionType() == RSConstants.NO_COMPRESSION) {
                 //Simply grab the data and wrap it in a buffer
-                byte[] temp = new byte[container.GetDataLength()];
-                stream.Read(temp, 0, container.GetDataLength());
-                container.SetStream(new JagStream(temp));
+                int len = container.GetDataLength();
+                Span<byte> temp = len <= 4096 ? stackalloc byte[len] : new byte[len];
+                stream.Read(temp);
+                container.SetStream(new JagStream(temp.ToArray()));
 
                 container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1); //Decode the version if present
                 container.PrintInfo();
@@ -120,7 +121,7 @@ namespace FlashEditor.cache {
 
                 //Read the data from the stream into a buffer
                 byte[] data = new byte[container.GetDataLength()];
-                stream.Read(data, 0, data.Length);
+                stream.Read(data.AsSpan());
 
                 //Decompress the data
                 data = container.GetCompressionType() switch {

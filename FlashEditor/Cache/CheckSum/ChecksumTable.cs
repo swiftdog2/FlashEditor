@@ -81,10 +81,11 @@ namespace FlashEditor.Cache {
             //calculate the whirlpool digest we expect to have at the end 
             byte[] masterDigest = null;
             if(whirlpool) {
-                byte[] temp = new byte[size * 80 + 1];
+                int tmpLen = size * 80 + 1;
+                Span<byte> temp = tmpLen <= 4096 ? stackalloc byte[tmpLen] : new byte[tmpLen];
                 buffer.Position = 0;
-                buffer.Read(temp, 0, temp.Length);
-                masterDigest = Whirlpool.whirlpool(temp, 0, temp.Length);
+                buffer.Read(temp);
+                masterDigest = Whirlpool.whirlpool(temp.ToArray(), 0, temp.Length);
             }
 
             //read the entries
@@ -97,17 +98,17 @@ namespace FlashEditor.Cache {
                 int archiveSize = whirlpool ? buffer.ReadInt() : 0;
 
                 //Read the whirlpool digest, if applicable
-                byte[] digest = new byte[64];
+                Span<byte> digest = stackalloc byte[64];
                 if(whirlpool)
-                    buffer.Read(digest, 0, digest.Length);
+                    buffer.Read(digest);
 
-                table.entries[i] = new CheckSumEntry(crc, version, files, archiveSize, digest);
+                table.entries[i] = new CheckSumEntry(crc, version, files, archiveSize, digest.ToArray());
             }
 
             //Read the trailing digest and check if it matches up
             if(whirlpool) {
                 byte[] bytes = new byte[buffer.Remaining()];
-                buffer.Read(bytes, 0, bytes.Length);
+                buffer.Read(bytes.AsSpan());
                 JagStream temp = new JagStream(bytes);
 
                 if(modulus.HasValue && publicKey.HasValue) {

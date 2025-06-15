@@ -14,8 +14,14 @@ namespace FlashEditor {
         public static byte[] Gunzip(byte[] bytes) {
             DebugUtil.PrintByteArray(bytes);
             MemoryStream inflateStream = new MemoryStream();
-            using(GZipInputStream gz = new GZipInputStream(new JagStream(bytes), 4096))
-                StreamUtils.Copy(gz, inflateStream, new byte[4096]);
+            using(GZipInputStream gz = new GZipInputStream(new JagStream(bytes), 4096)) {
+                byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(4096);
+                try {
+                    StreamUtils.Copy(gz, inflateStream, buffer);
+                } finally {
+                    System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
 
             return inflateStream.ToArray();
         }
@@ -24,7 +30,12 @@ namespace FlashEditor {
             MemoryStream deflateStream = new MemoryStream();
             using(GZipOutputStream gz = new GZipOutputStream(deflateStream, 4096)) {
                 using(MemoryStream js = new MemoryStream(bytes)) {
-                    StreamUtils.Copy(js, gz, new byte[4096]);
+                    byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(4096);
+                    try {
+                        StreamUtils.Copy(js, gz, buffer);
+                    } finally {
+                        System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+                    }
                 }
             }
 
@@ -58,8 +69,14 @@ namespace FlashEditor {
             using (JagStream target = new JagStream()) {
                 // Use a block size of 1 to match Bunzip2 and then
                 // strip the BZIP2 header that the stream writes.
-                using (BZip2OutputStream bz = new BZip2OutputStream(target, 1))
-                    StreamUtils.Copy(source, bz, new byte[4096]);
+                using (BZip2OutputStream bz = new BZip2OutputStream(target, 1)) {
+                    byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(4096);
+                    try {
+                        StreamUtils.Copy(source, bz, buffer);
+                    } finally {
+                        System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+                    }
+                }
 
                 byte[] data = target.ToArray();
                 // Remove the 4 byte "BZh1" header

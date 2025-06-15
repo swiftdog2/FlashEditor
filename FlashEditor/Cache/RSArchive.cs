@@ -66,18 +66,16 @@ namespace FlashEditor.cache {
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
 
-            //Read the data into the buffers 
+            //Read the data into the buffers
             for(int chunk = 0; chunk < archive.chunks; chunk++) {
                 for(int id = 0; id < size; id++) {
                     //Get the length of this chunk
                     int chunkSize = chunkSizes[chunk][id];
 
-                    //Copy this chunk into a temporary buffer
-                    byte[] temp = new byte[chunkSize];
-                    stream.Read(temp, 0, temp.Length);
+                    Span<byte> temp = chunkSize <= 4096 ? stackalloc byte[chunkSize] : new byte[chunkSize];
+                    stream.Read(temp);
 
-                    //Copy the temporary buffer into the file buffer
-                    archive.entries[id].Write(temp, 0, temp.Length);
+                    archive.entries[id].Write(temp);
                 }
             }
 
