@@ -134,6 +134,20 @@ namespace FlashEditor.Definitions.Model {
             }
         }
 
+        /// <summary>
+        /// Converts an array of signed bytes into the equivalent unsigned byte array.
+        /// </summary>
+        /// <param name="data">The source <see cref="sbyte"/> array.</param>
+        /// <returns>A new <see cref="byte"/> array containing the same bit pattern.</returns>
+        private static byte[] ToBytes(sbyte[] data) {
+            if(data == null)
+                throw new ArgumentNullException(nameof(data));
+
+            byte[] result = new byte[data.Length];
+            Buffer.BlockCopy(data, 0, result, 0, data.Length);
+            return result;
+        }
+
         private bool UsesNewerHeader(sbyte[] data) {
             return data[0] == 1 || data[0] == 0;
         }
@@ -143,13 +157,14 @@ namespace FlashEditor.Definitions.Model {
         }
 
         private void DecodeNew(sbyte[] data) {
-            JagStream buffer = new JagStream((byte[]) (Array) data);
-            JagStream buffer_25_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_26_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_27_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_28_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_29_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_30_ = new JagStream((byte[]) (Array) data);
+            byte[] bytes = ToBytes(data);
+            JagStream buffer = new JagStream(bytes);
+            JagStream buffer_25_ = new JagStream(bytes);
+            JagStream buffer_26_ = new JagStream(bytes);
+            JagStream buffer_27_ = new JagStream(bytes);
+            JagStream buffer_28_ = new JagStream(bytes);
+            JagStream buffer_29_ = new JagStream(bytes);
+            JagStream buffer_30_ = new JagStream(bytes);
 
             buffer.Position = data.Length - 23;
 
@@ -616,11 +631,12 @@ namespace FlashEditor.Definitions.Model {
         private void DecodeOld(sbyte[] data) {
             bool has_fill_attr = false;
             bool textured = false;
-            JagStream buffer = new JagStream((byte[]) (Array) data);
-            JagStream buffer_144_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_145_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_146_ = new JagStream((byte[]) (Array) data);
-            JagStream buffer_147_ = new JagStream((byte[]) (Array) data);
+            byte[] bytes = ToBytes(data);
+            JagStream buffer = new JagStream(bytes);
+            JagStream buffer_144_ = new JagStream(bytes);
+            JagStream buffer_145_ = new JagStream(bytes);
+            JagStream buffer_146_ = new JagStream(bytes);
+            JagStream buffer_147_ = new JagStream(bytes);
             buffer.Position = data.Length - 18;
             this.numVertices = buffer.ReadUnsignedShort();
             this.numTriangles = buffer.ReadUnsignedShort();
@@ -907,13 +923,14 @@ namespace FlashEditor.Definitions.Model {
         }
 
         void DecodeNewNewModel(sbyte[] modelData) {
-            JagStream footer = new JagStream((byte[])(Array)modelData);
-            JagStream drawTypes = new JagStream((byte[])(Array)modelData);
-            JagStream priorities = new JagStream((byte[])(Array)modelData);
-            JagStream alphas = new JagStream((byte[])(Array)modelData);
-            JagStream trianglesAndVertices = new JagStream((byte[])(Array)modelData);
-            JagStream textures = new JagStream((byte[])(Array)modelData);
-            JagStream textureCoordinates = new JagStream((byte[])(Array)modelData);
+            byte[] bytes = ToBytes(modelData);
+            JagStream footer = new JagStream(bytes);
+            JagStream drawTypes = new JagStream(bytes);
+            JagStream priorities = new JagStream(bytes);
+            JagStream alphas = new JagStream(bytes);
+            JagStream trianglesAndVertices = new JagStream(bytes);
+            JagStream textures = new JagStream(bytes);
+            JagStream textureCoordinates = new JagStream(bytes);
 
             int i = footer.ReadUnsignedByte();
             if(i != 1)
@@ -1389,11 +1406,12 @@ namespace FlashEditor.Definitions.Model {
         void DecodeNewOldModel(sbyte[] instream) {
             bool bool1 = false;
             bool bool_136_ = false;
-            JagStream footer = new JagStream((byte[])(Array)instream);
-            JagStream class219_sub41_137_ = new JagStream((byte[])(Array)instream);
-            JagStream class219_sub41_138_ = new JagStream((byte[])(Array)instream);
-            JagStream class219_sub41_139_ = new JagStream((byte[])(Array)instream);
-            JagStream class219_sub41_140_ = new JagStream((byte[])(Array)instream);
+            byte[] bytes = ToBytes(instream);
+            JagStream footer = new JagStream(bytes);
+            JagStream class219_sub41_137_ = new JagStream(bytes);
+            JagStream class219_sub41_138_ = new JagStream(bytes);
+            JagStream class219_sub41_139_ = new JagStream(bytes);
+            JagStream class219_sub41_140_ = new JagStream(bytes);
             int i = footer.ReadUnsignedByte();
             if(i != 0)
                 Debug(i.ToString());
@@ -1628,13 +1646,14 @@ namespace FlashEditor.Definitions.Model {
 
 
         void Read800Model(sbyte[] data) {
-            JagStream header = new JagStream((byte[])(Array)data);
-            JagStream drawTypes = new JagStream((byte[])(Array)data);
-            JagStream priorities = new JagStream((byte[])(Array)data);
-            JagStream alphas = new JagStream((byte[])(Array)data);
-            JagStream var6 = new JagStream((byte[])(Array)data);
-            JagStream var7 = new JagStream((byte[])(Array)data);
-            JagStream var8 = new JagStream((byte[])(Array)data);
+            byte[] bytes = ToBytes(data);
+            JagStream header = new JagStream(bytes);
+            JagStream drawTypes = new JagStream(bytes);
+            JagStream priorities = new JagStream(bytes);
+            JagStream alphas = new JagStream(bytes);
+            JagStream var6 = new JagStream(bytes);
+            JagStream var7 = new JagStream(bytes);
+            JagStream var8 = new JagStream(bytes);
             int modelType = header.ReadUnsignedByte();
             if(modelType != 1) {
                 Debug("" + modelType);
@@ -1772,7 +1791,7 @@ namespace FlashEditor.Definitions.Model {
                 int var61;
                 int var62;
                 if(hasUVCoordinates) {
-                    JagStream var60 = new JagStream((byte[])(Array)data);
+                    JagStream var60 = new JagStream(bytes);
                     var60.Position = data.Length - 26;//-1814364954;
                     var60.Position -= data[var60.Position - 1];// * 1582127231 - 1582127231];
                     this.anInt1234 = var60.ReadUnsignedShort();
