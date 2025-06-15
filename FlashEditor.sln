@@ -5,7 +5,9 @@ VisualStudioVersion = 16.0.29613.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashEditor", "FlashEditor\FlashEditor.csproj", "{355AFED6-FE4B-4536-9587-6924BF867A4E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashEditor.Tests", "FlashEditor.Tests\FlashEditor.Tests.csproj", "{819FD34B-3EDD-414B-B559-CEF76799FFA3}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "FlashEditor.Tests", "FlashEditor.Tests", "{65B8EBD5-A154-4037-9741-EC8D6905B558}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashEditor.Tests", "FlashEditor.Tests\FlashEditor.Tests\FlashEditor.Tests.csproj", "{FF01A770-96E7-4607-B95F-B5FC782E48A5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,18 +16,21 @@ Global
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{355AFED6-FE4B-4536-9587-6924BF867A4E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-                {355AFED6-FE4B-4536-9587-6924BF867A4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-                {355AFED6-FE4B-4536-9587-6924BF867A4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-                {355AFED6-FE4B-4536-9587-6924BF867A4E}.Release|Any CPU.Build.0 = Release|Any CPU
-                {819FD34B-3EDD-414B-B559-CEF76799FFA3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-                {819FD34B-3EDD-414B-B559-CEF76799FFA3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-                {819FD34B-3EDD-414B-B559-CEF76799FFA3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-                {819FD34B-3EDD-414B-B559-CEF76799FFA3}.Release|Any CPU.Build.0 = Release|Any CPU
-        EndGlobalSection
+		{355AFED6-FE4B-4536-9587-6924BF867A4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{355AFED6-FE4B-4536-9587-6924BF867A4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{355AFED6-FE4B-4536-9587-6924BF867A4E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FF01A770-96E7-4607-B95F-B5FC782E48A5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF01A770-96E7-4607-B95F-B5FC782E48A5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF01A770-96E7-4607-B95F-B5FC782E48A5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF01A770-96E7-4607-B95F-B5FC782E48A5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3E795BF8-B9F2-4F10-8DD8-D2D853BE790A}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FF01A770-96E7-4607-B95F-B5FC782E48A5} = {65B8EBD5-A154-4037-9741-EC8D6905B558}
 	EndGlobalSection
 EndGlobal
