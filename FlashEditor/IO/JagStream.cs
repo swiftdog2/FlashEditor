@@ -139,25 +139,26 @@ namespace FlashEditor {
         }
 
         internal int[] ReadUnsignedByteArray(int size) {
-            byte[] byteBuffer = new byte[size];
-            Read(byteBuffer, 0, byteBuffer.Length);
-            return Array.ConvertAll(byteBuffer, Convert.ToInt32);
+            Span<byte> byteBuffer = size <= 1024 ? stackalloc byte[size] : new byte[size];
+            Read(byteBuffer);
+
+            int[] result = new int[size];
+            for (int i = 0; i < size; i++)
+                result[i] = byteBuffer[i];
+
+            return result;
         }
 
         public int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
         }
         public int[] ReadUnsignedShortArray(int size) {
-            //Read 2x length contiguous block of bytes
-            byte[] byteBuffer = new byte[size * 2];
-            Read(byteBuffer, 0, byteBuffer.Length);
+            Span<byte> byteBuffer = size * 2 <= 2048 ? stackalloc byte[size * 2] : new byte[size * 2];
+            Read(byteBuffer);
 
             int[] shortBuffer = new int[size];
-
             int k = 0;
-
-            //Recombine into shorts
-            for(int i = 0; i < size; i++) {
+            for (int i = 0; i < size; i++) {
                 shortBuffer[i] = (byteBuffer[k] << 8) | byteBuffer[k + 1];
                 k += 2;
             }
@@ -295,16 +296,18 @@ namespace FlashEditor {
         }
 
         internal void WriteBytes(int bytes, object value) {
-            byte[] data = new byte[bytes];
+            Span<byte> data = bytes <= 8 ? stackalloc byte[bytes] : new byte[bytes];
 
-            if(value is int)
-                data = BitConverter.GetBytes((int) value);
-            if(value is short)
-                data = BitConverter.GetBytes((short) value);
+            int val = value switch {
+                int i => i,
+                short s => (ushort)s,
+                _ => 0
+            };
 
-            //Backwards to maintain the correct endianness!
-            for(int k = bytes - 1; k >= 0; k--)
-                WriteByte(data[k]);
+            for (int i = 0; i < bytes; i++)
+                data[i] = (byte)(val >> (8 * (bytes - i - 1)));
+
+            Write(data);
         }
 
         public void WriteShort(short value) {
