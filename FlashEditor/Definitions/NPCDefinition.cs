@@ -162,7 +162,7 @@ namespace FlashEditor
                     {
                         int idx = opcode - 30;
                         options[idx] = stream.ReadJagexString();
-                        if (options[idx] == "Hidden")
+                        if (string.Equals(options[idx], "Hidden", StringComparison.Ordinal))
                             options[idx] = null;
                         break;
                     }
@@ -404,7 +404,7 @@ namespace FlashEditor
                     {
                         int idx = opcode - 150;
                         options[idx] = stream.ReadJagexString();
-                        if (options[idx] == "Hidden")
+                        if (string.Equals(options[idx], "Hidden", StringComparison.Ordinal))
                             options[idx] = null;
                         break;
                     }
