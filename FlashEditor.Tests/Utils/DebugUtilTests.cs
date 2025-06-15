@@ -19,7 +19,7 @@ namespace FlashEditor.Tests.Utils
 
         [Theory]
         [InlineData((short)0x1F, "0000000000011111")]
-        [InlineData((short)0xFFFF, "1111111111111111")]
+        [InlineData((short)-1, "1111111111111111")]
         public void ToBitString_Short_ReturnsBinaryString(short input, string expected)
         {
             // Act
