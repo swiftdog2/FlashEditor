@@ -46,13 +46,12 @@ namespace FlashEditor.cache {
             int oldLen = data.Length;
 
             //Write the data to the stream
-            if(GetCompressionType() == RSConstants.BZIP2_COMPRESSION) {
-                data = CompressionUtils.Bzip2(data);
-                compressionType = RSConstants.BZIP2_COMPRESSION;
-            } else if(GetCompressionType() == RSConstants.GZIP_COMPRESSION) {
-                data = CompressionUtils.Gzip(data);
-                compressionType = RSConstants.GZIP_COMPRESSION;
-            }
+            compressionType = GetCompressionType();
+            data = compressionType switch {
+                RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bzip2(data),
+                RSConstants.GZIP_COMPRESSION => CompressionUtils.Gzip(data),
+                _ => data
+            };
 
             Debug("Compressed " + oldLen + " to : " + data.Length);
 
@@ -124,12 +123,11 @@ namespace FlashEditor.cache {
                 stream.Read(data, 0, data.Length);
 
                 //Decompress the data
-                if(container.GetCompressionType() == RSConstants.BZIP2_COMPRESSION)
-                    data = CompressionUtils.Bunzip2(data, container.GetDecompressedLength());
-                else if(container.GetCompressionType() == RSConstants.GZIP_COMPRESSION)
-                    data = CompressionUtils.Gunzip(data);
-                else
-                    throw new IOException("Invalid compression type");
+                data = container.GetCompressionType() switch {
+                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(data, container.GetDecompressedLength()),
+                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(data),
+                    _ => throw new IOException("Invalid compression type")
+                };
 
                 //Check if the decompressed length is what it should be
                 if(data.Length != container.GetDecompressedLength())
@@ -143,12 +141,11 @@ namespace FlashEditor.cache {
         }
 
         public string GetCompressionString() {
-            string compressType = "None";
-            if(GetCompressionType() == RSConstants.BZIP2_COMPRESSION)
-                compressType = "BZIP2";
-            else if(GetCompressionType() == RSConstants.GZIP_COMPRESSION)
-                compressType = "GZIP";
-            return compressType;
+            return GetCompressionType() switch {
+                RSConstants.BZIP2_COMPRESSION => "BZIP2",
+                RSConstants.GZIP_COMPRESSION => "GZIP",
+                _ => "None"
+            };
         }
 
         private int GetDecompressedLength() {
