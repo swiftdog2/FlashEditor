@@ -1,6 +1,6 @@
 ﻿using FlashEditor.cache.sprites;
 using FlashEditor.Cache.Util;
-using Ionic.Crc;
+using ICSharpCode.SharpZipLib.Checksum;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -135,7 +135,9 @@ namespace FlashEditor.cache {
 
             //Update the version and checksum for this file
             hashableStream.Seek0(); //allows the crc32 to slurp the blocks
-            entry.SetCrc(new CRC32().GetCrc32(hashableStream));
+            var crc = new Crc32();
+            crc.Update(hashableStream.ToArray());      // feeds the bytes
+            entry.SetCrc((int)crc.Value);              // .Value is UInt32
             entry.SetVersion(1337);
 
             //Calculate and update the whirlpool digest if we need to

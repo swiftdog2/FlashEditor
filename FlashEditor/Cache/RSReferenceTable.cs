@@ -38,7 +38,7 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="stream">The stream containing the reference table Container data</param>
         /// <returns>The reference table</returns>
-        internal static RSReferenceTable Decode(JagStream stream) {
+        public static RSReferenceTable Decode(JagStream stream) {
             Debug("Decoding reference table", LOG_DETAIL.ADVANCED);
 
             RSReferenceTable table = new RSReferenceTable();
@@ -155,7 +155,7 @@ namespace FlashEditor.cache {
         /// Writes the RSReferenceTable
         /// </summary>
         /// <returns>The reference table</returns>
-        internal JagStream Encode() {
+        public JagStream Encode() {
             Debug("Encoding Reference Table " + type);
 
             JagStream stream = new JagStream();

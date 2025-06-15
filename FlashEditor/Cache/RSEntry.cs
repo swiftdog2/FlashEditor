@@ -5,7 +5,7 @@ using System.Linq;
 using FlashEditor.Cache.CheckSum;
 
 namespace FlashEditor.cache {
-    internal class RSEntry {
+    public class RSEntry {
         private JagStream stream = new JagStream(); //ensure there is a default stream
         public int identifier = -1;
         public RSIdentifiers identifiers;
