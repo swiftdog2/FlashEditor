@@ -141,8 +141,10 @@ namespace FlashEditor.cache {
             entry.SetVersion(1337);
 
             //Calculate and update the whirlpool digest if we need to
-            if(table.usesWhirlpool)
-                entry.SetWhirlpool(Whirlpool.GetHash(hashableStream.ToArray()));
+            if(table.usesWhirlpool) {
+                byte[] digest = Whirlpool.GetHash(hashableStream.ToArray());
+                entry.SetWhirlpool(digest);
+            }
 
             //Add the entry to the reference table
             table.PutEntry(containerId, entry);

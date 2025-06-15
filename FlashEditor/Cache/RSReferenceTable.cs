@@ -95,8 +95,8 @@ namespace FlashEditor.cache {
             //If the archive uses whirlpool, set the whirlpool hash
             if(table.usesWhirlpool) {
                 for(int index = 0; index < table.validArchivesCount; index++) {
-                    byte[] whirpool = new byte[64];
-                    stream.Read(whirpool, 0, 64);
+                    Span<byte> whirpool = stackalloc byte[64];
+                    stream.Read(whirpool);
                     table.entries[table.validArchiveIds[index]].SetWhirlpool(whirpool);
                 }
             }
