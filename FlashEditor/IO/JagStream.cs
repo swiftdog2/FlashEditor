@@ -118,7 +118,7 @@ namespace FlashEditor {
             return ReadUnsignedShort() - 32769;
         }
 
-        internal int ReadInt() {
+        public int ReadInt() {
             return (ReadUnsignedByte() << 24) + (ReadUnsignedByte() << 16) + (ReadUnsignedByte() << 8) + ReadUnsignedByte();
         }
 
@@ -314,11 +314,11 @@ namespace FlashEditor {
             throw new NotImplementedException();
         }
 
-        internal void WriteInteger(int value) {
+        public void WriteInteger(int value) {
             WriteBytes(4, value);
         }
 
-        internal void WriteInteger(long value) {
+        public void WriteInteger(long value) {
             WriteInteger((int) value);
         }
 
