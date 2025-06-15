@@ -57,6 +57,10 @@ namespace FlashEditor {
             if(stream == null)
                 throw new NullReferenceException("Stream was null");
 
+            string? dirName = Path.GetDirectoryName(directory);
+            if(!string.IsNullOrEmpty(dirName) && !Directory.Exists(dirName))
+                Directory.CreateDirectory(dirName);
+
             using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write))
                 file.Write(stream.ToArray(), 0, (int) stream.Length);
         }
