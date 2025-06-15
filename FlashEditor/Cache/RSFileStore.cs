@@ -55,7 +55,12 @@ namespace FlashEditor.cache {
                 throw new NullReferenceException("IndexChannels is null");
 
             //Don't include the meta index as a type, of course
-            return indexChannels.Keys.Where(x => x < RSConstants.META_INDEX).Max();
+            int max = 0;
+            foreach(int key in indexChannels.Keys) {
+                if(key < RSConstants.META_INDEX && key > max)
+                    max = key;
+            }
+            return max;
         }
 
         internal RSIndex GetIndex(int type) {

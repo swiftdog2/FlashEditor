@@ -102,30 +102,43 @@ namespace FlashEditor.Definitions.Tracks {
             for(var29 = 0; var29 < ctrlChangeOpcodes; ++var29) {
                 var28 = var28 + (buf.ReadUnsignedByte()) & 127;
                 if(var28 != 0 && var28 != 32) {
-                    if(var28 == 1) {
-                        ++var16;
-                    } else if(var28 == 33) {
-                        ++var17;
-                    } else if(var28 == 7) {
-                        ++var18;
-                    } else if(var28 == 39) {
-                        ++var19;
-                    } else if(var28 == 10) {
-                        ++var20;
-                    } else if(var28 == 42) {
-                        ++var21;
-                    } else if(var28 == 99) {
-                        ++var22;
-                    } else if(var28 == 98) {
-                        ++var23;
-                    } else if(var28 == 101) {
-                        ++var24;
-                    } else if(var28 == 100) {
-                        ++var25;
-                    } else if(var28 != 64 && var28 != 65 && var28 != 120 && var28 != 121 && var28 != 123) {
-                        ++var27;
-                    } else {
-                        ++var26;
+                    switch(var28) {
+                        case 1:
+                            ++var16;
+                            break;
+                        case 33:
+                            ++var17;
+                            break;
+                        case 7:
+                            ++var18;
+                            break;
+                        case 39:
+                            ++var19;
+                            break;
+                        case 10:
+                            ++var20;
+                            break;
+                        case 42:
+                            ++var21;
+                            break;
+                        case 99:
+                            ++var22;
+                            break;
+                        case 98:
+                            ++var23;
+                            break;
+                        case 101:
+                            ++var24;
+                            break;
+                        case 100:
+                            ++var25;
+                            break;
+                        default:
+                            if(var28 != 64 && var28 != 65 && var28 != 120 && var28 != 121 && var28 != 123)
+                                ++var27;
+                            else
+                                ++var26;
+                            break;
                     }
                 } else {
                     ++progmChangeOpcodes;
@@ -260,7 +273,8 @@ label361:
                         midiBuff.WriteByte((byte) buf.ToArray()[var50++]);
                     } else {
                         var52 ^= var64 >> 4;
-                        if(var62 == 0) {
+                        switch(var62) {
+                        case 0:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (144 + var52));
                             }
@@ -269,7 +283,8 @@ label361:
                             var54 += buf.ToArray()[var38++];
                             midiBuff.WriteByte((byte) (var53 & 127));
                             midiBuff.WriteByte((byte) (var54 & 127));
-                        } else if(var62 == 1) {
+                            break;
+                        case 1:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (128 + var52));
                             }
@@ -278,7 +293,8 @@ label361:
                             var55 += buf.ToArray()[var40++];
                             midiBuff.WriteByte((byte) (var53 & 127));
                             midiBuff.WriteByte((byte) (var55 & 127));
-                        } else if(var62 == 2) {
+                            break;
+                        case 2:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (176 + var52));
                             }
@@ -319,7 +335,8 @@ label361:
                             int var67 = var66 + var59[var28];
                             var59[var28] = var67;
                             midiBuff.WriteByte((byte) (var67 & 127));
-                        } else if(var62 == 3) {
+                            break;
+                        case 3:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (224 + var52));
                             }
@@ -328,14 +345,16 @@ label361:
                             var56 += buf.ToArray()[var33++] << 7;
                             midiBuff.WriteByte((byte) (var56 & 127));
                             midiBuff.WriteByte((byte) (var56 >> 7 & 127));
-                        } else if(var62 == 4) {
+                            break;
+                        case 4:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (208 + var52));
                             }
 
                             var57 += buf.ToArray()[var32++];
                             midiBuff.WriteByte((byte) (var57 & 127));
-                        } else if(var62 == 5) {
+                            break;
+                        case 5:
                             if(var65) {
                                 midiBuff.WriteByte((byte) (160 + var52));
                             }
@@ -344,7 +363,8 @@ label361:
                             var58 += buf.ToArray()[var31++];
                             midiBuff.WriteByte((byte) (var53 & 127));
                             midiBuff.WriteByte((byte) (var58 & 127));
-                        } else {
+                            break;
+                        default:
                             if(var62 != 6)
                                 throw new Exception();
 
@@ -352,6 +372,7 @@ label361:
                                 midiBuff.WriteByte((byte) (192 + var52));
 
                             midiBuff.WriteByte((byte) buf.ToArray()[var44++]);
+                            break;
                         }
                     }
                 }

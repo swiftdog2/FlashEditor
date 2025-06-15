@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace FlashEditor.Collections {
     public static class ArrayUtil {
@@ -13,7 +12,10 @@ namespace FlashEditor.Collections {
         /// <returns></returns>
         public static T[][] ReturnRectangularArray<T>(int firstDimension, int secondDimension)
             where T : struct {
-            return new T[firstDimension].Select(obj => new T[secondDimension]).ToArray();
+            T[][] result = new T[firstDimension][];
+            for(int i = 0; i < firstDimension; i++)
+                result[i] = new T[secondDimension];
+            return result;
         }
     }
 }
