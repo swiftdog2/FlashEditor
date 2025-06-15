@@ -120,15 +120,17 @@ namespace FlashEditor.cache {
                 container.SetDecompressedLength(stream.ReadInt());
 
                 //Read the data from the stream into a buffer
-                byte[] data = new byte[container.GetDataLength()];
-                stream.Read(data.AsSpan());
+                byte[] compressed = MemoryUtils.Rent(container.GetDataLength());
+                stream.Read(compressed, 0, container.GetDataLength());
 
                 //Decompress the data
-                data = container.GetCompressionType() switch {
-                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(data, container.GetDecompressedLength()),
-                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(data),
+                byte[] data = container.GetCompressionType() switch {
+                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(compressed, container.GetDecompressedLength()),
+                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(compressed),
                     _ => throw new IOException("Invalid compression type")
                 };
+
+                MemoryUtils.Return(compressed);
 
                 //Check if the decompressed length is what it should be
                 if(data.Length != container.GetDecompressedLength())
