@@ -56,12 +56,12 @@ namespace FlashEditor.cache {
             return whirlpool;
         }
 
-        public virtual void SetWhirlpool(byte[] whirlpool) {
+        public virtual void SetWhirlpool(ReadOnlySpan<byte> whirlpool) {
             if(whirlpool.Length != 64) {
                 Debug("Whirlpool length is not 64 bytes");
                 throw new ArgumentException();
             }
-            Array.Copy(whirlpool, 0, this.whirlpool, 0, whirlpool.Length);
+            whirlpool.CopyTo(this.whirlpool);
         }
 
         public JagStream GetStream() {
