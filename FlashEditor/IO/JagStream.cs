@@ -10,6 +10,8 @@ namespace FlashEditor {
         public JagStream(byte[] buffer) : base(buffer) { }
         public JagStream() { }
 
+        private static readonly StringBuilder SharedBuilder = new StringBuilder();
+
         /*
          * The modified set of 'extended ASCII' characters used by the client.
          */
@@ -167,14 +169,14 @@ namespace FlashEditor {
         }
 
         internal string ReadString2() {
-            StringBuilder sb = new StringBuilder();
+            SharedBuilder.Clear();
             int b;
 
             while((b = ReadByte()) != 0)
-                sb.Append((char) b);
+                SharedBuilder.Append((char) b);
 
             WriteLine("'");
-            return sb.ToString();
+            return SharedBuilder.ToString();
         }
 
         /**
@@ -184,21 +186,21 @@ namespace FlashEditor {
          * @return The decoded string.
          */
         public string ReadJagexString() {
-            StringBuilder sb = new StringBuilder();
+            SharedBuilder.Clear();
             int b;
             while((b = ReadByte()) != 0) {
                 //If the byte read is between 127 and 159, it should be remapped
                 if(b >= 127 && b < 160) {
                     char c = CHARACTERS[b - 128];
-                    if(c.Equals('\0')) //if it needs to be remapped, as per the characters array
+                    if(c == '\0') //if it needs to be remapped, as per the characters array
                         c = '\u003F'; //replace with question mark as placeholder to avoid rendering issues
-                    sb.Append(c);
+                    SharedBuilder.Append(c);
                 } else {
-                    sb.Append((char) b);
+                    SharedBuilder.Append((char) b);
                 }
             }
 
-            return sb.ToString();
+            return SharedBuilder.ToString();
         }
 
         internal byte Get(int pos) {
@@ -222,12 +224,12 @@ namespace FlashEditor {
 
         //Seems to work better? idk tbh my brain is fried...
         public string ReadFlashString() {
-            StringBuilder sb = new StringBuilder();
+            SharedBuilder.Clear();
             int b;
             while((b = ReadByte()) != 0) {
                 if(b >= 128 && b < 160) {
                     char c = CHARACTERS[b - 128];
-                    sb.Append(c == (char) 0 ? (char) 63 : c);
+                    SharedBuilder.Append(c == (char) 0 ? (char) 63 : c);
                 } else {
                     //Nobody seems to have this (including client, openrs, etc)
                     //Seems to eliminate issues reading strings not terminated by 0
@@ -237,11 +239,11 @@ namespace FlashEditor {
                         break;
                     }
 
-                    sb.Append((char) b);
+                        SharedBuilder.Append((char) b);
                 }
             }
 
-            return sb.ToString();
+            return SharedBuilder.ToString();
         }
 
         /*

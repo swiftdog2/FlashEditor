@@ -32,7 +32,7 @@ namespace FlashEditor {
         }
 
         public bool IsCacheDirSet() {
-            if(Properties.Settings.Default.cacheDir == "")
+            if(string.Equals(Properties.Settings.Default.cacheDir, string.Empty, StringComparison.Ordinal))
                 return false;
             return true;
         }
@@ -55,7 +55,7 @@ namespace FlashEditor {
         }
 
         private void Editor_Load(object sender, EventArgs e) {
-            if(Properties.Settings.Default.cacheDir != "")
+            if(!string.Equals(Properties.Settings.Default.cacheDir, string.Empty, StringComparison.Ordinal))
                 LoadCache(Properties.Settings.Default.cacheDir);
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
             ItemListView.AlwaysGroupByColumn = ItemID;

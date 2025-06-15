@@ -61,6 +61,8 @@ namespace FlashEditor {
         public int equipId;
         public int multiStackSize;
 
+        private static readonly StringBuilder SharedBuilder = new StringBuilder();
+
         public SortedDictionary<int, object> itemParams;
 
         public ItemDefinition Clone() { return (ItemDefinition) MemberwiseClone(); }
@@ -77,7 +79,7 @@ namespace FlashEditor {
         public static ItemDefinition Decode(JagStream stream) {
             int total = 0;
 
-            StringBuilder sb = new StringBuilder();
+            SharedBuilder.Clear();
             ItemDefinition def = new ItemDefinition();
 
             if(stream != null) {
@@ -100,11 +102,11 @@ namespace FlashEditor {
 
                 for(int k = 0; k < def.decoded.Length; k++) {
                     if(def.decoded[k])
-                        sb.Append(k + " ");
+                        SharedBuilder.Append(k + " ");
                 }
             }
 
-            Debug((def.name ?? "null") + " (stream len " + stream.Length + "), OPCODEs: " + sb.ToString(), LOG_DETAIL.INSANE);
+            Debug((def.name ?? "null") + " (stream len " + stream.Length + "), OPCODEs: " + SharedBuilder.ToString(), LOG_DETAIL.INSANE);
             return def;
         }
 
