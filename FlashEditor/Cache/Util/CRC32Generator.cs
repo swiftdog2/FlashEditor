@@ -38,20 +38,39 @@ namespace FlashEditor.Cache.Util {
         }
 
         /// <summary>
-        /// Reset CRC
+        /// Resets the CRC accumulator for new data.
         /// </summary>
         public void Init() {
             value = kInitial;
         }
 
+        /// <summary>
+        /// Gets the computed CRC32 hash.
+        /// </summary>
         public int Value {
             get { return (int) ~value; }
         }
 
+        /// <summary>
+        /// Updates the hash with a single byte.
+        /// </summary>
+        /// <param name="b">The byte value to incorporate.</param>
         public void UpdateByte(byte b) {
             value = (value >> 8) ^ Table[(byte) value ^ b];
         }
 
+        /// <summary>
+        /// Updates the hash with a block of bytes.
+        /// </summary>
+        /// <param name="data">The buffer containing data.</param>
+        /// <param name="offset">Zero‑based index in <paramref name="data"/> to
+        /// start reading.</param>
+        /// <param name="count">The number of bytes to read from the buffer.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when
+        /// <paramref name="offset"/> or <paramref name="count"/> is out of range
+        /// for <paramref name="data"/>.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when
+        /// <paramref name="data"/> is null.</exception>
         public void Update(byte[] data, int offset, int count) {
             new ArraySegment<byte>(data, offset, count);     // check arguments
             if(count == 0)
@@ -95,17 +114,35 @@ namespace FlashEditor.Cache.Util {
             value = crc;
         }
 
-        static public int GetHash(byte[] data, int offset, int size) {
+        /// <summary>
+        /// Computes the CRC32 hash for a segment of a byte array.
+        /// </summary>
+        /// <param name="data">The source buffer.</param>
+        /// <param name="offset">Zero‑based index in <paramref name="data"/> to
+        /// start hashing.</param>
+        /// <param name="size">The number of bytes to process.</param>
+        /// <returns>The 32‑bit CRC value.</returns>
+        public static int GetHash(byte[] data, int offset, int size) {
             var crc = new CRC32Generator();
             crc.Update(data, offset, size);
             return crc.Value;
         }
 
-        static public int GetHash(byte[] data) {
+        /// <summary>
+        /// Computes the CRC32 hash for the entire buffer.
+        /// </summary>
+        /// <param name="data">The buffer to process.</param>
+        /// <returns>The 32‑bit CRC value.</returns>
+        public static int GetHash(byte[] data) {
             return GetHash(data, 0, data.Length);
         }
 
-        static public int GetHash(ArraySegment<byte> block) {
+        /// <summary>
+        /// Computes the CRC32 hash for an array segment.
+        /// </summary>
+        /// <param name="block">The segment containing the bytes.</param>
+        /// <returns>The 32‑bit CRC value.</returns>
+        public static int GetHash(ArraySegment<byte> block) {
             return GetHash(block.Array, block.Offset, block.Count);
         }
     }
