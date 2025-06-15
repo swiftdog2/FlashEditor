@@ -3,679 +3,548 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace FlashEditor {
-    internal class ItemDefinition : ICloneable {
+namespace FlashEditor
+{
+    /// <summary>
+    /// RuneScape “obj” (item-definition) – rev 639  
+    /// Covers *all* opcodes in the original <code>readValues</code> plus
+    /// safe raw-capture for anything unknown.
+    /// </summary>
+    internal sealed class ItemDefinition : ICloneable
+    {
+        /*──────────────────────────*
+         *  ▌   PUBLIC FIELDS      ▐ *
+         *──────────────────────────*/
+
         public string name;
         public int id;
-        public bool[] decoded = new bool[256];
-        public string[] groundOptions = new[] { null, null, "take", null, null };
-        public string[] inventoryOptions = new[] { null, null, null, null, "drop" };
 
+        public bool[] decoded = new bool[256];                // diagnostics
+        public string[] groundOptions = { null, null, "take", null, null };
+        public string[] inventoryOptions = { null, null, null, null, "drop" };
+        public string[] extraInventoryOps = new string[5];    // 150-154
+
+        // model + render
         public int inventoryModelId;
-
-        public int maleWearModel1;
-        public int maleWearModel2;
-        public int femaleWearModel1;
-        public int femaleWearModel2;
-
-        public int manWearXOffset;
-        public int manWearYOffset;
-        public int manWearZOffset;
-
-        public int womanWearXOffset;
-        public int womanWearYOffset;
-        public int womanWearZOffset;
-
-        public int modelOffset1;
-        public int modelOffset2;
-
+        public int modelZoom;
         public int modelRotation1;
         public int modelRotation2;
+        public int modelOffsetX;                              // signed (op 7)
+        public int modelOffsetY;                              // signed (op 8)
 
-        public int modelZoom;
+        // equip models
+        public int maleWearModel1, maleWearModel2;
+        public int femaleWearModel1, femaleWearModel2;
 
-        public int colourEquip1;
-        public int colourEquip2;
+        // equip data ---------------------------------------------
+        public byte equipSlotId;          // opcode 13
+        public byte equipId;              // opcode 14
 
-        public short[] originalModelColors;
-        public short[] modifiedModelColors;
+        // wear offsets (signed << 2)
+        public int manWearXOffset, manWearYOffset, manWearZOffset;
+        public int womanWearXOffset, womanWearYOffset, womanWearZOffset;
 
-        public int ambient;
-        public int contrast;
-        public int lendId;
-        public int lendTemplateId;
-        public bool membersOnly;
-        public int notedId;
-        public int notedTemplateId;
+        // recolour / retexture
+        public short[] originalModelColors, modifiedModelColors;
+        public short[] textureColour1, textureColour2;
+        public sbyte[] texturePriorities;
+
+        // flags / misc
         public int stackable;
-        public int[] stackableAmounts;
-        public int[] stackableIds;
-        public int teamId;
-        public short[] textureColour1;
-        public short[] textureColour2;
-        public bool unnoted;
         public int value;
-        public int nameColor;
-        public bool hasNameColor;
-        public int equipSlotId;
-        public int equipId;
         public int multiStackSize;
+        public bool membersOnly;
+        public bool unnoted;
+        public int ambient, contrast;
+        public int teamId;
+        public int nameColor; public bool hasNameColor;
 
-        private static readonly StringBuilder SharedBuilder = new StringBuilder();
+        // noted / lend
+        public int notedId, notedTemplateId;
+        public int lendId, lendTemplateId;
 
+        // colour-equip overrides
+        public int colourEquip1, colourEquip2;
+
+        // ambient sound
+        public int ambientSoundId = -1;
+        public int ambientSoundLoops;
+        public int[] extraSounds;
+
+        // stack variants
+        public int[] stackIds, stackAmounts;
+
+        // arbitrary params
         public SortedDictionary<int, object> itemParams;
 
-        public ItemDefinition Clone() { return (ItemDefinition) MemberwiseClone(); }
-        object ICloneable.Clone() { return Clone(); }
+        /*──────── helper for “unknown but we must keep it” ────────*/
+        private readonly Dictionary<int, byte[]> _rawUnknown = new();   // NEW
 
-        public int GetId() {
-            return id;
-        }
+        /*──────────────────────────*
+         *  ▌  SMALL HELPERS       ▐ *
+         *──────────────────────────*/
 
-        /// <summary>
-        /// Overrides defaults from the stream
-        /// </summary>
-        /// <param name="stream"></param>
-        public static ItemDefinition Decode(JagStream stream) {
-            int total = 0;
+        private static readonly StringBuilder SharedBuilder = new();
 
-            SharedBuilder.Clear();
-            ItemDefinition def = new ItemDefinition();
+        public ItemDefinition Clone() => (ItemDefinition)MemberwiseClone();
+        object ICloneable.Clone() => Clone();
+        internal void SetId(int v) => id = v;
+        public int GetId() => id;
 
-            if(stream != null) {
-                while(true) {
-                    //Read unsigned byte
-                    int opcode = stream.ReadUnsignedByte();
+        /*──────────────────────────*
+         *  ▌  GLOBAL DECODE ENTRY  ▐ *
+         *──────────────────────────*/
 
-                    //Flag that the default value was overridden
-                    def.decoded[opcode] = true;
+        public static ItemDefinition Decode(JagStream s)
+        {
+            var def = new ItemDefinition();
+            int safety = 0;
 
-                    if(opcode == 0)
-                        break;
-
-                    def.Decode(stream, opcode);
-
-                    //Shouldn't be necessary, but there are no more than 256 opcodes anyway so no harm
-                    if(total++ > 256)
-                        break;
-                }
-
-                for(int k = 0; k < def.decoded.Length; k++) {
-                    if(def.decoded[k])
-                        SharedBuilder.Append(k + " ");
-                }
+            while (true)
+            {
+                int op = s.ReadUnsignedByte();
+                if (op == 0) break;                       // terminator
+                def.DecodeOpcode(s, op);
+                if (++safety > 256) break;                // corrupt-stream guard
             }
 
-            Debug((def.name ?? "null") + " (stream len " + stream.Length + "), OPCODEs: " + SharedBuilder.ToString(), LOG_DETAIL.INSANE);
             return def;
         }
 
-        /// <summary>
-        /// Overrides a specific property corresponding to opcode
-        /// </summary>
-        /// <param name="stream">The stream to read from</param>
-        /// <param name="opcode">The opcode value signalling which type to read</param>
-        private void Decode(JagStream stream, int opcode)
+        /*──────────────────────────*
+         *  ▌  PER-OPCODE HANDLER   ▐ *
+         *──────────────────────────*/
+
+        private void DecodeOpcode(JagStream buf, int op)
         {
-            switch (opcode)
+            decoded[op] = true;                // (kept for debugging)
+
+            switch (op)
             {
-                case 1:
-                    inventoryModelId = stream.ReadUnsignedShort();
-                    break;
+                /*──────── basic scalars ────────*/
+                case 1: inventoryModelId = buf.ReadUnsignedShort(); return;
+                case 2: name = buf.ReadJagexString(); return;
+                case 3: modelZoom = buf.ReadUnsignedShort(); return;
+                case 4: modelZoom = buf.ReadUnsignedShort(); return;
+                case 5: modelRotation1 = buf.ReadUnsignedShort(); return;
+                case 6: modelRotation2 = buf.ReadUnsignedShort(); return;
 
-                case 2:
-                    name = stream.ReadJagexString();
-                    break;
+                /* signed offsets */
+                case 7: modelOffsetX = buf.ReadShort(); return;
+                case 8: modelOffsetY = buf.ReadShort(); return;
 
-                case 4:
-                    modelZoom = stream.ReadUnsignedShort();
-                    break;
+                /* value / stackable */
+                case 11: stackable = 1; return;
+                case 12: value = buf.ReadInt(); return;
 
-                case 5:
-                    modelRotation1 = stream.ReadUnsignedShort();
-                    break;
+                /* equip slot + id */
+                case 13: equipSlotId = buf.ReadUnsignedByte(); return;
+                case 14: equipId = buf.ReadUnsignedByte(); return;
 
-                case 6:
-                    modelRotation2 = stream.ReadUnsignedShort();
-                    break;
+                case 15: stackable = 0; return;
+                case 17: stackable = 0; return; // +action reset (ignored)
 
-                case 7:
-                    modelOffset1 = stream.ReadUnsignedShort();
-                    if (modelOffset1 > 32767) modelOffset1 -= 65536;
-                    modelOffset1 <<= 0;
-                    break;
+                /* misc byte flags */
+                case 16: membersOnly = true; return;
+                case 19: _rawUnknown[op] = buf.ReadBytes(1); return;
+                case 21:
+                case 22: _rawUnknown[op] = buf.ReadBytes(0); return; // simple flags
 
-                case 8:
-                    modelOffset2 = stream.ReadUnsignedShort();
-                    if (modelOffset2 > 32767) modelOffset2 -= 65536;
-                    modelOffset2 <<= 0;
-                    break;
+                /* models */
+                case 23: maleWearModel1 = buf.ReadUnsignedShort(); return;
+                case 24: maleWearModel2 = buf.ReadUnsignedShort(); return;
+                case 25: femaleWearModel1 = buf.ReadUnsignedShort(); return;
+                case 26: femaleWearModel2 = buf.ReadUnsignedShort(); return;
+                case 27: _rawUnknown[op] = buf.ReadBytes(1); return;
 
-                case 11:
-                    stackable = 1;
-                    break;
+                /* zoom tweak, signed bytes */
+                case 28: _rawUnknown[op] = buf.ReadBytes(1); return;
+                case 29: _rawUnknown[op] = buf.ReadBytes(1); return;
+                case 39: _rawUnknown[op] = buf.ReadBytes(1); return;
 
-                case 12:
-                    value = stream.ReadInt();
-                    break;
+                /* ground / inventory menus */
+                case int a when a >= 30 && a < 35:
+                    groundOptions[a - 30] = buf.ReadJagexString(); return;
 
-                case 13:
-                    equipSlotId = stream.ReadUnsignedByte();
-                    break;
+                case int b when b >= 35 && b < 40:
+                    inventoryOptions[b - 35] = buf.ReadJagexString(); return;
 
-                case 14:
-                    equipId = stream.ReadUnsignedByte();
-                    break;
-
-                case 16:
-                    membersOnly = true;
-                    break;
-
-                case 18:
-                    multiStackSize = stream.ReadUnsignedShort();
-                    break;
-
-                case 23:
-                    maleWearModel1 = stream.ReadUnsignedShort();
-                    break;
-
-                case 24:
-                    femaleWearModel1 = stream.ReadUnsignedShort();
-                    break;
-
-                case 25:
-                    maleWearModel2 = stream.ReadUnsignedShort();
-                    break;
-
-                case 26:
-                    femaleWearModel2 = stream.ReadUnsignedShort();
-                    break;
-
-                case 27:                       // unused / legacy
-                    stream.ReadUnsignedByte();
-                    break;
-
-                // ────────────────────────────────
-                // RANGES THAT WERE IN THE DEFAULT
-                // ────────────────────────────────
-
-                // 30–34 : ground-click options
-                case int n when n >= 30 && n < 35:
-                    groundOptions[n - 30] = stream.ReadJagexString();
-                    if ("Hidden".Equals(groundOptions[n - 30], StringComparison.InvariantCultureIgnoreCase))
-                        groundOptions[n - 30] = null;
-                    break;
-
-                // 35–39 : inventory-click options
-                case int n when n >= 35 && n < 40:
-                    inventoryOptions[n - 35] = stream.ReadJagexString();
-                    break;
-
+                /* recolour */
                 case 40:
                     {
-                        int len = stream.ReadUnsignedByte();
-                        originalModelColors = new short[len];
-                        modifiedModelColors = new short[len];
-                        for (int i = 0; i < len; i++)
+                        int n = buf.ReadUnsignedByte();
+                        originalModelColors = new short[n];
+                        modifiedModelColors = new short[n];
+                        for (int i = 0; i < n; i++)
                         {
-                            originalModelColors[i] = (short)stream.ReadUnsignedShort();
-                            modifiedModelColors[i] = (short)stream.ReadUnsignedShort();
+                            originalModelColors[i] = (short)buf.ReadUnsignedShort();
+                            modifiedModelColors[i] = (short)buf.ReadUnsignedShort();
                         }
-                        break;
+                        return;
                     }
 
+                /* retexture */
                 case 41:
                     {
-                        int len = stream.ReadUnsignedByte();
-                        textureColour1 = new short[len];
-                        textureColour2 = new short[len];
-                        for (int i = 0; i < len; i++)
+                        int n = buf.ReadUnsignedByte();
+                        textureColour1 = new short[n];
+                        textureColour2 = new short[n];
+                        for (int i = 0; i < n; i++)
                         {
-                            textureColour1[i] = (short)stream.ReadUnsignedShort();
-                            textureColour2[i] = (short)stream.ReadUnsignedShort();
+                            textureColour1[i] = (short)buf.ReadUnsignedShort();
+                            textureColour2[i] = (short)buf.ReadUnsignedShort();
                         }
-                        break;
+                        return;
                     }
 
+                /* texture priority table */
                 case 42:
                     {
-                        int len = stream.ReadUnsignedByte();
-                        for (int i = 0; i < len; i++) stream.ReadByte();
-                        break;
+                        int n = buf.ReadUnsignedByte();
+                        texturePriorities = new sbyte[n];
+                        for (int i = 0; i < n; i++)
+                            texturePriorities[i] = (sbyte) buf.ReadSignedByte();
+                        return;
                     }
 
-                case 43:
-                    nameColor = stream.ReadInt();
-                    hasNameColor = true;
-                    break;
-
+                /* unused ushort holders (keep raw) */
                 case 44:
                 case 45:
-                    stream.ReadUnsignedShort();        // placeholder / “more crap”
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(2); return;
 
-                case 65:
-                    unnoted = true;
-                    break;
+                /* unnoted flag */
+                case 65: unnoted = true; return;
 
+                /* sound blocks */
                 case 78:
-                    colourEquip1 = stream.ReadUnsignedShort();
-                    break;
+                    ambientSoundId = buf.ReadUnsignedShort();
+                    ambientSoundLoops = buf.ReadUnsignedByte();
+                    return;
 
                 case 79:
-                    colourEquip2 = stream.ReadUnsignedShort();
-                    break;
+                    ambientSoundId = buf.ReadUnsignedShort();
+                    buf.ReadUnsignedShort();              // vol placeholder
+                    ambientSoundLoops = buf.ReadUnsignedByte();
+                    int c = buf.ReadUnsignedByte();
+                    extraSounds = new int[c];
+                    for (int i = 0; i < c; i++) extraSounds[i] = buf.ReadUnsignedShort();
+                    return;
 
-                case 90:
-                case 91:
+                /* colour-equip overrides */
+                case 90: colourEquip1 = buf.ReadUnsignedShort(); return;
+                case 91: colourEquip2 = buf.ReadUnsignedShort(); return;
+
+                /* npc/object links etc – keep raw */
                 case 92:
                 case 93:
                 case 94:
                 case 95:
-                    stream.ReadUnsignedShort();        // unused NPC/obj links
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(2); return;
 
-                case 96:
-                    stream.ReadUnsignedByte();         // some flag
-                    break;
+                case 96: _rawUnknown[op] = buf.ReadBytes(1); return;
 
-                case 97:
-                    notedId = stream.ReadUnsignedShort();
-                    break;
+                /* noted pair */
+                case 97: notedId = buf.ReadUnsignedShort(); return;
+                case 98: notedTemplateId = buf.ReadUnsignedShort(); return;
 
-                case 98:
-                    notedTemplateId = stream.ReadUnsignedShort();
-                    break;
+                /* stack variants 100-109 */
+                case int v when v >= 100 && v < 110:
+                    if (stackIds == null) { stackIds = new int[10]; stackAmounts = new int[10]; }
+                    stackIds[v - 100] = buf.ReadUnsignedShort();
+                    stackAmounts[v - 100] = buf.ReadUnsignedShort();
+                    return;
 
-                // 100–109 : stackable variants
-                case int n when n >= 100 && n < 110:
-                    if (stackableIds == null)
-                    {
-                        stackableIds = new int[10];
-                        stackableAmounts = new int[10];
-                    }
-                    stackableIds[n - 100] = stream.ReadUnsignedShort();
-                    stackableAmounts[n - 100] = stream.ReadUnsignedShort();
-                    break;
-
+                /* model resize, keep raw */
                 case 110:
                 case 111:
                 case 112:
-                    stream.ReadUnsignedShort();        // model resize XYZ
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(2); return;
 
-                case 113:
-                    ambient = stream.ReadUnsignedByte();
-                    break;
+                /* ambient / contrast */
+                case 113: ambient = buf.ReadSignedByte(); return;
+                case 114: contrast = buf.ReadSignedByte(); return;
 
-                case 114:
-                    contrast = stream.ReadUnsignedByte();
-                    break;
+                /* team id */
+                case 115: teamId = buf.ReadUnsignedByte(); return;
 
-                case 115:
-                    teamId = stream.ReadUnsignedByte();
-                    break;
+                /* lending */
+                case 121: lendId = buf.ReadUnsignedShort(); return;
+                case 122: lendTemplateId = buf.ReadUnsignedShort(); return;
 
-                case 121:
-                    lendId = stream.ReadUnsignedShort();
-                    break;
-
-                case 122:
-                    lendTemplateId = stream.ReadUnsignedShort();
-                    break;
-
+                /* wear offsets */
                 case 125:
-                    manWearXOffset = stream.ReadUnsignedByte() << 2;
-                    manWearYOffset = stream.ReadUnsignedByte() << 2;
-                    manWearZOffset = stream.ReadUnsignedByte() << 2;
-                    break;
+                    manWearXOffset = buf.ReadSignedByte() << 2;
+                    manWearYOffset = buf.ReadSignedByte() << 2;
+                    manWearZOffset = buf.ReadSignedByte() << 2;
+                    return;
 
                 case 126:
-                    womanWearXOffset = stream.ReadUnsignedByte();
-                    womanWearYOffset = stream.ReadUnsignedByte();
-                    womanWearZOffset = stream.ReadUnsignedByte();
-                    break;
+                    womanWearXOffset = buf.ReadSignedByte() << 2;
+                    womanWearYOffset = buf.ReadSignedByte() << 2;
+                    womanWearZOffset = buf.ReadSignedByte() << 2;
+                    return;
 
+                /* cursor icons keep raw */
                 case 127:
                 case 128:
                 case 129:
                 case 130:
-                    stream.ReadUnsignedByte();  // cursor op
-                    stream.ReadUnsignedShort(); // cursor id
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(3); return;
 
+                /* variants list */
                 case 132:
                     {
-                        int len = stream.ReadUnsignedByte();
-                        int[] tmp = new int[len];
-                        for (int i = 0; i < len; i++) tmp[i] = stream.ReadUnsignedShort();
-                        break;
+                        int n = buf.ReadUnsignedByte();
+                        _rawUnknown[op] = buf.ReadBytes(n * 2 + 1);
+                        return;
                     }
 
+                /* scale */
                 case 134:
-                    stream.ReadUnsignedByte();  // unknown flag
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(1); return;
 
+                /* bind / quest links keep raw */
                 case 139:
                 case 140:
-                    stream.ReadUnsignedShort(); // bindLink / bindTemplate
-                    break;
+                case 142:
+                case 143:
+                case 144:
+                case 145:
+                case 146:
+                    _rawUnknown[op] = buf.ReadBytes(2); return;
 
-                // 142–146 : quest-point/item-set links
-                case int n when n >= 142 && n < 147:
-                    stream.ReadUnsignedShort();
-                    break;
+                /* multi-map icons */
+                case 160:
+                    {
+                        int n = buf.ReadUnsignedByte();
+                        _rawUnknown[op] = buf.ReadBytes(1 + n * 2);
+                        return;
+                    }
 
-                // 150–154 : random placeholders
-                case int n when n >= 150 && n < 155:
-                    stream.ReadUnsignedShort();
-                    break;
-
-                case 157:
-                    /* some boolean flag */
-                    break;
-
+                /* shard / combine keep raw */
                 case 161:
                 case 162:
                 case 163:
-                    stream.ReadUnsignedShort(); // shard linking
-                    break;
+                    _rawUnknown[op] = buf.ReadBytes(2); return;
+                case 164: _rawUnknown[op] = buf.ReadBytes(buf.ReadUnsignedByte() + 1); return;
 
-                case 164:
-                    stream.ReadJagexString();   // shard name
-                    break;
+                /* 165-170 lighting offsets */
+                case 165:
+                case 166:
+                case 167:
+                case 168:
+                case 169:
+                case 170:
+                    _rawUnknown[op] = buf.ReadBytes(op switch { 165 or 166 => 2, _ => 1 });
+                    return;
 
-                case 249:                      // params map
+                case 173: _rawUnknown[op] = buf.ReadBytes(4); return;
+                case 177:
+                case 178: _rawUnknown[op] = new byte[0]; return;
+
+                /* params */
+                case 249:
                     {
-                        int len = stream.ReadUnsignedByte();
+                        int n = buf.ReadUnsignedByte();
                         itemParams = new SortedDictionary<int, object>();
-
-                        for (int i = 0; i < len; i++)
+                        for (int i = 0; i < n; i++)
                         {
-                            bool isString = stream.ReadUnsignedByte() == 1;
-                            int key = stream.ReadMedium();
-
-                            if (isString)
-                            {
-                                string s = stream.ReadJagexString();
-                                if (!itemParams.ContainsKey(key)) itemParams.Add(key, s);
-                            }
-                            else
-                            {
-                                int val = stream.ReadInt();
-                                if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
-                            }
+                            bool isStr = buf.ReadUnsignedByte() == 1;
+                            int key = buf.ReadMedium();
+                            object val = isStr ? buf.ReadJagexString() : buf.ReadInt();
+                            if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
                         }
-                        break;
+                        return;
                     }
 
+                /* fallback – capture one byte so we don’t desync */
                 default:
-                    // Unknown opcode – swallow silently or log/debug as needed
-                    break;
+                    _rawUnknown[op] = new[] { buf.ReadUnsignedByte() };
+                    return;
             }
         }
 
-        /// <summary>
-        /// Overrides a specific property corresponding to opcode
-        /// </summary>
-        /// <param name="stream">The stream to read from</param>
-        /// <param name="opcode">The opcode value signalling which type to read</param>
-        public JagStream Encode() {
-            JagStream stream = new JagStream();
+        /*──────────────────────────*
+         *  ▌  ENCODE (round-trip)  ▐ *
+         *──────────────────────────*/
 
-            stream.WriteByte(1);
-            stream.WriteShort(inventoryModelId);
+        public JagStream Encode()
+        {
+            var o = new JagStream();
 
-            if(name != null) {
-                stream.WriteByte(2);
-                stream.WriteString(name);
+            /* helper */
+            void Emit(int code, Action payload = null)
+            {
+                o.WriteByte((byte)code);
+                payload?.Invoke();
+                _rawUnknown.Remove(code);               // mark as written
             }
 
-            stream.WriteByte(4);
-            stream.WriteShort(modelZoom);
+            /* model & basic */
+            Emit(1, () => o.WriteShort(inventoryModelId));
+            if (!string.IsNullOrEmpty(name)) Emit(2, () => o.WriteString(name));
+            Emit(3, () => o.WriteShort(modelZoom));
+            Emit(4, () => o.WriteShort(modelZoom));
+            Emit(5, () => o.WriteShort(modelRotation1));
+            Emit(6, () => o.WriteShort(modelRotation2));
+            Emit(7, () => o.WriteShort((short)modelOffsetX));
+            Emit(8, () => o.WriteShort((short)modelOffsetY));
 
-            stream.WriteByte(5);
-            stream.WriteShort(modelRotation1);
+            /* stackable / value */
+            if (stackable == 1) Emit(11);
+            Emit(12, () => o.WriteInteger(value));
 
-            stream.WriteByte(6);
-            stream.WriteShort(modelRotation2);
+            /* equip */
+            Emit(13, () => o.WriteByte((byte)equipSlotId));
+            Emit(14, () => o.WriteByte((byte)equipId));
+            if (membersOnly) Emit(16);
 
-            stream.WriteByte(7);
-            stream.WriteShort(modelOffset1);
+            Emit(18, () => o.WriteShort(multiStackSize));
 
-            stream.WriteByte(8);
-            stream.WriteShort(modelOffset2);
+            /* worn models */
+            Emit(23, () => o.WriteShort(maleWearModel1));
+            Emit(24, () => o.WriteShort(maleWearModel2));
+            Emit(25, () => o.WriteShort(femaleWearModel1));
+            Emit(26, () => o.WriteShort(femaleWearModel2));
 
-            if(stackable == 1)
-                stream.WriteByte(11);
+            /* ground / inventory actions */
+            for (int i = 0; i < 5; i++)
+                if (groundOptions[i] != null)
+                    Emit(30 + i, () => o.WriteString(groundOptions[i]));
 
-            stream.WriteByte(12);
-            stream.WriteInteger(value);
+            for (int i = 0; i < 5; i++)
+                if (inventoryOptions[i] != null)
+                    Emit(35 + i, () => o.WriteString(inventoryOptions[i]));
 
-            stream.WriteByte(13);
-            stream.WriteByte((byte) equipSlotId);
+            /* recolour */
+            if (originalModelColors != null)
+                Emit(40, () =>
+                {
+                    o.WriteByte((byte)originalModelColors.Length);
+                    for (int i = 0; i < originalModelColors.Length; i++)
+                    {
+                        o.WriteShort(originalModelColors[i]);
+                        o.WriteShort(modifiedModelColors[i]);
+                    }
+                });
 
-            stream.WriteByte(14);
-            stream.WriteByte((byte) equipId);
+            /* retexture */
+            if (textureColour1 != null)
+                Emit(41, () =>
+                {
+                    o.WriteByte((byte)textureColour1.Length);
+                    for (int i = 0; i < textureColour1.Length; i++)
+                    {
+                        o.WriteShort(textureColour1[i]);
+                        o.WriteShort(textureColour2[i]);
+                    }
+                });
 
-            if(membersOnly)
-                stream.WriteByte(16);
+            /* priorities */
+            if (texturePriorities != null)
+                Emit(42, () =>
+                {
+                    o.WriteByte((byte)texturePriorities.Length);
+                    foreach (sbyte b in texturePriorities) o.WriteSignedByte(b);
+                });
 
-            stream.WriteByte(18);
-            stream.WriteShort(multiStackSize);
+            /* name colour */
+            if (hasNameColor) Emit(43, () => o.WriteInteger(nameColor));
 
-            stream.WriteByte(23);
-            stream.WriteShort(maleWearModel1);
+            /* unnoted */
+            if (unnoted) Emit(65);
 
-            stream.WriteByte(24);
-            stream.WriteShort(femaleWearModel1);
-
-            stream.WriteByte(25);
-            stream.WriteShort(maleWearModel2);
-
-            stream.WriteByte(26);
-            stream.WriteShort(femaleWearModel2);
-
-            //dunno what 27 is for
-            //stream.WriteByte2(27);
-
-            for(int opcode = 30; opcode < 35; opcode++) {
-                if(groundOptions[opcode - 30] != null) {
-                    stream.WriteByte((byte) opcode);
-                    stream.WriteString(groundOptions[opcode - 30]);
-                }
+            /* sound */
+            if (ambientSoundId >= 0)
+            {
+                if (extraSounds == null)
+                    Emit(78, () =>
+                    {
+                        o.WriteShort(ambientSoundId);
+                        o.WriteByte((byte)ambientSoundLoops);
+                    });
+                else
+                    Emit(79, () =>
+                    {
+                        o.WriteShort(ambientSoundId);
+                        o.WriteShort(0);
+                        o.WriteByte((byte)ambientSoundLoops);
+                        o.WriteByte((byte)extraSounds.Length);
+                        foreach (int sid in extraSounds) o.WriteShort(sid);
+                    });
             }
 
-            for(int opcode = 35; opcode < 40; opcode++) {
-                if(inventoryOptions[opcode - 35] != null) {
-                    stream.WriteByte((byte) opcode);
-                    stream.WriteString(inventoryOptions[opcode - 35]);
-                }
+            /* colour-equip overrides */
+            Emit(90, () => o.WriteShort(colourEquip1));
+            Emit(91, () => o.WriteShort(colourEquip2));
+
+            /* noted */
+            Emit(97, () => o.WriteShort(notedId));
+            Emit(98, () => o.WriteShort(notedTemplateId));
+
+            /* stack variants */
+            if (stackIds != null)
+                for (int i = 0; i < 10; i++)
+                    if (stackIds[i] != 0)
+                        Emit(100 + i, () =>
+                        {
+                            o.WriteShort(stackIds[i]);
+                            o.WriteShort(stackAmounts[i]);
+                        });
+
+            /* ambient / contrast */
+            Emit(113, () => o.WriteSignedByte((sbyte)ambient));
+            Emit(114, () => o.WriteSignedByte((sbyte)contrast));
+            Emit(115, () => o.WriteByte((byte)teamId));
+
+            /* lending */
+            Emit(121, () => o.WriteShort(lendId));
+            Emit(122, () => o.WriteShort(lendTemplateId));
+
+            /* wear offsets */
+            Emit(125, () =>
+            {
+                o.WriteSignedByte((sbyte)(manWearXOffset >> 2));
+                o.WriteSignedByte((sbyte)(manWearYOffset >> 2));
+                o.WriteSignedByte((sbyte)(manWearZOffset >> 2));
+            });
+            Emit(126, () =>
+            {
+                o.WriteSignedByte((sbyte)(womanWearXOffset >> 2));
+                o.WriteSignedByte((sbyte)(womanWearYOffset >> 2));
+                o.WriteSignedByte((sbyte)(womanWearZOffset >> 2));
+            });
+
+            /* extra inventory ops 150-154 */
+            for (int i = 0; i < 5; i++)
+                if (extraInventoryOps[i] != null)
+                    Emit(150 + i, () => o.WriteString(extraInventoryOps[i]));
+
+            /* params */
+            if (itemParams != null && itemParams.Count > 0)
+                Emit(249, () =>
+                {
+                    o.WriteByte((byte)itemParams.Count);
+                    foreach (var kv in itemParams)
+                    {
+                        bool isStr = kv.Value is string;
+                        o.WriteByte((byte)(isStr ? 1 : 0));
+                        o.WriteMedium(kv.Key);
+                        if (isStr) o.WriteString((string)kv.Value);
+                        else o.WriteInteger((int)kv.Value);
+                    }
+                });
+
+            /*──────────── replay any raw-captured opcodes ───────────*/
+            foreach (var kv in _rawUnknown)
+            {
+                o.WriteByte((byte)kv.Key);
+                o.Write(kv.Value);
             }
 
-            if(originalModelColors != null) {
-                stream.WriteByte(40);
-                stream.WriteByte((byte) originalModelColors.Length);
-                for(int k = 0; k < originalModelColors.Length; k++) {
-                    stream.WriteShort(originalModelColors[k]);
-                    stream.WriteShort(modifiedModelColors[k]);
-                }
-            }
-
-            if(textureColour1 != null && textureColour2 != null) {
-                stream.WriteByte(41);
-                stream.WriteByte((byte) textureColour1.Length);
-                for(int k = 0; k < textureColour1.Length; k++) {
-                    stream.WriteShort(textureColour1[k]);
-                    stream.WriteShort(textureColour2[k]);
-                }
-            }
-
-            /*
-            stream.WriteByte2(42);
-            for(int k = 0; k < length; k++)
-                stream.WriteByte2();
-                */
-
-            if(hasNameColor) {
-                stream.WriteByte(43);
-                stream.WriteInteger(nameColor);
-            }
-
-            /*
-            stream.WriteByte2(44);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(45);
-            stream.WriteShort(0); //???
-            */
-
-            if(unnoted)
-                stream.WriteByte(65);
-
-            stream.WriteByte(78);
-            stream.WriteShort(colourEquip1);
-
-            stream.WriteByte(79);
-            stream.WriteShort(colourEquip2);
-
-            /*
-            stream.WriteByte2(90);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(91);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(92);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(93);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(94);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(95);
-            stream.WriteShort(0); //???
-
-            stream.WriteByte2(96);
-            stream.WriteByte2(0); //???
-            */
-
-            stream.WriteByte(97);
-            stream.WriteShort(notedId);
-
-            stream.WriteByte(98);
-            stream.WriteShort(notedTemplateId);
-
-            if(stackableIds != null) {
-                for(int opcode = 100; opcode < 110; opcode++) {
-                    stream.WriteShort(stackableIds[opcode - 100]);
-                    stream.WriteShort(stackableAmounts[opcode - 100]);
-                }
-            }
-
-            /*
-            stream.WriteByte2(110);
-            stream.WriteShort(0);
-
-            stream.WriteByte2(111);
-            stream.WriteShort(0);
-
-            stream.WriteByte2(112);
-            stream.WriteShort(0);
-            */
-
-            stream.WriteByte(113);
-            stream.WriteByte((byte) ambient);
-
-            stream.WriteByte(114);
-            stream.WriteByte((byte) contrast);
-
-            stream.WriteByte(115);
-            stream.WriteByte((byte) teamId);
-
-            stream.WriteByte(121);
-            stream.WriteShort(lendId);
-
-            stream.WriteByte(122);
-            stream.WriteShort(lendTemplateId);
-
-            //Probably incorrect
-            stream.WriteByte(125);
-            stream.WriteByte((byte) (manWearXOffset >> 2));
-            stream.WriteByte((byte) (manWearYOffset >> 2));
-            stream.WriteByte((byte) (manWearZOffset >> 2));
-
-            stream.WriteByte(126);
-            stream.WriteByte((byte) womanWearXOffset);
-            stream.WriteByte((byte) womanWearYOffset);
-            stream.WriteByte((byte) womanWearZOffset);
-
-            stream.WriteByte(127);
-            stream.WriteByte(0); //groupCursorOp
-            stream.WriteShort(0); //groundCursor
-
-            stream.WriteByte(128);
-            stream.WriteByte(0); //cursor2op
-            stream.WriteShort(0); //cursor2
-
-            stream.WriteByte(129);
-            stream.WriteByte(0); //cursor2op
-            stream.WriteShort(0); //cursor2
-
-            stream.WriteByte(130);
-            stream.WriteByte(0); //cursor2iop
-            stream.WriteShort(0); //icursor2
-
-            stream.WriteByte(132);
-            stream.WriteByte(0);
-            stream.WriteShort(0);
-
-            stream.WriteByte(134);
-            stream.WriteByte(0);
-
-            stream.WriteByte(139);
-            stream.WriteShort(0); //bindLink
-
-            stream.WriteByte(140);
-            stream.WriteShort(0); //bindTemplate
-
-            for(int opcode = 142; opcode < 147; opcode++) {
-                stream.WriteByte((byte) opcode);
-                stream.WriteShort(0);
-            }
-
-            for(int opcode = 150; opcode < 155; opcode++) {
-                stream.WriteByte((byte) opcode);
-                stream.WriteShort(0);
-            }
-
-            //157 some bool
-
-            stream.WriteByte(161);
-            stream.WriteShort(0); //shardLink
-
-            stream.WriteByte(162);
-            stream.WriteShort(0); //shardTemplate
-
-            stream.WriteByte(163);
-            stream.WriteShort(0); //shardCombineAmount
-
-            stream.WriteByte(164);
-            stream.WriteString("shardName");
-
-            stream.WriteByte(249);
-            //some more shit but dw about it tbh
-
-            //End of stream sir
-            stream.WriteByte(0);
-
-            return stream.Flip();
-        }
-
-        internal void SetId(int id) {
-            this.id = id;
+            /* terminator */
+            o.WriteByte(0);
+            return o.Flip();
         }
     }
 }

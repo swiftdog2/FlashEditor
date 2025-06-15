@@ -20,6 +20,18 @@ namespace FlashEditor {
             '\u201D', '\u2022', '\u2013', '\u2014', '\u02DC', '\u2122', '\u0161', '\u203A', '\u0153', '\0', '\u017E',
             '\u0178' };
 
+        /// <summary>Maps Unicode → RuneScape extended byte (128-159).</summary>
+        private static readonly Dictionary<char, byte> EXTENDED_REMAP = BuildReverse();
+
+        private static Dictionary<char, byte> BuildReverse()
+        {
+            var map = new Dictionary<char, byte>(32);
+            for (int i = 0; i < CHARACTERS.Length; i++)
+                if (CHARACTERS[i] != '\0')
+                    map[CHARACTERS[i]] = (byte)(i + 128);
+            return map;
+        }
+
         /*
          * Loading stream from file
          */
@@ -151,6 +163,19 @@ namespace FlashEditor {
             return result;
         }
 
+        // ➊  add this inside the JagStream class, anywhere among the other read helpers
+        /// <summary>
+        /// Reads a signed 8-bit value (-128 … 127) from the stream.
+        /// Java’s <c>readSignedByte</c> equivalent.
+        /// </summary>
+        internal int ReadSignedByte()
+        {
+            int b = ReadByte();          // 0-255
+            if (b == -1)
+                throw new EndOfStreamException("End of stream");
+            return (sbyte)b;             // cast preserves the sign
+        }
+
         public int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
         }
@@ -246,19 +271,26 @@ namespace FlashEditor {
             return SharedBuilder.ToString();
         }
 
-        /*
-         * Methods for writing to the JagStream
-         */
-
-        internal void WriteString(string s) {
-            foreach(char c in s.ToCharArray())
-                WriteByte((byte) c);
-
-            //terminate the string with 0
-            WriteByte(0);
-
-            //apparently 317 format is terminated with 10
+        /// <summary>
+        /// Writes a 0-terminated Jagex string using the cache’s
+        /// modified CP-1252 encoding (bytes 0-255).
+        /// </summary>
+        internal void WriteString(string s)
+        {
+            foreach (char c in s)
+            {
+                if (c == 0)
+                    continue;                 // never embed a NUL
+                if (c < 128 || (c >= 160 && c <= 255))
+                    WriteByte((byte)c);               // plain ASCII or 0xA0-0xFF
+                else if (EXTENDED_REMAP.TryGetValue(c, out byte b))
+                    WriteByte(b);                     // 0x80-0x9F mapping
+                else
+                    WriteByte((byte)'?');             // fallback
+            }
+            WriteByte(0);                            // terminator
         }
+
 
         /**
          * Interesting method ripped from kfricilone's openRS

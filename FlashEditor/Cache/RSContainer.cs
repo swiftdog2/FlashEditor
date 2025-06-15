@@ -4,7 +4,7 @@ using System;
 using FlashEditor.utils;
 
 namespace FlashEditor.cache {
-    internal class RSContainer {
+    public class RSContainer {
         private JagStream stream; //the archive stream
         public int type;
         public int id;

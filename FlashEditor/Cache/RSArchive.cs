@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
-    class RSArchive {
+    public class RSArchive {
         public SortedDictionary<int, JagStream> entries = new SortedDictionary<int, JagStream>();
         public int chunks = 1;
 
@@ -131,7 +131,7 @@ namespace FlashEditor.cache {
             return entries.Count;
         }
 
-        internal void PutEntry(int entryId, JagStream entry) {
+        public void PutEntry(int entryId, JagStream entry) {
             if(entries.ContainsKey(entryId)) {
                 //Update the entry
                 entries[entryId] = entry;

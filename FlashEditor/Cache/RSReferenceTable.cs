@@ -144,7 +144,7 @@ namespace FlashEditor.cache {
             return table;
         }
 
-        internal void PutEntry(int containerId, RSEntry entry) {
+        public void PutEntry(int containerId, RSEntry entry) {
             if(entries.ContainsKey(containerId))
                 entries[containerId] = entry;
             else

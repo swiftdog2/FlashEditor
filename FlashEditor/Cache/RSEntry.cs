@@ -99,12 +99,12 @@ namespace FlashEditor.cache {
             return childEntries;
         }
 
-        internal void SetHash(int hash) {
+        public void SetHash(int hash) {
             this.hash = hash;
         }
 
         //Pretty sure this is for naming shit so you can find it in the cache editor tho lol sneaky jagex
-        internal int CalculateHash() {
+        public int CalculateHash() {
             int h = 0;
 
             foreach(byte b in stream.ToArray())
@@ -112,23 +112,23 @@ namespace FlashEditor.cache {
 
             return h;
         }
-        internal long GetHash() {
+        public long GetHash() {
             return hash;
         }
 
-        internal void SetValidFileIds(int[] validFileIds) {
+        public void SetValidFileIds(int[] validFileIds) {
             this.validFileIds = validFileIds;
         }
 
-        internal int[] GetValidFileIds() {
+        public int[] GetValidFileIds() {
             return validFileIds;
         }
 
-        internal void SetChildEntries(SortedDictionary<int, RSChildEntry> childEntries) {
+        public void SetChildEntries(SortedDictionary<int, RSChildEntry> childEntries) {
             this.childEntries = childEntries;
         }
 
-        internal RSChildEntry GetChildEntry(int member) {
+        public RSChildEntry GetChildEntry(int member) {
             if(!GetChildEntries().ContainsKey(member))
                 return null;
             return GetChildEntries()[member];
