@@ -69,30 +69,37 @@ namespace FlashEditor.Definitions.Model {
                     float f8 = f2 * (-f1 + 1.0F);
                     float f9 = f2 * (-(f7 * f1) + 1.0F);
                     float f10 = (1.0F - f1 * (-f7 + 1.0F)) * f2;
-                    if(i4 == 0) {
-                        f3 = f2;
-                        f5 = f8;
-                        f4 = f10;
-                    } else if(i4 == 1) {
-                        f5 = f8;
-                        f3 = f9;
-                        f4 = f2;
-                    } else if(i4 == 2) {
-                        f3 = f8;
-                        f4 = f2;
-                        f5 = f10;
-                    } else if(i4 == 3) {
-                        f4 = f9;
-                        f3 = f8;
-                        f5 = f2;
-                    } else if(i4 == 4) {
-                        f5 = f2;
-                        f3 = f10;
-                        f4 = f8;
-                    } else {
-                        f4 = f8;
-                        f5 = f9;
-                        f3 = f2;
+                    switch(i4) {
+                        case 0:
+                            f3 = f2;
+                            f5 = f8;
+                            f4 = f10;
+                            break;
+                        case 1:
+                            f5 = f8;
+                            f3 = f9;
+                            f4 = f2;
+                            break;
+                        case 2:
+                            f3 = f8;
+                            f4 = f2;
+                            f5 = f10;
+                            break;
+                        case 3:
+                            f4 = f9;
+                            f3 = f8;
+                            f5 = f2;
+                            break;
+                        case 4:
+                            f5 = f2;
+                            f3 = f10;
+                            f4 = f8;
+                            break;
+                        default:
+                            f4 = f8;
+                            f5 = f9;
+                            f3 = f2;
+                            break;
                     }
 
                     out1[i++] = (int) ((float) Math.Pow((double) f3, d) * 256.0F) << 16
