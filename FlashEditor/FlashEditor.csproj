@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<!-- ───── common settings (apply to every configuration) ───── -->
-	<PropertyGroup>
-		<!-- Target & language -->
-		<TargetFramework>net9.0-windows</TargetFramework>
-		<LangVersion>latest</LangVersion>
+        <PropertyGroup>
+                <!-- Target & language -->
+                <TargetFramework>net9.0-windows</TargetFramework>
+                <LangVersion>latest</LangVersion>
+                <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
 		<!-- WinForms -->
 		<OutputType>WinExe</OutputType>

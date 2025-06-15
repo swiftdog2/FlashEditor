@@ -1,10 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	<PropertyGroup>
-		<TargetFramework>net9.0-windows</TargetFramework>
-		<IsPackable>false</IsPackable>
-		<!-- Use modern C# features while targeting .NET Framework -->
-		<LangVersion>11.0</LangVersion>
-		<ImplicitUsings>false</ImplicitUsings>
+        <PropertyGroup>
+                <TargetFramework>net9.0-windows</TargetFramework>
+                <IsPackable>false</IsPackable>
+                <!-- Use modern C# features while targeting .NET Framework -->
+                <LangVersion>11.0</LangVersion>
+                <EnableWindowsTargeting>true</EnableWindowsTargeting>
+                <ImplicitUsings>false</ImplicitUsings>
 		<RunSettingsFilePath>.\FlashEditor.runsettings</RunSettingsFilePath>
 	</PropertyGroup>
 
