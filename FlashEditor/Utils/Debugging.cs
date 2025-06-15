@@ -6,7 +6,7 @@ using System.Text;
 using Newtonsoft.Json.Linq;
 
 namespace FlashEditor.utils {
-    class DebugUtil {
+    public static class DebugUtil {
         //Change the order of the indexes when you change the layout of the editor tabs
         public enum LOG_DETAIL {
             NONE = 0,
