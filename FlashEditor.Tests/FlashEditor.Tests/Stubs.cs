@@ -51,7 +51,8 @@ namespace FlashEditor.Cache.Util
 
     public static class RSA
     {
-        public static JagStream Crypt(JagStream buffer, java.math.BigInteger modulus, java.math.BigInteger key)
+        // Simple stub that just echoes the input buffer
+        public static JagStream Crypt(JagStream buffer, System.Numerics.BigInteger modulus, System.Numerics.BigInteger key)
         {
             return buffer;
         }
