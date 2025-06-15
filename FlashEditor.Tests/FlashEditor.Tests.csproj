@@ -2,8 +2,9 @@
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <IsPackable>false</IsPackable>
-    <!-- Enable modern C# language features for tests -->
-    <LangVersion>8.0</LangVersion>
+    <!-- Use modern C# features while targeting .NET Framework -->
+    <LangVersion>11.0</LangVersion>
+    <ImplicitUsings>false</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.5.0" />
