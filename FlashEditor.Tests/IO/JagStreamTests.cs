@@ -66,5 +66,35 @@ namespace FlashEditor.Tests.IO
                     System.IO.File.Delete(tempPath);
             }
         }
+
+        [Fact]
+        public void ReadJagexString_WithExtendedCharacters_DecodesCorrectly()
+        {
+            // Arrange
+            byte[] bytes = { (byte)'H', (byte)'i', 0 };
+            var stream = new JagStream(bytes);
+
+            // Act
+            string result = stream.ReadJagexString();
+
+            // Assert
+            Assert.Equal("Hi", result);
+        }
+
+        [Fact]
+        public void ReadUnsignedShortArray_ReadsAllValues()
+        {
+            // Arrange
+            var stream = new JagStream();
+            stream.WriteShort((short)1);
+            stream.WriteShort((short)2);
+            stream.Seek0();
+
+            // Act
+            int[] result = stream.ReadUnsignedShortArray(2);
+
+            // Assert
+            Assert.Equal(new[]{1,2}, result);
+        }
     }
 }
