@@ -24,7 +24,6 @@ namespace FlashEditor.utils {
         /// <param name="output">The debug message</param>
         public static void Debug(string output) {
             Console.WriteLine(output);
-            Console.ReadLine();
         }
 
         public static void Debug(string output, LOG_DETAIL level) {
