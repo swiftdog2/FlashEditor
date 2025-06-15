@@ -53,6 +53,9 @@
   <PropertyGroup>
     <StartupObject>FlashEditor.FlashEditorForm</StartupObject>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
   <PropertyGroup>
     <ApplicationIcon>
     </ApplicationIcon>
@@ -272,4 +275,5 @@
     <Folder Include="Cache\Type\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="$(NuGetPackageRoot)microsoft.netframework.referenceassemblies.net472/1.0.3/build/Microsoft.NETFramework.ReferenceAssemblies.net472.targets" Condition="Exists('$(NuGetPackageRoot)microsoft.netframework.referenceassemblies.net472/1.0.3/build/Microsoft.NETFramework.ReferenceAssemblies.net472.targets')" />
 </Project>

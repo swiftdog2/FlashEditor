@@ -20,5 +20,29 @@ namespace FlashEditor.Tests.Cache.Util
             // Assert
             Assert.Equal(expected.ToArgb(), result.ToArgb());
         }
+
+        [Fact]
+        [Trait("Category", "Integration")]
+        public void Save_WritesBitmapToFile()
+        {
+            // Arrange
+            using var bmp = new DirectBitmap(1, 1);
+            bmp.SetPixel(0, 0, Color.Blue);
+            string path = System.IO.Path.GetTempFileName();
+
+            try
+            {
+                // Act
+                bmp.Save(path);
+
+                // Assert
+                Assert.True(System.IO.File.Exists(path));
+            }
+            finally
+            {
+                if (System.IO.File.Exists(path))
+                    System.IO.File.Delete(path);
+            }
+        }
     }
 }
