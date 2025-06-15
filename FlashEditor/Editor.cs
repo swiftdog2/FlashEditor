@@ -419,7 +419,9 @@ namespace FlashEditor {
             Debug(@"|______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
             Debug("Edit Item");
 
-            Debug("itemdef name: " + currentItem.name);
+            Debug("itemdef name: " + (currentItem != null ? currentItem.name : "<none>"));
+            if(currentItem == null)
+                currentItem = ((ItemDefinition) e.RowObject).Clone();
 
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
