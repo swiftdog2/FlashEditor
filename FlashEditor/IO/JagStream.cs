@@ -140,10 +140,10 @@ namespace FlashEditor {
             return Array.ConvertAll(byteBuffer, Convert.ToInt32);
         }
 
-        internal int ReadUnsignedShort() {
+        public int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
         }
-        internal int[] ReadUnsignedShortArray(int size) {
+        public int[] ReadUnsignedShortArray(int size) {
             //Read 2x length contiguous block of bytes
             byte[] byteBuffer = new byte[size * 2];
             Read(byteBuffer, 0, byteBuffer.Length);
@@ -294,11 +294,11 @@ namespace FlashEditor {
                 WriteByte(data[k]);
         }
 
-        internal void WriteShort(short value) {
+        public void WriteShort(short value) {
             WriteBytes(2, value);
         }
 
-        internal void WriteShort(int value) {
+        public void WriteShort(int value) {
             WriteShort((short) value);
         }
 
