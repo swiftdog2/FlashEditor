@@ -70,3 +70,5 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 
 The editor also supports features such as MIDI music playback and the modern index layout (0–36 plus 255). When porting assets to other revisions, keep in mind that opcode mappings and file formats may differ significantly after revision 669.
 
+## Performance Guidelines
+- Avoid using heavy LINQ chains like `Where().Select().ToList()` inside performance-critical loops. Use a single-pass `for` loop to filter and transform in one step.
