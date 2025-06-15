@@ -52,7 +52,6 @@ namespace FlashEditor.Cache.CheckSum {
         }
 
         public RSIdentifiers(int[] identifiers) {
-            return;
 
             //Initial identifier sizes
             int length = identifiers.Length;

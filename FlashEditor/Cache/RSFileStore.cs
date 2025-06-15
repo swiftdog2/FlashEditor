@@ -47,9 +47,9 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
-        /// Returns the total number of non-meta indices
+        /// Returns the highest non-meta index rather than a true count.
         /// </summary>
-        /// <returns>The length of the <param name="indexChannels"> array</returns>
+        /// <returns>The maximum index present in <paramref name="indexChannels"/></returns>
         internal int GetTypeCount() {
             if(indexChannels == null)
                 throw new NullReferenceException("IndexChannels is null");
