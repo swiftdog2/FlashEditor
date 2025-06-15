@@ -68,6 +68,30 @@ namespace FlashEditor.Tests.IO
         }
 
         [Fact]
+        public void Save_CreatesDirectoryIfMissing()
+        {
+            // Arrange
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.Guid.NewGuid().ToString());
+            string file = System.IO.Path.Combine(dir, "test.bin");
+            var stream = new JagStream();
+            stream.WriteByte(42);
+
+            try
+            {
+                // Act
+                JagStream.Save(stream, file);
+
+                // Assert
+                Assert.True(System.IO.File.Exists(file));
+            }
+            finally
+            {
+                if(System.IO.Directory.Exists(dir))
+                    System.IO.Directory.Delete(dir, true);
+            }
+        }
+
+        [Fact]
         public void ReadJagexString_WithExtendedCharacters_DecodesCorrectly()
         {
             // Arrange
