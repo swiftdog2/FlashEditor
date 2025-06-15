@@ -130,7 +130,7 @@ namespace FlashEditor {
                 name = stream.ReadJagexString();
             } else if(opcode == 12) {
                 size = stream.ReadByte();
-            } else if(opcode >= 30 && opcode < 34) { //was 36 before
+            } else if(opcode >= 30 && opcode < 36) { //was 36 before
                 options[opcode - 30] = stream.ReadJagexString();
                 if(options[opcode - 30] == "Hidden")
                     options[opcode - 30] = null;
