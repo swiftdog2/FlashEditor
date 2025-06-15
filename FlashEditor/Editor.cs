@@ -116,8 +116,10 @@ namespace FlashEditor {
             if(type == -1)
                 type = RSConstants.META_INDEX;
 
-            if(cache == null)
-                throw new FileNotFoundException("Cache failed to load");
+            if(cache == null) {
+                Debug("Cache failed to load");
+                return;
+            }
 
             //Already loaded, no need to reload
             if(loaded[editorIndex] && type != RSConstants.META_INDEX)
