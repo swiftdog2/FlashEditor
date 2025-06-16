@@ -8,7 +8,7 @@ namespace FlashEditor.Definitions
     /// <summary>
     /// Represents a single “loc” / world-object definition.
     /// </summary>
-    internal sealed class ObjectDefinition : ICloneable
+    internal sealed class ObjectDefinition : ICloneable, IDefinition
     {
         /*───────────────────────────────────────────*
          *  ▌  Static/shared helpers                ▐
@@ -64,9 +64,8 @@ namespace FlashEditor.Definitions
         /// </summary>
         /// <param name="stream">Stream positioned at the start of the definition blob.</param>
         /// <returns>Populated <see cref="ObjectDefinition"/> instance.</returns>
-        public static ObjectDefinition Decode(JagStream stream)
+        public void Decode(JagStream stream)
         {
-            var def = new ObjectDefinition();
             int count = 0;
 
             SharedBuilder.Clear();
@@ -74,18 +73,24 @@ namespace FlashEditor.Definitions
             while (true)
             {
                 int opcode = stream.ReadUnsignedByte();
-                def.decoded[opcode] = true;
+                decoded[opcode] = true;
 
                 if (opcode == 0) break;          // terminator
-                def.Decode(stream, opcode);
+                Decode(stream, opcode);
 
                 if (++count > 256) break;        // safety guard
             }
 
-            for (int i = 0; i < def.decoded.Length; i++)
-                if (def.decoded[i]) SharedBuilder.Append(i).Append(' ');
+            for (int i = 0; i < decoded.Length; i++)
+                if (decoded[i]) SharedBuilder.Append(i).Append(' ');
 
-            Debug($"ObjectDef {def.id} ({def.name ?? "null"}) OPCODES: {SharedBuilder}", LOG_DETAIL.NONE);
+            Debug($"ObjectDef {id} ({name ?? "null"}) OPCODES: {SharedBuilder}", LOG_DETAIL.NONE);
+        }
+
+        public static ObjectDefinition DecodeFromStream(JagStream stream)
+        {
+            var def = new ObjectDefinition();
+            def.Decode(stream);
             return def;
         }
 
@@ -244,6 +249,11 @@ namespace FlashEditor.Definitions
         {
             int val = buf.ReadUnsignedShort();
             return val == 0xFFFF ? -1 : val;
+        }
+
+        public JagStream Encode()
+        {
+            throw new NotImplementedException();
         }
     }
 }

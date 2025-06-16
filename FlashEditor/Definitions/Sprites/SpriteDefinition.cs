@@ -26,12 +26,13 @@ using FlashEditor.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System;
+using FlashEditor;
 
 namespace FlashEditor.cache.sprites {
     /// <summary>
     /// Represents a {@link Sprite} which may contain one or more frames.
     /// </summary>
-    public class SpriteDefinition {
+    public class SpriteDefinition : IDefinition {
         //This flag indicates that the pixels should be read vertically instead of horizontally.
         public static readonly int FLAG_VERTICAL = 0x01;
 
@@ -81,7 +82,7 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <param name="stream">The stream.</param>
         /// <returns>The sprite.</returns>
-        internal static SpriteDefinition Decode(JagStream stream) {
+        public void Decode(JagStream stream) {
             //Find the size of this sprite set
             stream.Seek(stream.Length - 2);
             int size = stream.ReadUnsignedShort();
@@ -95,7 +96,10 @@ namespace FlashEditor.cache.sprites {
             Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length, LOG_DETAIL.INSANE);
 
             //And allocate an object for this sprite set
-            SpriteDefinition sprite = new SpriteDefinition(width, height, size);
+            this.width = width;
+            this.height = height;
+            this.frameCount = size;
+            frames = new List<RSBufferedImage>(size);
 
             //Read the offsets and dimensions of the individual sprites
             int[] offsetsX = stream.ReadUnsignedShortArray(size);
@@ -181,11 +185,15 @@ namespace FlashEditor.cache.sprites {
 
                 //First frame in the sprite is the thumb image
                 if(id == 0)
-                    sprite.thumb = image.GetSprite();
+                    this.thumb = image.GetSprite();
 
-                sprite.frames.Add(image);
+                this.frames.Add(image);
             }
+        }
 
+        internal static SpriteDefinition DecodeFromStream(JagStream stream) {
+            var sprite = new SpriteDefinition();
+            sprite.Decode(stream);
             return sprite;
         }
 
@@ -246,6 +254,10 @@ namespace FlashEditor.cache.sprites {
 
         internal void SetIndex(int index) {
             this.index = index;
+        }
+
+        public JagStream Encode() {
+            throw new NotImplementedException();
         }
     }
 }

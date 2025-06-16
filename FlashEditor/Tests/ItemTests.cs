@@ -24,7 +24,7 @@ namespace FlashEditor {
         /// <returns>The decoded item definition</returns>
         static ItemDefinition LoadItemDefinition(cache.RSCache cache, int archive, int file) {
             JagStream item = cache.ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, file);
-            ItemDefinition def = ItemDefinition.Decode(item);
+            ItemDefinition def = ItemDefinition.DecodeFromStream(item);
             return def;
         }
 

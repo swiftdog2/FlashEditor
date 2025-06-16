@@ -2,10 +2,11 @@
 using OpenTK;
 using System.Threading.Tasks;
 using static FlashEditor.utils.DebugUtil;
+using FlashEditor;
 
 namespace FlashEditor.Definitions.Model {
 
-    public class Model {
+    public class Model : IDefinition {
         public int[] anIntArray1231;
         public int anInt1234;
         public byte[] aByteArray1266;
@@ -116,6 +117,10 @@ namespace FlashEditor.Definitions.Model {
         }
 
         public Model(sbyte[] data) {
+            DecodeFromBytes(data);
+        }
+
+        private void DecodeFromBytes(sbyte[] data) {
             if(UsesNewerHeader(data) && !UsesNewHeader(data)) {
                 newFormat = true;
                 if(data[0] == 1)
@@ -133,6 +138,17 @@ namespace FlashEditor.Definitions.Model {
                     this.Upscale();
                 }
             }
+        }
+
+        public void Decode(JagStream stream) {
+            byte[] raw = stream.ToArray();
+            sbyte[] data = new sbyte[raw.Length];
+            Buffer.BlockCopy(raw, 0, data, 0, raw.Length);
+            DecodeFromBytes(data);
+        }
+
+        public JagStream Encode() {
+            throw new NotImplementedException();
         }
 
         /// <summary>
