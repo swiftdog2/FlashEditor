@@ -2,7 +2,7 @@
 
 namespace FlashEditor
 {
-    internal class NPCDefinition
+    internal class NPCDefinition : IDefinition
     {
         sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;

@@ -10,7 +10,7 @@ namespace FlashEditor
     /// Covers *all* opcodes in the original <code>readValues</code> plus
     /// safe raw-capture for anything unknown.
     /// </summary>
-    internal sealed class ItemDefinition : ICloneable
+    internal sealed class ItemDefinition : ICloneable, IDefinition
     {
         /*──────────────────────────*
          *  ▌   PUBLIC FIELDS      ▐ *
@@ -95,19 +95,23 @@ namespace FlashEditor
          *  ▌  GLOBAL DECODE ENTRY  ▐ *
          *──────────────────────────*/
 
-        public static ItemDefinition Decode(JagStream s)
+        public void Decode(JagStream s)
         {
-            var def = new ItemDefinition();
             int safety = 0;
 
             while (true)
             {
                 int op = s.ReadUnsignedByte();
                 if (op == 0) break;                       // terminator
-                def.DecodeOpcode(s, op);
+                DecodeOpcode(s, op);
                 if (++safety > 256) break;                // corrupt-stream guard
             }
+        }
 
+        public static ItemDefinition DecodeFromStream(JagStream s)
+        {
+            var def = new ItemDefinition();
+            def.Decode(s);
             return def;
         }
 

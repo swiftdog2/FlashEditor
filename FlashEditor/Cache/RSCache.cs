@@ -409,7 +409,7 @@ namespace FlashEditor.cache {
 
         public ItemDefinition GetItemDefinition(int archive, int entryId) {
             JagStream entry = ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, entryId);
-            ItemDefinition def = ItemDefinition.Decode(entry);
+            ItemDefinition def = ItemDefinition.DecodeFromStream(entry);
             def.SetId(archive * 256 + entryId);
             return def;
         }
@@ -417,7 +417,7 @@ namespace FlashEditor.cache {
         public SpriteDefinition GetSprite(int containerId) {
             //Get the sprite for the given entry
             RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
-            return SpriteDefinition.Decode(container.GetStream());
+            return SpriteDefinition.DecodeFromStream(container.GetStream());
         }
 
         internal NPCDefinition GetNPCDefinition(int archive, int entry) {
