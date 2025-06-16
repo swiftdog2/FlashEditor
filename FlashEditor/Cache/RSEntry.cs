@@ -14,6 +14,10 @@ namespace FlashEditor.cache {
         public int crc;
         public int version;
         public int id;
+        /// <summary>
+        ///     Indicates whether the group's payload uses XTEA encryption.
+        /// </summary>
+        public bool usesXtea;
 
         private SortedDictionary<int, RSChildEntry> childEntries = new SortedDictionary<int, RSChildEntry>();
         private int[] validFileIds;

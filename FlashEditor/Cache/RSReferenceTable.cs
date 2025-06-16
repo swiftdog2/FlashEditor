@@ -32,6 +32,8 @@ namespace FlashEditor.cache {
         public int[] validArchiveIds;
         public int type;
 
+        private bool dirty;
+
         private RSIdentifiers identifiers;
 
         /// <summary>
@@ -111,8 +113,15 @@ namespace FlashEditor.cache {
             }
 
             //Versions
-            foreach(KeyValuePair<int, RSEntry> kvp in table.entries)
+            foreach (KeyValuePair<int, RSEntry> kvp in table.entries)
                 kvp.Value.SetVersion(stream.ReadInt());
+
+            //Group flags (bit0 indicates XTEA usage)
+            for (int i = 0; i < table.validArchivesCount; i++)
+            {
+                byte flag = stream.ReadUnsignedByte();
+                table.entries[table.validArchiveIds[i]].usesXtea = (flag & 1) != 0;
+            }
 
             //Child sizes
             foreach(KeyValuePair<int, RSEntry> kvp in table.entries)
@@ -245,6 +254,10 @@ namespace FlashEditor.cache {
                 Debug(sb.ToString());
             }
 
+            Debug("Writing group flags", LOG_DETAIL.INSANE);
+            foreach (KeyValuePair<int, RSEntry> kvp in entries)
+                stream.WriteByte((byte)(kvp.Value.usesXtea ? 1 : 0));
+
             Debug("Writing number of non-null child entries", LOG_DETAIL.INSANE);
             foreach(KeyValuePair<int, RSEntry> kvp in entries) {
                 int nnce = kvp.Value.GetChildEntries().Count;
@@ -324,6 +337,55 @@ namespace FlashEditor.cache {
 
         internal void SetType(int type) {
             this.type = type;
+        }
+
+        /// <summary>
+        ///     Gets whether this reference table has unsaved modifications.
+        /// </summary>
+        internal bool IsDirty => dirty;
+
+        /// <summary>
+        ///     Update metadata for a single group.
+        /// </summary>
+        /// <param name="groupId">Group id within this table.</param>
+        /// <param name="newCrc">Updated CRC32 of the group data.</param>
+        /// <param name="usesXtea">Whether the group is XTEA encrypted.</param>
+        /// <param name="versionInc">Amount to increment the group's version.</param>
+        public void UpdateGroup(int groupId, uint newCrc, bool usesXtea, int versionInc)
+        {
+            if (!entries.TryGetValue(groupId, out var entry))
+                throw new KeyNotFoundException($"Group {groupId} not found");
+
+            entry.SetCrc((int)newCrc);
+            entry.usesXtea = usesXtea;
+            entry.SetVersion(entry.GetVersion() + versionInc);
+            dirty = true;
+        }
+
+        /// <summary>
+        ///     Encode this reference table into a <see cref="RSContainer"/> using
+        ///     the specified compression algorithm.
+        /// </summary>
+        /// <param name="algo">Compression algorithm.</param>
+        /// <returns>Encoded container bytes.</returns>
+        public byte[] ToContainer(Compression algo)
+        {
+            JagStream encoded = Encode();
+            var container = new RSContainer(RSConstants.META_INDEX, type, (byte)algo, encoded, version);
+            return container.Encode().ToArray();
+        }
+
+        /// <summary>
+        ///     Decodes a reference table from a previously encoded container.
+        /// </summary>
+        /// <param name="raw">Raw container bytes.</param>
+        /// <returns>The decoded <see cref="RSReferenceTable"/>.</returns>
+        public static RSReferenceTable FromContainer(byte[] raw)
+        {
+            RSContainer container = RSContainer.Decode(new JagStream(raw));
+            RSReferenceTable table = Decode(container.GetStream());
+            table.version = container.GetVersion();
+            return table;
         }
     }
 }
