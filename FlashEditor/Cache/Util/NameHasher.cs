@@ -1,130 +1,34 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
-namespace FlashEditor.Cache.Util {
-    //Straight rip no idea if it works or not lol
+namespace FlashEditor.Cache.Util
+{
+    /// <summary>
+    /// Computes case-insensitive hashes used for cache file lookups.
+    /// </summary>
+    public static class NameHasher
+    {
+        // Windows-1252 (CP1252) matches the RuneScape cache’s legacy byte mapping.
+        // On .NET Core / .NET 5+, you must register CodePagesEncodingProvider once:
+        //   Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        private static readonly Encoding Cp1252 = Encoding.GetEncoding(1252);
 
-    //Ripped from CacheIO
-    public class NameHasher {
-        public static int GetNameHash(string name) {
+        /// <summary>
+        /// Calculates the hash value for a name using the cache’s algorithm.
+        /// </summary>
+        /// <param name="name">String to hash (will be lower‐cased).</param>
+        /// <returns>The 32-bit hash.</returns>
+        public static int GetNameHash(string name)
+        {
+            if (name is null) throw new ArgumentNullException(nameof(name));
+
             int hash = 0;
-            name = name.ToLower();
-
-            for(int i = 0; i < name.Length; i++) {
-                hash = Method1258(name.ToCharArray()[i]) + ((hash << 5) - hash);
+            foreach (char c in name.ToLowerInvariant())
+            {
+                byte b = Cp1252.GetBytes(new[] { c })[0];
+                hash = b + ((hash << 5) - hash);
             }
-
             return hash;
-        }
-
-        private static byte Method1258(char c) {
-            int charByte;
-            if(((c > 0) && (c < '')) || ((c >= ' ') && (c <= 'ÿ'))) {
-                charByte = c;
-            } else {
-                if(c != '€') {
-                    if(c != '‚') {
-                        if(c != 'ƒ') {
-                            if(c == '„') {
-                                charByte = -124;
-                            } else {
-                                if(c != '…') {
-                                    if(c != '†') {
-                                        if(c == '‡') {
-                                            charByte = -121;
-                                        } else {
-                                            if(c == 'ˆ') {
-                                                charByte = -120;
-                                            } else {
-                                                if(c == '‰') {
-                                                    charByte = -119;
-                                                } else {
-                                                    if(c == 'Š') {
-                                                        charByte = -118;
-                                                    } else {
-                                                        if(c == '‹') {
-                                                            charByte = -117;
-                                                        } else {
-                                                            if(c == 'Œ') {
-                                                                charByte = -116;
-                                                            } else {
-                                                                if(c != 'Ž') {
-                                                                    if(c == '‘') {
-                                                                        charByte = -111;
-                                                                    } else {
-                                                                        if(c != '’') {
-                                                                            if(c != '“') {
-                                                                                if(c == '”') {
-                                                                                    charByte = -108;
-                                                                                } else {
-                                                                                    if(c != '•') {
-                                                                                        if(c == '–') {
-                                                                                            charByte = -106;
-                                                                                        } else {
-                                                                                            if(c == '—') {
-                                                                                                charByte = -105;
-                                                                                            } else {
-                                                                                                if(c == '˜') {
-                                                                                                    charByte = -104;
-                                                                                                } else {
-                                                                                                    if(c == '™') {
-                                                                                                        charByte = -103;
-                                                                                                    } else {
-                                                                                                        if(c != 'š') {
-                                                                                                            if(c == '›') {
-                                                                                                                charByte = -101;
-                                                                                                            } else {
-                                                                                                                if(c != 'œ') {
-                                                                                                                    if(c == 'ž') {
-                                                                                                                        charByte = -98;
-                                                                                                                    } else {
-                                                                                                                        if(c != 'Ÿ')
-                                                                                                                            charByte = 63;
-                                                                                                                        else
-                                                                                                                            charByte = -97;
-                                                                                                                    }
-                                                                                                                } else {
-                                                                                                                    charByte = -100;
-                                                                                                                }
-                                                                                                            }
-                                                                                                        } else { charByte = -102; }
-                                                                                                    }
-                                                                                                }
-                                                                                            }
-                                                                                        }
-                                                                                    } else { charByte = -107; }
-                                                                                }
-                                                                            } else {
-                                                                                charByte = -109;
-                                                                            }
-                                                                        } else {
-                                                                            charByte = -110;
-                                                                        }
-                                                                    }
-                                                                } else { charByte = -114; }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else { charByte = -122; }
-                                } else {
-                                    charByte = -123;
-                                }
-                            }
-                        } else { charByte = -125; }
-                    } else {
-                        charByte = -126;
-                    }
-                } else {
-                    charByte = -128;
-                }
-            }
-            return (byte) charByte;
         }
     }
 }
