@@ -1,5 +1,6 @@
 ﻿using FlashEditor.cache.sprites;
 using FlashEditor.Cache.Util;
+using FlashEditor.Definitions;
 using ICSharpCode.SharpZipLib.Checksum;
 using System;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ namespace FlashEditor.cache {
 
         //Better to make generic type Definition and store each of them under their respective indexes but that's for later anyway
         public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
+        public SortedDictionary<int, ObjectDefinition> objects = new SortedDictionary<int, ObjectDefinition>();
 
         /// <summary>
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables
@@ -418,6 +420,14 @@ namespace FlashEditor.cache {
             //Get the sprite for the given entry
             RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
             return SpriteDefinition.DecodeFromStream(container.GetStream());
+        }
+
+        public ObjectDefinition GetObjectDefinition(int archive, int entry)
+        {
+            JagStream objStream = ReadEntry(RSConstants.OBJECTS_DEFINITIONS_INDEX, archive, entry);
+            ObjectDefinition def = ObjectDefinition.DecodeFromStream(objStream);
+            def.id = archive * 256 + entry;
+            return def;
         }
 
         internal NPCDefinition GetNPCDefinition(int archive, int entry) {
