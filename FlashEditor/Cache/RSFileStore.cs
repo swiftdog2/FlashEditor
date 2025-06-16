@@ -101,6 +101,19 @@ namespace FlashEditor.cache {
          * However, if containerID = 4, this means we would be skipping 3 which is dumb af
          */
 
+        /// <summary>
+        ///     Writes a container's payload to <c>main_file_cache.dat2</c> and updates
+        ///     the corresponding six byte record inside the index file.
+        ///     Any additional sectors required are appended to the end of the data file.
+        /// </summary>
+        /// <param name="type">Index the container belongs to.</param>
+        /// <param name="containerId">Container id within the index.</param>
+        /// <param name="data">Stream holding the encoded container.</param>
+        /// <exception cref="FileNotFoundException">Thrown if the index does not exist.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     Thrown if <paramref name="containerId"/> is not contiguous with existing
+        ///     records.
+        /// </exception>
         public void Write(int type, int containerId, JagStream data) {
             Debug("Writing index " + type + ", container " + containerId + ", data len: " + data.Length);
 
@@ -128,7 +141,8 @@ namespace FlashEditor.cache {
                 curSector = index.GetSectorID(); //Find the first sector
                 int oldSize = index.GetSize(); //Get the current sector size
                 index.GetStream().Seek(ptr);
-                oldSectorCount = oldSize / 512 + (oldSize % 512 > 0 ? 1 : 0);
+                oldSectorCount = oldSize / RSSector.DATA_LEN +
+                    (oldSize % RSSector.DATA_LEN > 0 ? 1 : 0);
             }
 
             //Update the container header
@@ -147,13 +161,16 @@ namespace FlashEditor.cache {
                 curSector = RSSector.Decode(overwriteSector).GetNextSector();
             }
 
-            int newSectorCount = (int) data.Length / 512 + (data.Length % 512 > 0 ? 1 : 0);
-            if(newSectorCount > oldSectorCount) {
+            int newSectorCount = (int)data.Length / RSSector.DATA_LEN +
+                (data.Length % RSSector.DATA_LEN > 0 ? 1 : 0);
+            if (newSectorCount > oldSectorCount) {
                 Debug("**Expanding the index**");
 
-                for(int k = 0; k < newSectorCount - oldSectorCount; k++) {
-                    sectors.Add(++curSector);
-                    Debug("New sector: " + curSector);
+                int nextFreeSector = (int)(dataChannel.GetStream().Length / RSSector.SIZE);
+                for (int k = 0; k < newSectorCount - oldSectorCount; k++) {
+                    sectors.Add(nextFreeSector);
+                    Debug("New sector: " + nextFreeSector);
+                    nextFreeSector++;
                 }
             }
 
