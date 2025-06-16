@@ -205,6 +205,31 @@ namespace FlashEditor.cache {
                 dataChannel.GetStream().Seek(ptr);
                 dataChannel.GetStream().Write(sectorData.ToArray(), 0, sectorData.ToArray().Length);
             }
+
+            // --- round-trip verification ---
+            var expected = data.ToArray();
+            JagStream verify = ReadSectorChain(sectors[0], expected.Length);
+            if(!verify.ToArray().SequenceEqual(expected))
+                throw new IOException("Sector chain verification failed");
+        }
+
+        /// <summary>
+        /// Reads <paramref name="length"/> bytes starting from the given sector chain.
+        /// </summary>
+        private JagStream ReadSectorChain(int firstSector, int length) {
+            JagStream result = new JagStream(length);
+            int remaining = length;
+            int sectorId = firstSector;
+            while(remaining > 0 && sectorId > 0) {
+                long ptr = sectorId * RSSector.SIZE;
+                JagStream raw = dataChannel.GetStream().GetSubStream(RSSector.SIZE, ptr);
+                RSSector sector = RSSector.Decode(raw);
+                int bytes = Math.Min(remaining, RSSector.DATA_LEN);
+                result.Write(sector.GetData(), 0, bytes);
+                remaining -= bytes;
+                sectorId = sector.GetNextSector();
+            }
+            return result.Flip();
         }
     }
 }
