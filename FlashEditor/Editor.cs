@@ -3,12 +3,14 @@ using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Windows.Forms;
 using System.ComponentModel;
 using System.Diagnostics;
 using BrightIdeasSoftware;
 using FlashEditor.Tests;
+using FlashEditor.Definitions;
 
 namespace FlashEditor
 {
@@ -68,6 +70,7 @@ namespace FlashEditor
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
             ItemListView.AlwaysGroupByColumn = ItemID;
             SpriteListView.AlwaysGroupByColumn = ID;
+            ObjectListView.AlwaysGroupByColumn = objectIdColumn;
         }
 
         private void LoadCache()
@@ -405,6 +408,55 @@ namespace FlashEditor
 
                     bgw.RunWorkerAsync();
                     break;
+                case RSConstants.OBJECTS_DEFINITIONS_INDEX:
+                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                        ObjectProgressBar.Value = e.ProgressPercentage;
+                        ObjectLoadingLabel.Text = e.UserState.ToString();
+                    });
+
+                    bgw.DoWork += delegate {
+                        List<ObjectDefinition> objects = new List<ObjectDefinition>();
+
+                        int filesPerArchive = referenceTable.GetEntry(referenceTable.GetEntries().Keys.First()).GetValidFileIds().Length;
+                        int total = referenceTable.GetEntryTotal() * filesPerArchive;
+                        int done = 0;
+                        int percentile = total / 100;
+
+                        bgw.ReportProgress(0, "Loading Objects");
+
+                        foreach (KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries())
+                        {
+                            int archiveId = archive.Key;
+                            for (int file = 0; file < filesPerArchive; file++)
+                            {
+                                try
+                                {
+                                    ObjectDefinition obj = cache.GetObjectDefinition(archiveId, file);
+                                    obj.id = archiveId * filesPerArchive + file;
+                                    objects.Add(obj);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug(ex.Message);
+                                }
+                                finally
+                                {
+                                    done++;
+                                    if (done % percentile == 0 || done == total)
+                                        bgw.ReportProgress((done + 1) * 100 / total, $"Loaded {done}/{total} {(done + 1) * 100 / total}%");
+                                }
+                            }
+                        }
+
+                        ObjectListView.SetObjects(objects);
+                    };
+
+                    bgw.Disposed += delegate {
+                        workers.Remove(bgw);
+                    };
+
+                    bgw.RunWorkerAsync();
+                    break;
             }
         }
 
@@ -619,7 +671,7 @@ namespace FlashEditor
         private void alternateRowsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             TreeListView[] tlvs = { RefTableListView, ContainerListView, SpriteListView };
-            FastObjectListView[] olvs = { ItemListView, NPCListView };
+            FastObjectListView[] olvs = { ItemListView, NPCListView, ObjectListView };
             DialogResult result = colorDialog1.ShowDialog();
 
             foreach (TreeListView tlv in tlvs)
