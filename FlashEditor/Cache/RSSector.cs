@@ -7,8 +7,6 @@ namespace FlashEditor.cache {
     ///     used to verify the integrity of the cache like the current file id, type and
     ///     chunk. It also contains a pointer to the next sector such that the sectors
     ///     form a singly-linked list. The data is simply up to 512 bytes of the file.
-    ///     @author Graham
-    ///     @author `Discardedx2
     /// </summary>
     class RSSector {
         public const int HEADER_LEN = 8;
@@ -20,6 +18,14 @@ namespace FlashEditor.cache {
         private int nextSector;
         private int type;
 
+        /// <summary>
+        /// Constructs a sector record.
+        /// </summary>
+        /// <param name="type">Index the sector belongs to.</param>
+        /// <param name="id">Container id.</param>
+        /// <param name="chunk">Chunk number within the container.</param>
+        /// <param name="nextSector">Pointer to the next sector.</param>
+        /// <param name="data">Sector payload.</param>
         public RSSector(int type, int id, int chunk, int nextSector, byte[] data) {
             this.type = type;
             this.id = id;
@@ -32,7 +38,7 @@ namespace FlashEditor.cache {
         /// Reads the 8-byte Sector header
         /// </summary>
         /// <param name="stream">The stream to read from</param>
-        /// <returns></returns>
+        /// <returns>Decoded sector instance.</returns>
         public static RSSector Decode(JagStream stream) {
             if(stream.Length < SIZE)
                 throw new ArgumentException("Invalid sector length : " + stream.Length + "/" + SIZE);
@@ -58,9 +64,9 @@ namespace FlashEditor.cache {
 
 
         /// <summary>
-        /// Writes the Sector header
+        /// Writes this sector to a stream.
         /// </summary>
-        /// <returns>A buffer containing the sector header data</returns>
+        /// <returns>Buffer containing the encoded sector.</returns>
         public JagStream Encode() {
             JagStream stream = new JagStream(SIZE);
             stream.WriteShort(id);
@@ -71,22 +77,27 @@ namespace FlashEditor.cache {
             return stream.Flip();
         }
 
+        /// <summary>Gets the sector type (index).</summary>
         public new int GetType() {
             return type;
         }
 
+        /// <summary>Container id for this sector.</summary>
         public int GetId() {
             return id;
         }
 
+        /// <summary>Chunk number within the container.</summary>
         public int GetChunk() {
             return chunk;
         }
 
+        /// <summary>Next sector pointer or zero.</summary>
         public int GetNextSector() {
             return nextSector;
         }
 
+        /// <summary>Raw sector data.</summary>
         public byte[] GetData() {
             return data;
         }
