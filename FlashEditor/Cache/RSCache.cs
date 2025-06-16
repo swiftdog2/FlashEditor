@@ -150,7 +150,7 @@ namespace FlashEditor.cache {
 
             //Calculate and update the whirlpool digest if we need to
             if(table.usesWhirlpool) {
-                byte[] digest = Whirlpool.GetHash(hashableStream.ToArray());
+                byte[] digest = Whirlpool.ComputeHash(hashableStream.ToArray());
                 entry.SetWhirlpool(digest);
             }
 
