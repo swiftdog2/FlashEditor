@@ -1,5 +1,4 @@
-﻿// File: Cache/Util/Whirlpool.cs
-using System;
+﻿using System;
 using System.Text;
 using Org.BouncyCastle.Crypto.Digests;
 
