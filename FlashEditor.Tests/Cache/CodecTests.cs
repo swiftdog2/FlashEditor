@@ -43,22 +43,41 @@ namespace FlashEditor.Tests.Cache
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());
         }
 
-        [Fact]
-        public void Container_EncodeDecode_RoundTrips()
+        [Theory]
+        [InlineData(RSConstants.NO_COMPRESSION)]
+        [InlineData(RSConstants.BZIP2_COMPRESSION)]
+        [InlineData(RSConstants.GZIP_COMPRESSION)]
+        public void Container_EncodeDecode_RoundTrips(byte compression)
         {
-            // Arrange
             var payload = new JagStream();
-            payload.WriteByte(1);
-            payload.WriteByte(2);
+            payload.Write(new byte[] {1, 2, 3}, 0, 3);
             var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
-                                            RSConstants.NO_COMPRESSION, payload, 1);
+                                            compression, payload, 1);
 
-            // Act
             JagStream encoded = container.Encode();
             RSContainer decoded = RSContainer.Decode(new JagStream(encoded.ToArray()));
             JagStream reencoded = decoded.Encode();
 
-            // Assert
+            Assert.Equal(encoded.ToArray(), reencoded.ToArray());
+        }
+
+        [Theory]
+        [InlineData(RSConstants.NO_COMPRESSION)]
+        [InlineData(RSConstants.BZIP2_COMPRESSION)]
+        [InlineData(RSConstants.GZIP_COMPRESSION)]
+        public void Container_MultiFile_RoundTrips(byte compression)
+        {
+            var archive = new RSArchive();
+            archive.PutEntry(0, new JagStream(new byte[] { 1, 2 }));
+            archive.PutEntry(1, new JagStream(new byte[] { 3, 4, 5 }));
+
+            var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
+                                            compression, archive.Encode(), 1);
+
+            JagStream encoded = container.Encode();
+            RSContainer decoded = RSContainer.Decode(new JagStream(encoded.ToArray()));
+            JagStream reencoded = decoded.Encode();
+
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());
         }
 
@@ -77,6 +96,41 @@ namespace FlashEditor.Tests.Cache
 
             // Assert
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());
+        }
+
+        /// <summary>
+        ///     Ensures container headers remain byte‑accurate through multiple
+        ///     encode/decode cycles for all compression methods and for
+        ///     multi‑file archives.
+        /// </summary>
+        [Theory]
+        [InlineData(RSConstants.NO_COMPRESSION)]
+        [InlineData(RSConstants.BZIP2_COMPRESSION)]
+        [InlineData(RSConstants.GZIP_COMPRESSION)]
+        public void Container_RoundTrip_PreservesBytes(byte compression)
+        {
+            var payload = new JagStream(System.Text.Encoding.ASCII.GetBytes("hello"));
+            var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
+                                            compression, payload, 1);
+
+            JagStream initial = container.Encode();
+            RSContainer decoded = RSContainer.Decode(new JagStream(initial.ToArray()));
+            JagStream re = decoded.Encode();
+            RSContainer again = RSContainer.Decode(new JagStream(re.ToArray()));
+            Assert.Equal(initial.ToArray(), re.ToArray());
+
+            var archive = new RSArchive();
+            archive.PutEntry(0, payload);
+            archive.PutEntry(1, new JagStream(System.Text.Encoding.ASCII.GetBytes("bye")));
+
+            var multi = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 1,
+                                        compression, archive.Encode(), 1);
+
+            JagStream initArchive = multi.Encode();
+            RSContainer decArchive = RSContainer.Decode(new JagStream(initArchive.ToArray()));
+            JagStream reArchive = decArchive.Encode();
+            RSContainer againArchive = RSContainer.Decode(new JagStream(reArchive.ToArray()));
+            Assert.Equal(initArchive.ToArray(), reArchive.ToArray());
         }
     }
 }
