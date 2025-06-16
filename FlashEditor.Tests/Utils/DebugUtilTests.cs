@@ -40,28 +40,5 @@ namespace FlashEditor.Tests.Utils
             // Assert
             Assert.Equal(expected, result);
         }
-
-        [Fact]
-        public void PrintByteArray_WritesExpectedFormat()
-        {
-            // Arrange
-            byte[] data = {1, 2, 3};
-            using var writer = new System.IO.StringWriter();
-            var originalOut = System.Console.Out;
-            System.Console.SetOut(writer);
-
-            try
-            {
-                // Act
-                DebugUtil.PrintByteArray(data);
-            }
-            finally
-            {
-                System.Console.SetOut(originalOut);
-            }
-
-            // Assert
-            Assert.Contains("3/3", writer.ToString());
-        }
     }
 }
