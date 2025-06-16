@@ -43,22 +43,42 @@ namespace FlashEditor.Tests.Cache
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());
         }
 
-        [Fact]
-        public void Container_EncodeDecode_RoundTrips()
+        [Theory]
+        [InlineData(RSConstants.NO_COMPRESSION)]
+        [InlineData(RSConstants.BZIP2_COMPRESSION)]
+        [InlineData(RSConstants.GZIP_COMPRESSION)]
+        public void Container_EncodeDecode_RoundTrips(byte compression)
         {
-            // Arrange
             var payload = new JagStream();
-            payload.WriteByte(1);
-            payload.WriteByte(2);
+            payload.Write(new byte[] {1, 2, 3}, 0, 3);
             var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
-                                            RSConstants.NO_COMPRESSION, payload, 1);
+                                            compression, payload, 1);
 
-            // Act
             JagStream encoded = container.Encode();
             RSContainer decoded = RSContainer.Decode(new JagStream(encoded.ToArray()));
             JagStream reencoded = decoded.Encode();
 
-            // Assert
+            Assert.Equal(encoded.ToArray(), reencoded.ToArray());
+        }
+
+        [Theory]
+        [InlineData(RSConstants.NO_COMPRESSION)]
+        [InlineData(RSConstants.BZIP2_COMPRESSION)]
+        [InlineData(RSConstants.GZIP_COMPRESSION)]
+        public void Container_MultiFile_RoundTrips(byte compression)
+        {
+            var archive = new RSArchive();
+            archive.PutEntry(0, new JagStream(new byte[] { 1, 2 }));
+            archive.PutEntry(1, new JagStream(new byte[] { 3, 4, 5 }));
+
+            var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
+                                            compression, archive.Encode(), 1);
+            container.SetArchive(archive);
+
+            JagStream encoded = container.Encode();
+            RSContainer decoded = RSContainer.Decode(new JagStream(encoded.ToArray()));
+            JagStream reencoded = decoded.Encode();
+
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());
         }
 

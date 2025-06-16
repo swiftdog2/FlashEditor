@@ -2,6 +2,7 @@
 using System.IO;
 using System;
 using FlashEditor.utils;
+using FlashEditor.Cache.Util.Crypto;
 
 namespace FlashEditor.cache {
     public class RSContainer {
@@ -37,7 +38,21 @@ namespace FlashEditor.cache {
             this.version = version;
     }
 
-        public JagStream Encode() {
+        /// <summary>
+        /// Encodes this container to the on-disk format.
+        /// </summary>
+        /// <remarks>
+        /// The header consists of a single byte compression type followed by
+        /// the <em>uncompressed</em> payload length. The payload is optionally
+        /// XTEA encrypted when <paramref name="xteaKey"/> is provided. If the
+        /// container represents a multi-file archive then the payload already
+        /// contains the cumulative length table produced by
+        /// <see cref="RSArchive.Encode"/>.
+        /// </remarks>
+        /// <param name="xteaKey">Optional 4 integer XTEA key. When
+        /// <c>null</c> no encryption is performed.</param>
+        /// <returns>A <see cref="JagStream"/> containing the encoded bytes.</returns>
+        public JagStream Encode(int[] xteaKey = null) {
             Debug("Encoding RSContainer " + id + ", length " + GetStream().Length);
 
             JagStream stream = new JagStream();
@@ -55,32 +70,26 @@ namespace FlashEditor.cache {
 
             Debug("Compressed " + oldLen + " to : " + data.Length);
 
-            //Write out the compression type
+            //Write the header
             stream.WriteByte(compressionType);
+            stream.WriteInteger(GetStream().Length);
 
-            //Write the stored ("compressed") length
-            stream.WriteInteger(data.Length);
-            SetDataLength(data.Length);
+            //Optionally encrypt the payload before writing it out
+            if (xteaKey != null)
+            {
+                JagStream temp = new JagStream(data);
+                Cache.Util.Crypto.XTEA.Encipher(temp, 0, temp.Length, xteaKey);
+                data = temp.ToArray();
+            }
 
-            //If compressed, write the decompressed length also
-            if(compressionType != RSConstants.NO_COMPRESSION)
-                stream.WriteInteger(GetStream().Length);
-
-            //Write the compressed data
+            //Write the compressed (and possibly encrypted) data
             stream.Write(data, 0, data.Length);
 
             PrintByteArray(data);
 
-            //Write out the optional version
+            //Write out the optional version value
             if(GetVersion() != -1)
                 stream.WriteShort(GetVersion());
-
-            //Optionally, encrypt with XTEAS...
-            /*
-            if(keys[0] != 0 || keys[1] != 0 || keys[2] != 0 || keys[3] != 0) {
-                Xtea.encipher(buf, 5, compressed.length + (type == COMPRESSION_NONE ? 5 : 9), keys);
-            }
-            */
 
             Debug("\t\t\tENCODED Container, stream len: " + stream.Length);
             PrintInfo();
@@ -92,55 +101,86 @@ namespace FlashEditor.cache {
         /// <summary>
         /// Constructs a new <see cref="RSContainer"/> from the stream data
         /// </summary>
-        /// <param name="stream">The raw container data</param>
-        /// <returns>The new container, or null if <paramref name="stream"/> is null</returns>
-        public static RSContainer Decode(JagStream stream) {
+        /// <param name="stream">The raw container data.</param>
+        /// <param name="xteaKey">Optional XTEA key used to decrypt the payload.</param>
+        /// <returns>The new container, or <c>null</c> if <paramref name="stream"/> is null.</returns>
+        public static RSContainer Decode(JagStream stream, int[] xteaKey = null) {
             if(stream == null)
                 return null;
 
             RSContainer container = new RSContainer();
 
             container.SetCompressionType(stream.ReadUnsignedByte());
-            container.SetDataLength(stream.ReadInt());
+            container.SetDecompressedLength(stream.ReadInt());
 
-            if(container.GetCompressionType() == RSConstants.NO_COMPRESSION) {
-                //Simply grab the data and wrap it in a buffer
-                int len = container.GetDataLength();
-                Span<byte> temp = len <= 4096 ? stackalloc byte[len] : new byte[len];
-                stream.Read(temp);
-                container.SetStream(new JagStream(temp.ToArray()));
+            int payloadLength = (int)(stream.Length - stream.Position);
+            byte[] payload = stream.ReadBytes(payloadLength);
 
-                container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1); //Decode the version if present
-                container.PrintInfo();
+            int version = -1;
+            Span<byte> encrypted = payload;
 
-                //Return the decoded container
-                return container;
-            } else {
-                //Grab the length of the uncompressed data
-                container.SetDecompressedLength(stream.ReadInt());
+            // Attempt to remove a trailing version value if present.
+            byte[] dataPortion = payload;
+            if (payloadLength > 2)
+            {
+                dataPortion = payload.AsSpan(0, payloadLength - 2).ToArray();
+                Span<byte> testBuf = dataPortion;
+                if (xteaKey != null)
+                {
+                    JagStream t = new JagStream(dataPortion);
+                    XTEA.Decipher(t, 0, t.Length, xteaKey);
+                    testBuf = t.ToArray();
+                }
 
-                //Read the data from the stream into a buffer
-                byte[] compressed = MemoryUtils.Rent(container.GetDataLength());
-                stream.Read(compressed, 0, container.GetDataLength());
-
-                //Decompress the data
-                byte[] data = container.GetCompressionType() switch {
-                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(compressed, container.GetDecompressedLength()),
-                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(compressed),
+                byte[] test = container.GetCompressionType() switch
+                {
+                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(testBuf.ToArray(), container.GetDecompressedLength()),
+                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(testBuf.ToArray()),
+                    RSConstants.NO_COMPRESSION => testBuf.ToArray(),
                     _ => throw new IOException("Invalid compression type")
                 };
 
-                MemoryUtils.Return(compressed);
-
-                //Check if the decompressed length is what it should be
-                if(data.Length != container.GetDecompressedLength())
-                    throw new IOException("Length mismatch. [ " + data.Length + " != " + container.GetDecompressedLength() + " ]");
-
-                container.SetStream(new JagStream(data));
-                container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1); //Decode the version if present
-                container.PrintInfo();
-                return container;
+                if (test.Length == container.GetDecompressedLength())
+                {
+                    encrypted = dataPortion;
+                    version = (payload[payloadLength - 2] << 8) | payload[payloadLength - 1];
+                    payload = test;
+                }
+                else
+                {
+                    encrypted = payload;
+                }
             }
+
+            if (encrypted != payload)
+            {
+                // Already decrypted as part of test above
+            }
+            else if (xteaKey != null)
+            {
+                JagStream temp = new JagStream(encrypted.ToArray());
+                XTEA.Decipher(temp, 0, temp.Length, xteaKey);
+                encrypted = temp.ToArray();
+            }
+
+            if (payload == encrypted)
+            {
+                payload = container.GetCompressionType() switch
+                {
+                    RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(encrypted.ToArray(), container.GetDecompressedLength()),
+                    RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(encrypted.ToArray()),
+                    RSConstants.NO_COMPRESSION => encrypted.ToArray(),
+                    _ => throw new IOException("Invalid compression type")
+                };
+
+                if (payload.Length != container.GetDecompressedLength())
+                    throw new IOException("Length mismatch. [ " + payload.Length + " != " + container.GetDecompressedLength() + " ]");
+            }
+
+            container.SetStream(new JagStream(payload));
+            container.SetVersion(version == -1 && stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : version);
+            container.PrintInfo();
+            return container;
         }
 
         public string GetCompressionString() {
