@@ -18,9 +18,9 @@ namespace FlashEditor.Tests {
 
                 //Reference table
                 RSReferenceTable itemRefIn = cache.GetReferenceTable(RSConstants.ITEM_DEFINITIONS_INDEX);
-                JagStream itemRefTableEncoded = itemRefIn.Encode();
-                RSReferenceTable itemRefOut = RSReferenceTable.Decode(itemRefTableEncoded);
-                JagStream itemRefTableEncoded2 = itemRefOut.Encode();
+                JagStream itemRefTableEncoded = ReferenceTableCodec.Encode(itemRefIn);
+                RSReferenceTable itemRefOut = ReferenceTableCodec.Decode(itemRefTableEncoded);
+                JagStream itemRefTableEncoded2 = ReferenceTableCodec.Encode(itemRefOut);
                 StreamTests.StreamDifference(itemRefTableEncoded, itemRefTableEncoded2, "item refs");
 
                 //Reference table container

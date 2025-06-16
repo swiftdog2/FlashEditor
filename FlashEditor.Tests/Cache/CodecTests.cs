@@ -35,9 +35,9 @@ namespace FlashEditor.Tests.Cache
             table.PutEntry(0, entry);
 
             // Act
-            JagStream encoded = table.Encode();
-            RSReferenceTable decoded = RSReferenceTable.Decode(new JagStream(encoded.ToArray()));
-            JagStream reencoded = decoded.Encode();
+            JagStream encoded = ReferenceTableCodec.Encode(table);
+            RSReferenceTable decoded = ReferenceTableCodec.Decode(new JagStream(encoded.ToArray()));
+            JagStream reencoded = ReferenceTableCodec.Encode(decoded);
 
             // Assert
             Assert.Equal(encoded.ToArray(), reencoded.ToArray());

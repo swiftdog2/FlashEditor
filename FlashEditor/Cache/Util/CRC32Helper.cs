@@ -59,12 +59,11 @@ namespace FlashEditor.Cache.Util
             {
                 entry.SetCrc((int)crc);
                 entry.SetVersion(entry.GetVersion() + 1);
+                entry.UsesXtea = usesXtea;
             }
 
-            // The current reference table implementation does not expose
-            // per-group flags or a dirty marker. Those aspects are therefore
-            // not handled here.
-            _ = usesXtea; // parameter acknowledged to avoid warnings
+            // bump reference table version to mark it dirty
+            table.version++;
         }
     }
 }

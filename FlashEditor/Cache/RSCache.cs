@@ -160,7 +160,7 @@ namespace FlashEditor.cache {
             //tableContainer.SetStream(table.Encode());
 
             //Write out the reference table
-            RSContainer tableContainer = new RSContainer(RSConstants.META_INDEX, type, RSConstants.GZIP_COMPRESSION, table.Encode(), 1337);
+            RSContainer tableContainer = new RSContainer(RSConstants.META_INDEX, type, RSConstants.GZIP_COMPRESSION, ReferenceTableCodec.Encode(table), 1337);
             store.Write(RSConstants.META_INDEX, type, tableContainer.Encode());
             store.Write(type, containerId, stream);
         }
@@ -340,7 +340,7 @@ namespace FlashEditor.cache {
 
                 //Decode the reference table from the container stream and cache it 
                 JagStream containerStream = container.GetStream();
-                RSReferenceTable refTable = RSReferenceTable.Decode(containerStream);
+                RSReferenceTable refTable = ReferenceTableCodec.Decode(containerStream);
                 refTable.SetType(type); //For the UI
                 referenceTables[type] = refTable;
                 Debug("...Decoded reference table " + type, LOG_DETAIL.ADVANCED);
