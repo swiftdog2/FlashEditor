@@ -104,6 +104,14 @@
             this.olvColumn9 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumn11 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ObjectEditorTab = new System.Windows.Forms.TabPage();
+            this.groupBox5 = new System.Windows.Forms.GroupBox();
+            this.ObjectLoadingLabel = new System.Windows.Forms.Label();
+            this.ObjectProgressBar = new System.Windows.Forms.ProgressBar();
+            this.button7 = new System.Windows.Forms.Button();
+            this.button8 = new System.Windows.Forms.Button();
+            this.ObjectListView = new BrightIdeasSoftware.FastObjectListView();
+            this.objectIdColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.objectNameColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.InterfaceEditorTab = new System.Windows.Forms.TabPage();
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
@@ -127,6 +135,9 @@
             this.NPCEditorTab.SuspendLayout();
             this.groupBox6.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).BeginInit();
+            this.ObjectEditorTab.SuspendLayout();
+            this.groupBox5.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.ObjectListView)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).BeginInit();
             this.SuspendLayout();
             // 
@@ -994,12 +1005,115 @@
             // 
             // ObjectEditorTab
             // 
+            this.ObjectEditorTab.Controls.Add(this.groupBox5);
+            this.ObjectEditorTab.Controls.Add(this.ObjectListView);
             this.ObjectEditorTab.Location = new System.Drawing.Point(4, 28);
             this.ObjectEditorTab.Name = "ObjectEditorTab";
             this.ObjectEditorTab.Size = new System.Drawing.Size(1121, 538);
             this.ObjectEditorTab.TabIndex = 4;
             this.ObjectEditorTab.Text = "Objects";
             this.ObjectEditorTab.UseVisualStyleBackColor = true;
+            //
+            // groupBox5
+            //
+            this.groupBox5.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.groupBox5.BackColor = System.Drawing.Color.White;
+            this.groupBox5.Controls.Add(this.ObjectLoadingLabel);
+            this.groupBox5.Controls.Add(this.ObjectProgressBar);
+            this.groupBox5.Controls.Add(this.button7);
+            this.groupBox5.Controls.Add(this.button8);
+            this.groupBox5.Font = new System.Drawing.Font("Consolas", 12.25F);
+            this.groupBox5.Location = new System.Drawing.Point(857, 3);
+            this.groupBox5.Name = "groupBox5";
+            this.groupBox5.Size = new System.Drawing.Size(243, 523);
+            this.groupBox5.TabIndex = 19;
+            this.groupBox5.TabStop = false;
+            this.groupBox5.Text = "Editor Controls";
+            //
+            // ObjectLoadingLabel
+            //
+            this.ObjectLoadingLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.ObjectLoadingLabel.AutoSize = true;
+            this.ObjectLoadingLabel.BackColor = System.Drawing.Color.Transparent;
+            this.ObjectLoadingLabel.Font = new System.Drawing.Font("Consolas", 12F);
+            this.ObjectLoadingLabel.Location = new System.Drawing.Point(3, 439);
+            this.ObjectLoadingLabel.Name = "ObjectLoadingLabel";
+            this.ObjectLoadingLabel.Size = new System.Drawing.Size(144, 19);
+            this.ObjectLoadingLabel.TabIndex = 17;
+            this.ObjectLoadingLabel.Text = "Loading Objects";
+            this.ObjectLoadingLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            //
+            // ObjectProgressBar
+            //
+            this.ObjectProgressBar.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.ObjectProgressBar.ForeColor = System.Drawing.Color.DarkRed;
+            this.ObjectProgressBar.Location = new System.Drawing.Point(0, 461);
+            this.ObjectProgressBar.Name = "ObjectProgressBar";
+            this.ObjectProgressBar.Size = new System.Drawing.Size(240, 62);
+            this.ObjectProgressBar.TabIndex = 8;
+            //
+            // button7
+            //
+            this.button7.BackColor = System.Drawing.Color.White;
+            this.button7.Location = new System.Drawing.Point(6, 70);
+            this.button7.Name = "button7";
+            this.button7.Size = new System.Drawing.Size(231, 35);
+            this.button7.TabIndex = 1;
+            this.button7.Text = "Export Selected (.dat)";
+            this.button7.UseVisualStyleBackColor = false;
+            //
+            // button8
+            //
+            this.button8.BackColor = System.Drawing.Color.White;
+            this.button8.Location = new System.Drawing.Point(6, 29);
+            this.button8.Name = "button8";
+            this.button8.Size = new System.Drawing.Size(231, 35);
+            this.button8.TabIndex = 0;
+            this.button8.Text = "Import Object";
+            this.button8.UseVisualStyleBackColor = false;
+            //
+            // ObjectListView
+            //
+            this.ObjectListView.AllColumns.Add(this.objectIdColumn);
+            this.ObjectListView.AllColumns.Add(this.objectNameColumn);
+            this.ObjectListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.ObjectListView.BackColor = System.Drawing.Color.White;
+            this.ObjectListView.CellEditUseWholeCell = false;
+            this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.objectIdColumn,
+            this.objectNameColumn});
+            this.ObjectListView.Cursor = System.Windows.Forms.Cursors.Default;
+            this.ObjectListView.Font = new System.Drawing.Font("Consolas", 11.25F);
+            this.ObjectListView.FullRowSelect = true;
+            this.ObjectListView.GridLines = true;
+            this.ObjectListView.HideSelection = false;
+            this.ObjectListView.Location = new System.Drawing.Point(-2, -2);
+            this.ObjectListView.Name = "ObjectListView";
+            this.ObjectListView.RowHeight = 10;
+            this.ObjectListView.ShowGroups = false;
+            this.ObjectListView.ShowImagesOnSubItems = true;
+            this.ObjectListView.Size = new System.Drawing.Size(853, 535);
+            this.ObjectListView.TabIndex = 18;
+            this.ObjectListView.UseCompatibleStateImageBehavior = false;
+            this.ObjectListView.View = System.Windows.Forms.View.Details;
+            this.ObjectListView.VirtualMode = true;
+            //
+            // objectIdColumn
+            //
+            this.objectIdColumn.AspectName = "id";
+            this.objectIdColumn.Groupable = false;
+            this.objectIdColumn.Searchable = false;
+            this.objectIdColumn.Text = "ID";
+            this.objectIdColumn.Width = 78;
+            //
+            // objectNameColumn
+            //
+            this.objectNameColumn.AspectName = "name";
+            this.objectNameColumn.Text = "Name";
+            this.objectNameColumn.Width = 191;
             // 
             // InterfaceEditorTab
             // 
@@ -1058,6 +1172,10 @@
             this.groupBox6.ResumeLayout(false);
             this.groupBox6.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.NPCListView)).EndInit();
+            this.ObjectEditorTab.ResumeLayout(false);
+            this.groupBox5.ResumeLayout(false);
+            this.groupBox5.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.ObjectListView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
@@ -1148,6 +1266,14 @@
         private System.Windows.Forms.ToolStripMenuItem alternateRowsToolStripMenuItem;
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.NumericUpDown numericUpDown1;
+        private System.Windows.Forms.GroupBox groupBox5;
+        private System.Windows.Forms.Label ObjectLoadingLabel;
+        private System.Windows.Forms.ProgressBar ObjectProgressBar;
+        private System.Windows.Forms.Button button7;
+        private System.Windows.Forms.Button button8;
+        private BrightIdeasSoftware.FastObjectListView ObjectListView;
+        private BrightIdeasSoftware.OLVColumn objectIdColumn;
+        private BrightIdeasSoftware.OLVColumn objectNameColumn;
     }
 }
 
