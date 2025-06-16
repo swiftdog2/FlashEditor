@@ -34,6 +34,7 @@ namespace FlashEditor.cache {
             Debug("Read container " + containerId + " header... size: " + size + ", sector: " + sector, LOG_DETAIL.ADVANCED);
         }
 
+        /// <summary>Encodes the current record to a stream.</summary>
         internal JagStream Encode() {
             JagStream stream = new JagStream(SIZE);
             stream.WriteMedium(size);
@@ -41,16 +42,17 @@ namespace FlashEditor.cache {
             return stream.Flip();
         }
 
+        /// <summary>Gets the underlying data stream.</summary>
         public JagStream GetStream() {
             return stream;
         }
 
-        //The size of the container stream (in bytes)
+        /// <summary>Size of the container's data in bytes.</summary>
         public int GetSize() {
             return size;
         }
 
-        //The first sector in the dat2 in which the container data is stored
+        /// <summary>First sector id containing the container data.</summary>
         public int GetSectorID() {
             return sector;
         }
