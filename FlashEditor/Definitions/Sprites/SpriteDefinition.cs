@@ -191,6 +191,11 @@ namespace FlashEditor.cache.sprites {
             }
         }
 
+        /// <summary>
+        /// Creates a <see cref="SpriteDefinition"/> from an encoded stream.
+        /// </summary>
+        /// <param name="stream">Stream containing the sprite set.</param>
+        /// <returns>The decoded sprite definition.</returns>
         internal static SpriteDefinition DecodeFromStream(JagStream stream) {
             var sprite = new SpriteDefinition();
             sprite.Decode(stream);
@@ -256,6 +261,8 @@ namespace FlashEditor.cache.sprites {
             this.index = index;
         }
 
+        /// <summary>Encodes the sprite set to a stream.</summary>
+        /// <returns>Serialized sprite data.</returns>
         public JagStream Encode() {
             throw new NotImplementedException();
         }
