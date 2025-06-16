@@ -6,7 +6,6 @@
                 <LangVersion>11.0</LangVersion>
                 <EnableWindowsTargeting>true</EnableWindowsTargeting>
                 <ImplicitUsings>false</ImplicitUsings>
-		<RunSettingsFilePath>.\FlashEditor.runsettings</RunSettingsFilePath>
 	</PropertyGroup>
 
 	<ItemGroup>
