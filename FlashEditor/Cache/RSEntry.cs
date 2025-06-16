@@ -14,6 +14,8 @@ namespace FlashEditor.cache {
         public int crc;
         public int version;
         public int id;
+        public bool UsesXtea { get; set; }  // true ⇢ groupFlags bit-0 is set
+
 
         private SortedDictionary<int, RSChildEntry> childEntries = new SortedDictionary<int, RSChildEntry>();
         private int[] validFileIds;
