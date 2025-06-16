@@ -1,13 +1,13 @@
 # FlashEditor Contribution Guide
 
-This repository contains a C# RuneScape cache editor targeting **Revision 639**. It provides a WinForms-based GUI to load, view, edit, and update JS5 cache archives. The application targets **.NET Framework 4.7.2** and includes xUnit-based unit tests.
+This repository contains a C# RuneScape cache editor targeting **Revision 639**. It provides a WinForms-based GUI to load, view, edit, and update JS5 cache archives. The application targets **.NET 9** and includes xUnit-based unit tests.
 
 ## Build Requirements
-- Visual Studio or `msbuild` with .NET Framework 4.7.2 SDK.
+- Visual Studio or `dotnet` with .NET 9 SDK.
 - All packages are restored via NuGet. The `packages.config` file lists dependencies such as IKVM, Newtonsoft.Json, and OpenTK.
 
 ## Test Suite
-- Tests reside under the `FlashEditor.Tests` project and target .NET Framework 4.7.2.
+- Tests reside under the `FlashEditor.Tests` project and target .NET 9.
 - xUnit (`2.5.0`) and Moq are the primary test dependencies.
 - Run `dotnet test` or use Visual Studio Test Explorer to execute the suite.
 
@@ -72,3 +72,6 @@ The editor also supports features such as MIDI music playback and the modern ind
 
 ## Performance Guidelines
 - Avoid using heavy LINQ chains like `Where().Select().ToList()` inside performance-critical loops. Use a single-pass `for` loop to filter and transform in one step.
+
+## Coding Guidelines
+- Include C# XML documentation comments on public classes and members whenever the intent isn't obvious.
