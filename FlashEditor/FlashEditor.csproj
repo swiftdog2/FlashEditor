@@ -59,6 +59,7 @@
 
 
 	<ItemGroup>
+    <PackageReference Include="BouncyCastle.NetCore" Version="2.2.1" />
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
