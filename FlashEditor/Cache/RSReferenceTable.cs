@@ -35,122 +35,141 @@ namespace FlashEditor.cache {
         private RSIdentifiers identifiers;
 
         /// <summary>
-        /// Constructs a reference table from the stream data
+        ///     Parses a reference-table container payload into an <see cref="RSReferenceTable"/> instance.
+        ///     Handles formats 5 → 7.  Archive-flags (bit-0 ⇢ XTEA) are present only in format 7+
+        ///     and are read <em>after</em> the per-archive version integers (matching on-disk order).
         /// </summary>
-        /// <param name="stream">The stream containing the reference table Container data</param>
-        /// <returns>The reference table</returns>
-        public static RSReferenceTable Decode(JagStream stream) {
+        /// <param name="stream">
+        ///     A <see cref="JagStream"/> positioned at the start of the container’s payload
+        ///     (i.e. immediately after the 5- or 9-byte container header).
+        /// </param>
+        /// <returns>The populated reference table.</returns>
+        public static RSReferenceTable Decode(JagStream stream)
+        {
             Debug("Decoding reference table", LOG_DETAIL.ADVANCED);
 
             RSReferenceTable table = new RSReferenceTable();
 
+            /* ── Table header ───────────────────────────────────────── */
             table.format = stream.ReadUnsignedByte();
-
-            //If the table is versioned
-            if(table.format >= 6)
+            if (table.format >= 6)
                 table.version = stream.ReadInt();
 
-            //Calculate the flags for this table
             table.flags = stream.ReadUnsignedByte();
-            table.hasIdentifiers = (FLAG_IDENTIFIERS & table.flags) != 0;
-            table.usesWhirlpool = (FLAG_WHIRLPOOL & table.flags) != 0;
-            table.entryHashes = (FLAG_HASH & table.flags) != 0;
-            table.sizes = (FLAG_SIZES & table.flags) != 0;
+            table.hasIdentifiers = (table.flags & FLAG_IDENTIFIERS) != 0;
+            table.usesWhirlpool = (table.flags & FLAG_WHIRLPOOL) != 0;
+            table.entryHashes = (table.flags & FLAG_HASH) != 0;
+            table.sizes = (table.flags & FLAG_SIZES) != 0;
 
             table.validArchivesCount = stream.ReadUnsignedShort();
 
-            Debug("Table version: " + table.version + " | Format: " + table.format + " | Flags: " + DebugUtil.ToBitString(table.flags) + " | Archives: " + table.validArchivesCount + " | Whirl: " + (table.usesWhirlpool ? "Y" : "N"), LOG_DETAIL.ADVANCED);
+            Debug($"Table v{table.version} | fmt {table.format} | flags {DebugUtil.ToBitString(table.flags)} | " +
+                  $"archives {table.validArchivesCount}", LOG_DETAIL.ADVANCED);
 
+            /* ── Delta-encoded archive IDs ──────────────────────────── */
             table.validArchiveIds = new int[table.validArchivesCount];
 
-            int k = 0, lastArchiveId = 0;
-
-            //Read the delta-encoded archive IDs
-            for(int index = 0; index < table.validArchivesCount; index++) {
-                int val = stream.ReadUnsignedShort();
-                int archiveId = lastArchiveId += val;
-                table.validArchiveIds[index] = archiveId;
-                table.entries.Add(archiveId, new RSEntry(k++));
+            int lastArchiveId = 0;
+            for (int i = 0; i < table.validArchivesCount; i++)
+            {
+                lastArchiveId += stream.ReadUnsignedShort();
+                table.validArchiveIds[i] = lastArchiveId;
+                table.entries.Add(lastArchiveId, new RSEntry(i));
             }
 
-            //Identifier hashers
-            int[] identifiersArray = new int[table.GetEntries().Keys.Max() + 1];
-            if(table.hasIdentifiers) {
-                foreach(KeyValuePair<int, RSEntry> kvp in table.GetEntries()) {
-                    int identifier = stream.ReadInt();
-                    identifiersArray[kvp.Key] = identifier;
-                    kvp.Value.SetIdentifier(identifier);
+            /* ── Optional 32-bit identifier hashes ─────────────────── */
+            int[] identifiersTmp = new int[table.entries.Keys.Max() + 1];
+            if (table.hasIdentifiers)
+            {
+                foreach (var kv in table.entries)
+                {
+                    int ident = stream.ReadInt();
+                    identifiersTmp[kv.Key] = ident;
+                    kv.Value.SetIdentifier(ident);
                 }
             }
-            table.identifiers = new RSIdentifiers(identifiersArray);
+            table.identifiers = new RSIdentifiers(identifiersTmp);
 
-            //CRC checksums
-            for(int index = 0; index < table.validArchivesCount; index++)
-                table.entries[table.validArchiveIds[index]].SetCrc(stream.ReadInt());
+            /* ── CRC-32 for each archive (always) ───────────────────── */
+            for (int i = 0; i < table.validArchivesCount; i++)
+                table.entries[table.validArchiveIds[i]].SetCrc(stream.ReadInt());
 
-            //Read the entry hash if present
-            if(table.entryHashes)
-                foreach(KeyValuePair<int, RSEntry> kvp in table.GetEntries())
-                    kvp.Value.SetHash(stream.ReadInt());
+            /* ── Archive versions (always) ──────────────────────────── */
+            foreach (var kv in table.entries)
+                kv.Value.SetVersion(stream.ReadInt());
 
-            //If the archive uses whirlpool, set the whirlpool hash
-            if(table.usesWhirlpool) {
-                for(int index = 0; index < table.validArchivesCount; index++) {
-                    Span<byte> whirpool = stackalloc byte[64];
-                    stream.Read(whirpool);
-                    table.entries[table.validArchiveIds[index]].SetWhirlpool(whirpool);
-                }
-            }
-
-            //Read the sizes of the archive
-            if(table.sizes) {
-                foreach(KeyValuePair<int, RSEntry> kvp in table.entries) {
-                    kvp.Value.compressed = stream.ReadInt();
-                    kvp.Value.uncompressed = stream.ReadInt();
+            /* ── Archive-flags (format 7+)  bit-0 ⇢ XTEA ───────────── */
+            if (table.format >= 7)
+            {
+                for (int i = 0; i < table.validArchivesCount; i++)
+                {
+                    byte flagByte = stream.ReadUnsignedByte();
+                    table.entries[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
+                    /*  Further bits can be stored if future client revisions use them. */
                 }
             }
 
-            //Versions
-            foreach(KeyValuePair<int, RSEntry> kvp in table.entries)
-                kvp.Value.SetVersion(stream.ReadInt());
+            /* ── Optional entry hash (32-bit) ───────────────────────── */
+            if (table.entryHashes)
+                foreach (var kv in table.entries)
+                    kv.Value.SetHash(stream.ReadInt());
 
-            //Child sizes
-            foreach(KeyValuePair<int, RSEntry> kvp in table.entries)
-                kvp.Value.SetValidFileIds(new int[stream.ReadUnsignedShort()]);
+            /* ── Optional Whirlpool digests (64 bytes each) ─────────── */
+            if (table.usesWhirlpool)
+            {
+                for (int i = 0; i < table.validArchivesCount; i++)
+                {
+                    Span<byte> whirl = stackalloc byte[64];
+                    stream.Read(whirl);
+                    table.entries[table.validArchiveIds[i]].SetWhirlpool(whirl);
+                }
+            }
 
-            //Child IDs
-            for(int index = 0; index < table.validArchivesCount; index++) {
+            /* ── Optional compressed / uncompressed sizes ───────────── */
+            if (table.sizes)
+            {
+                foreach (var kv in table.entries)
+                {
+                    kv.Value.compressed = stream.ReadInt();
+                    kv.Value.uncompressed = stream.ReadInt();
+                }
+            }
+
+            /* ── Child counts (one 16-bit per archive) ──────────────── */
+            foreach (var kv in table.entries)
+                kv.Value.SetValidFileIds(new int[stream.ReadUnsignedShort()]);
+
+            /* ── Child IDs, delta-encoded ───────────────────────────── */
+            for (int i = 0; i < table.validArchivesCount; i++)
+            {
+                RSEntry entry = table.entries[table.validArchiveIds[i]];
                 int lastFileId = 0;
-                int biggestFileId = 0;
-                RSEntry entry = table.entries[table.validArchiveIds[index]];
-                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++) {
-                    int fileId = lastFileId += stream.ReadUnsignedShort();
-                    if(fileId > biggestFileId)
-                        biggestFileId = fileId;
-                    entry.GetValidFileIds()[index2] = fileId;
+
+                for (int j = 0; j < entry.GetValidFileIds().Length; j++)
+                {
+                    lastFileId += stream.ReadUnsignedShort();
+                    entry.GetValidFileIds()[j] = lastFileId;
                 }
+
                 entry.SetChildEntries(new SortedDictionary<int, RSChildEntry>());
-                for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
-                    entry.GetChildEntries()[entry.GetValidFileIds()[index2]] = new RSChildEntry();
+                foreach (int id in entry.GetValidFileIds())
+                    entry.GetChildEntries()[id] = new RSChildEntry();
             }
 
-            if(table.hasIdentifiers) {
-                for(int index = 0; index < table.validArchivesCount; index++) {
-                    RSEntry entry = table.entries[table.validArchiveIds[index]];
-                    for(int index2 = 0; index2 < entry.GetValidFileIds().Length; index2++)
-                        entry.GetChildEntries()[entry.GetValidFileIds()[index2]].SetHash(stream.ReadInt());
+            /* ── Optional per-child hashes when identifiers present ─── */
+            if (table.hasIdentifiers)
+            {
+                for (int i = 0; i < table.validArchivesCount; i++)
+                {
+                    RSEntry entry = table.entries[table.validArchiveIds[i]];
+                    foreach (int fileId in entry.GetValidFileIds())
+                        entry.GetChildEntries()[fileId].SetHash(stream.ReadInt());
                 }
             }
 
             return table;
         }
 
-        public void PutEntry(int containerId, RSEntry entry) {
-            if(entries.ContainsKey(containerId))
-                entries[containerId] = entry;
-            else
-                entries.Add(containerId, entry);
-        }
 
         /// <summary>
         /// Writes the RSReferenceTable
@@ -282,6 +301,23 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        /// Updates CRC, XTEA flag and version for a single group,
+        /// then marks the table dirty by incrementing <see cref="version"/>.
+        /// </summary>
+        public void UpdateGroup(int groupId, uint crc, bool usesXtea, int versionInc = 1)
+        {
+            if (!entries.TryGetValue(groupId, out var e))
+                return;
+
+            e.SetCrc((int)crc);
+            e.UsesXtea = usesXtea;
+            e.SetVersion(e.GetVersion() + versionInc);
+
+            // bump reference-table version so the client notices the change
+            version++;
+        }
+
+        /// <summary>
         /// Gets the maximum number of entries in this table.
         /// </summary>
         /// <returns>The maximum number of entries</returns>
@@ -301,6 +337,15 @@ namespace FlashEditor.cache {
                 return null;
             return entries[id];
         }
+
+        public void PutEntry(int containerId, RSEntry entry)
+        {
+            if (entries.ContainsKey(containerId))
+                entries[containerId] = entry;
+            else
+                entries.Add(containerId, entry);
+        }
+
 
         /// <summary>
         /// Returns the number of entries in the reference table
