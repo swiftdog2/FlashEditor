@@ -20,8 +20,15 @@ namespace FlashEditor.cache {
             this.stream = stream;
         }
 
+        /// <summary>
+        ///     Reads a six byte index entry for the given container.
+        ///     The entry is encoded big-endian as
+        ///     <c>[length:3][sector:3]</c>.
+        /// </summary>
+        /// <param name="containerId">Zero-based id of the container.</param>
         public void ReadContainerHeader(int containerId) {
-            stream.Seek(containerId * SIZE); //seek to the container header position
+            // seek to the container header position
+            stream.Seek(containerId * SIZE);
             size = GetStream().ReadMedium();
             sector = GetStream().ReadMedium();
             Debug("Read container " + containerId + " header... size: " + size + ", sector: " + sector, LOG_DETAIL.ADVANCED);
