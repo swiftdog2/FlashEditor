@@ -11,44 +11,109 @@ namespace FlashEditor.Definitions
     public class ObjectDefinition : ICloneable, IDefinition
     {
         /*───────────────────────────────────────────*
-         *  ▌  Static/shared helpers                ▐
+         *  ▌  Static / shared helpers              ▐
          *───────────────────────────────────────────*/
         private static readonly StringBuilder SharedBuilder = new StringBuilder();
 
         /*───────────────────────────────────────────*
          *  ▌  Public fields (RS cache values)      ▐
-         *     — Only those touched by opcodes are  *
-         *       declared here; add more as you map *
          *───────────────────────────────────────────*/
-        public string name;
         public int id;
 
-        public bool[] decoded = new bool[256];          // opcode hit-map
-        public string[] actions = new string[5];          // opcodes 30-34
-        public string[] menuOps = new string[5];          // opcodes 150-154
+        // ─── Name & menu strings ─────────────────────────
+        public string name;
+        public string[] actions = new string[5];        // op-codes 30-34
+        public string[] menuOps = new string[5];        // op-codes 150-154
 
-        // Geometry / render flags
-        public byte sizeX = 1, sizeY = 1;
+        // ─── Geometry / render flags ─────────────────────
+        public byte sizeX = 1;          // op-code 14
+        public byte sizeY = 1;          // op-code 15
         public bool walkable = true;
         public bool isClipped = false;
         public int modelBrightness, modelContrast;
 
-        // Morph varbits / varps (op 77 / 92)
+        // ───── misc metadata ──────────────────────────
+        public byte category;          // opcode 19
+
+        // ─── Model groups (op-codes 1 / 5) ───────────────
+        public bool usesOpcode5;                        // true → encode with 5, else 1
+        public sbyte[] modelTypes;                // per group
+        public ushort[][] modelIds;                  // per group
+
+        // ─── Animation (op-code 24) ──────────────────────
+        public int animationId = -1;
+
+        // ─── Light / ambience (65-67) ────────────────────
+        public int ambience;         // 65
+        public int contrast;         // 66
+        public int scaleZ;         // 67
+
+        // ─── Morph varbits / varps (77 / 92) ─────────────
         public int morphVarbit = -1;
         public int morphVarp = -1;
         public int[] morphIds;
 
-        // Sound / ambience
+        // ─── Sound / ambience (78 / 79) ──────────────────
         public int ambientSoundId = -1;
         public int ambientSoundLoops;
         public int[] extraSounds;
 
-        // Colour / texture swaps
+        // ─── Colour / texture swaps (40 / 41) ────────────
         public short[] recolSrc, recolDst;
         public short[] retexSrc, retexDst;
 
-        // Params (opcode 249)
+        // ─── Minimap icons (op-code 160) ────────────────
+        public ushort[] minimapIcons;
+
+        // ─── Params (op-code 249) ───────────────────────
         public SortedDictionary<int, object> parameters;
+        private byte clipType;
+        private int obstructsGround;
+        private bool randomAnimStart;
+        private sbyte[] texturePriorities;
+        private bool flipped;
+        private bool castsShadow;
+        private int scaleX;
+        private int scaleY;
+        private int mapSceneId;
+        private byte minimapForceClip;
+        private int offsetX;
+        private int offsetY;
+        private int offsetZ;
+        private bool obstructsWheelchair;
+        private bool isSolid;
+        private byte supportItems;
+        private byte soundRadius;
+        private byte soundVolume;
+        private bool playsOnLoop;
+        private bool isDoorway;
+        private bool blocksRanged;
+        private bool nonFlatShading;
+        private bool occludes;
+        private int opcode;
+        private int aByteCamType;
+        private int camOverride;
+        private int camPitch;
+        private int camYaw;
+        private int camRoll;
+        private int camZoom;
+        private int lightXOffset;
+        private int lightYOffset;
+        private int lightZOffset;
+        private int cursorSprite;
+        private int mapFunction;
+        private int mapAreaId;
+        private int objClipStart;
+        private int objClipEnd;
+        private bool breakShield;
+        private byte minimapRenderPri;
+        private bool alwaysDraw;
+        private int actionCount;
+        private bool lowPriorityRender;
+        private readonly Dictionary<int, byte[]> _rawUnknown = new();
+
+        // ─── Misc bookkeeping ───────────────────────────
+        public readonly bool[] decoded = new bool[256];  // opcode hit-map
 
         /*───────────────────────────────────────────*
          *  ▌  Clone support                        ▐
@@ -59,26 +124,21 @@ namespace FlashEditor.Definitions
         /*───────────────────────────────────────────*
          *  ▌  Public decode entry-point            ▐
          *───────────────────────────────────────────*/
-        /// <summary>
-        /// Fully decodes an <see cref="ObjectDefinition"/> from the supplied <see cref="JagStream"/>.
-        /// </summary>
-        /// <param name="stream">Stream positioned at the start of the definition blob.</param>
-        /// <returns>Populated <see cref="ObjectDefinition"/> instance.</returns>
         public void Decode(JagStream stream)
         {
-            int count = 0;
-
+            int safeGuard = 0;
             SharedBuilder.Clear();
 
             while (true)
             {
-                int opcode = stream.ReadUnsignedByte();
-                decoded[opcode] = true;
+                int op = stream.ReadUnsignedByte();
+                decoded[op] = true;
 
-                if (opcode == 0) break;          // terminator
-                Decode(stream, opcode);
+                if (op == 0) break;          // terminator
+                Decode(stream, op);
 
-                if (++count > 256) break;        // safety guard
+                if (++safeGuard > 256)
+                    throw new InvalidOperationException("Opcode overflow while decoding ObjectDefinition.");
             }
 
             for (int i = 0; i < decoded.Length; i++)
@@ -94,14 +154,10 @@ namespace FlashEditor.Definitions
             return def;
         }
 
+
         /*───────────────────────────────────────────*
          *  ▌  Private per-opcode handler           ▐
          *───────────────────────────────────────────*/
-        /// <summary>
-        /// Handles a single opcode inside the definition stream.
-        /// </summary>
-        /// <param name="buf">Data stream.</param>
-        /// <param name="op">Opcode byte already read.</param>
         private void Decode(JagStream buf, int op)
         {
             switch (op)
@@ -110,32 +166,46 @@ namespace FlashEditor.Definitions
                 case 1:
                 case 5:
                     {
-                        int groupCount = buf.ReadUnsignedByte();
-                        /* You can store the raw model data here if needed.
-                           Skipping for brevity – just seek past it.           */
-                        for (int g = 0; g < groupCount; g++)
+                        usesOpcode5 = (op == 5);
+                        int groupCt = buf.ReadUnsignedByte();
+                        modelTypes = new sbyte[groupCt];
+                        modelIds = new ushort[groupCt][];
+
+                        for (int g = 0; g < groupCt; g++)
                         {
-                            buf.ReadSignedByte();                      // model type
+                            modelTypes[g] = (sbyte)buf.ReadSignedByte();
                             int modelCt = buf.ReadUnsignedByte();
-                            for (int m = 0; m < modelCt; m++) buf.ReadUnsignedShort();
+                            var ids = new ushort[modelCt];
+                            for (int m = 0; m < modelCt; m++) ids[m] = (ushort)buf.ReadUnsignedShort();
+                            modelIds[g] = ids;
                         }
                         break;
                     }
 
                 /*──────── scalar flags ────────*/
                 case 2: name = buf.ReadJagexString(); break;
-                case 14: sizeY = buf.ReadUnsignedByte(); break;
-                case 15: walkable = false; break;
-                case 17: walkable = false; /*actionCount=0*/      break;
+                case 14: sizeX = buf.ReadUnsignedByte(); break;
+                case 15: sizeY = buf.ReadUnsignedByte(); break;
+
+                case 17:
                 case 18: walkable = false; break;
-                case 19: /* some int */  buf.ReadUnsignedByte(); break;
-                case 22: /* non-solid */ isClipped = true; break;
-                case 24: /* animation id */ buf.ReadUnsignedShort(); break;
+
+                // category/id-grouping
+                case 19:                           
+                    category = buf.ReadUnsignedByte();
+                    return;
+
+                /* ─────────────── map-scene & clip flags ─────────────── */
+                case 21: clipType = buf.ReadUnsignedByte(); return;          // 1 byte
+                case 22: isClipped = true; return;             // flag only
+                case 23: obstructsGround = 1; return;             // Solidity flag
+                case 24: animationId = buf.ReadUnsignedShort(); return;      // 2 bytes
+                case 27: randomAnimStart = true; return;             // flag only
                 case 28: modelBrightness = buf.ReadUnsignedByte() << 2; break;
                 case 29: modelContrast = buf.ReadSignedByte(); break;
 
                 /*──────── action strings 30-34 ────────*/
-                case int a when a >= 30 && a < 35:
+                case int a when (a >= 30 && a < 35):
                     actions[a - 30] = buf.ReadJagexString();
                     break;
 
@@ -167,10 +237,33 @@ namespace FlashEditor.Definitions
                         break;
                     }
 
-                /*──────── light/shadow 65-67 ────────*/
-                case 65: /* ambience */ buf.ReadUnsignedShort(); break;
-                case 66: /* contrast */ buf.ReadUnsignedShort(); break;
-                case 67: /* scaleZ  */ buf.ReadShort(); break;
+                /* ─────────────── texture-priority table (byte[]) ─────── */
+                case 42:
+                    {
+                        int n = buf.ReadUnsignedByte();
+                        texturePriorities = new sbyte[n];
+                        for (int i = 0; i < n; i++)
+                            texturePriorities[i] = (sbyte)buf.ReadSignedByte();
+                        return;
+                    }
+
+                /* ─────────────── render-side flags ─────────────── */
+                case 62: flipped = true; return;        // mirror on X
+                case 64: castsShadow = false; return;        // disable shadow
+                case 65: scaleX = buf.ReadUnsignedShort(); return;    // 2 bytes
+                case 66: scaleY = buf.ReadUnsignedShort(); return;    // 2 bytes
+                case 67: scaleZ = buf.ReadUnsignedShort(); return;    // 2 bytes
+                case 68: mapSceneId = buf.ReadUnsignedShort(); return;    // 2 bytes
+                case 69: minimapForceClip = buf.ReadUnsignedByte(); return;  // 1 byte
+
+                /* signed short offsets (<< 2 already applied in Java) */
+                case 70: offsetX = buf.ReadShort() << 2; return;
+                case 71: offsetY = buf.ReadShort() << 2; return;
+                case 72: offsetZ = buf.ReadShort() << 2; return;
+
+                case 73: obstructsWheelchair = true; return;
+                case 74: isSolid = true; return;
+                case 75: supportItems = buf.ReadUnsignedByte(); return;
 
                 /*──────── morph (77 / 92) ────────*/
                 case 77:
@@ -197,7 +290,6 @@ namespace FlashEditor.Definitions
                 case 79:
                     {
                         ambientSoundId = buf.ReadUnsignedShort();
-                        /* extra sound fields … */
                         int count = buf.ReadUnsignedByte();
                         extraSounds = new int[count];
                         for (int i = 0; i < count; i++) extraSounds[i] = buf.ReadUnsignedShort();
@@ -205,20 +297,20 @@ namespace FlashEditor.Definitions
                     }
 
                 /*──────── menuOps 150-154 ────────*/
-                case int m when m >= 150 && m < 155:
+                case int m when (m >= 150 && m < 155):
                     menuOps[m - 150] = buf.ReadJagexString();
                     break;
 
-                /*──────── multi-map icons 160 ────────*/
+                /*──────── minimap icons (160) ─────*/
                 case 160:
                     {
-                        int len = buf.ReadUnsignedByte();
-                        /* ignore for now */
-                        for (int i = 0; i < len; i++) buf.ReadUnsignedShort();
+                        int n = buf.ReadUnsignedByte();
+                        minimapIcons = new ushort[n];
+                        for (int i = 0; i < n; i++) minimapIcons[i] = (ushort)buf.ReadUnsignedShort();
                         break;
                     }
 
-                /*──────── arbitrary params 249 ────────*/
+                /*──────── arbitrary params (249) ───*/
                 case 249:
                     {
                         int len = buf.ReadUnsignedByte();
@@ -228,7 +320,6 @@ namespace FlashEditor.Definitions
                         {
                             bool isString = buf.ReadUnsignedByte() == 1;
                             int key = buf.ReadMedium();
-
                             object value = isString ? (object)buf.ReadJagexString() : buf.ReadInt();
                             if (!parameters.ContainsKey(key)) parameters.Add(key, value);
                         }
@@ -237,7 +328,7 @@ namespace FlashEditor.Definitions
 
                 /*──────── unhandled opcodes ────────*/
                 default:
-                    // Safely skip unknown opcode for now
+                    // Safely ignore for now.
                     break;
             }
         }
@@ -251,49 +342,77 @@ namespace FlashEditor.Definitions
             return val == 0xFFFF ? -1 : val;
         }
 
-        /// <summary>
-        /// Encodes this <see cref="ObjectDefinition"/> back into its binary form.
-        /// </summary>
-        /// <returns>Serialized definition stream.</returns>
+        /*───────────────────────────────────────────*
+         *  ▌  Encode back to binary                 ▐
+         *───────────────────────────────────────────*/
         public JagStream Encode()
         {
             var o = new JagStream();
 
+            /* local helper */
             void Emit(int op, Action payload = null)
             {
                 o.WriteByte((byte)op);
                 payload?.Invoke();
             }
 
-            /* basic scalar fields */
+            /*─── 1 / 5  – model-group tables ───────────────────────────*/
+            if (modelIds != null && modelTypes != null)
+            {
+                int op = usesOpcode5 ? 5 : 1;
+                Emit(op, () =>
+                {
+                    o.WriteByte((byte)modelIds.Length);
+                    for (int g = 0; g < modelIds.Length; g++)
+                    {
+                        o.WriteSignedByte(modelTypes[g]);
+                        o.WriteByte((byte)modelIds[g].Length);
+                        foreach (ushort id in modelIds[g])
+                            o.WriteShort(id);
+                    }
+                });
+            }
+
+            /*─── 2 – name ──────────────────────────────────────────────*/
             if (!string.IsNullOrEmpty(name))
                 Emit(2, () => o.WriteJagexString(name));
 
-            if (sizeY != 1)
-                Emit(14, () => o.WriteByte(sizeY));
+            /*─── size (14 / 15) ───────────────────────────────────────*/
+            if (sizeX != 1) Emit(14, () => o.WriteByte(sizeX));
+            if (sizeY != 1) Emit(15, () => o.WriteByte(sizeY));
 
+            /*─── walk-blocking flags (17 / 18) ────────────────────────*/
             if (!walkable)
             {
-                if (decoded[15]) Emit(15);
-                if (decoded[17]) Emit(17);
-                if (decoded[18]) Emit(18);
+                // reproduce whichever flag we originally saw
+                if (decoded[17]) Emit(17); else if (decoded[18]) Emit(18); else Emit(17);
             }
 
-            if (isClipped)
-                Emit(22);
+            /*─── 19 – category id ─────────────────────────────────────*/
+            if (category != 0)
+                Emit(19, () => o.WriteByte(category));
 
+            /*─── 21-24 – clipping & animation information ─────────────*/
+            if (clipType != 0) Emit(21, () => o.WriteByte(clipType));
+            if (isClipped) Emit(22);
+            if (obstructsGround == 1) Emit(23);
+            if (animationId != -1) Emit(24, () => o.WriteShort(animationId));
+
+            /*─── 27 – random animation start ─────────────────────────*/
+            if (randomAnimStart) Emit(27);
+
+            /*─── brightness / contrast (28 / 29) ─────────────────────*/
             if (modelBrightness != 0)
-                Emit(28, () => o.WriteByte((byte)(modelBrightness >> 2)));
-
+                Emit(28, () => o.WriteByte((byte)(modelBrightness >> 2))); // undo « <<2 » from decode
             if (modelContrast != 0)
                 Emit(29, () => o.WriteSignedByte((sbyte)modelContrast));
 
-            /* action strings */
+            /*─── action strings 30-34 ────────────────────────────────*/
             for (int i = 0; i < actions.Length; i++)
                 if (actions[i] != null)
                     Emit(30 + i, () => o.WriteJagexString(actions[i]));
 
-            /* recolour */
+            /*─── recolour (40) ───────────────────────────────────────*/
             if (recolSrc != null)
                 Emit(40, () =>
                 {
@@ -305,7 +424,7 @@ namespace FlashEditor.Definitions
                     }
                 });
 
-            /* retexture */
+            /*─── retexture (41) ──────────────────────────────────────*/
             if (retexSrc != null)
                 Emit(41, () =>
                 {
@@ -317,7 +436,33 @@ namespace FlashEditor.Definitions
                     }
                 });
 
-            /* morph */
+            /*─── texture priorities (42) ─────────────────────────────*/
+            if (texturePriorities != null)
+                Emit(42, () =>
+                {
+                    o.WriteByte((byte)texturePriorities.Length);
+                    foreach (sbyte b in texturePriorities) o.WriteSignedByte(b);
+                });
+
+            /*─── render-side flags 62-75 ─────────────────────────────*/
+            if (flipped) Emit(62);
+            if (!castsShadow) Emit(64);
+            if (scaleX != 0) Emit(65, () => o.WriteShort(scaleX));
+            if (scaleY != 0) Emit(66, () => o.WriteShort(scaleY));
+            if (scaleZ != 0) Emit(67, () => o.WriteShort(scaleZ));
+            if (mapSceneId != 0) Emit(68, () => o.WriteShort(mapSceneId));
+            if (minimapForceClip != 0)
+                Emit(69, () => o.WriteByte(minimapForceClip));
+
+            if (offsetX != 0) Emit(70, () => o.WriteShort((short)(offsetX >> 2)));
+            if (offsetY != 0) Emit(71, () => o.WriteShort((short)(offsetY >> 2)));
+            if (offsetZ != 0) Emit(72, () => o.WriteShort((short)(offsetZ >> 2)));
+
+            if (obstructsWheelchair) Emit(73);
+            if (isSolid) Emit(74);
+            if (supportItems != 0) Emit(75, () => o.WriteByte(supportItems));
+
+            /*─── morph table (77 / 92) ───────────────────────────────*/
             if (morphIds != null)
             {
                 bool use92 = decoded[92];
@@ -326,9 +471,9 @@ namespace FlashEditor.Definitions
                 {
                     o.WriteShort(morphVarbit == -1 ? 0xFFFF : morphVarbit);
                     o.WriteShort(morphVarp == -1 ? 0xFFFF : morphVarp);
-                    int lastIndex = morphIds.Length - 1;
+
                     if (use92)
-                        o.WriteShort(morphIds[lastIndex] == -1 ? 0xFFFF : morphIds[lastIndex]);
+                        o.WriteShort(morphIds[^1] == -1 ? 0xFFFF : morphIds[^1]);
 
                     int count = morphIds.Length - 2;
                     o.WriteByte((byte)count);
@@ -337,7 +482,7 @@ namespace FlashEditor.Definitions
                 });
             }
 
-            /* sounds */
+            /*─── ambient sounds (78 / 79) ────────────────────────────*/
             if (ambientSoundId != -1)
             {
                 if (extraSounds == null)
@@ -350,18 +495,26 @@ namespace FlashEditor.Definitions
                     Emit(79, () =>
                     {
                         o.WriteShort(ambientSoundId);
+                        o.WriteByte((byte)ambientSoundLoops);
                         o.WriteByte((byte)extraSounds.Length);
-                        foreach (var s in extraSounds)
-                            o.WriteShort(s);
+                        foreach (int s in extraSounds) o.WriteShort(s);
                     });
             }
 
-            /* menu options */
+            /*─── menu-ops 150-154 ───────────────────────────────────*/
             for (int i = 0; i < menuOps.Length; i++)
                 if (menuOps[i] != null)
                     Emit(150 + i, () => o.WriteJagexString(menuOps[i]));
 
-            /* params */
+            /*─── minimap icons (160) ────────────────────────────────*/
+            if (minimapIcons != null)
+                Emit(160, () =>
+                {
+                    o.WriteByte((byte)minimapIcons.Length);
+                    foreach (ushort icon in minimapIcons) o.WriteShort(icon);
+                });
+
+            /*─── params (249) ───────────────────────────────────────*/
             if (parameters != null && parameters.Count > 0)
                 Emit(249, () =>
                 {

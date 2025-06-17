@@ -291,6 +291,8 @@ namespace FlashEditor {
             WriteByte(0);                            // terminator
         }
 
+        public void WriteByte(int value) => WriteByte((byte)value);
+
 
         /**
          * Interesting method ripped from kfricilone's openRS
