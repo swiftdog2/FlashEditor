@@ -251,9 +251,134 @@ namespace FlashEditor.Definitions
             return val == 0xFFFF ? -1 : val;
         }
 
+        /// <summary>
+        /// Encodes this <see cref="ObjectDefinition"/> back into its binary form.
+        /// </summary>
+        /// <returns>Serialized definition stream.</returns>
         public JagStream Encode()
         {
-            throw new NotImplementedException();
+            var o = new JagStream();
+
+            void Emit(int op, Action payload = null)
+            {
+                o.WriteByte((byte)op);
+                payload?.Invoke();
+            }
+
+            /* basic scalar fields */
+            if (!string.IsNullOrEmpty(name))
+                Emit(2, () => o.WriteString(name));
+
+            if (sizeY != 1)
+                Emit(14, () => o.WriteByte(sizeY));
+
+            if (!walkable)
+            {
+                if (decoded[15]) Emit(15);
+                if (decoded[17]) Emit(17);
+                if (decoded[18]) Emit(18);
+            }
+
+            if (isClipped)
+                Emit(22);
+
+            if (modelBrightness != 0)
+                Emit(28, () => o.WriteByte((byte)(modelBrightness >> 2)));
+
+            if (modelContrast != 0)
+                Emit(29, () => o.WriteSignedByte((sbyte)modelContrast));
+
+            /* action strings */
+            for (int i = 0; i < actions.Length; i++)
+                if (actions[i] != null)
+                    Emit(30 + i, () => o.WriteString(actions[i]));
+
+            /* recolour */
+            if (recolSrc != null)
+                Emit(40, () =>
+                {
+                    o.WriteByte((byte)recolSrc.Length);
+                    for (int i = 0; i < recolSrc.Length; i++)
+                    {
+                        o.WriteShort(recolSrc[i]);
+                        o.WriteShort(recolDst[i]);
+                    }
+                });
+
+            /* retexture */
+            if (retexSrc != null)
+                Emit(41, () =>
+                {
+                    o.WriteByte((byte)retexSrc.Length);
+                    for (int i = 0; i < retexSrc.Length; i++)
+                    {
+                        o.WriteShort(retexSrc[i]);
+                        o.WriteShort(retexDst[i]);
+                    }
+                });
+
+            /* morph */
+            if (morphIds != null)
+            {
+                bool use92 = decoded[92];
+                int op = use92 ? 92 : 77;
+                Emit(op, () =>
+                {
+                    o.WriteShort(morphVarbit == -1 ? 0xFFFF : morphVarbit);
+                    o.WriteShort(morphVarp == -1 ? 0xFFFF : morphVarp);
+                    int lastIndex = morphIds.Length - 1;
+                    if (use92)
+                        o.WriteShort(morphIds[lastIndex] == -1 ? 0xFFFF : morphIds[lastIndex]);
+
+                    int count = morphIds.Length - 2;
+                    o.WriteByte((byte)count);
+                    for (int i = 0; i <= count; i++)
+                        o.WriteShort(morphIds[i] == -1 ? 0xFFFF : morphIds[i]);
+                });
+            }
+
+            /* sounds */
+            if (ambientSoundId != -1)
+            {
+                if (extraSounds == null)
+                    Emit(78, () =>
+                    {
+                        o.WriteShort(ambientSoundId);
+                        o.WriteByte((byte)ambientSoundLoops);
+                    });
+                else
+                    Emit(79, () =>
+                    {
+                        o.WriteShort(ambientSoundId);
+                        o.WriteByte((byte)extraSounds.Length);
+                        foreach (var s in extraSounds)
+                            o.WriteShort(s);
+                    });
+            }
+
+            /* menu options */
+            for (int i = 0; i < menuOps.Length; i++)
+                if (menuOps[i] != null)
+                    Emit(150 + i, () => o.WriteString(menuOps[i]));
+
+            /* params */
+            if (parameters != null && parameters.Count > 0)
+                Emit(249, () =>
+                {
+                    o.WriteByte((byte)parameters.Count);
+                    foreach (var kv in parameters)
+                    {
+                        bool isStr = kv.Value is string;
+                        o.WriteByte((byte)(isStr ? 1 : 0));
+                        o.WriteMedium(kv.Key);
+                        if (isStr) o.WriteString((string)kv.Value);
+                        else o.WriteInteger((int)kv.Value);
+                    }
+                });
+
+            /* terminator */
+            o.WriteByte(0);
+            return o.Flip();
         }
     }
 }

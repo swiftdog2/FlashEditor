@@ -112,6 +112,10 @@
             this.ObjectListView = new BrightIdeasSoftware.FastObjectListView();
             this.objectIdColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.objectNameColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.sizeXColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.sizeYColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.walkableColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.clippedColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.InterfaceEditorTab = new System.Windows.Forms.TabPage();
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
@@ -1077,6 +1081,10 @@
             //
             this.ObjectListView.AllColumns.Add(this.objectIdColumn);
             this.ObjectListView.AllColumns.Add(this.objectNameColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeXColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeYColumn);
+            this.ObjectListView.AllColumns.Add(this.walkableColumn);
+            this.ObjectListView.AllColumns.Add(this.clippedColumn);
             this.ObjectListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -1084,7 +1092,11 @@
             this.ObjectListView.CellEditUseWholeCell = false;
             this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.objectIdColumn,
-            this.objectNameColumn});
+            this.objectNameColumn,
+            this.sizeXColumn,
+            this.sizeYColumn,
+            this.walkableColumn,
+            this.clippedColumn});
             this.ObjectListView.Cursor = System.Windows.Forms.Cursors.Default;
             this.ObjectListView.Font = new System.Drawing.Font("Consolas", 11.25F);
             this.ObjectListView.FullRowSelect = true;
@@ -1100,6 +1112,8 @@
             this.ObjectListView.UseCompatibleStateImageBehavior = false;
             this.ObjectListView.View = System.Windows.Forms.View.Details;
             this.ObjectListView.VirtualMode = true;
+            this.ObjectListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditFinished);
+            this.ObjectListView.CellEditStarting += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditStarting);
             //
             // objectIdColumn
             //
@@ -1114,7 +1128,33 @@
             this.objectNameColumn.AspectName = "name";
             this.objectNameColumn.Text = "Name";
             this.objectNameColumn.Width = 191;
-            // 
+            //
+            // sizeXColumn
+            //
+            this.sizeXColumn.AspectName = "sizeX";
+            this.sizeXColumn.Text = "SizeX";
+            this.sizeXColumn.Width = 60;
+            //
+            // sizeYColumn
+            //
+            this.sizeYColumn.AspectName = "sizeY";
+            this.sizeYColumn.Text = "SizeY";
+            this.sizeYColumn.Width = 60;
+            //
+            // walkableColumn
+            //
+            this.walkableColumn.AspectName = "walkable";
+            this.walkableColumn.CheckBoxes = true;
+            this.walkableColumn.Text = "Walkable";
+            this.walkableColumn.Width = 80;
+            //
+            // clippedColumn
+            //
+            this.clippedColumn.AspectName = "isClipped";
+            this.clippedColumn.CheckBoxes = true;
+            this.clippedColumn.Text = "Clipped";
+            this.clippedColumn.Width = 70;
+            //
             // InterfaceEditorTab
             // 
             this.InterfaceEditorTab.Location = new System.Drawing.Point(4, 28);
@@ -1274,6 +1314,10 @@
         private BrightIdeasSoftware.FastObjectListView ObjectListView;
         private BrightIdeasSoftware.OLVColumn objectIdColumn;
         private BrightIdeasSoftware.OLVColumn objectNameColumn;
+        private BrightIdeasSoftware.OLVColumn sizeXColumn;
+        private BrightIdeasSoftware.OLVColumn sizeYColumn;
+        private BrightIdeasSoftware.OLVColumn walkableColumn;
+        private BrightIdeasSoftware.OLVColumn clippedColumn;
     }
 }
 
