@@ -74,6 +74,11 @@
             this.Female2 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.Rotate1 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.Rotate2 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.ValueColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.StackableColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.EquipSlotColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.EquipIdColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.MembersColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.SpriteEditorTab = new System.Windows.Forms.TabPage();
             this.groupBox3 = new System.Windows.Forms.GroupBox();
             this.label1 = new System.Windows.Forms.Label();
@@ -103,6 +108,11 @@
             this.olvColumn10 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumn9 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumn11 = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.rotationColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.ambientColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.contrastColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.attackCursorColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.visiblePriorityColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ObjectEditorTab = new System.Windows.Forms.TabPage();
             this.groupBox5 = new System.Windows.Forms.GroupBox();
             this.ObjectLoadingLabel = new System.Windows.Forms.Label();
@@ -112,6 +122,12 @@
             this.ObjectListView = new BrightIdeasSoftware.FastObjectListView();
             this.objectIdColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.objectNameColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.sizeXColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.sizeYColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.walkableColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.isClippedColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.ambientSoundColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.morphVarbitColumn = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.InterfaceEditorTab = new System.Windows.Forms.TabPage();
             this.eventLog1 = new System.Diagnostics.EventLog();
             this.colorDialog1 = new System.Windows.Forms.ColorDialog();
@@ -566,6 +582,11 @@
             this.ItemListView.AllColumns.Add(this.Female2);
             this.ItemListView.AllColumns.Add(this.Rotate1);
             this.ItemListView.AllColumns.Add(this.Rotate2);
+            this.ItemListView.AllColumns.Add(this.ValueColumn);
+            this.ItemListView.AllColumns.Add(this.StackableColumn);
+            this.ItemListView.AllColumns.Add(this.EquipSlotColumn);
+            this.ItemListView.AllColumns.Add(this.EquipIdColumn);
+            this.ItemListView.AllColumns.Add(this.MembersColumn);
             this.ItemListView.AlternateRowBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(192)))), ((int)(((byte)(255)))), ((int)(((byte)(192)))));
             this.ItemListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left) 
@@ -583,7 +604,12 @@
             this.Female1,
             this.Female2,
             this.Rotate1,
-            this.Rotate2});
+            this.Rotate2,
+            this.ValueColumn,
+            this.StackableColumn,
+            this.EquipSlotColumn,
+            this.EquipIdColumn,
+            this.MembersColumn});
             this.ItemListView.Cursor = System.Windows.Forms.Cursors.Default;
             this.ItemListView.Font = new System.Drawing.Font("Consolas", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.ItemListView.FullRowSelect = true;
@@ -660,6 +686,37 @@
             this.Rotate2.AspectName = "modelRotation2";
             this.Rotate2.Text = "Rotate2";
             this.Rotate2.Width = 71;
+            //
+            // ValueColumn
+            //
+            this.ValueColumn.AspectName = "value";
+            this.ValueColumn.Text = "Value";
+            this.ValueColumn.Width = 70;
+            //
+            // StackableColumn
+            //
+            this.StackableColumn.AspectName = "stackable";
+            this.StackableColumn.Text = "Stackable";
+            this.StackableColumn.Width = 80;
+            //
+            // EquipSlotColumn
+            //
+            this.EquipSlotColumn.AspectName = "equipSlotId";
+            this.EquipSlotColumn.Text = "EquipSlot";
+            this.EquipSlotColumn.Width = 80;
+            //
+            // EquipIdColumn
+            //
+            this.EquipIdColumn.AspectName = "equipId";
+            this.EquipIdColumn.Text = "EquipId";
+            this.EquipIdColumn.Width = 70;
+            //
+            // MembersColumn
+            //
+            this.MembersColumn.AspectName = "membersOnly";
+            this.MembersColumn.CheckBoxes = true;
+            this.MembersColumn.Text = "Members";
+            this.MembersColumn.Width = 80;
             // 
             // SpriteEditorTab
             // 
@@ -927,6 +984,11 @@
             this.NPCListView.AllColumns.Add(this.olvColumn10);
             this.NPCListView.AllColumns.Add(this.olvColumn9);
             this.NPCListView.AllColumns.Add(this.olvColumn11);
+            this.NPCListView.AllColumns.Add(this.rotationColumn);
+            this.NPCListView.AllColumns.Add(this.ambientColumn);
+            this.NPCListView.AllColumns.Add(this.contrastColumn);
+            this.NPCListView.AllColumns.Add(this.attackCursorColumn);
+            this.NPCListView.AllColumns.Add(this.visiblePriorityColumn);
             this.NPCListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -939,7 +1001,12 @@
             this.levelColumn,
             this.olvColumn10,
             this.olvColumn9,
-            this.olvColumn11});
+            this.olvColumn11,
+            this.rotationColumn,
+            this.ambientColumn,
+            this.contrastColumn,
+            this.attackCursorColumn,
+            this.visiblePriorityColumn});
             this.NPCListView.Cursor = System.Windows.Forms.Cursors.Default;
             this.NPCListView.Font = new System.Drawing.Font("Consolas", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.NPCListView.FullRowSelect = true;
@@ -1002,6 +1069,37 @@
             this.olvColumn11.CheckBoxes = true;
             this.olvColumn11.Text = "Minidot";
             this.olvColumn11.Width = 77;
+            //
+            // rotationColumn
+            //
+            this.rotationColumn.AspectName = "rotation";
+            this.rotationColumn.Text = "Rotation";
+            this.rotationColumn.Width = 75;
+            //
+            // ambientColumn
+            //
+            this.ambientColumn.AspectName = "ambient";
+            this.ambientColumn.Text = "Ambient";
+            this.ambientColumn.Width = 70;
+            //
+            // contrastColumn
+            //
+            this.contrastColumn.AspectName = "contrast";
+            this.contrastColumn.Text = "Contrast";
+            this.contrastColumn.Width = 72;
+            //
+            // attackCursorColumn
+            //
+            this.attackCursorColumn.AspectName = "attackOpCursor";
+            this.attackCursorColumn.Text = "AtkCursor";
+            this.attackCursorColumn.Width = 82;
+            //
+            // visiblePriorityColumn
+            //
+            this.visiblePriorityColumn.AspectName = "visiblePriority";
+            this.visiblePriorityColumn.CheckBoxes = true;
+            this.visiblePriorityColumn.Text = "VisPrio";
+            this.visiblePriorityColumn.Width = 78;
             // 
             // ObjectEditorTab
             // 
@@ -1077,6 +1175,12 @@
             //
             this.ObjectListView.AllColumns.Add(this.objectIdColumn);
             this.ObjectListView.AllColumns.Add(this.objectNameColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeXColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeYColumn);
+            this.ObjectListView.AllColumns.Add(this.walkableColumn);
+            this.ObjectListView.AllColumns.Add(this.isClippedColumn);
+            this.ObjectListView.AllColumns.Add(this.ambientSoundColumn);
+            this.ObjectListView.AllColumns.Add(this.morphVarbitColumn);
             this.ObjectListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -1084,7 +1188,13 @@
             this.ObjectListView.CellEditUseWholeCell = false;
             this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.objectIdColumn,
-            this.objectNameColumn});
+            this.objectNameColumn,
+            this.sizeXColumn,
+            this.sizeYColumn,
+            this.walkableColumn,
+            this.isClippedColumn,
+            this.ambientSoundColumn,
+            this.morphVarbitColumn});
             this.ObjectListView.Cursor = System.Windows.Forms.Cursors.Default;
             this.ObjectListView.Font = new System.Drawing.Font("Consolas", 11.25F);
             this.ObjectListView.FullRowSelect = true;
@@ -1114,6 +1224,44 @@
             this.objectNameColumn.AspectName = "name";
             this.objectNameColumn.Text = "Name";
             this.objectNameColumn.Width = 191;
+            //
+            // sizeXColumn
+            //
+            this.sizeXColumn.AspectName = "sizeX";
+            this.sizeXColumn.Text = "SizeX";
+            this.sizeXColumn.Width = 60;
+            //
+            // sizeYColumn
+            //
+            this.sizeYColumn.AspectName = "sizeY";
+            this.sizeYColumn.Text = "SizeY";
+            this.sizeYColumn.Width = 60;
+            //
+            // walkableColumn
+            //
+            this.walkableColumn.AspectName = "walkable";
+            this.walkableColumn.CheckBoxes = true;
+            this.walkableColumn.Text = "Walk";
+            this.walkableColumn.Width = 60;
+            //
+            // isClippedColumn
+            //
+            this.isClippedColumn.AspectName = "isClipped";
+            this.isClippedColumn.CheckBoxes = true;
+            this.isClippedColumn.Text = "Clipped";
+            this.isClippedColumn.Width = 70;
+            //
+            // ambientSoundColumn
+            //
+            this.ambientSoundColumn.AspectName = "ambientSoundId";
+            this.ambientSoundColumn.Text = "Sound";
+            this.ambientSoundColumn.Width = 70;
+            //
+            // morphVarbitColumn
+            //
+            this.morphVarbitColumn.AspectName = "morphVarbit";
+            this.morphVarbitColumn.Text = "MorphVar";
+            this.morphVarbitColumn.Width = 80;
             // 
             // InterfaceEditorTab
             // 
@@ -1274,6 +1422,22 @@
         private BrightIdeasSoftware.FastObjectListView ObjectListView;
         private BrightIdeasSoftware.OLVColumn objectIdColumn;
         private BrightIdeasSoftware.OLVColumn objectNameColumn;
+        private BrightIdeasSoftware.OLVColumn sizeXColumn;
+        private BrightIdeasSoftware.OLVColumn sizeYColumn;
+        private BrightIdeasSoftware.OLVColumn walkableColumn;
+        private BrightIdeasSoftware.OLVColumn isClippedColumn;
+        private BrightIdeasSoftware.OLVColumn ambientSoundColumn;
+        private BrightIdeasSoftware.OLVColumn morphVarbitColumn;
+        private BrightIdeasSoftware.OLVColumn ValueColumn;
+        private BrightIdeasSoftware.OLVColumn StackableColumn;
+        private BrightIdeasSoftware.OLVColumn EquipSlotColumn;
+        private BrightIdeasSoftware.OLVColumn EquipIdColumn;
+        private BrightIdeasSoftware.OLVColumn MembersColumn;
+        private BrightIdeasSoftware.OLVColumn rotationColumn;
+        private BrightIdeasSoftware.OLVColumn ambientColumn;
+        private BrightIdeasSoftware.OLVColumn contrastColumn;
+        private BrightIdeasSoftware.OLVColumn attackCursorColumn;
+        private BrightIdeasSoftware.OLVColumn visiblePriorityColumn;
     }
 }
 
