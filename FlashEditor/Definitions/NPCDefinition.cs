@@ -518,7 +518,7 @@ namespace FlashEditor
 
             // 2: name
             stream.WriteByte(2);
-            stream.WriteString(name);
+            stream.WriteJagexString(name);
 
             // 12: size
             stream.WriteByte(12);
@@ -528,7 +528,7 @@ namespace FlashEditor
             for (int opc = 30; opc <= 34; opc++)
             {
                 stream.WriteByte((byte)opc);
-                stream.WriteString(options[opc - 30] ?? "Hidden");
+                stream.WriteJagexString(options[opc - 30] ?? "Hidden");
             }
 
             // 40: recolor
@@ -667,7 +667,7 @@ namespace FlashEditor
             for (int opc = 150; opc <= 154; opc++)
             {
                 stream.WriteByte((byte)opc);
-                stream.WriteString(options[opc - 150] ?? "Hidden");
+                stream.WriteJagexString(options[opc - 150] ?? "Hidden");
             }
 
             // 155
@@ -727,7 +727,7 @@ namespace FlashEditor
                     bool isStr = kv.Value is string;
                     stream.WriteByte((byte)(isStr ? 1 : 0));
                     stream.WriteMedium(kv.Key);
-                    if (isStr) stream.WriteString((string)kv.Value);
+                    if (isStr) stream.WriteJagexString((string)kv.Value);
                     else stream.WriteInteger((int)kv.Value);
                 }
             }

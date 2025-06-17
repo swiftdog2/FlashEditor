@@ -8,7 +8,7 @@ namespace FlashEditor.Definitions
     /// <summary>
     /// Represents a single “loc” / world-object definition.
     /// </summary>
-    internal sealed class ObjectDefinition : ICloneable, IDefinition
+    public class ObjectDefinition : ICloneable, IDefinition
     {
         /*───────────────────────────────────────────*
          *  ▌  Static/shared helpers                ▐
@@ -267,7 +267,7 @@ namespace FlashEditor.Definitions
 
             /* basic scalar fields */
             if (!string.IsNullOrEmpty(name))
-                Emit(2, () => o.WriteString(name));
+                Emit(2, () => o.WriteJagexString(name));
 
             if (sizeY != 1)
                 Emit(14, () => o.WriteByte(sizeY));
@@ -291,7 +291,7 @@ namespace FlashEditor.Definitions
             /* action strings */
             for (int i = 0; i < actions.Length; i++)
                 if (actions[i] != null)
-                    Emit(30 + i, () => o.WriteString(actions[i]));
+                    Emit(30 + i, () => o.WriteJagexString(actions[i]));
 
             /* recolour */
             if (recolSrc != null)
@@ -359,7 +359,7 @@ namespace FlashEditor.Definitions
             /* menu options */
             for (int i = 0; i < menuOps.Length; i++)
                 if (menuOps[i] != null)
-                    Emit(150 + i, () => o.WriteString(menuOps[i]));
+                    Emit(150 + i, () => o.WriteJagexString(menuOps[i]));
 
             /* params */
             if (parameters != null && parameters.Count > 0)
@@ -371,7 +371,7 @@ namespace FlashEditor.Definitions
                         bool isStr = kv.Value is string;
                         o.WriteByte((byte)(isStr ? 1 : 0));
                         o.WriteMedium(kv.Key);
-                        if (isStr) o.WriteString((string)kv.Value);
+                        if (isStr) o.WriteJagexString((string)kv.Value);
                         else o.WriteInteger((int)kv.Value);
                     }
                 });

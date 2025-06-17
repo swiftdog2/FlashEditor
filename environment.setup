@@ -1,0 +1,43 @@
+#!/bin/bash
+set -e
+
+# Error handling: report line on failure
+trap 'echo "Error occurred on line $LINENO. Exiting." >&2' ERR
+
+# Define the version of .NET you want to install
+dotnet_version="9.0"
+
+echo "Checking for existing .NET SDK $dotnet_version..."
+# Idempotency: skip if already installed
+if command -v dotnet &>/dev/null && dotnet --version | grep -q "^$dotnet_version"; then
+  echo ".NET SDK $dotnet_version is already installed. Skipping installation."
+  exit 0
+fi
+
+echo "Installing .NET SDK $dotnet_version to /root/.dotnet"
+
+# Step 1: Install prerequisites
+sudo apt-get update
+sudo apt-get install -y wget
+
+# Step 2: Download and run the official installer
+wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
+chmod +x dotnet-install.sh
+./dotnet-install.sh --channel "$dotnet_version" --install-dir /root/.dotnet
+
+# Step 3: Export and persist environment variables for current session
+export DOTNET_ROOT=/root/.dotnet
+export PATH=/root/.dotnet:$PATH
+
+# Persist to .bashrc so it's available in future shells
+echo 'export DOTNET_ROOT=/root/.dotnet' >> ~/.bashrc
+echo 'export PATH=/root/.dotnet:$PATH'      >> ~/.bashrc
+
+# Step 4: Confirm installation
+if ! command -v dotnet &>/dev/null; then
+  echo "dotnet command not found after installation. Please check the install logs." >&2
+  exit 1
+fi
+
+echo "Installed .NET version: $(dotnet --version)"
+echo ".NET SDK $dotnet_version setup complete"

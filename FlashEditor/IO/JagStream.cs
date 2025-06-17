@@ -54,7 +54,7 @@ namespace FlashEditor {
         /// If the mark is defined then it is discarded.
         /// </summary>
         /// <returns>The buffer</returns>
-        internal JagStream Flip() {
+        public JagStream Flip() {
             if(Position == 0 && Length > 0)
                 throw new IOException("Idiot you're destroying the stream");
             SetLength(Position);
@@ -275,7 +275,7 @@ namespace FlashEditor {
         /// Writes a 0-terminated Jagex string using the cache’s
         /// modified CP-1252 encoding (bytes 0-255).
         /// </summary>
-        internal void WriteString(string s)
+        public void WriteJagexString(string s)
         {
             foreach (char c in s)
             {
@@ -352,15 +352,15 @@ namespace FlashEditor {
             WriteShort((short) value);
         }
 
-        internal void WriteMedium(int value) {
+        public void WriteMedium(int value) {
             WriteBytes(3, value);
         }
 
-        internal void WriteMedium(long value) {
+        public void WriteMedium(long value) {
             WriteBytes(3, (int) value);
         }
 
-        internal void WriteVarInt(int var63) {
+        public void WriteVarInt(int var63) {
             throw new NotImplementedException();
         }
 
@@ -372,27 +372,27 @@ namespace FlashEditor {
             WriteInteger((int) value);
         }
 
-        internal int ReadShort() {
+        public int ReadShort() {
             int i = ReadUnsignedShort();
             return i > 32767 ? i -= 0x10000 : i;
         }
 
         //Returns a substream starting at ptr with length bytes
 
-        internal JagStream GetSubStream(int length, long ptr) {
+        public JagStream GetSubStream(int length, long ptr) {
             Seek(ptr);
             return GetSubStream(length);
         }
 
-        internal JagStream GetSubStream(int length) {
+        public JagStream GetSubStream(int length) {
             return new JagStream(ReadBytes(length));
         }
 
-        internal byte[] ReadBytes(long length) {
+        public byte[] ReadBytes(long length) {
             return ReadBytes((int) length);
         }
 
-        internal byte[] ReadBytes(int length) {
+        public byte[] ReadBytes(int length) {
             byte[] buf = new byte[length];
             for(int k = 0; k < length; k++)
                 buf[k] = (byte) ReadByte();

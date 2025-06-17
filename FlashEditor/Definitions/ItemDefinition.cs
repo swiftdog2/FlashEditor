@@ -386,7 +386,7 @@ namespace FlashEditor
 
             /* model & basic */
             Emit(1, () => o.WriteShort(inventoryModelId));
-            if (!string.IsNullOrEmpty(name)) Emit(2, () => o.WriteString(name));
+            if (!string.IsNullOrEmpty(name)) Emit(2, () => o.WriteJagexString(name));
             Emit(3, () => o.WriteShort(modelZoom));
             Emit(4, () => o.WriteShort(modelZoom));
             Emit(5, () => o.WriteShort(modelRotation1));
@@ -414,11 +414,11 @@ namespace FlashEditor
             /* ground / inventory actions */
             for (int i = 0; i < 5; i++)
                 if (groundOptions[i] != null)
-                    Emit(30 + i, () => o.WriteString(groundOptions[i]));
+                    Emit(30 + i, () => o.WriteJagexString(groundOptions[i]));
 
             for (int i = 0; i < 5; i++)
                 if (inventoryOptions[i] != null)
-                    Emit(35 + i, () => o.WriteString(inventoryOptions[i]));
+                    Emit(35 + i, () => o.WriteJagexString(inventoryOptions[i]));
 
             /* recolour */
             if (originalModelColors != null)
@@ -522,7 +522,7 @@ namespace FlashEditor
             /* extra inventory ops 150-154 */
             for (int i = 0; i < 5; i++)
                 if (extraInventoryOps[i] != null)
-                    Emit(150 + i, () => o.WriteString(extraInventoryOps[i]));
+                    Emit(150 + i, () => o.WriteJagexString(extraInventoryOps[i]));
 
             /* params */
             if (itemParams != null && itemParams.Count > 0)
@@ -534,7 +534,7 @@ namespace FlashEditor
                         bool isStr = kv.Value is string;
                         o.WriteByte((byte)(isStr ? 1 : 0));
                         o.WriteMedium(kv.Key);
-                        if (isStr) o.WriteString((string)kv.Value);
+                        if (isStr) o.WriteJagexString((string)kv.Value);
                         else o.WriteInteger((int)kv.Value);
                     }
                 });
