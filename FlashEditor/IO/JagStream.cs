@@ -1,16 +1,15 @@
-﻿using static FlashEditor.utils.DebugUtil;
-using FlashEditor.utils;
+﻿using FlashEditor.utils;
 using System;
+using System.Buffers;
 using System.IO;
 using System.Text;
+using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor {
     public class JagStream : MemoryStream {
         public JagStream(int size) : base(size) { }
         public JagStream(byte[] buffer) : base(buffer) { }
         public JagStream() { }
-
-        private static readonly StringBuilder SharedBuilder = new StringBuilder();
 
         /*
          * The modified set of 'extended ASCII' characters used by the client.
@@ -99,41 +98,50 @@ namespace FlashEditor {
          * Methods for reading data from the stream
          */
 
+        /// <summary>
+        /// Reads a variable-length int exactly like Java’s “var-int”.
+        /// Each byte contributes 7 data bits; the MSB is the “more” flag.
+        /// </summary>
         public int ReadVarInt() {
-            byte val = (byte) ReadByte();
+            int value = 0;
+            int shift = 0;
+            byte chunk;
 
-            int k;
-            for(k = 0; val < 0; val = (byte) ReadByte())
-                k = (k | val & 0x7F) << 7;
+            do
+            {
+                chunk = ReadUnsignedByte();              // 0-255, never negative
+                value |= (chunk & 0x7F) << shift;         // data bits
+                shift += 7;
+            }
+            while ((chunk & 0x80) != 0);                  // MSB set ⇒ more bytes
 
-            return k | val;
+            return value;
         }
 
         /// <summary>
         /// Read's smart_v1 from buffer.
         /// </summary>
         /// <returns></returns>
-        public int ReadSmart() {
-            int first = ReadUnsignedByte();
-            Position -= 1; // go back a one.
-            if(first < 128)
-                return ReadUnsignedByte();
-            return ReadUnsignedShort() - 32768;
+        public int ReadSmart()
+        {
+            int peek = GetBuffer()[Position];          // no advance
+            if (peek < 128)
+                return ReadUnsignedByte();         // consumes one
+            return ReadUnsignedShort() - 32768;    // consumes two
         }
 
-        public int ReadUnsignedSmart() {
-            int first = ReadUnsignedByte();
-            Position -= 1; // go back a one.
-            return first < 128 ? ReadUnsignedByte() - 64
-                    : ReadUnsignedShort() - 49152;
+        public int ReadUnsignedSmart()
+        {
+            int peek = GetBuffer()[Position];
+            return peek < 128 ? ReadUnsignedByte() - 64
+                              : ReadUnsignedShort() - 49152;
         }
 
-        public int ReadSpecialSmart() {
-            int first = ReadUnsignedByte();
-            Position -= 1; // go back a one.
-            if(first < 128)
-                return ReadUnsignedByte() - 1;
-            return ReadUnsignedShort() - 32769;
+        public int ReadSpecialSmart()
+        {
+            int peek = GetBuffer()[Position];
+            return peek < 128 ? ReadUnsignedByte() - 1
+                              : ReadUnsignedShort() - 32769;
         }
 
         public int ReadInt() {
@@ -152,14 +160,23 @@ namespace FlashEditor {
             return (byte) result;
         }
 
-        internal int[] ReadUnsignedByteArray(int size) {
-            Span<byte> byteBuffer = size <= 1024 ? stackalloc byte[size] : new byte[size];
-            Read(byteBuffer);
+        internal int[] ReadUnsignedByteArray(int size)
+        {
+            byte[]? rented = null;
+            Span<byte> span = size <= 1024
+                ? stackalloc byte[size]                     // on the stack
+                : (rented = ArrayPool<byte>.Shared.Rent(size)).AsSpan(0, size);
+
+            int read = Read(span);                          // MemoryStream.Read
+            if (read != size)
+                throw new EndOfStreamException($"Needed {size} bytes, got {read}");
 
             int[] result = new int[size];
             for (int i = 0; i < size; i++)
-                result[i] = byteBuffer[i];
+                result[i] = span[i];
 
+            if (rented != null)
+                ArrayPool<byte>.Shared.Return(rented);      // return to pool
             return result;
         }
 
@@ -179,29 +196,49 @@ namespace FlashEditor {
         public int ReadUnsignedShort() {
             return (ReadByte() << 8) | ReadByte();
         }
-        public int[] ReadUnsignedShortArray(int size) {
-            Span<byte> byteBuffer = size * 2 <= 2048 ? stackalloc byte[size * 2] : new byte[size * 2];
-            Read(byteBuffer);
 
-            int[] shortBuffer = new int[size];
-            int k = 0;
-            for (int i = 0; i < size; i++) {
-                shortBuffer[i] = (byteBuffer[k] << 8) | byteBuffer[k + 1];
-                k += 2;
+        /// <summary>
+        /// Reads <paramref name="size"/> unsigned 16-bit values (big-endian) into an int[]
+        /// without allocating on the LOH.
+        /// </summary>
+        public int[] ReadUnsignedShortArray(int size)
+        {
+            int byteCount = size * 2;
+
+            byte[]? rent = null;
+            Span<byte> span = byteCount <= 2048
+                ? stackalloc byte[byteCount]                     // on the stack
+                : (rent = ArrayPool<byte>.Shared.Rent(byteCount)).AsSpan(0, byteCount);
+
+            try
+            {
+                int read = Read(span);
+                if (read != byteCount)
+                    throw new EndOfStreamException($"Wanted {byteCount} bytes, got {read}");
+
+                int[] result = new int[size];
+                for (int i = 0, j = 0; i < size; i++, j += 2)
+                    result[i] = (span[j] << 8) | span[j + 1];
+
+                return result;
             }
-
-            return shortBuffer;
+            finally
+            {
+                if (rent != null)
+                    ArrayPool<byte>.Shared.Return(rent);
+            }
         }
 
         internal string ReadString2() {
-            SharedBuilder.Clear();
+            StringBuilder sb = new StringBuilder();
+
             int b;
 
             while((b = ReadByte()) != 0)
-                SharedBuilder.Append((char) b);
+                sb.Append((char) b);
 
             WriteLine("'");
-            return SharedBuilder.ToString();
+            return sb.ToString();
         }
 
         /**
@@ -211,7 +248,8 @@ namespace FlashEditor {
          * @return The decoded string.
          */
         public string ReadJagexString() {
-            SharedBuilder.Clear();
+            StringBuilder sb = new StringBuilder();
+
             int b;
             while((b = ReadByte()) != 0) {
                 //If the byte read is between 127 and 159, it should be remapped
@@ -219,13 +257,13 @@ namespace FlashEditor {
                     char c = CHARACTERS[b - 128];
                     if(c == '\0') //if it needs to be remapped, as per the characters array
                         c = '\u003F'; //replace with question mark as placeholder to avoid rendering issues
-                    SharedBuilder.Append(c);
+                    sb.Append(c);
                 } else {
-                    SharedBuilder.Append((char) b);
+                    sb.Append((char) b);
                 }
             }
 
-            return SharedBuilder.ToString();
+            return sb.ToString();
         }
 
         internal byte Get(int pos) {
@@ -245,30 +283,6 @@ namespace FlashEditor {
 
         internal void Skip(int skip) {
             Position += skip;
-        }
-
-        //Seems to work better? idk tbh my brain is fried...
-        public string ReadFlashString() {
-            SharedBuilder.Clear();
-            int b;
-            while((b = ReadByte()) != 0) {
-                if(b >= 128 && b < 160) {
-                    char c = CHARACTERS[b - 128];
-                    SharedBuilder.Append(c == (char) 0 ? (char) 63 : c);
-                } else {
-                    //Nobody seems to have this (including client, openrs, etc)
-                    //Seems to eliminate issues reading strings not terminated by 0
-                    if(b < 32) {
-                        //But also should we reduce the position because we over-read the stream?
-                        Position--;
-                        break;
-                    }
-
-                        SharedBuilder.Append((char) b);
-                }
-            }
-
-            return SharedBuilder.ToString();
         }
 
         /// <summary>
@@ -294,84 +308,39 @@ namespace FlashEditor {
         public void WriteByte(int value) => WriteByte((byte)value);
 
 
-        /**
-         * Interesting method ripped from kfricilone's openRS
-         * Converts the contents of the specified byte buffer to a string, which is
-        * formatted similarly to the output of the {@link Arrays#toString()}
-        * method.
-        * 
-        * @param buffer
-        *            The buffer.
-        * @return The string.
-        */
-        /*
-        public static String toString(ByteBuffer buffer) {
-            StringBuilder builder = new StringBuilder("[");
-            for(int i = 0; i < buffer.limit(); i++) {
-                String hex = Integer.toHexString(buffer.get(i) & 0xFF).toUpperCase();
-                if(hex.length() == 1)
-                    hex = "0" + hex;
-
-                builder.append("0x").append(hex);
-                if(i != buffer.limit() - 1) {
-                    builder.append(", ");
-                }
-            }
-            builder.append("]");
-            return builder.toString();
-        }
-        */
-
         /// <summary>
         /// Writes a Java‐style signed byte (-128..127) into the stream.
         /// </summary>
-        public void WriteSignedByte(sbyte value)
-        {
+        public void WriteSignedByte(sbyte value) {
             // cast to byte will wrap negative values into their two’s‐complement 0..255 form
             WriteByte((byte)value);
         }
 
-        internal void WriteBytes(int bytes, object value) {
-            Span<byte> data = bytes <= 8 ? stackalloc byte[bytes] : new byte[bytes];
-
-            int val = value switch {
-                int i => i,
-                short s => (ushort)s,
-                _ => 0
-            };
-
+        internal void WriteBytes(int bytes, long value)
+        {
+            Span<byte> tmp = bytes <= 8 ? stackalloc byte[bytes] : new byte[bytes];
             for (int i = 0; i < bytes; i++)
-                data[i] = (byte)(val >> (8 * (bytes - i - 1)));
-
-            Write(data);
+                tmp[i] = (byte)(value >> (8 * (bytes - i - 1)));
+            Write(tmp);
         }
 
-        public void WriteShort(short value) {
-            WriteBytes(2, value);
-        }
-
-        public void WriteShort(int value) {
-            WriteShort((short) value);
-        }
-
-        public void WriteMedium(int value) {
-            WriteBytes(3, value);
-        }
-
-        public void WriteMedium(long value) {
-            WriteBytes(3, (int) value);
-        }
-
-        public void WriteVarInt(int var63) {
-            throw new NotImplementedException();
-        }
-
-        public void WriteInteger(int value) {
-            WriteBytes(4, value);
-        }
-
-        public void WriteInteger(long value) {
-            WriteInteger((int) value);
+        public void WriteShort(short v) => WriteBytes(2, v);
+        public void WriteMedium(int v) => WriteBytes(3, v);
+        public void WriteInteger(int v) => WriteBytes(4, v);
+        public void WriteLong(long v) => WriteBytes(8, v);
+        public void WriteShort(int value) => WriteShort((short)value);
+        public void WriteMedium(long value) => WriteBytes(3, value);        // cast not needed; WriteBytes takes long
+        public void WriteInteger(long value) => WriteInteger((int)value);   // 4-byte truncation is intentional
+        
+        public void WriteVarInt(int value)
+        {
+            uint v = (uint)value;            // work in unsigned space
+            while (v >= 0x80)
+            {
+                WriteByte((byte)(v | 0x80)); // set "more" flag
+                v >>= 7;
+            }
+            WriteByte((byte)v);              // final byte, MSB clear
         }
 
         public int ReadShort() {
@@ -411,7 +380,7 @@ namespace FlashEditor {
         /// capacity, and the mark is discarded.
         /// </summary>
         public void Clear() {
-            Seek0();
+            Position = 0;
             SetLength(Capacity);
         }
 
