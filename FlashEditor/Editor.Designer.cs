@@ -644,72 +644,84 @@
             this.ItemName.AspectName = "name";
             this.ItemName.Text = "Name";
             this.ItemName.Width = 191;
+            this.ItemName.IsEditable = true;
             // 
             // InvModel
             // 
             this.InvModel.AspectName = "inventoryModelId";
             this.InvModel.Text = "InvModel";
             this.InvModel.Width = 78;
+            this.InvModel.IsEditable = true;
             // 
             // Male1
             // 
             this.Male1.AspectName = "maleWearModel1";
             this.Male1.Text = "ManModel1";
             this.Male1.Width = 87;
+            this.Male1.IsEditable = true;
             // 
             // Male2
             // 
             this.Male2.AspectName = "maleWearModel2";
             this.Male2.Text = "ManModel2";
             this.Male2.Width = 88;
+            this.Male2.IsEditable = true;
             // 
             // Female1
             // 
             this.Female1.AspectName = "femaleWearModel1";
             this.Female1.Text = "Female1";
             this.Female1.Width = 72;
+            this.Female1.IsEditable = true;
             // 
             // Female2
             // 
             this.Female2.AspectName = "femaleWearModel2";
             this.Female2.Text = "Female2";
             this.Female2.Width = 69;
+            this.Female2.IsEditable = true;
             // 
             // Rotate1
             // 
             this.Rotate1.AspectName = "modelRotation1";
             this.Rotate1.Text = "Rotate1";
             this.Rotate1.Width = 73;
+            this.Rotate1.IsEditable = true;
             // 
             // Rotate2
             // 
             this.Rotate2.AspectName = "modelRotation2";
             this.Rotate2.Text = "Rotate2";
             this.Rotate2.Width = 71;
+            this.Rotate2.IsEditable = true;
             //
             // valueColumn
             //
             this.valueColumn.AspectName = "value";
             this.valueColumn.Text = "Value";
             this.valueColumn.Width = 80;
+            this.valueColumn.IsEditable = true;
             //
             // stackableColumn
             //
             this.stackableColumn.AspectName = "stackable";
             this.stackableColumn.Text = "Stack";
             this.stackableColumn.Width = 60;
+            this.stackableColumn.IsEditable = true;
             //
             // equipSlotColumn
             //
             this.equipSlotColumn.AspectName = "equipSlotId";
             this.equipSlotColumn.Text = "Slot";
             this.equipSlotColumn.Width = 60;
+            this.equipSlotColumn.IsEditable = true;
             //
             // equipIdColumn
             //
             this.equipIdColumn.AspectName = "equipId";
             this.equipIdColumn.Text = "EquipId";
             this.equipIdColumn.Width = 70;
+            this.equipIdColumn.IsEditable = true;
             //
             // membersOnlyColumn
             //
@@ -717,6 +729,7 @@
             this.membersOnlyColumn.CheckBoxes = true;
             this.membersOnlyColumn.Text = "Members";
             this.membersOnlyColumn.Width = 80;
+            this.membersOnlyColumn.IsEditable = true;
             // 
             // SpriteEditorTab
             // 
