@@ -433,6 +433,7 @@ namespace FlashEditor
                                 {
                                     ObjectDefinition obj = cache.GetObjectDefinition(archiveId, file);
                                     obj.id = archiveId * filesPerArchive + file;
+                                    cache.objects[obj.id] = obj;
                                     objects.Add(obj);
                                 }
                                 catch (Exception ex)
@@ -535,6 +536,22 @@ namespace FlashEditor
             cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
 
             PrintDifferences(newDefinition, currentItem);
+        }
+
+        private void ObjectListView_CellEditFinished(object sender, CellEditEventArgs e)
+        {
+            ObjectDefinition newDef = (ObjectDefinition)e.RowObject;
+            cache.objects[newDef.id] = newDef;
+
+            var refTable = cache.GetReferenceTable(RSConstants.OBJECTS_DEFINITIONS_INDEX);
+            int filesPerArchive = refTable.GetEntry(refTable.GetEntries().Keys.First()).GetValidFileIds().Length;
+            int archiveId = newDef.id / filesPerArchive;
+            int entryId = newDef.id % filesPerArchive;
+
+            JagStream data = newDef.Encode();
+            cache.WriteEntry(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, entryId, data);
+
+            PrintDifferences(newDef, currentObject);
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e)
@@ -648,11 +665,19 @@ namespace FlashEditor
 
         internal ItemDefinition currentItem;
 
+        internal ObjectDefinition currentObject;
+
         private void ItemListView_CellEditStarting(object sender, CellEditEventArgs e)
         {
             //cache the item definition prior to editing
             currentItem = (ItemDefinition)ItemListView.SelectedObject;
             currentItem = currentItem.Clone();
+        }
+
+        private void ObjectListView_CellEditStarting(object sender, CellEditEventArgs e)
+        {
+            currentObject = (ObjectDefinition)ObjectListView.SelectedObject;
+            currentObject = currentObject.Clone();
         }
 
         private void button5_Click(object sender, EventArgs e)
