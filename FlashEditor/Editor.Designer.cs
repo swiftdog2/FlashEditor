@@ -952,11 +952,11 @@
             // 
             // npcIdColumn
             // 
-            npcIdColumn.AspectName = "id";
-            npcIdColumn.Groupable = false;
-            npcIdColumn.Searchable = false;
-            npcIdColumn.Text = "ID";
-            npcIdColumn.Width = 78;
+            this.npcIdColumn.AspectName = "id";
+            this.npcIdColumn.Groupable = false;
+            this.npcIdColumn.Searchable = false;
+            this.npcIdColumn.Text = "ID";
+            this.npcIdColumn.Width = 78;
             // 
             // nameColumn
             // 
@@ -1097,43 +1097,55 @@
             button8.UseVisualStyleBackColor = false;
             // 
             // ObjectListView
-            // 
-            ObjectListView.AllColumns.Add(objectIdColumn);
-            ObjectListView.AllColumns.Add(objectNameColumn);
-            ObjectListView.AllColumns.Add(sizeXColumn);
-            ObjectListView.AllColumns.Add(sizeYColumn);
-            ObjectListView.AllColumns.Add(walkableColumn);
-            ObjectListView.AllColumns.Add(clippedColumn);
-            ObjectListView.AllColumns.Add(ambientSoundColumn);
-            ObjectListView.AllColumns.Add(morphVarbitColumn);
-            ObjectListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            ObjectListView.BackColor = Color.White;
-            ObjectListView.CellEditUseWholeCell = false;
-            ObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
-            ObjectListView.Font = new Font("Consolas", 11.25F);
-            ObjectListView.FullRowSelect = true;
-            ObjectListView.GridLines = true;
-            ObjectListView.Location = new Point(-2, -2);
-            ObjectListView.Name = "ObjectListView";
-            ObjectListView.RowHeight = 10;
-            ObjectListView.ShowGroups = false;
-            ObjectListView.ShowImagesOnSubItems = true;
-            ObjectListView.Size = new Size(853, 535);
-            ObjectListView.TabIndex = 18;
-            ObjectListView.UseCompatibleStateImageBehavior = false;
-            ObjectListView.View = View.Details;
-            ObjectListView.VirtualMode = true;
-            ObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
-            ObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
-            // 
+            //
+            this.ObjectListView.AllColumns.Add(this.objectIdColumn);
+            this.ObjectListView.AllColumns.Add(this.objectNameColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeXColumn);
+            this.ObjectListView.AllColumns.Add(this.sizeYColumn);
+            this.ObjectListView.AllColumns.Add(this.walkableColumn);
+            this.ObjectListView.AllColumns.Add(this.clippedColumn);
+            this.ObjectListView.AllColumns.Add(this.ambientSoundColumn);
+            this.ObjectListView.AllColumns.Add(this.morphVarbitColumn);
+            this.ObjectListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.ObjectListView.BackColor = System.Drawing.Color.White;
+            this.ObjectListView.CellEditUseWholeCell = false;
+            this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.objectIdColumn,
+            this.objectNameColumn,
+            this.sizeXColumn,
+            this.sizeYColumn,
+            this.walkableColumn,
+            this.clippedColumn,
+            this.ambientSoundColumn,
+            this.morphVarbitColumn});
+            this.ObjectListView.Cursor = System.Windows.Forms.Cursors.Default;
+            this.ObjectListView.Font = new System.Drawing.Font("Consolas", 11.25F);
+            this.ObjectListView.FullRowSelect = true;
+            this.ObjectListView.GridLines = true;
+            this.ObjectListView.HideSelection = false;
+            this.ObjectListView.Location = new System.Drawing.Point(-2, -2);
+            this.ObjectListView.Name = "ObjectListView";
+            this.ObjectListView.RowHeight = 10;
+            this.ObjectListView.ShowGroups = false;
+            this.ObjectListView.ShowImagesOnSubItems = true;
+            this.ObjectListView.Size = new System.Drawing.Size(853, 535);
+            this.ObjectListView.TabIndex = 18;
+            this.ObjectListView.UseCompatibleStateImageBehavior = false;
+            this.ObjectListView.View = System.Windows.Forms.View.Details;
+            this.ObjectListView.VirtualMode = true;
+            this.ObjectListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditFinished);
+            this.ObjectListView.CellEditStarting += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditStarting);
+            //
             // objectIdColumn
-            // 
-            objectIdColumn.AspectName = "id";
-            objectIdColumn.Groupable = false;
-            objectIdColumn.Searchable = false;
-            objectIdColumn.Text = "ID";
-            objectIdColumn.Width = 78;
-            // 
+            //
+            this.objectIdColumn.AspectName = "id";
+            this.objectIdColumn.Groupable = false;
+            this.objectIdColumn.Searchable = false;
+            this.objectIdColumn.Text = "ID";
+            this.objectIdColumn.Width = 78;
+            //
             // objectNameColumn
             // 
             objectNameColumn.AspectName = "name";

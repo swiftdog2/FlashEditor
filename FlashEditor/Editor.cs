@@ -425,6 +425,7 @@ namespace FlashEditor
                                 {
                                     NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
                                     npc.SetId(archiveId * 128 + file); //Set the NPC ID
+                                    cache.npcs[npc.id] = npc;
                                     npcs.Add(npc);
                                 }
                                 catch (Exception ex)
@@ -680,6 +681,20 @@ namespace FlashEditor
             PrintDifferences(newDef, currentObject);
         }
 
+        private void NPCListView_CellEditFinished(object sender, CellEditEventArgs e)
+        {
+            NPCDefinition newDef = (NPCDefinition)e.RowObject;
+            cache.npcs[newDef.id] = newDef;
+
+            int archiveId = newDef.id / 128;
+            int entryId = newDef.id % 128;
+
+            JagStream data = newDef.Encode();
+            cache.WriteEntry(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, entryId, data);
+
+            PrintDifferences(newDef, currentNpc);
+        }
+
         private void ExportItemDatBtn_Click(object sender, EventArgs e)
         {
             ItemLoadingLabel.Text = "Status: Dumping " + ItemListView.SelectedObjects.Count + " Items...";
@@ -795,6 +810,8 @@ namespace FlashEditor
 
         internal ItemDefinition currentItem;
 
+        internal NPCDefinition currentNpc;
+
         internal ObjectDefinition currentObject;
 
         private void ItemListView_CellEditStarting(object sender, CellEditEventArgs e)
@@ -808,6 +825,12 @@ namespace FlashEditor
         {
             currentObject = (ObjectDefinition)ObjectListView.SelectedObject;
             currentObject = currentObject.Clone();
+        }
+
+        private void NPCListView_CellEditStarting(object sender, CellEditEventArgs e)
+        {
+            currentNpc = (NPCDefinition)NPCListView.SelectedObject;
+            currentNpc = currentNpc.Clone();
         }
 
         private void button5_Click(object sender, EventArgs e)

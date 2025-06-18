@@ -1,8 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace FlashEditor
 {
-    internal class NPCDefinition : IDefinition
+    internal class NPCDefinition : ICloneable, IDefinition
     {
         sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;
@@ -741,5 +742,11 @@ namespace FlashEditor
         {
             this.id = id;
         }
+
+        /// <summary>
+        /// Creates a shallow copy of this <see cref="NPCDefinition"/>.
+        /// </summary>
+        public NPCDefinition Clone() => (NPCDefinition)MemberwiseClone();
+        object ICloneable.Clone() => Clone();
     }
 }
