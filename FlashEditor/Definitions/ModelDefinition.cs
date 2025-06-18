@@ -200,9 +200,9 @@ namespace FlashEditor.Definitions
             for (int i = 0; i < VertexCount; i++)
             {
                 int flags = s1.ReadUnsignedByte();
-                int dx = (flags & 1) != 0 ? ReadSmartSigned(s3) : 0;
-                int dy = (flags & 2) != 0 ? ReadSmartSigned(s3) : 0;
-                int dz = (flags & 4) != 0 ? ReadSmartSigned(s3) : 0;
+                int dx = (flags & 1) != 0 ? s3.ReadSignedSmart() : 0;
+                int dy = (flags & 2) != 0 ? s3.ReadSignedSmart() : 0;
+                int dz = (flags & 4) != 0 ? s3.ReadSignedSmart() : 0;
                 vx += dx; vy += dy; vz += dz;
                 VertX[i] = vx; VertY[i] = vy; VertZ[i] = vz;
                 if ((f.VertFlags & 1) != 0) VertSkins![i] = s4.ReadUnsignedByte();
@@ -229,13 +229,13 @@ namespace FlashEditor.Definitions
                 int opcode = sIndA.ReadUnsignedByte();
                 if (opcode == 1)
                 {
-                    lastA = ReadSmartUnsigned(sIndB);
+                    lastA = sIndB.ReadUnsignedSmart();
                     lastIndex += lastA;
                     IndA[i] = (ushort)lastIndex;
-                    lastB = ReadSmartUnsigned(sIndB);
+                    lastB = sIndB.ReadUnsignedSmart();
                     lastIndex += lastB;
                     IndB[i] = (ushort)lastIndex;
-                    lastC = ReadSmartUnsigned(sIndB);
+                    lastC = sIndB.ReadUnsignedSmart();
                     lastIndex += lastC;
                     IndC[i] = (ushort)lastIndex;
                 }
@@ -243,7 +243,7 @@ namespace FlashEditor.Definitions
                 {
                     IndA[i] = IndA[i - 1];
                     IndB[i] = IndC[i - 1];
-                    lastC = ReadSmartUnsigned(sIndB);
+                    lastC = sIndB.ReadUnsignedSmart();
                     lastIndex += lastC;
                     IndC[i] = (ushort)lastIndex;
                 }
@@ -251,7 +251,7 @@ namespace FlashEditor.Definitions
                 {
                     IndA[i] = IndC[i - 1];
                     IndB[i] = IndB[i - 1];
-                    lastC = ReadSmartUnsigned(sIndB);
+                    lastC = sIndB.ReadUnsignedSmart();
                     lastIndex += lastC;
                     IndC[i] = (ushort)lastIndex;
                 }
@@ -259,7 +259,7 @@ namespace FlashEditor.Definitions
                 {
                     IndA[i] = IndB[i - 1];
                     IndB[i] = IndA[i - 1];
-                    lastC = ReadSmartUnsigned(sIndB);
+                    lastC = sIndB.ReadUnsignedSmart();
                     lastIndex += lastC;
                     IndC[i] = (ushort)lastIndex;
                 }
@@ -281,19 +281,6 @@ namespace FlashEditor.Definitions
         #endregion
 
         #region ≡ helper methods
-
-        private static int ReadSmartUnsigned(JagStream s)
-        {
-            int peek = s.PeekUnsignedByte();
-            return peek < 128 ? s.ReadUnsignedByte() : s.ReadUnsignedShort() - 32768;
-        }
-
-        private static int ReadSmartSigned(JagStream s)
-        {
-            int val = ReadSmartUnsigned(s);
-            // Zig‑zag decode – see Jagex smart A
-            return (val >> 1) ^ (-(val & 1));
-        }
 
         private static readonly int[] _hsl2Rgb = BuildHslLut();
 
