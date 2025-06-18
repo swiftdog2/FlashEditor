@@ -66,21 +66,27 @@ namespace FlashEditor.cache {
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
 
+            //--- allocate a single reusable heap buffer up-front
+            byte[] smallBuffer = new byte[4096];
+
             //Read the data into the buffers
-            for(int chunk = 0; chunk < archive.chunks; chunk++) {
-                for(int id = 0; id < size; id++) {
-                    //Get the length of this chunk
+            for (int chunk = 0; chunk < archive.chunks; chunk++)
+            {
+                for (int id = 0; id < size; id++)
+                {
                     int chunkSize = chunkSizes[chunk][id];
 
-                    Span<byte> temp = chunkSize <= 4096 ? stackalloc byte[chunkSize] : new byte[chunkSize];
-                    stream.Read(temp);
+                    Span<byte> temp = chunkSize <= 4096
+                        ? smallBuffer.AsSpan(0, chunkSize)         // reuse stack-safe buffer
+                        : new byte[chunkSize];                     // allocate ONLY when > 4 KB
 
+                    stream.Read(temp);
                     archive.entries[id].Write(temp);
                 }
             }
 
             //Flip all of the buffers
-            for(int id = 0; id < size; id++)
+            for (int id = 0; id < size; id++)
                 archive.entries[id].Flip();
 
             //Return the archive
