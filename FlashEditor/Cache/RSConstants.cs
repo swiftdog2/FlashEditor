@@ -89,6 +89,14 @@ namespace FlashEditor.cache {
             "THEORA_AKA_CUTSCENES",
             "VORBIS"};
 
+        /// <summary>
+        /// Return a short, user-friendly name for a cache index.
+        /// </summary>
+        /// <remarks>
+        /// This is mainly for GUI display (tab titles, labels, logging).  
+        /// If you add new indexes later, extend the <c>switch</c>.
+        /// </remarks>
+
         internal static string GetContainerNameForType(int type) {
             if(type >= containerNames.Length) {
                 if(type == META_INDEX)
