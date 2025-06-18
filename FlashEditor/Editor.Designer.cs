@@ -1006,6 +1006,7 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.NPCListView.BackColor = System.Drawing.Color.White;
+            this.NPCListView.CellEditActivation = BrightIdeasSoftware.ObjectListView.CellEditActivateMode.DoubleClick;
             this.NPCListView.CellEditUseWholeCell = false;
             this.NPCListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.npcIdColumn,
@@ -1036,11 +1037,14 @@
             this.NPCListView.UseCompatibleStateImageBehavior = false;
             this.NPCListView.View = System.Windows.Forms.View.Details;
             this.NPCListView.VirtualMode = true;
+            this.NPCListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.NPCListView_CellEditFinished);
+            this.NPCListView.CellEditStarting += new BrightIdeasSoftware.CellEditEventHandler(this.NPCListView_CellEditStarting);
             // 
             // npcIdColumn
             // 
             this.npcIdColumn.AspectName = "id";
             this.npcIdColumn.Groupable = false;
+            this.npcIdColumn.IsEditable = false;
             this.npcIdColumn.Searchable = false;
             this.npcIdColumn.Text = "ID";
             this.npcIdColumn.Width = 78;
@@ -1198,6 +1202,7 @@
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             this.ObjectListView.BackColor = System.Drawing.Color.White;
+            this.ObjectListView.CellEditActivation = BrightIdeasSoftware.ObjectListView.CellEditActivateMode.DoubleClick;
             this.ObjectListView.CellEditUseWholeCell = false;
             this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.objectIdColumn,
@@ -1230,6 +1235,7 @@
             //
             this.objectIdColumn.AspectName = "id";
             this.objectIdColumn.Groupable = false;
+            this.objectIdColumn.IsEditable = false;
             this.objectIdColumn.Searchable = false;
             this.objectIdColumn.Text = "ID";
             this.objectIdColumn.Width = 78;

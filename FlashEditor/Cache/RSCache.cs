@@ -19,6 +19,7 @@ namespace FlashEditor.cache {
         //Better to make generic type Definition and store each of them under their respective indexes but that's for later anyway
         public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
         public SortedDictionary<int, ObjectDefinition> objects = new SortedDictionary<int, ObjectDefinition>();
+        public SortedDictionary<int, NPCDefinition> npcs = new SortedDictionary<int, NPCDefinition>();
 
         /// <summary>
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables
