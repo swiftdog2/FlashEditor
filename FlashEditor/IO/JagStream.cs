@@ -162,7 +162,18 @@ namespace FlashEditor {
         }
 
         public int ReadInt() {
-            return (ReadUnsignedByte() << 24) + (ReadUnsignedByte() << 16) + (ReadUnsignedByte() << 8) + ReadUnsignedByte();
+            int b1 = ReadUnsignedByte();
+            int b2 = ReadUnsignedByte();
+            int b3 = ReadUnsignedByte();
+            int b4 = ReadUnsignedByte();
+            return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+        }
+
+        public int ReadUnsignedShort()
+        {
+            int hi = ReadUnsignedByte();          // 0-255
+            int lo = ReadUnsignedByte();          // 0-255
+            return (hi << 8) | lo;
         }
 
         internal int ReadMedium() {
@@ -170,7 +181,7 @@ namespace FlashEditor {
         }
 
         internal byte ReadUnsignedByte() {
-            int result = ReadByte();
+            int result = ReadByte() & 0xFF;
             if(result == -1)
                 throw new EndOfStreamException("End of stream bro");
 
@@ -225,10 +236,6 @@ namespace FlashEditor {
             if (b == -1)
                 throw new EndOfStreamException("End of stream");
             return (sbyte)b;             // cast preserves the sign
-        }
-
-        public int ReadUnsignedShort() {
-            return (ReadByte() << 8) | ReadByte();
         }
 
         /// <summary>

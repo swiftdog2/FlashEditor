@@ -2,6 +2,7 @@
 using FlashEditor.utils;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor.cache {
@@ -55,6 +56,15 @@ namespace FlashEditor.cache {
 
                     //And add it to the size of the whole file
                     entrySizes[id] += cumulativeChunkSize;
+
+                    // log the first few numbers only, so output stays short
+                    if (chunk < 4 && id < 4)
+                        Debug($"[Model-debug] row={chunk} col={id}  delta={delta}", LOG_DETAIL.INSANE);
+
+                    // sanity: negative deltas should never occur
+                    if (delta < 0)
+                        Debug($"[Model-debug-ERR]  NEG delta at row {chunk}, col {id}: {delta}", LOG_DETAIL.INSANE);
+
                     Debug("\t- Entry " + id + " size: " + cumulativeChunkSize, LOG_DETAIL.INSANE);
                 }
             }
@@ -69,19 +79,23 @@ namespace FlashEditor.cache {
             //--- allocate a single reusable heap buffer up-front
             byte[] smallBuffer = new byte[4096];
 
-            //Read the data into the buffers
+            //Read the data into the buffers 
             for (int chunk = 0; chunk < archive.chunks; chunk++)
             {
                 for (int id = 0; id < size; id++)
                 {
+                    //Get the length of this chunk
                     int chunkSize = chunkSizes[chunk][id];
 
-                    Span<byte> temp = chunkSize <= 4096
-                        ? smallBuffer.AsSpan(0, chunkSize)         // reuse stack-safe buffer
-                        : new byte[chunkSize];                     // allocate ONLY when > 4 KB
+                    if (chunk < 4 && id < 4)
+                        Debug($"[Model-debug] COPY row={chunk} col={id}  len={chunkSize}", LOG_DETAIL.BASIC);
 
-                    stream.Read(temp);
-                    archive.entries[id].Write(temp);
+                    //Copy this chunk into a temporary buffer
+                    byte[] temp = new byte[chunkSize];
+                    stream.Read(temp, 0, temp.Length);
+
+                    //Copy the temporary buffer into the file buffer
+                    archive.entries[id].Write(temp, 0, temp.Length);
                 }
             }
 

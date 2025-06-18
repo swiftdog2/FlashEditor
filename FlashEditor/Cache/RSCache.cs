@@ -409,7 +409,9 @@ namespace FlashEditor.cache
             // Otherwise archives with sparse file ids decode incorrectly and lookups like file=256 fail.
 
             Debug("Reading " + RSConstants.GetContainerNameForType(type) + ", Archive" + archive + " - file " + file, LOG_DETAIL.ADVANCED);
-            return GetArchive(GetContainer(type, archive), entry.GetValidFileIds().Length).GetEntry(file);
+
+            int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
+            return GetArchive(GetContainer(type, archive), realFiles).GetEntry(file);
         }
 
         /// <summary>
