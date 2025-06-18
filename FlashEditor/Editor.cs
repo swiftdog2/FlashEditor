@@ -1,22 +1,26 @@
-﻿using static FlashEditor.utils.DebugUtil;
+﻿using BrightIdeasSoftware;
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
+using FlashEditor.Definitions;
+using FlashEditor.Tests;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.IO;
-using System.Windows.Forms;
 using System.ComponentModel;
 using System.Diagnostics;
-using BrightIdeasSoftware;
-using FlashEditor.Tests;
-using FlashEditor.Definitions;
+using System.IO;
+using System.Linq;
+using System.Windows.Forms;
+using static FlashEditor.utils.DebugUtil;
+using OpenTK.Graphics.OpenGL;
+using FlashEditor.utils;     // old 4.0 namespace
+
 
 namespace FlashEditor
 {
     public partial class Editor : Form
     {
         internal RSCache cache;
+        private readonly ModelRenderer _modelRenderer = new ModelRenderer();
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
@@ -26,6 +30,7 @@ namespace FlashEditor
             RSConstants.NPC_DEFINITIONS_INDEX,
             RSConstants.OBJECTS_DEFINITIONS_INDEX,
             RSConstants.INTERFACE_DEFINITIONS_INDEX,
+            RSConstants.MODELS_INDEX
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -34,6 +39,32 @@ namespace FlashEditor
         public Editor()
         {
             InitializeComponent();
+
+            // 1 – attach GL handlers
+            glControl.Load += Gl_Load;
+            glControl.Paint += Gl_Paint;
+            glControl.Resize += (_, _) => glControl.Invalidate();
+
+            // 2 – simple game-loop (comment out if it hogs CPU later)
+            Application.Idle += (_, _) => glControl.Invalidate();
+        }
+
+        private void Gl_Load(object sender, EventArgs e)
+        {
+            GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
+            GL.Enable(EnableCap.DepthTest);
+        }
+
+        private void Gl_Paint(object sender, PaintEventArgs e)
+        {
+            glControl.MakeCurrent();
+            GL.Viewport(0, 0, glControl.Width, glControl.Height);
+
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+            _modelRenderer.Draw();
+
+            glControl.SwapBuffers();
         }
 
         public bool IsCacheDirSet()
@@ -71,6 +102,7 @@ namespace FlashEditor
             ItemListView.AlwaysGroupByColumn = ItemID;
             SpriteListView.AlwaysGroupByColumn = ID;
             ObjectListView.AlwaysGroupByColumn = objectIdColumn;
+            ModelListView.AlwaysGroupByColumn = ModelID;
         }
 
         private void LoadCache()
@@ -171,7 +203,8 @@ namespace FlashEditor
             switch (type)
             {
                 case RSConstants.META_INDEX:
-                    bgw.DoWork += delegate {
+                    bgw.DoWork += delegate
+                    {
                         List<RSReferenceTable> refTables = new List<RSReferenceTable>();
                         for (int k = 0; k < cache.referenceTables.Length; k++)
                             if (cache.referenceTables[k] != null)
@@ -206,7 +239,8 @@ namespace FlashEditor
                         ContainerListView.SetObjects(containers);
                     };
 
-                    bgw.Disposed += delegate {
+                    bgw.Disposed += delegate
+                    {
                         workers.Remove(bgw);
                     };
 
@@ -215,12 +249,14 @@ namespace FlashEditor
 
                 case RSConstants.ITEM_DEFINITIONS_INDEX:
                     //When an item is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) =>
+                    {
                         ItemProgressBar.Value = e.ProgressPercentage;
                         ItemLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += delegate {
+                    bgw.DoWork += delegate
+                    {
                         int done = 0;
                         int total = referenceTable.GetEntryTotal() * 256;
                         int percentile = total / 100;
@@ -269,7 +305,8 @@ namespace FlashEditor
                         ItemListView.SetObjects(cache.items.Values);
                     };
 
-                    bgw.Disposed += delegate {
+                    bgw.Disposed += delegate
+                    {
                         workers.Remove(bgw);
                     };
 
@@ -278,12 +315,14 @@ namespace FlashEditor
                 case RSConstants.SPRITES_INDEX:
 
                     //When a sprite is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) =>
+                    {
                         SpriteProgressBar.Value = e.ProgressPercentage;
                         SpriteLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += delegate {
+                    bgw.DoWork += delegate
+                    {
                         Debug(@" _                     _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
                         Debug(@"| |     ___   __ _  __| |_ _ __   __ _  | (___  _ __  _ __ _| |_ ___ ___ ");
@@ -327,14 +366,16 @@ namespace FlashEditor
                         //Set the root objects for the tree
                         SpriteListView.SetObjects(sprites);
 
-                        SpriteListView.CanExpandGetter = delegate (object x) {
+                        SpriteListView.CanExpandGetter = delegate (object x)
+                        {
                             if (x is SpriteDefinition definition)
                                 if (definition.GetFrameCount() > 1)
                                     return true;
                             return false;
                         };
 
-                        SpriteListView.ChildrenGetter = delegate (object x) {
+                        SpriteListView.ChildrenGetter = delegate (object x)
+                        {
                             //Basically this rewraps the RSBufferedImage (frames) as SpriteDefinitions
                             return ((SpriteDefinition)x).GetFrames().ConvertAll(y => ((SpriteDefinition)y));
                         };
@@ -355,12 +396,14 @@ namespace FlashEditor
                     Debug(@"Loading NPCs");
 
                     //When an NPC is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) =>
+                    {
                         NPCProgressBar.Value = e.ProgressPercentage;
                         NPCLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += async delegate {
+                    bgw.DoWork += async delegate
+                    {
                         List<NPCDefinition> npcs = new List<NPCDefinition>();
 
                         int done = 0;
@@ -402,19 +445,22 @@ namespace FlashEditor
                         NPCListView.SetObjects(npcs);
                     };
 
-                    bgw.Disposed += delegate {
+                    bgw.Disposed += delegate
+                    {
                         workers.Remove(bgw);
                     };
 
                     bgw.RunWorkerAsync();
                     break;
                 case RSConstants.OBJECTS_DEFINITIONS_INDEX:
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) =>
+                    {
                         ObjectProgressBar.Value = e.ProgressPercentage;
                         ObjectLoadingLabel.Text = e.UserState.ToString();
                     });
 
-                    bgw.DoWork += delegate {
+                    bgw.DoWork += delegate
+                    {
                         List<ObjectDefinition> objects = new List<ObjectDefinition>();
 
                         int filesPerArchive = referenceTable.GetEntry(referenceTable.GetEntries().Keys.First()).GetValidFileIds().Length;
@@ -452,12 +498,92 @@ namespace FlashEditor
                         ObjectListView.SetObjects(objects);
                     };
 
-                    bgw.Disposed += delegate {
+                    bgw.Disposed += delegate
+                    {
                         workers.Remove(bgw);
                     };
 
                     bgw.RunWorkerAsync();
                     break;
+                case RSConstants.MODELS_INDEX:
+                    {
+                        // ------------------------------------------------------------------
+                        ProgressBar bar = ModelProgressBar;
+                        Label lbl = ModelLoadingLabel;
+
+                        bgw.WorkerReportsProgress = true;
+                        bgw.WorkerSupportsCancellation = true;
+
+                        // ---------------- BACKGROUND THREAD ----------------
+                        bgw.DoWork += (object? s, DoWorkEventArgs args) =>
+                        {
+                            RSReferenceTable rt = cache.GetReferenceTable(RSConstants.MODELS_INDEX);
+                            const int perArc = 256;
+                            int total = rt.GetEntryTotal() * perArc;
+                            int done = 0;
+                            int percentile = total / 100;
+
+                            var dict = new SortedDictionary<int, ModelDefinition>();
+
+                            int id;
+
+
+                            foreach (var (archiveId, entry) in rt.GetEntries())
+                            {
+                                foreach (int fileId in entry.GetValidFileIds())  // only existing files
+                                {
+                                    int modelId = (archiveId << 8) | fileId;
+                                    try
+                                    {
+                                        var def = cache.GetModelDefinition(archiveId, fileId);
+                                        def.ModelID = modelId;
+                                        dict[modelId] = def;
+                                        Debug("Loaded model: " + modelId, LOG_DETAIL.ADVANCED);
+                                    }
+                                    catch
+                                    {
+                                        Debug("Failed to load model " + modelId, LOG_DETAIL.ADVANCED);
+                                    }
+
+                                    if (++done % percentile == 0 || done == total)
+                                        // ---- progress report ----
+                                        bgw.ReportProgress((done + 1) * 100 / total,
+                                            $"Loaded {done}/{total} models");
+
+                                    if (modelId >= 5000)
+                                    {
+                                        args.Result = dict;
+                                        return;
+                                    }
+                                }
+                            }
+
+                            args.Result = dict;                 // give result to UI thread
+                        };
+
+                        // ---------------- PROGRESS BAR ----------------
+                        bgw.ProgressChanged += new ProgressChangedEventHandler((_, e) => {
+                            ModelProgressBar.Value = e.ProgressPercentage;
+                            ModelLoadingLabel.Text = e.UserState?.ToString();
+                        });
+
+                        // ---------------- UI THREAD ----------------
+                        bgw.RunWorkerCompleted += (_, e) =>
+                        {
+                            var dict = (SortedDictionary<int, ModelDefinition>)e.Result!;
+
+                            cache.models.Clear();
+                            foreach (var kv in dict)
+                                cache.models.Add(kv.Key, kv.Value);
+
+                            ModelListView.SetObjects(dict.Values);     // pass full objects
+                            lbl.Text = $"Models loaded ({dict.Count})";
+                        };
+
+                        bgw.RunWorkerAsync();
+                        break;
+                    }
+
             }
         }
 
@@ -567,7 +693,8 @@ namespace FlashEditor
             workers.Add(itemDumper);
 
             //When an item is loaded, update the progress bar
-            itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) => {
+            itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) =>
+            {
                 ItemProgressBar.Value = e2.ProgressPercentage;
                 ItemLoadingLabel.Text = e2.UserState.ToString();
             });
@@ -576,7 +703,8 @@ namespace FlashEditor
             ItemListView.SelectedObjects.CopyTo(items, 0);
             Debug(items[0].name);
 
-            itemDumper.DoWork += delegate {
+            itemDumper.DoWork += delegate
+            {
                 if (items.Length > 0)
                 {
                     //Ensures that the directory exists
@@ -594,11 +722,13 @@ namespace FlashEditor
                 }
             };
 
-            itemDumper.Disposed += delegate {
+            itemDumper.Disposed += delegate
+            {
                 workers.Remove(itemDumper);
             };
 
-            itemDumper.RunWorkerCompleted += (sender2, e2) => {
+            itemDumper.RunWorkerCompleted += (sender2, e2) =>
+            {
                 if (e2.Error != null)
                     Debug("error: " + e2.Error.ToString());
             };
@@ -719,5 +849,16 @@ namespace FlashEditor
         {
             SpriteListView.RowHeight = (int)numericUpDown1.Value;
         }
+
+        private void ModelListView_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (ModelListView.SelectedObject is int ModelID &&
+                cache.models.TryGetValue(ModelID, out var def))
+            {
+                _modelRenderer.Load(def);      // uploads into VBO
+                glControl.Invalidate();        // triggers Paint -> Draw()
+            }
+        }
+
     }
 }

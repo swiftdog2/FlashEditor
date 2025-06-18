@@ -68,6 +68,8 @@
     </PackageReference>
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="ObjectListView.Repack.NET6Plus" Version="2.9.5" />
+    <PackageReference Include="OpenTK" Version="4.0.0" />
+    <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
     <PackageReference Include="System.Data.DataSetExtensions" Version="4.5.0" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.6" />
@@ -78,7 +80,6 @@
     </PackageReference>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" PrivateAssets="all" Version="1.0.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="OpenTK" Version="4.9.4" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">
