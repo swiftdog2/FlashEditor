@@ -1,9 +1,10 @@
-﻿using System;
+﻿using FlashEditor.cache;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
 using System.Text;
-using Newtonsoft.Json.Linq;
 
 namespace FlashEditor.utils {
     public static class DebugUtil {
@@ -16,7 +17,7 @@ namespace FlashEditor.utils {
         };
 
         //The current logging detail level, change for lower/higher detailed logs
-        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.NONE;
+        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.ADVANCED;
 
         /// <summary>
         /// Prints out the debug message and waits for user input
