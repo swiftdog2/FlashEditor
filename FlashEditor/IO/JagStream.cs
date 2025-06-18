@@ -130,11 +130,28 @@ namespace FlashEditor {
             return ReadUnsignedShort() - 32768;    // consumes two
         }
 
+        /// <summary>
+        /// Unsigned “smart” integer used inside cache files (not the network variant).  
+        ///  • 1 byte  for values 0-127  
+        ///  • 2 bytes for 128-32 767 (encoded = value + 32 768)
+        /// </summary>
         public int ReadUnsignedSmart()
         {
-            int peek = GetBuffer()[Position];
-            return peek < 128 ? ReadUnsignedByte() - 64
-                              : ReadUnsignedShort() - 49152;
+            int peek = PeekUnsignedByte();
+            return peek < 128
+                ? ReadUnsignedByte()
+                : ReadUnsignedShort() - 32768;
+        }
+
+        /// <summary>
+        /// Signed “smart” integer used inside cache files (delta-encoded numbers).  
+        /// Encoding = unsignedSmart → zig-zag (LSB encodes sign).
+        /// </summary>
+        public int ReadSignedSmart()
+        {
+            int val = ReadUnsignedSmart();         // 0…32767
+                                                   // Zig-zag decode:  0 → 0, 1 → -1, 2 → +1, 3 → -2, …
+            return (val >> 1) ^ (-(val & 1));
         }
 
         public int ReadSpecialSmart()
