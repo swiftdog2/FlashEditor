@@ -526,8 +526,6 @@ namespace FlashEditor
 
                             var dict = new SortedDictionary<int, ModelDefinition>();
 
-                            int id;
-
 
                             foreach (var (archiveId, entry) in rt.GetEntries())
                             {
@@ -541,9 +539,9 @@ namespace FlashEditor
                                         dict[modelId] = def;
                                         Debug("Loaded model: " + modelId, LOG_DETAIL.ADVANCED);
                                     }
-                                    catch
+                                    catch(Exception ex)
                                     {
-                                        Debug("Failed to load model " + modelId, LOG_DETAIL.ADVANCED);
+                                        Debug($"Failed to load model {modelId}: {ex}", LOG_DETAIL.BASIC);
                                     }
 
                                     if (++done % percentile == 0 || done == total)
@@ -551,7 +549,7 @@ namespace FlashEditor
                                         bgw.ReportProgress((done + 1) * 100 / total,
                                             $"Loaded {done}/{total} models");
 
-                                    if (modelId >= 5000)
+                                    if (modelId > 1024)
                                     {
                                         args.Result = dict;
                                         return;

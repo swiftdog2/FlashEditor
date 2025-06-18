@@ -5,13 +5,15 @@ using System.Linq;
 using System.Text;
 using FlashEditor.utils;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.cache
+{
     ///<summary>
     ///A<seealso cref="RSReferenceTable" /> holds details for all the files with a single type,
     ///such as checksums, versions and archive members. There are also optional
     ///fields for identifier hashes and whirlpool digests.
     /// </summary>
-    public class RSReferenceTable {
+    public class RSReferenceTable
+    {
         public const int FLAG_IDENTIFIERS = 0x01;
         public const int FLAG_WHIRLPOOL = 0x02;
         public const int FLAG_SIZES = 0x04;
@@ -55,8 +57,9 @@ namespace FlashEditor.cache {
         /// Gets the maximum number of entries in this table.
         /// </summary>
         /// <returns>The maximum number of entries</returns>
-        public int Capacity() {
-            if(entries.Count == 0)
+        public int Capacity()
+        {
+            if (entries.Count == 0)
                 return 0;
             return entries.Keys.Last() + 1;
         }
@@ -66,8 +69,9 @@ namespace FlashEditor.cache {
         /// </summary>
         /// <param name="id">The entry index</param>
         /// <returns>The entry at the index <paramref name="id"/></returns>
-        internal RSEntry GetEntry(int id) {
-            if(!entries.ContainsKey(id))
+        internal RSEntry GetEntry(int id)
+        {
+            if (!entries.ContainsKey(id))
                 return null;
             return entries[id];
         }
@@ -85,7 +89,8 @@ namespace FlashEditor.cache {
         /// Returns the number of entries in the reference table
         /// </summary>
         /// <returns>The number of archives</returns>
-        internal int GetEntryTotal() {
+        internal int GetEntryTotal()
+        {
             return entries.Count;
         }
 
@@ -93,15 +98,18 @@ namespace FlashEditor.cache {
         /// Return the reference table version
         /// </summary>
         /// <returns>The reference table version</returns>
-        public virtual int GetVersion() {
+        public virtual int GetVersion()
+        {
             return version;
         }
 
-        internal SortedDictionary<int, RSEntry> GetEntries() {
+        internal SortedDictionary<int, RSEntry> GetEntries()
+        {
             return entries;
         }
 
-        internal void SetType(int type) {
+        internal void SetType(int type)
+        {
             this.type = type;
         }
     }

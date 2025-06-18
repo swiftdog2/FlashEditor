@@ -401,12 +401,19 @@ namespace FlashEditor.cache
             //Check if the file/member are valid
             RSEntry entry = GetReferenceTable(type).GetEntry(archive);
 
-            if (entry == null || file < 0 || file >= entry.GetValidFileIds().Length)
+            // Validate the requested file actually exists within this archive
+            if (entry == null || !entry.GetChildEntries().ContainsKey(file))
                 throw new FileNotFoundException("\tUnable to find member " + file + ", in type " + type + ", archive " + archive + ", len: " + entry.GetValidFileIds().Length);
 
-            //Get the Entry from the Container's Archive
+            // The archive size must match the highest file id, not just the number of valid files.
+            // Otherwise archives with sparse file ids decode incorrectly and lookups like file=256 fail.
+
             Debug("Reading " + RSConstants.GetContainerNameForType(type) + ", Archive" + archive + " - file " + file, LOG_DETAIL.ADVANCED);
-            return GetArchive(GetContainer(type, archive), entry.GetValidFileIds().Length).GetEntry(file);
+
+            int realFiles = type == RSConstants.MODELS_INDEX ? 1
+              : entry.GetValidFileIds().Length;
+
+            return GetArchive(GetContainer(type, archive), realFiles).GetEntry(file);
         }
 
         /// <summary>
@@ -484,11 +491,37 @@ namespace FlashEditor.cache
 
         public ModelDefinition GetModelDefinition(int archive, int entry)
         {
-            JagStream data = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);
-            var def = new ModelDefinition();
-            def.Decode(data);
-            def.ModelID = (archive << 8) | entry;
-            return def;
+            int modelId = (archive << 8) | entry;
+            try
+            {
+                JagStream data = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);
+                var def = new ModelDefinition();
+                def.Decode(data);                    // ← may throw
+                def.ModelID = modelId;
+                return def;
+            }
+            catch (Exception ex)
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"[Model ID {modelId}] archive={archive} entry={entry}");
+                sb.AppendLine($"Type: {ex.GetType().Name}");
+                sb.AppendLine($"Message: {ex.Message}");
+                sb.AppendLine($"Stack: {ex.StackTrace}");
+                // Optional: dump first/last 32 bytes of the model blob
+                try
+                {
+                    JagStream raw = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);
+                    raw.Seek0();
+                    byte[] head = raw.ReadBytes(Math.Min(32, raw.Length));
+                    raw.Position = Math.Max(0, raw.Length - 32);
+                    byte[] tail = raw.ReadBytes(Math.Min(32, raw.Length));
+                    sb.AppendLine($"Data len={raw.Length}  head={BitConverter.ToString(head)}  tail={BitConverter.ToString(tail)}");
+                }
+                catch { /* ignore secondary errors */ }
+
+                Debug(sb.ToString(), LOG_DETAIL.ADVANCED);
+                throw;                               // re-throw so outer loop still logs “failed”
+            }
         }
     }
 }

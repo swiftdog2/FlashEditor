@@ -61,7 +61,7 @@ namespace FlashEditor.cache {
 
             //Allocate the buffers for the child entries
             for(int id = 0; id < size; id++)
-                archive.entries[id] = new JagStream(entrySizes[id]);
+                archive.entries[id] = new JagStream(/*entrySizes[id]*/);
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
