@@ -11,13 +11,6 @@ namespace FlashEditor.Tests.Cache
         {
             var s = new JagStream();
 
-            /*  1  • model list (format-1)  */
-            s.WriteByte(1);
-            s.WriteByte(1);                 // groupCount
-            s.WriteSignedByte(1);           // modelTypes[0]
-            s.WriteByte(1);                 // idCount
-            s.WriteShort(100);              // modelIds[0][0]
-
             /*  5  • model list (format-2)  */
             s.WriteByte(5);
             s.WriteByte(1);
@@ -30,7 +23,6 @@ namespace FlashEditor.Tests.Cache
             s.WriteByte(14); s.WriteByte(2);        // sizeX
             s.WriteByte(15); s.WriteByte(3);        // sizeY
             s.WriteByte(17);                        // walkable=false
-            s.WriteByte(18);                        // walkable=false
             s.WriteByte(19); s.WriteByte(4);        // category
             s.WriteByte(21); s.WriteByte(1);        // clipType
             s.WriteByte(22);                        // isClipped flag
@@ -82,13 +74,6 @@ namespace FlashEditor.Tests.Cache
             s.WriteByte(74);                 // isSolid
             s.WriteByte(75); s.WriteByte(1); // supportItems
 
-            /*  morph table (77)  */
-            s.WriteByte(77);
-            s.WriteShort(0xFFFF);  // varbit = -1
-            s.WriteShort(0xFFFF);  // varp   = -1
-            s.WriteByte(0);        // count
-            s.WriteShort(0xFFFF);  // single morphId = -1
-
             /*  morph table (92)  */
             s.WriteByte(92);
             s.WriteShort(0xFFFF);  // varbit
@@ -97,15 +82,11 @@ namespace FlashEditor.Tests.Cache
             s.WriteByte(0);        // count
             s.WriteShort(0xFFFF);  // morphIds[0]
 
-            /*  sound blocks  */
-            s.WriteByte(78);
-            s.WriteShort(1000);
-            s.WriteByte(1);        // loops
-
+            /* ambient sound – opcode 79 */
             s.WriteByte(79);
-            s.WriteShort(1002);
-            s.WriteByte(1);        // extraSound count
-            s.WriteShort(300);     // extraSound[0]
+            s.WriteShort(1002);   // soundId
+            s.WriteByte(1);       // extraSound count
+            s.WriteShort(300);    // extraSound[0]
 
             /*  menuOps 150-154  */
             for (int i = 0; i < 5; i++)

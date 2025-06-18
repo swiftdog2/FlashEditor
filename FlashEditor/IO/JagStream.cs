@@ -160,6 +160,23 @@ namespace FlashEditor {
             return (byte) result;
         }
 
+        /// <summary>
+        /// Returns the next byte in the stream <strong>without</strong> advancing
+        /// <see cref="Position"/>. The value is returned as an unsigned
+        /// 8-bit integer (0-255). Throws <see cref="EndOfStreamException"/>
+        /// if the current position is already at or beyond <see cref="Length"/>.
+        /// </summary>
+        internal int PeekUnsignedByte()
+        {
+            if (Position >= Length)
+                throw new EndOfStreamException("Peek beyond end of JagStream.");
+
+            // MemoryStream exposes its backing buffer; safe because the
+            // RuneScape cache always loads into a contiguous byte[].
+            return GetBuffer()[Position] & 0xFF;
+        }
+
+
         internal int[] ReadUnsignedByteArray(int size)
         {
             byte[]? rented = null;
@@ -305,7 +322,7 @@ namespace FlashEditor {
             WriteByte(0);                            // terminator
         }
 
-        public void WriteByte(int value) => WriteByte((byte)value);
+        public void WriteByte(int value) => base.WriteByte((byte)value);
 
 
         /// <summary>
@@ -369,10 +386,6 @@ namespace FlashEditor {
                 buf[k] = (byte) ReadByte();
 
             return buf;
-        }
-
-        internal void PutLengthFromMark(long v) {
-            throw new NotImplementedException();
         }
 
         /// <summary>

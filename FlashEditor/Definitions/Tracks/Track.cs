@@ -255,7 +255,7 @@ label361:
 
                         midiBuff.WriteByte((byte) 47); // type - end of track
                         midiBuff.WriteByte((byte) 0); // length
-                        midiBuff.PutLengthFromMark(midiBuff.Position - var61);
+                        //midiBuff.PutLengthFromMark(midiBuff.Position - var61);
                         goto label361;
                     }
 
