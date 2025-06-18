@@ -5,9 +5,12 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Region {
-    //Straight rip no idea if it works or not lol
-
-    class Position {
+    /// <summary>
+    ///     Represents a coordinate within a map region and provides
+    ///     convenience methods for converting between absolute and
+    ///     local coordinates.
+    /// </summary>
+    public class Position {
         enum RegionSize {
             DEFAULT = 104,
             LARGE = 120,
@@ -111,3 +114,4 @@ namespace FlashEditor.Cache.Region {
         }
     }
 }
+

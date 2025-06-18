@@ -5,9 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Region {
-    //Straight rip no idea if it works or not lol
-
-    class Location {
+    /// <summary>
+    ///     Represents an object placed within a region, including its
+    ///     identifier, orientation and absolute <see cref="Position"/>.
+    /// </summary>
+    public class Location {
 
         private int id;
         private int type;
@@ -31,7 +33,10 @@ namespace FlashEditor.Cache.Region {
         /**
 		 * @return the type
 		 */
-        public int GetType() {
+        /// <summary>
+        ///     Gets the location type value stored in the map.
+        /// </summary>
+        public int GetLocationType() {
             return type;
         }
 
@@ -51,3 +56,4 @@ namespace FlashEditor.Cache.Region {
 
     }
 }
+
