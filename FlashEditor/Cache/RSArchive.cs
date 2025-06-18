@@ -40,28 +40,24 @@ namespace FlashEditor.cache {
 
             stream.Seek(stream.Length - 1 - archive.chunks * size * 4);
 
-            //Read the chunks
-            for(int chunk = 0; chunk < archive.chunks; chunk++) {
+            //The table contains the length of each file's chunk. Values are
+            //written chunk by chunk and summed per file to obtain the final
+            //size of each entry.
+            for (int chunk = 0; chunk < archive.chunks; chunk++)
+            {
                 Debug("chunk size: " + size, LOG_DETAIL.INSANE);
-                int cumulativeChunkSize = 0;
-                for(int id = 0; id < size; id++) {
-                    //Read the delta-encoded chunk length
-                    int delta = stream.ReadInt();
-                    cumulativeChunkSize += delta;
-                    Debug(" " + delta, LOG_DETAIL.INSANE);
-
-                    //Store the size of this chunk
-                    chunkSizes[chunk][id] = cumulativeChunkSize;
-
-                    //And add it to the size of the whole file
-                    entrySizes[id] += cumulativeChunkSize;
-                    Debug("\t- Entry " + id + " size: " + cumulativeChunkSize, LOG_DETAIL.INSANE);
+                for (int id = 0; id < size; id++)
+                {
+                    int len = stream.ReadInt();
+                    chunkSizes[chunk][id] = len;     // raw chunk length
+                    entrySizes[id] += len;           // accumulate per file
+                    Debug(" " + len, LOG_DETAIL.INSANE);
                 }
             }
 
             //Allocate the buffers for the child entries
-            for(int id = 0; id < size; id++)
-                archive.entries[id] = new JagStream(/*entrySizes[id]*/);
+            for (int id = 0; id < size; id++)
+                archive.entries[id] = new JagStream(entrySizes[id]);
 
             //Return the stream to 0 otherwise this shit doesn't work
             stream.Seek0();
@@ -106,16 +102,10 @@ namespace FlashEditor.cache {
             foreach(KeyValuePair<int, JagStream> entry in entries)
                 entry.Value.WriteTo(stream);
 
-            //Write the chunk lengths
-            int prev = 0;
-            for(int chunk = 0; chunk < chunks; chunk++) {
-                foreach(KeyValuePair<int, JagStream> entry in entries) {
-                    //Archive is broken into chunks, which is the entry stream data
-                    int chunkSize = (int) entry.Value.Length; //Therefore chunk size is entry stream length
-                    stream.WriteInteger(chunkSize - prev); //So delta is the difference between the chunk sizes
-                    prev = chunkSize; //Store the size of the last entry
-                }
-            }
+            //Write the chunk lengths. We only support a single chunk when
+            //encoding, so the table simply stores each entry's length.
+            foreach (var entry in entries)
+                stream.WriteInteger((int)entry.Value.Length);
 
             //Write out the number of chunks that the archive is split up into
             //We only used one chunk due to a limitation of the implementation
