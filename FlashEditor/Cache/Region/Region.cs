@@ -5,14 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Region {
-    //Straight rip no idea if it works or not lol
-
-    /**
-     * 
-     * @author Kyle Friz
-     * @since  Jun 30, 2015
-     */
-    class Region {
+    /// <summary>
+    ///     Represents a 64×64 map region and exposes methods for
+    ///     decoding its terrain and location data.
+    /// </summary>
+    public class Region {
         public static int WIDTH = 64;
         public static int HEIGHT = 64;
 
@@ -174,3 +171,4 @@ namespace FlashEditor.Cache.Region {
         }
     }
 }
+

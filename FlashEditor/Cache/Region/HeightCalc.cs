@@ -6,8 +6,11 @@ using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Region
 {
-    //Straight rip no idea if it works or not lol
-    class HeightCalc
+    /// <summary>
+    ///     Utility methods used to approximate tile heights based on the noise
+    ///     algorithm used by the RuneScape client.
+    /// </summary>
+    public static class HeightCalc
     {
         /**
          * @author Kyle Friz
@@ -20,11 +23,18 @@ namespace FlashEditor.Cache.Region
         private static readonly int[] SIN = new int[JAGEX_CIRCULAR_ANGLE];
         private static readonly int[] COS = new int[JAGEX_CIRCULAR_ANGLE];
 
+        /// <summary>
+        ///     Converts a degree based angle into radians.
+        /// </summary>
         public static double ToRadians(double angle)
         {
             return Math.PI * angle / 180;
         }
 
+        /// <summary>
+        ///     Precomputes the internal sine and cosine tables used by
+        ///     <see cref="Calculate"/>.
+        /// </summary>
         public static void Precalculate()
         {
             for (int i = 0; i < JAGEX_CIRCULAR_ANGLE; i++)
@@ -34,6 +44,14 @@ namespace FlashEditor.Cache.Region
             }
         }
 
+        /// <summary>
+        ///     Approximates the terrain height for the specified tile.
+        /// </summary>
+        /// <param name="baseX">Region base X coordinate.</param>
+        /// <param name="baseY">Region base Y coordinate.</param>
+        /// <param name="x">Local X coordinate.</param>
+        /// <param name="y">Local Y coordinate.</param>
+        /// <returns>Height value ranging from 10..60.</returns>
         public static int Calculate(int baseX, int baseY, int x, int y)
         {
             int xc = (baseX >> 3) + 932638 + x;

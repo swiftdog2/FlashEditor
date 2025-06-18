@@ -5,29 +5,31 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Util.Crypto {
-    //Straight rip no idea if it works or not lol
-
-    class XTEA {
+    /// <summary>
+    ///     Implementation of the standard XTEA block cipher used by the
+    ///     RuneScape cache. The cipher operates on 8 byte blocks and
+    ///     always performs 32 rounds.
+    /// </summary>
+    public static class XTEA {
         /**
 		 * The golden ratio.
 		 */
-        public static uint GOLDEN_RATIO = 0x9E3779B9;
+        public static readonly uint GOLDEN_RATIO = 0x9E3779B9u;
 
         /**
 		 * The number of rounds.
 		 */
-        public static int ROUNDS = 32;
+        public const int ROUNDS = 32;
 
-        /**
-		 * Deciphers the specified {@link JagStream} with the given key.
-		 * 
-		 * @param buffer
-		 *            The buffer.
-		 * @param key
-		 *            The key.
-		 * @throws IllegalArgumentException
-		 *             if the key is not exactly 4 elements long.
-		 */
+        /// <summary>
+        ///     Decrypts <paramref name="buffer"/> in-place using the supplied
+        ///     128-bit key.
+        /// </summary>
+        /// <param name="buffer">Stream containing the cipher text.</param>
+        /// <param name="start">Starting offset.</param>
+        /// <param name="end">End offset.</param>
+        /// <param name="key">Four element XTEA key.</param>
+        /// <exception cref="ArgumentException">Key length is not 4.</exception>
         public static void Decipher(JagStream buffer, int start, int end, int[] key) {
             if(key.Length != 4)
                 throw new ArgumentException("Key length is invalid");
@@ -55,16 +57,15 @@ namespace FlashEditor.Cache.Util.Crypto {
             }
         }
 
-        /**
-		 * Enciphers the specified {@link JagStream} with the given key.
-		 * 
-		 * @param buffer
-		 *            The buffer.
-		 * @param key
-		 *            The key.
-		 * @throws IllegalArgumentException
-		 *             if the key is not exactly 4 elements long.
-		 */
+        /// <summary>
+        ///     Encrypts <paramref name="buffer"/> in-place using the supplied
+        ///     128-bit key.
+        /// </summary>
+        /// <param name="buffer">Stream containing the plain text.</param>
+        /// <param name="start">Starting offset.</param>
+        /// <param name="end">End offset.</param>
+        /// <param name="key">Four element XTEA key.</param>
+        /// <exception cref="ArgumentException">Key length is not 4.</exception>
         public static void Encipher(JagStream buffer, int start, int end, int[] key) {
             if(key.Length != 4)
                 throw new ArgumentException();
@@ -93,3 +94,4 @@ namespace FlashEditor.Cache.Util.Crypto {
         }
     }
 }
+
