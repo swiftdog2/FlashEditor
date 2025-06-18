@@ -529,9 +529,12 @@ namespace FlashEditor
 
                             foreach (var (archiveId, entry) in rt.GetEntries())
                             {
+                                Debug($"Archive ID: {archiveId}, entry {entry.GetId()}", LOG_DETAIL.ADVANCED);
                                 foreach (int fileId in entry.GetValidFileIds())  // only existing files
                                 {
                                     int modelId = (archiveId << 8) | fileId;
+                                    Debug($"File ID: {fileId}, model ID: {modelId}");
+
                                     try
                                     {
                                         var def = cache.GetModelDefinition(archiveId, fileId);
@@ -549,11 +552,6 @@ namespace FlashEditor
                                         bgw.ReportProgress((done + 1) * 100 / total,
                                             $"Loaded {done}/{total} models");
 
-                                    if (modelId > 1024)
-                                    {
-                                        args.Result = dict;
-                                        return;
-                                    }
                                 }
                             }
 

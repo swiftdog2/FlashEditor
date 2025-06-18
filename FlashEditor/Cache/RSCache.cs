@@ -411,7 +411,16 @@ namespace FlashEditor.cache
             Debug("Reading " + RSConstants.GetContainerNameForType(type) + ", Archive" + archive + " - file " + file, LOG_DETAIL.ADVANCED);
 
             int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
-            return GetArchive(GetContainer(type, archive), realFiles).GetEntry(file);
+
+            RSContainer container = GetContainer(type, archive);
+            if (container == null)
+                return null;
+
+            RSArchive RSarchive = GetArchive(container, realFiles);
+            if (RSarchive == null)
+                return null;
+
+            return RSarchive.GetEntry(file);
         }
 
         /// <summary>
@@ -429,7 +438,10 @@ namespace FlashEditor.cache
             //Otherwise, construct the archive from the container
             RSArchive archive = RSArchive.Decode(container.GetStream(), fileCount);
             if (archive == null)
-                throw new NullReferenceException("Archive is null");
+            {
+                Debug("Corrupted archive in container " + container.GetId(), LOG_DETAIL.ADVANCED);
+                //throw new NullReferenceException("Archive is null");
+            }
 
             container.SetArchive(archive);
 
@@ -494,7 +506,7 @@ namespace FlashEditor.cache
             {
                 JagStream data = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);
                 var def = new ModelDefinition();
-                def.Decode(data);                    // ← may throw
+                def.Decode(data);
                 def.ModelID = modelId;
                 return def;
             }
@@ -509,13 +521,18 @@ namespace FlashEditor.cache
                 try
                 {
                     JagStream raw = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);
+                    if (raw == null)
+                        throw;
                     raw.Seek0();
                     byte[] head = raw.ReadBytes(Math.Min(32, raw.Length));
                     raw.Position = Math.Max(0, raw.Length - 32);
                     byte[] tail = raw.ReadBytes(Math.Min(32, raw.Length));
                     sb.AppendLine($"Data len={raw.Length}  head={BitConverter.ToString(head)}  tail={BitConverter.ToString(tail)}");
                 }
-                catch { /* ignore secondary errors */ }
+                catch (Exception ex2) {
+                    Debug($"Failed to load model entry {modelId}: {ex2}", LOG_DETAIL.BASIC);
+
+                }
 
                 Debug(sb.ToString(), LOG_DETAIL.ADVANCED);
                 throw;                               // re-throw so outer loop still logs “failed”
