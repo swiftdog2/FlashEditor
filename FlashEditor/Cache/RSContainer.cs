@@ -42,12 +42,15 @@ namespace FlashEditor.cache {
         ///     Encodes this container to the on‑disk binary representation.
         /// </summary>
         /// <remarks>
-        ///     The header layout matches the client contract: one byte
-        ///     <c>compressionType</c> followed by the 4&nbsp;byte
-        ///     <c>compressedLength</c> and, when compressed, another 4&nbsp;byte
-        ///     <c>uncompressedLength</c>.  The payload may be XTEA encrypted
-        ///     when <paramref name="xteaKey"/> is supplied.  Multi‑file
-        ///     archives must already contain the cumulative length table.
+        ///     Revision 639 uses the modern JS5 container header format:
+        ///     <c>compressionType</c> (1&nbsp;byte) followed by
+        ///     <c>compressedLength</c> and then, when compression is used,
+        ///     <c>uncompressedLength</c>. Earlier revisions swapped the two
+        ///     length fields; maintaining this order ensures compatibility with
+        ///     the 639 client.
+        ///     The payload may be XTEA encrypted when
+        ///     <paramref name="xteaKey"/> is supplied. Multi‑file archives must
+        ///     already contain the cumulative length table.
         /// </remarks>
         /// <param name="xteaKey">Optional 4&nbsp;integer XTEA key. When
         /// <c>null</c> no encryption is performed.</param>
@@ -102,11 +105,20 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
-        /// Constructs a new <see cref="RSContainer"/> from the stream data
+        ///     Constructs a new <see cref="RSContainer"/> from the stream data.
         /// </summary>
+        /// <remarks>
+        ///     The method expects the header ordering used by revision 639:
+        ///     <c>compressionType</c>, <c>compressedLength</c> and, if
+        ///     compressed, <c>uncompressedLength</c>. Earlier revisions may
+        ///     store the lengths in reverse.
+        /// </remarks>
         /// <param name="stream">The raw container data.</param>
         /// <param name="xteaKey">Optional XTEA key used to decrypt the payload.</param>
-        /// <returns>The new container, or <c>null</c> if <paramref name="stream"/> is null.</returns>
+        /// <returns>
+        ///     The new container, or <c>null</c> if <paramref name="stream"/>
+        ///     is <c>null</c>.
+        /// </returns>
         public static RSContainer Decode(JagStream stream, int[] xteaKey = null) {
             if(stream == null)
                 return null;

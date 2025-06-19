@@ -45,9 +45,14 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 
 ### Container Wrapper
 - Byte `compressionType` (`0`=none, `1`=BZip2, `2`=GZip)
-- `uncompressedSize` (4 bytes)
+- `compressedSize` (4 bytes)
+- `uncompressedSize` (4 bytes when compressed)
 - Payload (optionally XTEA-encrypted)
 - Optional 3-byte `cumulativeLengths[]` table when the container has multiple files
+
+Revision 639 (and later) expects the header layout above. Some earlier
+revisions swapped the two length fields, so both encode and decode must
+use this ordering to remain compatible with the in-game client.
 
 ### XTEA Layer
 - Applied after compression and before sectorisation
