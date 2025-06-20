@@ -95,7 +95,7 @@ namespace FlashEditor
          *  ▌  GLOBAL DECODE ENTRY  ▐ *
          *──────────────────────────*/
 
-        public void Decode(JagStream s)
+        public void Decode(JagStream s, int[] xteaKey = null)
         {
             int safety = 0;
 

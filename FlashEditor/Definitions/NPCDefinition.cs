@@ -109,7 +109,7 @@ namespace FlashEditor
         /// Overrides defaults from the stream
         /// </summary>
         /// <param name="stream"></param>
-        public void Decode(JagStream stream)
+        public void Decode(JagStream stream, int[] xteaKey = null)
         {
             if (stream != null)
             {

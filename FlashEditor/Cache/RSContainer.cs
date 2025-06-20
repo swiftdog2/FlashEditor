@@ -4,8 +4,10 @@ using System;
 using FlashEditor.utils;
 using FlashEditor.Cache.Util.Crypto;
 
-namespace FlashEditor.cache {
-    public class RSContainer {
+namespace FlashEditor.cache
+{
+    public class RSContainer
+    {
         private JagStream stream; //the archive stream
         public int type;
         public int id;
@@ -17,11 +19,13 @@ namespace FlashEditor.cache {
         //The archive that is represented by the container
         public RSArchive archive;
 
-        public RSContainer() {
+        public RSContainer()
+        {
 
         }
 
-        public RSContainer(RSContainer container) {
+        public RSContainer(RSContainer container)
+        {
             type = container.GetIndexType();
             id = container.GetId();
             length = container.GetLength();
@@ -30,13 +34,72 @@ namespace FlashEditor.cache {
             decompressedLength = container.GetDecompressedLength();
         }
 
-        public RSContainer(int type, int id, byte compressionType, JagStream stream, int version) {
+        public RSContainer(int type, int id, byte compressionType, JagStream stream, int version)
+        {
             this.type = type;
             this.id = id;
             this.compressionType = compressionType;
             this.stream = stream;
             this.version = version;
-    }
+        }
+
+        /// <summary>
+        /// Constructs a new <see cref="RSContainer"/> from the stream data
+        /// </summary>
+        /// <param name="stream">The raw container data.</param>
+        /// <param name="xteaKey">Optional XTEA key used to decrypt the payload.</param>
+        /// <returns>The new container, or <c>null</c> if <paramref name="stream"/> is null.</returns>
+        public static RSContainer Decode(JagStream stream, int[] xteaKey = null)
+        {
+            if (stream == null)
+                return null;
+
+            RSContainer container = new RSContainer();
+
+            container.SetCompressionType(stream.ReadUnsignedByte());
+
+            String compressionName = "None";
+            if (container.GetCompressionType() == RSConstants.BZIP2_COMPRESSION)
+                compressionName = "BZIP2";
+            if (container.GetCompressionType() == RSConstants.GZIP_COMPRESSION)
+                compressionName = "GZIP";
+
+            container.SetDataLength(stream.ReadInt());
+
+            if (container.GetCompressionType() == RSConstants.NO_COMPRESSION)
+                container.SetDecompressedLength(container.GetDataLength()); // not compressed so it will match exactly
+            else
+                container.SetDecompressedLength(stream.ReadInt()); //read the expected compression length
+
+            Debug("Data Length: " + container.GetDataLength(), LOG_DETAIL.ADVANCED);
+            Debug("Compression type: " + compressionName, LOG_DETAIL.ADVANCED);
+            Debug("Decompressed length: " + container.GetDecompressedLength());
+
+            byte[] payload = stream.ReadBytes(container.GetDataLength());
+
+            if (xteaKey != null)
+            {
+                JagStream t = new JagStream(payload);
+                XTEA.Decipher(t, 0, (int)t.Length, xteaKey);
+                payload = t.ToArray();
+            }
+
+            payload = container.GetCompressionType() switch
+            {
+                RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(payload, container.GetDecompressedLength()),
+                RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(payload),
+                RSConstants.NO_COMPRESSION => payload,
+                _ => throw new IOException("Invalid compression type")
+            };
+
+            if (payload.Length != container.GetDecompressedLength())
+                throw new IOException("Length mismatch. [ " + payload.Length + " != " + container.GetDecompressedLength() + " ]");
+
+            container.SetStream(new JagStream(payload));
+            container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1);
+            container.PrintInfo();
+            return container;
+        }
 
         /// <summary>
         ///     Encodes this container to the on‑disk binary representation.
@@ -52,7 +115,8 @@ namespace FlashEditor.cache {
         /// <param name="xteaKey">Optional 4&nbsp;integer XTEA key. When
         /// <c>null</c> no encryption is performed.</param>
         /// <returns>The encoded container bytes.</returns>
-        public JagStream Encode(int[] xteaKey = null) {
+        public JagStream Encode(int[] xteaKey = null)
+        {
             Debug("Encoding RSContainer " + id + ", length " + GetStream().Length);
 
             JagStream stream = new JagStream();
@@ -91,7 +155,7 @@ namespace FlashEditor.cache {
             PrintByteArray(data);
 
             //Write out the optional version value
-            if(GetVersion() != -1)
+            if (GetVersion() != -1)
                 stream.WriteShort(GetVersion());
 
             Debug("\t\t\tENCODED Container, stream len: " + stream.Length);
@@ -101,81 +165,43 @@ namespace FlashEditor.cache {
             return stream.Flip();
         }
 
-        /// <summary>
-        /// Constructs a new <see cref="RSContainer"/> from the stream data
-        /// </summary>
-        /// <param name="stream">The raw container data.</param>
-        /// <param name="xteaKey">Optional XTEA key used to decrypt the payload.</param>
-        /// <returns>The new container, or <c>null</c> if <paramref name="stream"/> is null.</returns>
-        public static RSContainer Decode(JagStream stream, int[] xteaKey = null) {
-            if(stream == null)
-                return null;
-
-            RSContainer container = new RSContainer();
-
-            container.SetCompressionType(stream.ReadUnsignedByte());
-            container.SetDataLength(stream.ReadInt());
-
-            if (container.GetCompressionType() != RSConstants.NO_COMPRESSION)
-                container.SetDecompressedLength(stream.ReadInt());
-            else
-                container.SetDecompressedLength(container.GetDataLength());
-
-            byte[] payload = stream.ReadBytes(container.GetDataLength());
-
-            if (xteaKey != null)
+        public string GetCompressionString()
+        {
+            return GetCompressionType() switch
             {
-                JagStream t = new JagStream(payload);
-                XTEA.Decipher(t, 0, (int)t.Length, xteaKey);
-                payload = t.ToArray();
-            }
-
-            payload = container.GetCompressionType() switch
-            {
-                RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(payload, container.GetDecompressedLength()),
-                RSConstants.GZIP_COMPRESSION => CompressionUtils.Gunzip(payload),
-                RSConstants.NO_COMPRESSION => payload,
-                _ => throw new IOException("Invalid compression type")
-            };
-
-            if (payload.Length != container.GetDecompressedLength())
-                throw new IOException("Length mismatch. [ " + payload.Length + " != " + container.GetDecompressedLength() + " ]");
-
-            container.SetStream(new JagStream(payload));
-            container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1);
-            container.PrintInfo();
-            return container;
-        }
-
-        public string GetCompressionString() {
-            return GetCompressionType() switch {
                 RSConstants.BZIP2_COMPRESSION => "BZIP2",
                 RSConstants.GZIP_COMPRESSION => "GZIP",
                 _ => "None"
             };
         }
 
-        private int GetDecompressedLength() {
+        private int GetDecompressedLength()
+        {
             return decompressedLength;
         }
 
-        private void SetDecompressedLength(int decompressedLength) {
+        private void SetDecompressedLength(int decompressedLength)
+        {
             this.decompressedLength = decompressedLength;
         }
 
-        private void SetVersion(int version) {
+        private void SetVersion(int version)
+        {
             this.version = version;
         }
 
-        private void SetDataLength(int length) {
+        private void SetDataLength(int length)
+        {
             this.length = length;
         }
 
-        private int GetDataLength() {
+        private int GetDataLength()
+        {
             return length;
         }
 
-        private void PrintInfo() {
+        private void PrintInfo()
+        {
             Debug("\t\t\tCompression type: " + GetCompressionString()
                 + (stream == null ? "" : ", streamlen: " + stream.Length)
                 + ", datalen: " + GetDataLength()
@@ -183,11 +209,13 @@ namespace FlashEditor.cache {
             LOG_DETAIL.ADVANCED);
         }
 
-        public void SetStream(JagStream stream) {
+        public void SetStream(JagStream stream)
+        {
             this.stream = stream;
         }
 
-        private void SetCompressionType(byte compressionType) {
+        private void SetCompressionType(byte compressionType)
+        {
             this.compressionType = compressionType;
         }
 
@@ -195,7 +223,8 @@ namespace FlashEditor.cache {
         /// Returns the compression type for the container
         /// </summary>
         /// <returns>The container's compression type</returns>
-        internal byte GetCompressionType() {
+        internal byte GetCompressionType()
+        {
             return compressionType;
         }
 
@@ -203,7 +232,8 @@ namespace FlashEditor.cache {
         /// Returns the version for the container
         /// </summary>
         /// <returns>The container's version</returns>
-        internal int GetVersion() {
+        internal int GetVersion()
+        {
             return version;
         }
 
@@ -211,35 +241,43 @@ namespace FlashEditor.cache {
         /// Return the stream associated with this container
         /// </summary>
         /// <returns>The container stream</returns>
-        internal JagStream GetStream() {
+        internal JagStream GetStream()
+        {
             return stream;
         }
 
-        internal RSArchive GetArchive() {
+        internal RSArchive GetArchive()
+        {
             return archive;
         }
 
-        internal void SetArchive(RSArchive archive) {
+        internal void SetArchive(RSArchive archive)
+        {
             this.archive = archive;
         }
 
-        internal void SetType(int type) {
+        internal void SetType(int type)
+        {
             this.type = type;
         }
 
-        internal void SetId(int id) {
+        internal void SetId(int id)
+        {
             this.id = id;
         }
 
-        public int GetIndexType() {
+        public int GetIndexType()
+        {
             return type;
         }
 
-        public int GetId() {
+        public int GetId()
+        {
             return id;
         }
 
-        public int GetLength() {
+        public int GetLength()
+        {
             return length;
         }
     }

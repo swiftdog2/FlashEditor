@@ -63,7 +63,7 @@ namespace FlashEditor.utils {
         /// <param name="buffer">The byte buffer to print</param>
         /// <param name="length">The number of bytes to print from the beginning and end of the buffer</param>
         public static void PrintByteArray(byte[] buffer, int length) {
-            if(LOG_LEVEL == LOG_DETAIL.NONE)
+            if(LOG_LEVEL < LOG_DETAIL.INSANE)
                 return;
 
             //We cannot print more than max bytes on either side

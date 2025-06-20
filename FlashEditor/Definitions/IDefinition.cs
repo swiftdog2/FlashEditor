@@ -5,10 +5,16 @@ namespace FlashEditor
     /// </summary>
     internal interface IDefinition
     {
-        /// <summary>Populates the definition by decoding the supplied stream.</summary>
-        void Decode(JagStream stream);
+        /// <summary>
+        /// Populates the definition by decoding the supplied stream.
+        /// </summary>
+        /// <param name="stream">Stream with full model+footer.</param>
+        /// <param name="xteaKey">Optional XTEA decryption key (null by default).</param>
+        void Decode(JagStream stream, int[] xteaKey = null);
 
-        /// <summary>Encodes the definition back into a stream.</summary>
+        /// <summary>
+        /// Encodes the definition back into a stream.
+        /// </summary>
         JagStream Encode();
     }
 }

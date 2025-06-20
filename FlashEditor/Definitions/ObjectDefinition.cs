@@ -124,7 +124,7 @@ namespace FlashEditor.Definitions
         /*───────────────────────────────────────────*
          *  ▌  Public decode entry-point            ▐
          *───────────────────────────────────────────*/
-        public void Decode(JagStream stream)
+        public void Decode(JagStream stream, int[] xteaKey = null)
         {
             int safeGuard = 0;
             SharedBuilder.Clear();

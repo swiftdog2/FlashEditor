@@ -410,13 +410,15 @@ namespace FlashEditor.cache
 
             Debug("Reading " + RSConstants.GetContainerNameForType(type) + ", Archive" + archive + " - file " + file, LOG_DETAIL.ADVANCED);
 
-            int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
+            //int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
+
+            Debug($"Models archive {archive} has {entry.GetValidFileIds().Length} files");
 
             RSContainer container = GetContainer(type, archive);
             if (container == null)
                 return null;
 
-            RSArchive RSarchive = GetArchive(container, realFiles);
+            RSArchive RSarchive = GetArchive(container, entry.GetValidFileIds().Length);
             if (RSarchive == null)
                 return null;
 

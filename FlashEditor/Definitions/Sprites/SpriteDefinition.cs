@@ -82,7 +82,7 @@ namespace FlashEditor.cache.sprites {
         /// </summary>
         /// <param name="stream">The stream.</param>
         /// <returns>The sprite.</returns>
-        public void Decode(JagStream stream) {
+        public void Decode(JagStream stream, int[] xteaKey = null) {
             //Find the size of this sprite set
             stream.Seek(stream.Length - 2);
             int size = stream.ReadUnsignedShort();

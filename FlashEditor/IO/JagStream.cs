@@ -10,6 +10,13 @@ namespace FlashEditor {
         public JagStream(int size) : base(size) { }
         public JagStream(byte[] buffer) : base(buffer) { }
         public JagStream() { }
+        /// <summary>
+        /// Creates a JagStream over a portion of an existing buffer.
+        /// </summary>
+        public JagStream(byte[] buffer, int index, int count)
+            : base(buffer, index, count, writable: false, publiclyVisible: true)
+        { }
+
 
         /*
          * The modified set of 'extended ASCII' characters used by the client.
@@ -194,14 +201,14 @@ namespace FlashEditor {
         /// 8-bit integer (0-255). Throws <see cref="EndOfStreamException"/>
         /// if the current position is already at or beyond <see cref="Length"/>.
         /// </summary>
-        internal int PeekUnsignedByte()
+        public byte PeekUnsignedByte()
         {
-            if (Position >= Length)
-                throw new EndOfStreamException("Peek beyond end of JagStream.");
-
-            // MemoryStream exposes its backing buffer; safe because the
-            // RuneScape cache always loads into a contiguous byte[].
-            return GetBuffer()[Position] & 0xFF;
+            // Save current position
+            long pos = Position;
+            int b = ReadByte();            // read one byte
+            if (b < 0) throw new EndOfStreamException();
+            Position = pos;                // rewind
+            return (byte)b;
         }
 
 

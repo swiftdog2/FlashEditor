@@ -39,13 +39,17 @@ namespace FlashEditor.cache
             //Single‑file archives omit the size table entirely.
             if (size == 1)
             {
-                archive.entries[0] = new JagStream((int)stream.Length - 1);
                 stream.Seek0();
-                archive.entries[0].Write(stream.ReadBytes((int)stream.Length - 1));
-                archive.entries[0].Flip();
+
+                byte[] allData = stream.ReadBytes(stream.Length);
+
+                JagStream data = new JagStream();
+                data.Write(allData);
+                data.Flip();
+
+                archive.entries[0] = data;
                 return archive;
             }
-
 
             //Read the sizes of the child entries and individual chunks
             int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(archive.chunks, size);
@@ -64,12 +68,6 @@ namespace FlashEditor.cache
                 {
                     //Read the delta-encoded chunk length
                     int delta = stream.ReadInt();
-
-                    if (delta > size)
-                    {                       // crude sanity check
-                        Debug("Invalid delta detected! returning null", LOG_DETAIL.ADVANCED);
-                        return null;
-                    }
 
                     cumulativeChunkSize += delta;
                     Debug(" " + delta, LOG_DETAIL.INSANE);
@@ -117,39 +115,83 @@ namespace FlashEditor.cache
             return archive;
         }
 
+        /// <summary>
+        /// Serialises this <see cref="RSArchive"/> into the exact binary
+        /// format consumed by <see cref="Decode"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Write–order.</b>  Like the original Jagex client, we write the
+        /// <i>chunk payloads first</i> and the <i>size-table</i> afterwards.  
+        /// <see cref="Decode"/> therefore seeks to
+        /// <c>stream.Length - 1 - (chunks ✕ fileCount ✕ 4)</c>, reads the size
+        /// table, then rewinds to pull out each file unchanged.
+        /// </para>
+        /// <para>
+        /// <b>Single-vs-multi-file archives.</b><br/>
+        /// ─ If the archive holds only <c>1</c> file the spec omits the size
+        ///   table entirely; only the final chunk-count byte (<c>1</c>) is
+        ///   written.<br/>
+        /// ─ For <c>&gt;1</c> files we output one <c>int32</c> per file and per
+        ///   chunk.  Because this implementation always stores exactly one
+        ///   chunk, the delta we emit for file <i>i</i> is simply
+        ///   <c>len<i>i</i> - len<i>i-1</i></c> (the convention expected by
+        ///   <see cref="Decode"/>).  See lines around
+        ///   <c>cumulativeChunkSize += delta;</c> in the decoder for the
+        ///   corresponding read-side logic. :contentReference[oaicite:0]{index=0}
+        /// </para>
+        /// <para>
+        /// <b>Future multi-chunk support.</b>  
+        /// When <c>chunks &gt; 1</c> you must split each file into <c>chunks</c>
+        /// equal parts, write them in
+        /// <c>chunk0 file0 … fileN, chunk1 file0 …</c> order, and change the
+        /// delta calculation to be “this chunk’s size minus the previous chunk’s
+        /// size of the <i>same</i> file”.
+        /// </para>
+        /// </remarks>
+        /// <returns>
+        /// A flipped <see cref="JagStream"/> positioned at the start of the
+        /// freshly encoded archive.
+        /// </returns>
         public virtual JagStream Encode()
         {
-            JagStream stream = new JagStream();
+            var stream = new JagStream();
 
-            /*
-             * Reason why this looks backwards is because in the Decode() we have this line:
-             *             stream.Seek(stream.Length - 1 - archive.chunks * size * 4);
-             * Here, we are writing out the chunk data before the sizes so it all works out
-             */
-
-            //Write the chunk data for each entry stream
-            foreach (KeyValuePair<int, JagStream> entry in entries)
-                entry.Value.WriteTo(stream);
-
-            //Write the chunk lengths
-            int prev = 0;
-            for (int chunk = 0; chunk < chunks; chunk++)
+            //------------------------------------------------------------------
+            // 1)  Write raw payloads – one contiguous block per file
+            //------------------------------------------------------------------
+            foreach (var kvp in entries)
             {
-                foreach (KeyValuePair<int, JagStream> entry in entries)
+                kvp.Value.Seek0();          // defensive rewind
+                kvp.Value.WriteTo(stream);  // copy verbatim
+            }
+
+            //------------------------------------------------------------------
+            // 2)  Write the delta-encoded size table (multi-file only)
+            //------------------------------------------------------------------
+            int fileCount = entries.Count;
+            if (fileCount > 1)
+            {
+                for (int chunk = 0; chunk < chunks; ++chunk)            // always 1 today
                 {
-                    //Archive is broken into chunks, which is the entry stream data
-                    int chunkSize = (int)entry.Value.Length; //Therefore chunk size is entry stream length
-                    stream.WriteInteger(chunkSize - prev); //So delta is the difference between the chunk sizes
-                    prev = chunkSize; //Store the size of the last entry
+                    int prev = 0;
+                    foreach (var kvp in entries)                        // sorted by key
+                    {
+                        int chunkSize = (int)kvp.Value.Length;          // full len (1-chunk)
+                        stream.WriteInteger(chunkSize - prev);          // Δ vs previous file
+                        prev = chunkSize;
+                    }
                 }
             }
 
-            //Write out the number of chunks that the archive is split up into
-            //We only used one chunk due to a limitation of the implementation
-            stream.WriteByte(1);
+            //------------------------------------------------------------------
+            // 3)  Final byte – number of chunks
+            //------------------------------------------------------------------
+            stream.WriteByte((byte)chunks);   // spec = 1, keeps decoder happy
 
-            return stream.Flip();
+            return stream.Flip();             // ready for reading
         }
+
 
         /// <summary>
         /// Returns the file at the specified index id
