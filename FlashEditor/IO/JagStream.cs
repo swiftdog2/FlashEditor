@@ -1,166 +1,460 @@
 ﻿using FlashEditor.utils;
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using static FlashEditor.utils.DebugUtil;
 
 namespace FlashEditor {
-    public class JagStream : MemoryStream {
-        public JagStream(int size) : base(size) { }
-        public JagStream(byte[] buffer) : base(buffer) { }
-        public JagStream() { }
+    /// <summary>
+    /// A high-performance, span-based replacement for the old MemoryStream-based JagStream.
+    /// </summary>
+    public class JagStream {
+        private byte[] Buffer;
+        public int Position;
+        public int Length;
+        public int Capacity => Buffer.Length;
+
         /// <summary>
-        /// Creates a JagStream over a portion of an existing buffer.
+        /// The modified set of 'extended ASCII' characters used by the client.
         /// </summary>
-        public JagStream(byte[] buffer, int index, int count)
-            : base(buffer, index, count, writable: false, publiclyVisible: true)
-        { }
+        private static readonly char[] CHARACTERS = {
+            '\u20AC','\0','\u201A','\u0192','\u201E','\u2026','\u2020','\u2021',
+            '\u02C6','\u2030','\u0160','\u2039','\u0152','\0','\u017D','\0',
+            '\0','\u2018','\u2019','\u201C','\u201D','\u2022','\u2013','\u2014',
+            '\u02DC','\u2122','\u0161','\u203A','\u0153','\0','\u017E','\u0178'
+        };
 
-
-        /*
-         * The modified set of 'extended ASCII' characters used by the client.
-         */
-        private static char[] CHARACTERS = { '\u20AC', '\0', '\u201A', '\u0192', '\u201E', '\u2026', '\u2020', '\u2021',
-            '\u02C6', '\u2030', '\u0160', '\u2039', '\u0152', '\0', '\u017D', '\0', '\0', '\u2018', '\u2019', '\u201C',
-            '\u201D', '\u2022', '\u2013', '\u2014', '\u02DC', '\u2122', '\u0161', '\u203A', '\u0153', '\0', '\u017E',
-            '\u0178' };
-
-        /// <summary>Maps Unicode → RuneScape extended byte (128-159).</summary>
+        /// <summary>Maps Unicode → RuneScape extended byte (128–159).</summary>
         private static readonly Dictionary<char, byte> EXTENDED_REMAP = BuildReverse();
 
-        private static Dictionary<char, byte> BuildReverse()
-        {
+        private static Dictionary<char, byte> BuildReverse() {
             var map = new Dictionary<char, byte>(32);
-            for (int i = 0; i < CHARACTERS.Length; i++)
+            for (int i = 0 ; i < CHARACTERS.Length ; i++)
                 if (CHARACTERS[i] != '\0')
-                    map[CHARACTERS[i]] = (byte)(i + 128);
+                    map[CHARACTERS[i]] = (byte) (i + 128);
             return map;
         }
 
-        /*
-         * Loading stream from file
-         */
-        public static JagStream LoadStream(string directory) {
-            if(!File.Exists(directory))
-                throw new FileNotFoundException("'" + directory + "' could not be found.");
+        #region Constructors
 
-            byte[] data = File.ReadAllBytes(directory);
-            if(data.Length == 0)
-                Debug("No data read for directory: " + directory);
-
-            //We initialise it like this to ensure the stream is expandable
-            JagStream stream = new JagStream();
-            stream.Write(data, 0, data.Length);
-            return stream;
+        /// <summary>
+        /// Creates an expandable JagStream with the given initial capacity.
+        /// </summary>
+        public JagStream(int capacity) {
+            Buffer = new byte[capacity];
+            Length = 0;
+            Position = 0;
         }
 
         /// <summary>
-        /// The limit is set to the current position and then the position is set to zero.
-        /// If the mark is defined then it is discarded.
+        /// Creates a JagStream over an existing buffer (read/write).
         /// </summary>
-        /// <returns>The buffer</returns>
+        public JagStream(byte[] buffer) {
+            Buffer = buffer;
+            Length = buffer.Length;
+            Position = 0;
+        }
+
+        /// <summary>
+        /// Default constructor: starts with a small expandable buffer.
+        /// </summary>
+        public JagStream() : this(256) { }
+
+        /// <summary>
+        /// Creates a JagStream over a portion of an existing buffer (read-only, expandable).
+        /// </summary>
+        public JagStream(byte[] buffer, int index, int count) {
+            // publiclyVisible: we expose the full buffer via GetBuffer()
+            Buffer = new byte[count];
+            Array.Copy(buffer, index, Buffer, 0, count);
+            Length = count;
+            Position = 0;
+        }
+
+        #endregion
+
+        #region Load/Save
+
+        /// <summary>
+        /// Loads an entire file into a new JagStream (expandable).
+        /// </summary>
+        public static JagStream LoadStream(string path) {
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"'{path}' could not be found.");
+
+            byte[] data = File.ReadAllBytes(path);
+            if (data.Length == 0)
+                DebugUtil.Debug($"No data read for path: {path}");
+
+            var js = new JagStream();
+            js.Write(data, 0, data.Length);
+            return js;
+        }
+
+        /// <summary>
+        /// Writes binary data from a JagStream to a file.
+        /// </summary>
+        public static void Save(JagStream stream, string path) {
+            if (stream == null)
+                throw new NullReferenceException("Stream was null");
+
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            File.WriteAllBytes(path, stream.ToArray());
+        }
+
+        /// <summary>
+        /// Instance overload for Save.
+        /// </summary>
+        public void Save(string path) => Save(this, path);
+
+        #endregion
+
+        #region Buffer/Position Management
+
+        /// <summary>
+        /// Exposes the raw buffer (capacity).
+        /// </summary>
+        public byte[] GetBuffer() => Buffer;
+
+        /// <summary>
+        /// Copies the valid portion of the buffer to a fresh array.
+        /// </summary>
+        public byte[] ToArray() {
+            var output = new byte[Length];
+            Array.Copy(Buffer, 0, output, 0, Length);
+            return output;
+        }
+
+        /// <summary>
+        /// Sets length = position, resets position to 0.
+        /// </summary>
+        /// <returns>This stream.</returns>
         public JagStream Flip() {
-            if(Position == 0 && Length > 0)
+            if (Position == 0 && Length > 0)
                 throw new IOException("Idiot you're destroying the stream");
-            SetLength(Position);
-            Seek0();
+            Length = Position;
+            Position = 0;
             return this;
         }
 
-        ///<summary>
-        ///Writes binary data from a JagStream to a file
+        /// <summary>
+        /// Clears this buffer. Position=0, length=capacity.
         /// </summary>
-        /// <param name="stream">The stream to write to file</param>
-        /// <param name="directory">The directory to write the file to</param>
-        public static void Save(JagStream stream, string directory) {
-            if(stream == null)
-                throw new NullReferenceException("Stream was null");
-
-            string dirName = Path.GetDirectoryName(directory);
-            if(!string.IsNullOrEmpty(dirName) && !Directory.Exists(dirName))
-                Directory.CreateDirectory(dirName);
-
-            using(FileStream file = new FileStream(directory, FileMode.Create, FileAccess.Write))
-                file.Write(stream.ToArray(), 0, (int) stream.Length);
+        public void Clear() {
+            Position = 0;
+            Length = Buffer.Length;
         }
 
-        public void Save(string directory) {
-            Save(this, directory);
+        /// <summary>
+        /// Computes the number of bytes remaining.
+        /// </summary>
+        public int Remaining() => Length - Position;
+
+        /// <summary>
+        /// Seek to absolute offset from beginning.
+        /// </summary>
+        public long Seek(long offset) => Seek(offset, SeekOrigin.Begin);
+
+        /// <summary>
+        /// Seek with origin.
+        /// </summary>
+        public long Seek(long offset, SeekOrigin origin) {
+            int newPos = origin switch {
+                SeekOrigin.Begin => (int) offset,
+                SeekOrigin.Current => Position + (int) offset,
+                SeekOrigin.End => Length + (int) offset,
+                _ => throw new ArgumentOutOfRangeException(nameof(origin))
+            };
+            if (newPos < 0 || newPos > Length)
+                throw new IOException($"Seek out of bounds: {newPos}");
+            Position = newPos;
+            return Position;
         }
 
-        /*
-         * Stream reading utils
-         */
+        /// <summary>
+        /// Seek to 0.
+        /// </summary>
+        public long Seek0() => Seek(0, SeekOrigin.Begin);
 
-        public long Seek0() {
-            return Seek(0);
+        #endregion
+
+        #region Underlying Read/Write Helpers
+
+        private void EnsureCapacity(int required) {
+            if (required <= Buffer.Length) return;
+            int newSize = Math.Max(Buffer.Length * 2, required);
+            Array.Resize(ref Buffer, newSize);
         }
 
-        public long Seek(long offset) {
-            return Seek(offset, SeekOrigin.Begin);
+        /// <summary>
+        /// Reads up to <paramref name="destination"/>.Length bytes into the provided span,
+        /// advances the position, and returns the actual number of bytes read (0 on EOF).
+        /// </summary>
+        public int Read(Span<byte> destination) {
+            int remaining = Length - Position;
+            if (remaining <= 0) return 0;
+            int toCopy = Math.Min(remaining, destination.Length);
+            Buffer.AsSpan(Position, toCopy).CopyTo(destination);
+            Position += toCopy;
+            return toCopy;
         }
 
-        /*
-         * Methods for reading data from the stream
-         */
+        /// <summary>
+        /// Reads up to <paramref name="count"/> bytes into <paramref name="buffer"/> at <paramref name="offset"/>,
+        /// advances the position, and returns the number of bytes read.
+        /// </summary>
+        public int Read(byte[] buffer, int offset, int count) {
+            return Read(buffer.AsSpan(offset, count));
+        }
+
+        /// <summary>
+        /// Reads one byte (0–255) or -1 if EOF.
+        /// </summary>
+        public int ReadByte() {
+            if (Position >= Length) return -1;
+            return Buffer[Position++];
+        }
+
+        /// <summary>
+        /// Writes raw bytes from span.
+        /// </summary>
+        public void Write(ReadOnlySpan<byte> span) {
+            EnsureCapacity(Position + span.Length);
+            span.CopyTo(Buffer.AsSpan(Position));
+            Position += span.Length;
+            if (Position > Length) Length = Position;
+        }
+
+        /// <summary>
+        /// Writes the entire contents of this JagStream (from 0 up to Length)
+        /// into the provided destination stream.
+        /// </summary>
+        /// <param name="destination">The stream to write into.</param>
+        public void WriteTo(JagStream destination) {
+            if (destination == null)
+                throw new ArgumentNullException(nameof(destination));
+
+            // Write the valid portion of our internal buffer as a ReadOnlySpan<byte>
+            destination.Write(Buffer.AsSpan(0, Length));
+        }
+
+        /// <summary>
+        /// Writes raw bytes from array[offset..offset+count].
+        /// </summary>
+        public void Write(byte[] data, int offset, int count) => Write(data.AsSpan(offset, count));
+
+        /// <summary>
+        /// Writes a single byte.
+        /// </summary>
+        public void WriteByte(byte value) {
+            EnsureCapacity(Position + 1);
+            Buffer[Position++] = value;
+            if (Position > Length) Length = Position;
+        }
+
+        /// <summary>
+        /// Writes a single byte (int overload).
+        /// </summary>
+        public void WriteByte(int value) => WriteByte((byte) value);
+
+        #endregion
+
+        #region Primitive Readers/Writers
 
         /// <summary>
         /// Reads a variable-length integer encoded in 7-bit chunks (Java’s readVarInt equivalent).
         /// </summary>
-        /// <returns>The decoded int.</returns>
         public int ReadVarInt() {
-            // Java `byte` (–128…127) → C# `sbyte`
             sbyte b = ReadSignedByte();
             int value = 0;
-
-            // while the high bit is set
             while (b < 0) {
-                // mask off the sign-bit (0x7F) and accumulate, then shift for the next 7 bits
                 value = (value | (b & 0x7F)) << 7;
                 b = ReadSignedByte();
             }
-
-            // final chunk
             return value | b;
         }
 
         /// <summary>
-        /// Reads a “smart” 1‐ or 2‐byte value:
-        /// – If the next byte is < 128, returns readUnsignedByte() (0…127).
-        /// – Otherwise, reads an unsigned short and returns (value – 0x8000).
-        /// Mirrors the Java “smart_v1” pattern.
+        /// Writes a Java‐style varint.
         /// </summary>
-        public int ReadSmart() {
-            // 1) Peek the next raw byte without advancing
-            int pos = (int) Position;
-            var buf = GetBuffer();
-            if (pos >= buf.Length)
-                throw new EndOfStreamException("Cannot peek Smart: end of buffer");
-
-            int peek = buf[pos] & 0xFF;
-
-            // 2) Branch on peek
-            if (peek < 128) {
-                // single‐byte case → 0…127
-                return ReadByte();
+        public void WriteVarInt(int value) {
+            uint v = (uint) value;
+            while (v >= 0x80) {
+                WriteByte((byte) (v | 0x80));
+                v >>= 7;
             }
-            else {
-                // two‐byte case → 128…65535 → shift down into signed range
-                return ReadUnsignedShort() - 0x8000;
-            }
+            WriteByte((byte) v);
         }
 
         /// <summary>
-        /// Peeks the next byte without advancing the position.
+        /// Reads next byte as signed (-128..127).
+        /// </summary>
+        public sbyte ReadSignedByte() {
+            int b = ReadByte();
+            if (b < 0) throw new EndOfStreamException("End of stream");
+            return unchecked((sbyte) b);
+        }
+
+        /// <summary>
+        /// Writes a Java‐style signed byte.
+        /// </summary>
+        public void WriteSignedByte(sbyte value) => WriteByte((byte) value);
+
+        /// <summary>
+        /// Reads next byte as unsigned (0–255), throws at EOF.
+        /// </summary>
+        public int ReadUnsignedByte() {
+            return ReadByte() & 0xFF;
+        }
+
+        /// <summary>
+        /// Peeks next byte without advancing.
         /// </summary>
         public int Peek() {
-            long p = Position;
+            int p = Position;
             int v = ReadSignedByte();
             Position = p;
             return v;
         }
 
+        /// <summary>
+        /// Peeks next unsigned byte without advancing.
+        /// </summary>
+        public byte PeekUnsignedByte() {
+            int p = Position;
+            int b = ReadByte();
+            if (b < 0) throw new EndOfStreamException();
+            Position = p;
+            return (byte) b;
+        }
+
+        /// <summary>
+        /// Reads a 2-byte big-endian unsigned int.
+        /// </summary>
+        public int ReadUnsignedShort() {
+            if (Position + 2 > Length) throw new EndOfStreamException();
+            int val = BinaryPrimitives.ReadUInt16BigEndian(Buffer.AsSpan(Position));
+            Position += 2;
+            return val;
+        }
+
+        /// <summary>
+        /// Reads a signed 2-byte big-endian short (-32768..32767).
+        /// </summary>
+        public int ReadShort() {
+            int u = ReadUnsignedShort();
+            return u > 32767 ? u - 0x10000 : u;
+        }
+
+        /// <summary>
+        /// Writes a 2-byte big-endian short.
+        /// </summary>
+        public void WriteShort(short v) {
+            Span<byte> tmp = stackalloc byte[2];
+            BinaryPrimitives.WriteInt16BigEndian(tmp, v);
+            Write(tmp);
+        }
+
+        /// <summary>
+        /// Writes a 2-byte big-endian short (int overload).
+        /// </summary>
+        public void WriteShort(int value) => WriteShort((short) value);
+
+        /// <summary>
+        /// Reads a 3-byte “medium” int.
+        /// </summary>
+        public int ReadMedium() {
+            if (Position + 3 > Length) throw new EndOfStreamException();
+            int val = (Buffer[Position++] << 16)
+                    | (Buffer[Position++] << 8)
+                    | Buffer[Position++];
+            return val;
+        }
+
+        /// <summary>
+        /// Writes a 3-byte medium.
+        /// </summary>
+        public void WriteMedium(int v) {
+            Span<byte> tmp = stackalloc byte[3];
+            tmp[0] = (byte) (v >> 16);
+            tmp[1] = (byte) (v >> 8);
+            tmp[2] = (byte) v;
+            Write(tmp);
+        }
+
+        /// <summary>
+        /// Reads a 4-byte big-endian int.
+        /// </summary>
+        public int ReadInt() {
+            if (Position + 4 > Length) throw new EndOfStreamException();
+            int val = BinaryPrimitives.ReadInt32BigEndian(Buffer.AsSpan(Position));
+            Position += 4;
+            return val;
+        }
+
+        /// <summary>
+        /// Writes a 4-byte big-endian int.
+        /// </summary>
+        public void WriteInteger(int v) {
+            Span<byte> tmp = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(tmp, v);
+            Write(tmp);
+        }
+
+        /// <summary>
+        /// Writes a 4-byte unsigned big-endian integer.
+        /// </summary>
+        /// <param name="v">The unsigned integer to write.</param>
+        public void WriteInteger(uint v) {
+            Span<byte> tmp = stackalloc byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(tmp, v);
+            Write(tmp);
+        }
+
+        /// <summary>
+        /// Writes an 8-byte big-endian long.
+        /// </summary>
+        public void WriteLong(long v) {
+            Span<byte> tmp = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(tmp, v);
+            Write(tmp);
+        }
+
+        /// <summary>
+        /// Reads next 3 bytes as signed medium.
+        /// </summary>
+        public int ReadBytesAsInt(int count) {
+            if (Position + count > Length) throw new EndOfStreamException();
+            int val = 0;
+            for (int i = 0 ; i < count ; i++)
+                val = (val << 8) | Buffer[Position++];
+            return val;
+        }
+
+        #endregion
+
+        #region “Smart” Readers
+
+        /// <summary>
+        /// **smart_v1**: 1- or 2-byte value (<128 = one-byte; otherwise ushort − 0x8000).
+        /// </summary>
+        public int ReadSmart() {
+            int p = Position;
+            if (p >= Length) throw new EndOfStreamException("Cannot peek Smart");
+            int peek = Buffer[p] & 0xFF;
+            return peek < 128
+                ? ReadUnsignedByte()
+                : ReadUnsignedShort() - 0x8000;
+        }
+
+        /// <summary>
+        /// Reads a “short smart” (signed): single byte −64 or ushort −0xC000.
+        /// </summary>
         public int ReadShortSmart() {
             int peek = Peek() & 0xFF;
             return peek < 128
@@ -169,12 +463,9 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Unsigned “smart” integer used inside cache files (not the network variant).  
-        ///  • 1 byte  for values 0-127  
-        ///  • 2 bytes for 128-32 767 (encoded = value + 32 768)
+        /// Unsigned smart (cache file): one byte 0–127; two-byte (value+32768).
         /// </summary>
-        public int ReadUnsignedSmart()
-        {
+        public int ReadUnsignedSmart() {
             int peek = PeekUnsignedByte();
             return peek < 128
                 ? ReadByte()
@@ -182,289 +473,194 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Signed “smart” integer used inside cache files (delta-encoded numbers).  
-        /// Encoding = unsignedSmart → zig-zag (LSB encodes sign).
+        /// Signed smart (delta-encoded): zig-zag decode of unsignedSmart.
         /// </summary>
-        public int ReadSignedSmart()
-        {
-            int val = ReadUnsignedSmart();         // 0…32767
-                                                   // Zig-zag decode:  0 → 0, 1 → -1, 2 → +1, 3 → -2, …
+        public int ReadSignedSmart() {
+            int val = ReadUnsignedSmart();
             return (val >> 1) ^ (-(val & 1));
         }
 
-        public int ReadSpecialSmart()
-        {
-            int peek = GetBuffer()[Position];
-            return peek < 128 ? ReadByte() - 1
-                              : ReadUnsignedShort() - 32769;
+        /// <summary>
+        /// Special smart: single-byte-1 or unsignedShort-32769.
+        /// </summary>
+        public int ReadSpecialSmart() {
+            int peek = Buffer[Position] & 0xFF;
+            return peek < 128
+                ? ReadByte() - 1
+                : ReadUnsignedShort() - 32769;
         }
 
-        public int ReadInt() {
-            int b1 = ReadByte();
-            int b2 = ReadByte();
-            int b3 = ReadByte();
-            int b4 = ReadByte();
-            return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
-        }
+        #endregion
 
-        public int ReadUnsignedShort()
-        {
-            int hi = ReadByte();          // 0-255
-            int lo = ReadByte();          // 0-255
-            return (hi << 8) | lo;
-        }
-
-        internal int ReadMedium() {
-            return (ReadByte() << 16) + (ReadByte() << 8) + ReadByte();
-        }
+        #region Array Readers
 
         /// <summary>
-        /// Returns the next byte in the stream <strong>without</strong> advancing
-        /// <see cref="Position"/>. The value is returned as an unsigned
-        /// 8-bit integer (0-255). Throws <see cref="EndOfStreamException"/>
-        /// if the current position is already at or beyond <see cref="Length"/>.
+        /// Reads <paramref name="size"/> unsigned bytes into an int[], pooling for large sizes.
         /// </summary>
-        public byte PeekUnsignedByte()
-        {
-            // Save current position
-            long pos = Position;
-            int b = base.ReadByte();            // read one byte
-            if (b < 0) throw new EndOfStreamException();
-            Position = pos;                // rewind
-            return (byte)b;
-        }
-
-
-        internal int[] ReadUnsignedByteArray(int size)
-        {
-            byte[]? rented = null;
+        public int[] ReadUnsignedByteArray(int size) {
+            byte[]? rent = null;
             Span<byte> span = size <= 1024
-                ? stackalloc byte[size]                     // on the stack
-                : (rented = ArrayPool<byte>.Shared.Rent(size)).AsSpan(0, size);
+                ? stackalloc byte[size]
+                : (rent = ArrayPool<byte>.Shared.Rent(size)).AsSpan(0, size);
 
-            int read = Read(span);                          // MemoryStream.Read
-            if (read != size)
-                throw new EndOfStreamException($"Needed {size} bytes, got {read}");
+            int got = 0;
+            for (; got < size ; got++) {
+                int b = ReadByte();
+                if (b < 0) break;
+                span[got] = (byte) b;
+            }
+            if (got != size)
+                throw new EndOfStreamException($"Needed {size}, got {got}");
 
-            int[] result = new int[size];
-            for (int i = 0; i < size; i++)
+            var result = new int[size];
+            for (int i = 0 ; i < size ; i++)
                 result[i] = span[i];
 
-            if (rented != null)
-                ArrayPool<byte>.Shared.Return(rented);      // return to pool
+            if (rent != null) ArrayPool<byte>.Shared.Return(rent);
             return result;
         }
 
         /// <summary>
-        /// Reads a signed 8-bit value (-128 … 127) from the stream.
-        /// Java’s <c>readSignedByte</c> equivalent.
+        /// Reads <paramref name="size"/> unsigned shorts into an int[], pooling for large sizes.
         /// </summary>
-        internal sbyte ReadSignedByte()
-        {
-            int b = base.ReadByte();          // 0-255
-            if (b < 0)
-                throw new EndOfStreamException("End of stream");
-            return unchecked((sbyte)b);             // cast preserves the sign
-        }
-
-        /// <summary>
-        /// Reads <paramref name="size"/> unsigned 16-bit values (big-endian) into an int[]
-        /// without allocating on the LOH.
-        /// </summary>
-        public int[] ReadUnsignedShortArray(int size)
-        {
+        public int[] ReadUnsignedShortArray(int size) {
             int byteCount = size * 2;
-
             byte[]? rent = null;
             Span<byte> span = byteCount <= 2048
-                ? stackalloc byte[byteCount]                     // on the stack
+                ? stackalloc byte[2048]
                 : (rent = ArrayPool<byte>.Shared.Rent(byteCount)).AsSpan(0, byteCount);
 
-            try
-            {
-                int read = Read(span);
-                if (read != byteCount)
-                    throw new EndOfStreamException($"Wanted {byteCount} bytes, got {read}");
-
-                int[] result = new int[size];
-                for (int i = 0, j = 0; i < size; i++, j += 2)
-                    result[i] = (span[j] << 8) | span[j + 1];
-
-                return result;
+            for (int got = 0 ; got < byteCount ; got++) {
+                int b = ReadByte();
+                if (b < 0) throw new EndOfStreamException($"Wanted {byteCount} bytes, eof at {got}");
+                span[(int) got] = (byte) b;
             }
-            finally
-            {
-                if (rent != null)
-                    ArrayPool<byte>.Shared.Return(rent);
-            }
+
+            var result = new int[size];
+            for (int i = 0, j = 0 ; i < size ; i++, j += 2)
+                result[i] = (span[j] << 8) | span[j + 1];
+
+            if (rent != null) ArrayPool<byte>.Shared.Return(rent);
+            return result;
         }
 
-        internal string ReadString2() {
-            StringBuilder sb = new StringBuilder();
+        #endregion
 
+        #region String Readers/Writers
+
+        /// <summary>
+        /// Reads a null-terminated ASCII string (0 terminator).
+        /// </summary>
+        public string ReadString2() {
+            var sb = new StringBuilder();
             int b;
-
-            while((b = base.ReadByte()) != 0)
+            while ((b = ReadByte()) != 0) {
+                if (b < 0) throw new EndOfStreamException();
                 sb.Append((char) b);
-
-            WriteLine("'");
+            }
+            DebugUtil.WriteLine("'");
             return sb.ToString();
         }
 
-        /**
-         * Gets a null-terminated string from the specified buffer, using a
-         * modified ISO-8859-1 character set.
-         * @param buf The buffer.
-         * @return The decoded string.
-         */
+        /// <summary>
+        /// Reads a null-terminated “Jagex string” using CP-1252+ remap.
+        /// </summary>
         public string ReadJagexString() {
-            StringBuilder sb = new StringBuilder();
-
+            var sb = new StringBuilder();
             int b;
-            while((b = base.ReadByte()) != 0) {
-                //If the byte read is between 127 and 159, it should be remapped
-                if(b >= 127 && b < 160) {
+            while ((b = ReadByte()) != 0) {
+                if (b < 0) throw new EndOfStreamException();
+                if (b >= 127 && b < 160) {
                     char c = CHARACTERS[b - 128];
-                    if(c == '\0') //if it needs to be remapped, as per the characters array
-                        c = '\u003F'; //replace with question mark as placeholder to avoid rendering issues
-                    sb.Append(c);
-                } else {
+                    sb.Append(c == '\0' ? '?' : c);
+                }
+                else {
                     sb.Append((char) b);
                 }
             }
-
             return sb.ToString();
         }
 
-        internal byte Get(int pos) {
-            //Store the current position
-            long tempPosition = Position;
-
-            //Move the the desired position
-            Seek(pos);
-
-            byte x = (byte) base.ReadByte();
-
-            //Reset the position
-            Position = tempPosition;
-
-            return x;
-        }
-
-        internal void Skip(int skip) {
-            Position += skip;
-        }
-
         /// <summary>
-        /// Writes a 0-terminated Jagex string using the cache’s
-        /// modified CP-1252 encoding (bytes 0-255).
+        /// Writes a 0-terminated Jagex string using modified CP-1252.
         /// </summary>
-        public void WriteJagexString(string s)
-        {
-            foreach (char c in s)
-            {
-                if (c == 0)
-                    continue;                 // never embed a NUL
+        public void WriteJagexString(string s) {
+            foreach (char c in s) {
+                if (c == 0) continue;
                 if (c < 128 || (c >= 160 && c <= 255))
-                    WriteByte((byte)c);               // plain ASCII or 0xA0-0xFF
+                    WriteByte((byte) c);
                 else if (EXTENDED_REMAP.TryGetValue(c, out byte b))
-                    WriteByte(b);                     // 0x80-0x9F mapping
+                    WriteByte(b);
                 else
-                    WriteByte((byte)'?');             // fallback
+                    WriteByte((byte) '?');
             }
-            WriteByte(0);                            // terminator
+            WriteByte(0);
         }
 
-        public void WriteByte(int value) => base.WriteByte((byte)value);
+        #endregion
 
+        #region Miscellaneous
 
         /// <summary>
-        /// Writes a Java‐style signed byte (-128..127) into the stream.
+        /// Returns the byte at <paramref name="pos"/> without changing <see cref="Position"/>.
         /// </summary>
-        public void WriteSignedByte(sbyte value) {
-            // cast to byte will wrap negative values into their two’s‐complement 0..255 form
-            WriteByte((byte)value);
+        public byte Get(int pos) {
+            if (pos < 0 || pos >= Length)
+                throw new ArgumentOutOfRangeException(nameof(pos));
+            return Buffer[pos];
         }
 
-        internal void WriteBytes(int bytes, long value)
-        {
-            Span<byte> tmp = bytes <= 8 ? stackalloc byte[bytes] : new byte[bytes];
-            for (int i = 0; i < bytes; i++)
-                tmp[i] = (byte)(value >> (8 * (bytes - i - 1)));
-            Write(tmp);
+        /// <summary>
+        /// Advances position by <paramref name="skip"/>.
+        /// </summary>
+        public void Skip(int skip) {
+            Position += skip;
+            if (Position > Length) Position = Length;
+            if (Position < 0) Position = 0;
         }
 
-        public void WriteShort(short v) => WriteBytes(2, v);
-        public void WriteMedium(int v) => WriteBytes(3, v);
-        public void WriteInteger(int v) => WriteBytes(4, v);
-        public void WriteLong(long v) => WriteBytes(8, v);
-        public void WriteShort(int value) => WriteShort((short)value);
-        public void WriteMedium(long value) => WriteBytes(3, value);        // cast not needed; WriteBytes takes long
-        public void WriteInteger(long value) => WriteInteger((int)value);   // 4-byte truncation is intentional
-        
-        public void WriteVarInt(int value)
-        {
-            uint v = (uint)value;            // work in unsigned space
-            while (v >= 0x80)
-            {
-                WriteByte((byte)(v | 0x80)); // set "more" flag
-                v >>= 7;
-            }
-            WriteByte((byte)v);              // final byte, MSB clear
-        }
-
-        public int ReadShort() {
-            int i = ReadUnsignedShort();
-            return i > 32767 ? i -= 0x10000 : i;
-        }
-
-        //Returns a substream starting at ptr with length bytes
-
+        /// <summary>
+        /// Returns a sub-stream starting at ptr with length bytes.
+        /// </summary>
         public JagStream GetSubStream(int length, long ptr) {
-            Seek(ptr);
+            Seek(ptr, SeekOrigin.Begin);
             return GetSubStream(length);
         }
 
+        /// <summary>
+        /// Returns a sub-stream of the next <paramref name="length"/> bytes.
+        /// </summary>
         public JagStream GetSubStream(int length) {
-            return new JagStream(ReadBytes(length));
+            if (Position + length > Length)
+                throw new EndOfStreamException("Not enough data for substream");
+            var slice = new JagStream(Buffer, Position, length);
+            slice.Position = 0;
+            Position += length;
+            return slice;
         }
 
-        public byte[] ReadBytes(long length) {
-            return ReadBytes((int) length);
-        }
-
+        /// <summary>
+        /// Reads exactly <paramref name="length"/> bytes into a new array.
+        /// </summary>
         public byte[] ReadBytes(int length) {
-            byte[] buf = new byte[length];
-            for(int k = 0; k < length; k++)
-                buf[k] = (byte) base.ReadByte();
-
-            return buf;
+            if (Position + length > Length)
+                throw new EndOfStreamException($"Requested {length}, have {Remaining()}");
+            var dst = new byte[length];
+            Array.Copy(Buffer, Position, dst, 0, length);
+            Position += length;
+            return dst;
         }
 
         /// <summary>
-        /// Clears this buffer. The position is set to zero, the limit is set to the
-        /// capacity, and the mark is discarded.
+        /// Clears the buffer: position=0, length=capacity.
         /// </summary>
-        public void Clear() {
-            Position = 0;
-            SetLength(Capacity);
+        public void WriteBytes(int count, long value) {
+            Span<byte> tmp = count <= 8 ? stackalloc byte[8] : new byte[count];
+            for (int i = 0 ; i < count ; i++)
+                tmp[i] = (byte) (value >> (8 * (count - i - 1)));
+            Write(tmp.Slice(0, count));
         }
 
-        /// <summary>
-        /// Computes the number of bytes that can be read before reaching the Length (limit)
-        /// </summary>
-        /// <returns>The number of bytes remaining left to be read</returns>
-        public int Remaining() {
-            return (int) (Length - Position);
-        }
-
-        /// <summary>
-        /// Reads the next byte (0–255) from the stream.
-        /// Throws if the end of stream is reached.
-        /// </summary>
-        /// <returns>An integer in 0…255.</returns>
-        public int ReadUnsignedByte() {
-            return ReadByte() & 0xFF;
-        }
+        #endregion
     }
 }

@@ -17,7 +17,7 @@ namespace FlashEditor.Definitions.Tracks {
         private byte[] decoded;
 
         public void Decode(JagStream buf) {
-            buf.Position = buf.Seek(buf.Length - 3);
+            buf.Position = 0;// buf.Seek(buf.Length - 3);
             int tracks = buf.ReadByte();
             int division = buf.ReadUnsignedShort();
             int offset = 14 + tracks * 10;
