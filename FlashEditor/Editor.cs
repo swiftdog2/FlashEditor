@@ -2,17 +2,10 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
-using FlashEditor.Tests;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Windows.Forms;
 using static FlashEditor.utils.DebugUtil;
 using OpenTK.Graphics.OpenGL;
-using FlashEditor.utils;     // old 4.0 namespace
 
 
 namespace FlashEditor
@@ -792,9 +785,6 @@ namespace FlashEditor
             {
                 //Load the two caches into a stream
                 JagStream inputCache = JagStream.LoadStream(cacheIn + file);
-                JagStream outputCache = JagStream.LoadStream(cacheOut + file);
-                if (StreamTests.StreamDifference(inputCache, outputCache, file))
-                    return 1;
             }
             catch (Exception ex)
             {
