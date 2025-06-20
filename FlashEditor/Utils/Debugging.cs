@@ -17,7 +17,7 @@ namespace FlashEditor.utils {
         };
 
         //The current logging detail level, change for lower/higher detailed logs
-        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.ADVANCED;
+        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.BASIC;
 
         /// <summary>
         /// Prints out the debug message and waits for user input

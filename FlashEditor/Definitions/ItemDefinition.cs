@@ -101,7 +101,7 @@ namespace FlashEditor
 
             while (true)
             {
-                int op = s.ReadUnsignedByte();
+                int op = s.ReadByte();
                 if (op == 0) break;                       // terminator
                 DecodeOpcode(s, op);
                 if (++safety > 256) break;                // corrupt-stream guard
@@ -142,8 +142,8 @@ namespace FlashEditor
                 case 12: value = buf.ReadInt(); return;
 
                 /* equip slot + id */
-                case 13: equipSlotId = buf.ReadUnsignedByte(); return;
-                case 14: equipId = buf.ReadUnsignedByte(); return;
+                case 13: equipSlotId = (byte) buf.ReadByte(); return;
+                case 14: equipId = (byte) buf.ReadByte(); return;
 
                 case 15: stackable = 0; return;
                 case 17: stackable = 0; return; // +action reset (ignored)
@@ -176,7 +176,7 @@ namespace FlashEditor
                 /* recolour */
                 case 40:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         originalModelColors = new short[n];
                         modifiedModelColors = new short[n];
                         for (int i = 0; i < n; i++)
@@ -190,7 +190,7 @@ namespace FlashEditor
                 /* retexture */
                 case 41:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         textureColour1 = new short[n];
                         textureColour2 = new short[n];
                         for (int i = 0; i < n; i++)
@@ -204,10 +204,10 @@ namespace FlashEditor
                 /* texture priority table */
                 case 42:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         texturePriorities = new sbyte[n];
                         for (int i = 0; i < n; i++)
-                            texturePriorities[i] = (sbyte) buf.ReadSignedByte();
+                            texturePriorities[i] = buf.ReadSignedByte();
                         return;
                     }
 
@@ -222,14 +222,14 @@ namespace FlashEditor
                 /* sound blocks */
                 case 78:
                     ambientSoundId = buf.ReadUnsignedShort();
-                    ambientSoundLoops = buf.ReadUnsignedByte();
+                    ambientSoundLoops = buf.ReadByte();
                     return;
 
                 case 79:
                     ambientSoundId = buf.ReadUnsignedShort();
                     buf.ReadUnsignedShort();              // vol placeholder
-                    ambientSoundLoops = buf.ReadUnsignedByte();
-                    int c = buf.ReadUnsignedByte();
+                    ambientSoundLoops = buf.ReadByte();
+                    int c = buf.ReadByte();
                     extraSounds = new int[c];
                     for (int i = 0; i < c; i++) extraSounds[i] = buf.ReadUnsignedShort();
                     return;
@@ -269,7 +269,7 @@ namespace FlashEditor
                 case 114: contrast = buf.ReadSignedByte(); return;
 
                 /* team id */
-                case 115: teamId = buf.ReadUnsignedByte(); return;
+                case 115: teamId = buf.ReadByte(); return;
 
                 /* lending */
                 case 121: lendId = buf.ReadUnsignedShort(); return;
@@ -298,7 +298,7 @@ namespace FlashEditor
                 /* variants list */
                 case 132:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         _rawUnknown[op] = buf.ReadBytes(n * 2 + 1);
                         return;
                     }
@@ -320,7 +320,7 @@ namespace FlashEditor
                 /* multi-map icons */
                 case 160:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         _rawUnknown[op] = buf.ReadBytes(1 + n * 2);
                         return;
                     }
@@ -330,7 +330,7 @@ namespace FlashEditor
                 case 162:
                 case 163:
                     _rawUnknown[op] = buf.ReadBytes(2); return;
-                case 164: _rawUnknown[op] = buf.ReadBytes(buf.ReadUnsignedByte() + 1); return;
+                case 164: _rawUnknown[op] = buf.ReadBytes(buf.ReadByte() + 1); return;
 
                 /* 165-170 lighting offsets */
                 case 165:
@@ -349,11 +349,11 @@ namespace FlashEditor
                 /* params */
                 case 249:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         itemParams = new SortedDictionary<int, object>();
                         for (int i = 0; i < n; i++)
                         {
-                            bool isStr = buf.ReadUnsignedByte() == 1;
+                            bool isStr = buf.ReadByte() == 1;
                             int key = buf.ReadMedium();
                             object val = isStr ? buf.ReadJagexString() : buf.ReadInt();
                             if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
@@ -363,7 +363,7 @@ namespace FlashEditor
 
                 /* fallback – capture one byte so we don’t desync */
                 default:
-                    _rawUnknown[op] = new[] { buf.ReadUnsignedByte() };
+                    _rawUnknown[op] = [(byte) buf.ReadByte()];
                     return;
             }
         }

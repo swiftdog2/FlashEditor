@@ -26,9 +26,9 @@ internal sealed class ModelRenderer
         ushort[] indices = new ushort[m.TriangleCount * 3];
         for (int i = 0; i < m.TriangleCount; i++)
         {
-            indices[i * 3 + 0] = m.IndA[i];
-            indices[i * 3 + 1] = m.IndB[i];
-            indices[i * 3 + 2] = m.IndC[i];
+            indices[i * 3 + 0] = (ushort) m.faceIndices1[i];
+            indices[i * 3 + 1] = (ushort) m.faceIndices2[i];
+            indices[i * 3 + 2] = (ushort) m.faceIndices3[i];
         }
 
         _indexCount = indices.Length;

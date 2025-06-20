@@ -3,7 +3,7 @@
         public static Texture Decode(JagStream buffer) {
             buffer.ReadShort();
             buffer.ReadByte();
-            int count = buffer.ReadUnsignedByte();
+            int count = buffer.ReadByte();
 
             Texture texture = new Texture(count);
 

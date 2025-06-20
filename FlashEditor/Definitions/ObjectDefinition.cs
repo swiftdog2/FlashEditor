@@ -131,7 +131,7 @@ namespace FlashEditor.Definitions
 
             while (true)
             {
-                int op = stream.ReadUnsignedByte();
+                int op = stream.ReadByte();
                 decoded[op] = true;
 
                 if (op == 0) break;          // terminator
@@ -167,14 +167,14 @@ namespace FlashEditor.Definitions
                 case 5:
                     {
                         usesOpcode5 = (op == 5);
-                        int groupCt = buf.ReadUnsignedByte();
+                        int groupCt = buf.ReadByte();
                         modelTypes = new sbyte[groupCt];
                         modelIds = new ushort[groupCt][];
 
                         for (int g = 0; g < groupCt; g++)
                         {
-                            modelTypes[g] = (sbyte)buf.ReadSignedByte();
-                            int modelCt = buf.ReadUnsignedByte();
+                            modelTypes[g] = buf.ReadSignedByte();
+                            int modelCt = buf.ReadByte();
                             var ids = new ushort[modelCt];
                             for (int m = 0; m < modelCt; m++) ids[m] = (ushort)buf.ReadUnsignedShort();
                             modelIds[g] = ids;
@@ -184,24 +184,24 @@ namespace FlashEditor.Definitions
 
                 /*──────── scalar flags ────────*/
                 case 2: name = buf.ReadJagexString(); break;
-                case 14: sizeX = buf.ReadUnsignedByte(); break;
-                case 15: sizeY = buf.ReadUnsignedByte(); break;
+                case 14: sizeX = (byte) buf.ReadByte(); break;
+                case 15: sizeY = (byte) buf.ReadByte(); break;
 
                 case 17:
                 case 18: walkable = false; break;
 
                 // category/id-grouping
                 case 19:                           
-                    category = buf.ReadUnsignedByte();
+                    category = (byte) buf.ReadByte();
                     return;
 
                 /* ─────────────── map-scene & clip flags ─────────────── */
-                case 21: clipType = buf.ReadUnsignedByte(); return;          // 1 byte
+                case 21: clipType = (byte) buf.ReadByte(); return;          // 1 byte
                 case 22: isClipped = true; return;             // flag only
                 case 23: obstructsGround = 1; return;             // Solidity flag
                 case 24: animationId = buf.ReadUnsignedShort(); return;      // 2 bytes
                 case 27: randomAnimStart = true; return;             // flag only
-                case 28: modelBrightness = buf.ReadUnsignedByte() << 2; break;
+                case 28: modelBrightness = buf.ReadByte() << 2; break;
                 case 29: modelContrast = buf.ReadSignedByte(); break;
 
                 /*──────── action strings 30-34 ────────*/
@@ -212,7 +212,7 @@ namespace FlashEditor.Definitions
                 /*──────── recolour 40 ────────*/
                 case 40:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         recolSrc = new short[n];
                         recolDst = new short[n];
                         for (int i = 0; i < n; i++)
@@ -226,7 +226,7 @@ namespace FlashEditor.Definitions
                 /*──────── retexture 41 ────────*/
                 case 41:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         retexSrc = new short[n];
                         retexDst = new short[n];
                         for (int i = 0; i < n; i++)
@@ -240,10 +240,10 @@ namespace FlashEditor.Definitions
                 /* ─────────────── texture-priority table (byte[]) ─────── */
                 case 42:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         texturePriorities = new sbyte[n];
                         for (int i = 0; i < n; i++)
-                            texturePriorities[i] = (sbyte)buf.ReadSignedByte();
+                            texturePriorities[i] = buf.ReadSignedByte();
                         return;
                     }
 
@@ -254,7 +254,7 @@ namespace FlashEditor.Definitions
                 case 66: scaleY = buf.ReadUnsignedShort(); return;    // 2 bytes
                 case 67: scaleZ = buf.ReadUnsignedShort(); return;    // 2 bytes
                 case 68: mapSceneId = buf.ReadUnsignedShort(); return;    // 2 bytes
-                case 69: minimapForceClip = buf.ReadUnsignedByte(); return;  // 1 byte
+                case 69: minimapForceClip = (byte) buf.ReadByte(); return;  // 1 byte
 
                 /* signed short offsets (<< 2 already applied in Java) */
                 case 70: offsetX = buf.ReadShort() << 2; return;
@@ -263,7 +263,7 @@ namespace FlashEditor.Definitions
 
                 case 73: obstructsWheelchair = true; return;
                 case 74: isSolid = true; return;
-                case 75: supportItems = buf.ReadUnsignedByte(); return;
+                case 75: supportItems = (byte) buf.ReadByte(); return;
 
                 /*──────── morph (77 / 92) ────────*/
                 case 77:
@@ -273,7 +273,7 @@ namespace FlashEditor.Definitions
                         morphVarp = SmartOrMinus1(buf);
                         int defaultId = (op == 92) ? SmartOrMinus1(buf) : -1;
 
-                        int ct = buf.ReadUnsignedByte();
+                        int ct = buf.ReadByte();
                         morphIds = new int[ct + 2];
                         for (int i = 0; i <= ct; i++) morphIds[i] = SmartOrMinus1(buf);
                         morphIds[ct + 1] = defaultId;
@@ -284,13 +284,13 @@ namespace FlashEditor.Definitions
                 case 78:
                     {
                         ambientSoundId = buf.ReadUnsignedShort();
-                        ambientSoundLoops = buf.ReadUnsignedByte();
+                        ambientSoundLoops = buf.ReadByte();
                         break;
                     }
                 case 79:
                     {
                         ambientSoundId = buf.ReadUnsignedShort();
-                        int count = buf.ReadUnsignedByte();
+                        int count = buf.ReadByte();
                         extraSounds = new int[count];
                         for (int i = 0; i < count; i++) extraSounds[i] = buf.ReadUnsignedShort();
                         break;
@@ -304,7 +304,7 @@ namespace FlashEditor.Definitions
                 /*──────── minimap icons (160) ─────*/
                 case 160:
                     {
-                        int n = buf.ReadUnsignedByte();
+                        int n = buf.ReadByte();
                         minimapIcons = new ushort[n];
                         for (int i = 0; i < n; i++) minimapIcons[i] = (ushort)buf.ReadUnsignedShort();
                         break;
@@ -313,12 +313,12 @@ namespace FlashEditor.Definitions
                 /*──────── arbitrary params (249) ───*/
                 case 249:
                     {
-                        int len = buf.ReadUnsignedByte();
+                        int len = buf.ReadByte();
                         parameters = new SortedDictionary<int, object>();
 
                         for (int i = 0; i < len; i++)
                         {
-                            bool isString = buf.ReadUnsignedByte() == 1;
+                            bool isString = buf.ReadByte() == 1;
                             int key = buf.ReadMedium();
                             object value = isString ? (object)buf.ReadJagexString() : buf.ReadInt();
                             if (!parameters.ContainsKey(key)) parameters.Add(key, value);

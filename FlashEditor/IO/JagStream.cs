@@ -106,35 +106,66 @@ namespace FlashEditor {
          */
 
         /// <summary>
-        /// Reads a variable-length int exactly like Java’s “var-int”.
-        /// Each byte contributes 7 data bits; the MSB is the “more” flag.
+        /// Reads a variable-length integer encoded in 7-bit chunks (Java’s readVarInt equivalent).
         /// </summary>
+        /// <returns>The decoded int.</returns>
         public int ReadVarInt() {
+            // Java `byte` (–128…127) → C# `sbyte`
+            sbyte b = ReadSignedByte();
             int value = 0;
-            int shift = 0;
-            byte chunk;
 
-            do
-            {
-                chunk = ReadUnsignedByte();              // 0-255, never negative
-                value |= (chunk & 0x7F) << shift;         // data bits
-                shift += 7;
+            // while the high bit is set
+            while (b < 0) {
+                // mask off the sign-bit (0x7F) and accumulate, then shift for the next 7 bits
+                value = (value | (b & 0x7F)) << 7;
+                b = ReadSignedByte();
             }
-            while ((chunk & 0x80) != 0);                  // MSB set ⇒ more bytes
 
-            return value;
+            // final chunk
+            return value | b;
         }
 
         /// <summary>
-        /// Read's smart_v1 from buffer.
+        /// Reads a “smart” 1‐ or 2‐byte value:
+        /// – If the next byte is < 128, returns readUnsignedByte() (0…127).
+        /// – Otherwise, reads an unsigned short and returns (value – 0x8000).
+        /// Mirrors the Java “smart_v1” pattern.
         /// </summary>
-        /// <returns></returns>
-        public int ReadSmart()
-        {
-            int peek = GetBuffer()[Position];          // no advance
-            if (peek < 128)
-                return ReadUnsignedByte();         // consumes one
-            return ReadUnsignedShort() - 32768;    // consumes two
+        public int ReadSmart() {
+            // 1) Peek the next raw byte without advancing
+            int pos = (int) Position;
+            var buf = GetBuffer();
+            if (pos >= buf.Length)
+                throw new EndOfStreamException("Cannot peek Smart: end of buffer");
+
+            int peek = buf[pos] & 0xFF;
+
+            // 2) Branch on peek
+            if (peek < 128) {
+                // single‐byte case → 0…127
+                return ReadByte();
+            }
+            else {
+                // two‐byte case → 128…65535 → shift down into signed range
+                return ReadUnsignedShort() - 0x8000;
+            }
+        }
+
+        /// <summary>
+        /// Peeks the next byte without advancing the position.
+        /// </summary>
+        public int Peek() {
+            long p = Position;
+            int v = ReadSignedByte();
+            Position = p;
+            return v;
+        }
+
+        public int ReadShortSmart() {
+            int peek = Peek() & 0xFF;
+            return peek < 128
+                ? ReadByte() - 64
+                : ReadUnsignedShort() - 0xC000;
         }
 
         /// <summary>
@@ -146,7 +177,7 @@ namespace FlashEditor {
         {
             int peek = PeekUnsignedByte();
             return peek < 128
-                ? ReadUnsignedByte()
+                ? ReadByte()
                 : ReadUnsignedShort() - 32768;
         }
 
@@ -164,35 +195,27 @@ namespace FlashEditor {
         public int ReadSpecialSmart()
         {
             int peek = GetBuffer()[Position];
-            return peek < 128 ? ReadUnsignedByte() - 1
+            return peek < 128 ? ReadByte() - 1
                               : ReadUnsignedShort() - 32769;
         }
 
         public int ReadInt() {
-            int b1 = ReadUnsignedByte();
-            int b2 = ReadUnsignedByte();
-            int b3 = ReadUnsignedByte();
-            int b4 = ReadUnsignedByte();
+            int b1 = ReadByte();
+            int b2 = ReadByte();
+            int b3 = ReadByte();
+            int b4 = ReadByte();
             return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
         }
 
         public int ReadUnsignedShort()
         {
-            int hi = ReadUnsignedByte();          // 0-255
-            int lo = ReadUnsignedByte();          // 0-255
+            int hi = ReadByte();          // 0-255
+            int lo = ReadByte();          // 0-255
             return (hi << 8) | lo;
         }
 
         internal int ReadMedium() {
-            return (ReadUnsignedByte() << 16) + (ReadUnsignedByte() << 8) + ReadUnsignedByte();
-        }
-
-        internal byte ReadUnsignedByte() {
-            int result = ReadByte() & 0xFF;
-            if(result == -1)
-                throw new EndOfStreamException("End of stream bro");
-
-            return (byte) result;
+            return (ReadByte() << 16) + (ReadByte() << 8) + ReadByte();
         }
 
         /// <summary>
@@ -205,7 +228,7 @@ namespace FlashEditor {
         {
             // Save current position
             long pos = Position;
-            int b = ReadByte();            // read one byte
+            int b = base.ReadByte();            // read one byte
             if (b < 0) throw new EndOfStreamException();
             Position = pos;                // rewind
             return (byte)b;
@@ -232,17 +255,16 @@ namespace FlashEditor {
             return result;
         }
 
-        // ➊  add this inside the JagStream class, anywhere among the other read helpers
         /// <summary>
         /// Reads a signed 8-bit value (-128 … 127) from the stream.
         /// Java’s <c>readSignedByte</c> equivalent.
         /// </summary>
-        internal int ReadSignedByte()
+        internal sbyte ReadSignedByte()
         {
-            int b = ReadByte();          // 0-255
-            if (b == -1)
+            int b = base.ReadByte();          // 0-255
+            if (b < 0)
                 throw new EndOfStreamException("End of stream");
-            return (sbyte)b;             // cast preserves the sign
+            return unchecked((sbyte)b);             // cast preserves the sign
         }
 
         /// <summary>
@@ -282,7 +304,7 @@ namespace FlashEditor {
 
             int b;
 
-            while((b = ReadByte()) != 0)
+            while((b = base.ReadByte()) != 0)
                 sb.Append((char) b);
 
             WriteLine("'");
@@ -299,7 +321,7 @@ namespace FlashEditor {
             StringBuilder sb = new StringBuilder();
 
             int b;
-            while((b = ReadByte()) != 0) {
+            while((b = base.ReadByte()) != 0) {
                 //If the byte read is between 127 and 159, it should be remapped
                 if(b >= 127 && b < 160) {
                     char c = CHARACTERS[b - 128];
@@ -321,7 +343,7 @@ namespace FlashEditor {
             //Move the the desired position
             Seek(pos);
 
-            byte x = (byte) ReadByte();
+            byte x = (byte) base.ReadByte();
 
             //Reset the position
             Position = tempPosition;
@@ -414,7 +436,7 @@ namespace FlashEditor {
         public byte[] ReadBytes(int length) {
             byte[] buf = new byte[length];
             for(int k = 0; k < length; k++)
-                buf[k] = (byte) ReadByte();
+                buf[k] = (byte) base.ReadByte();
 
             return buf;
         }
@@ -434,6 +456,15 @@ namespace FlashEditor {
         /// <returns>The number of bytes remaining left to be read</returns>
         public int Remaining() {
             return (int) (Length - Position);
+        }
+
+        /// <summary>
+        /// Reads the next byte (0–255) from the stream.
+        /// Throws if the end of stream is reached.
+        /// </summary>
+        /// <returns>An integer in 0…255.</returns>
+        public int ReadUnsignedByte() {
+            return ReadByte() & 0xFF;
         }
     }
 }

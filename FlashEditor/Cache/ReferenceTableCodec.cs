@@ -23,11 +23,11 @@ namespace FlashEditor.cache
             RSReferenceTable table = new RSReferenceTable();
 
             /* ── Table header ───────────────────────────────────────── */
-            table.format = stream.ReadUnsignedByte();
+            table.format = stream.ReadByte();
             if (table.format >= 6)
                 table.version = stream.ReadInt();
 
-            table.flags = stream.ReadUnsignedByte();
+            table.flags = stream.ReadByte();
             table.hasIdentifiers = (table.flags & RSReferenceTable.FLAG_IDENTIFIERS) != 0;
             table.usesWhirlpool = (table.flags & RSReferenceTable.FLAG_WHIRLPOOL) != 0;
             table.entryHashes  = (table.flags & RSReferenceTable.FLAG_HASH) != 0;
@@ -75,7 +75,7 @@ namespace FlashEditor.cache
             {
                 for (int i = 0; i < table.validArchivesCount; i++)
                 {
-                    byte flagByte = stream.ReadUnsignedByte();
+                    byte flagByte = (byte) stream.ReadByte();
                     table.GetEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
                 }
             }

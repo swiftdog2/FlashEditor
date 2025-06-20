@@ -91,7 +91,7 @@ namespace FlashEditor.cache.sprites {
             stream.Seek(stream.Length - size * 8 - 7);
             int width = stream.ReadUnsignedShort();
             int height = stream.ReadUnsignedShort();
-            int[] palette = new int[stream.ReadUnsignedByte() + 1];
+            int[] palette = new int[stream.ReadByte() + 1];
 
             Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length, LOG_DETAIL.INSANE);
 
@@ -133,18 +133,18 @@ namespace FlashEditor.cache.sprites {
                 int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
 
                 //Read the flags so we know whether to read horizontally or vertically
-                int flags = stream.ReadUnsignedByte();
+                int flags = stream.ReadByte();
                 //Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]", LOG_DETAIL.INSANE);
 
                 //Read the palette indices
                 if((flags & FLAG_VERTICAL) != 0) {
                     for(int x = 0; x < subWidth; x++)
                         for(int y = 0; y < subHeight; y++)
-                            indices[x][y] = stream.ReadUnsignedByte();
+                            indices[x][y] = stream.ReadByte();
                 } else {
                     for(int y = 0; y < subHeight; y++)
                         for(int x = 0; x < subWidth; x++)
-                            indices[x][y] = stream.ReadUnsignedByte();
+                            indices[x][y] = stream.ReadByte();
                 }
 
                 //Read the alpha (if there is alpha) and convert values to ARGB
@@ -169,14 +169,14 @@ namespace FlashEditor.cache.sprites {
                     if((flags & FLAG_VERTICAL) != 0) {
                         for(int x = 0; x < subWidth; x++) {
                             for(int y = 0; y < subHeight; y++) {
-                                int alpha = stream.ReadUnsignedByte();
+                                int alpha = stream.ReadByte();
                                 image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
                             }
                         }
                     } else {
                         for(int y = 0; y < subHeight; y++) {
                             for(int x = 0; x < subWidth; x++) {
-                                int alpha = stream.ReadUnsignedByte();
+                                int alpha = stream.ReadByte();
                                 image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
                             }
                         }

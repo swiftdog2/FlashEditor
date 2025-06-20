@@ -56,7 +56,7 @@ namespace FlashEditor.cache
 
             RSContainer container = new RSContainer();
 
-            container.SetCompressionType(stream.ReadUnsignedByte());
+            container.SetCompressionType((byte)stream.ReadByte());
 
             String compressionName = "None";
             if (container.GetCompressionType() == RSConstants.BZIP2_COMPRESSION)

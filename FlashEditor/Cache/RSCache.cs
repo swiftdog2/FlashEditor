@@ -412,7 +412,7 @@ namespace FlashEditor.cache
 
             //int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
 
-            Debug($"Models archive {archive} has {entry.GetValidFileIds().Length} files");
+            Debug($"Models archive {archive} has {entry.GetValidFileIds().Length} files", LOG_DETAIL.INSANE);
 
             RSContainer container = GetContainer(type, archive);
             if (container == null)

@@ -55,7 +55,7 @@ namespace FlashEditor.cache {
             int id = stream.ReadUnsignedShort();
             int chunk = stream.ReadUnsignedShort();
             int nextSector = stream.ReadMedium();
-            int type = stream.ReadUnsignedByte();
+            int type = stream.ReadByte();
             byte[] data = new byte[DATA_LEN];
             stream.Read(data, 0, data.Length);
 

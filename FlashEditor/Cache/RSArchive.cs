@@ -32,7 +32,7 @@ namespace FlashEditor.cache
 
             //Read the number of chunks at the end of the archive
             stream.Seek(stream.Length - 1);
-            archive.chunks = stream.ReadUnsignedByte();
+            archive.chunks = stream.ReadByte();
 
             Debug("Chunk count: " + archive.chunks, LOG_DETAIL.INSANE);
 

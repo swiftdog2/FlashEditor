@@ -18,7 +18,7 @@ namespace FlashEditor.Definitions.Tracks {
 
         public void Decode(JagStream buf) {
             buf.Position = buf.Seek(buf.Length - 3);
-            int tracks = buf.ReadUnsignedByte();
+            int tracks = buf.ReadByte();
             int division = buf.ReadUnsignedShort();
             int offset = 14 + tracks * 10;
             buf.Seek0();
@@ -38,7 +38,7 @@ namespace FlashEditor.Definitions.Tracks {
                 opcode = -1;
 
                 while(true) {
-                    var15 = buf.ReadUnsignedByte();
+                    var15 = buf.ReadByte();
                     if(var15 != opcode) {
                         ++offset;
                     }
@@ -100,7 +100,7 @@ namespace FlashEditor.Definitions.Tracks {
 
             int var29;
             for(var29 = 0; var29 < ctrlChangeOpcodes; ++var29) {
-                var28 = var28 + (buf.ReadUnsignedByte()) & 127;
+                var28 = var28 + (buf.ReadByte()) & 127;
                 if(var28 != 0 && var28 != 32) {
                     switch(var28) {
                         case 1:

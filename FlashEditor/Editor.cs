@@ -532,8 +532,8 @@ namespace FlashEditor
                                 Debug($"Archive ID: {archiveId}, entry {entry.GetId()}", LOG_DETAIL.ADVANCED);
                                 foreach (int fileId in entry.GetValidFileIds())  // only existing files
                                 {
-                                    int modelId = (archiveId << 8) | fileId;
-                                    Debug($"File ID: {fileId}, model ID: {modelId}");
+                                    int modelId = archiveId;
+                                    Debug($"Model ID: {modelId}, file ID: {fileId}");
 
                                     try
                                     {

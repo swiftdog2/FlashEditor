@@ -43,7 +43,7 @@ namespace FlashEditor.Cache.Region {
                 for(int x = 0; x < 64; x++) {
                     for(int y = 0; y < 64; y++) {
                         while(true) {
-                            int attribute = buf.ReadUnsignedByte();
+                            int attribute = buf.ReadByte();
                             switch(attribute) {
                                 case 0:
                                     if(z == 0) {
@@ -54,7 +54,7 @@ namespace FlashEditor.Cache.Region {
                                     }
                                     break;
                                 case 1:
-                                    int height = buf.ReadUnsignedByte();
+                                    int height = buf.ReadByte();
                                     if(height == 1)
                                         height = 0;
 
