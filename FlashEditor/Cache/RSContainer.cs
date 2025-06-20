@@ -105,12 +105,15 @@ namespace FlashEditor.cache
         ///     Encodes this container to the on‑disk binary representation.
         /// </summary>
         /// <remarks>
-        ///     The header layout matches the client contract: one byte
-        ///     <c>compressionType</c> followed by the 4&nbsp;byte
-        ///     <c>compressedLength</c> and, when compressed, another 4&nbsp;byte
-        ///     <c>uncompressedLength</c>.  The payload may be XTEA encrypted
-        ///     when <paramref name="xteaKey"/> is supplied.  Multi‑file
-        ///     archives must already contain the cumulative length table.
+        ///     Revision 639 uses the modern JS5 container header format:
+        ///     <c>compressionType</c> (1&nbsp;byte) followed by
+        ///     <c>compressedLength</c> and then, when compression is used,
+        ///     <c>uncompressedLength</c>. Earlier revisions swapped the two
+        ///     length fields; maintaining this order ensures compatibility with
+        ///     the 639 client.
+        ///     The payload may be XTEA encrypted when
+        ///     <paramref name="xteaKey"/> is supplied. Multi‑file archives must
+        ///     already contain the cumulative length table.
         /// </remarks>
         /// <param name="xteaKey">Optional 4&nbsp;integer XTEA key. When
         /// <c>null</c> no encryption is performed.</param>
