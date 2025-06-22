@@ -501,6 +501,19 @@ namespace FlashEditor.cache
             return def;
         }
 
+        /// <summary>
+        /// Enumerates references to all models present in the cache without
+        /// decoding them.
+        /// </summary>
+        /// <returns>An enumerable of <see cref="ModelReference"/> records.</returns>
+        internal IEnumerable<ModelReference> EnumerateModelReferences()
+        {
+            RSReferenceTable table = GetReferenceTable(RSConstants.MODELS_INDEX);
+            foreach (var (archiveId, entry) in table.GetEntries())
+                foreach (int fileId in entry.GetValidFileIds())
+                    yield return new ModelReference(archiveId, fileId);
+        }
+
         public ModelDefinition GetModelDefinition(int archive, int entry)
         {
             int modelId = (archive << 8) | entry;
