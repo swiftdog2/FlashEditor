@@ -36,5 +36,9 @@ namespace FlashEditor.Definitions.Sprites
                 Textures.Add(def);
             }
         }
+
+        internal static Image GetThumbnailForTexture(string key) {
+            throw new NotImplementedException();
+        }
     }
 }

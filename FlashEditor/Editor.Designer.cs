@@ -1295,14 +1295,35 @@ namespace FlashEditor {
             TextureListView.Name = "TextureListView";
             TextureListView.Size = new Size(1113, 563);
             TextureListView.TabIndex = 0;
-            TextureListView.TileSize = new Size(120, 120);
+            TextureListView.TileSize = new Size(100, 100);
             TextureListView.View = View.Tile;
+            TextureListView.LargeImageList = new ImageList {
+                ImageSize = new Size(100, 100),
+                ColorDepth = ColorDepth.Depth32Bit
+            };
+
             // 
             // TextureImage
             // 
             TextureImage.Text = "";
             TextureImage.ImageGetter = row => ((TextureDefinition) row).thumb;
             TextureImage.IsTileViewColumn = false;
+            TextureImage.ImageGetter = rowObject => {
+                // a) figure out a unique key for this row
+                string key = ((TextureDefinition) rowObject).id.ToString();
+
+                // b) if it’s not already in the list, load & add it
+                if (!TextureListView.LargeImageList.Images.ContainsKey(key)) {
+                    // load from DB (or cache) and force it to 100×100
+                    Image raw = TextureManager.GetThumbnailForTexture(key);
+                    var thumb = new Bitmap(raw, new Size(100, 100));
+                    TextureListView.LargeImageList.Images.Add(key, thumb);
+                }
+
+                // c) return the key so OLV will pull thumb from your LargeImageList
+                return key;
+            };
+
             // 
             // TextureID
             // 
