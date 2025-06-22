@@ -1,6 +1,7 @@
 using FlashEditor;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 
 namespace FlashEditor.Definitions.Sprites
 {
@@ -20,6 +21,11 @@ namespace FlashEditor.Definitions.Sprites
         public int animationDirection;
 
         public int[] pixels;
+
+        /// <summary>
+        /// Thumbnail representation for GUI display.
+        /// </summary>
+        public Bitmap? thumb;
         public int width;
 
         public void Decode(JagStream s, int[] xteaKey = null)
