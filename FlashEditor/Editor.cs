@@ -10,6 +10,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System;
 using System.IO;
+using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
 
@@ -27,6 +28,14 @@ namespace FlashEditor {
         private Matrix4 _view;
         private Matrix4 _proj;
 
+        // camera state
+        private double _yaw = 0.0, _pitch = 0.0, _distance = 5.0, _fov = 45.0;
+        private Vector3 _target = Vector3.Zero;
+        private readonly Vector3 _up = Vector3.UnitY;
+        private MouseButtons _activeButton = MouseButtons.None;
+        private Point _lastMousePos;
+        private const float OrbitSpeed = 0.01f;
+        private const float PanSpeed = 0.005f;
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
             -1,
@@ -47,10 +56,17 @@ namespace FlashEditor {
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
             glControl.Resize += Editor_Resize;
+            glControl.MouseDown += Gl_MouseDown;
+            glControl.MouseUp += Gl_MouseUp;
+            glControl.MouseMove += Gl_MouseMove;
+            glControl.MouseWheel += Gl_MouseWheel;
 
             _fpsTimer.Interval = 1000 / 30;
             _fpsTimer.Tick += (_, _) => glControl.Invalidate();
             _fpsTimer.Start();
+
+            UpdateView();
+            UpdateProjection();
         }
 
         private void Gl_Load(object sender, EventArgs e) {
@@ -72,7 +88,6 @@ namespace FlashEditor {
             _uModel = GL.GetUniformLocation(_program, "uModel");
             _uView = GL.GetUniformLocation(_program, "uView");
             _uProj = GL.GetUniformLocation(_program, "uProj");
-
             float[] v = { -0.5f, -0.5f, 0f, 0.5f, -0.5f, 0f, 0f, 0.5f, 0f };
             ushort[] i = { 0, 1, 2 };
             _modelRenderer.Load(v, i);
@@ -80,7 +95,7 @@ namespace FlashEditor {
             GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
 
-            _view = Matrix4.LookAt(new Vector3(0, 0, 3), Vector3.Zero, Vector3.UnitY);
+            UpdateView();
             UpdateProjection();
         }
 
@@ -113,10 +128,29 @@ namespace FlashEditor {
 
         private void UpdateProjection() {
             _proj = Matrix4.CreatePerspectiveFieldOfView(
+                MathHelper.DegreesToRadians((float)_fov),
+                glControl.Width / (float)glControl.Height,
+                0.1f,
+                100f);
+        }
+
+        private Vector3 CameraPosition() {
+            return new Vector3(
+                _target.X + (float)(_distance * Math.Cos(_pitch) * Math.Sin(_yaw)),
+                _target.Y + (float)(_distance * Math.Sin(_pitch)),
+                _target.Z + (float)(_distance * Math.Cos(_pitch) * Math.Cos(_yaw))
+            );
+        }
+
+        private void UpdateView() {
+            _view = Matrix4.LookAt(CameraPosition(), _target, _up);
+        private void UpdateProjection() {
+            _proj = Matrix4.CreatePerspectiveFieldOfView(
                 MathHelper.DegreesToRadians(60f),
                 glControl.Width / (float)glControl.Height,
                 0.1f,
                 100f);
+
         }
 
 
@@ -126,11 +160,13 @@ namespace FlashEditor {
 
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
+            UpdateView();
+            UpdateProjection();
+
             GL.UseProgram(_program);
             GL.UniformMatrix4(_uModel, false, ref _model);
             GL.UniformMatrix4(_uView, false, ref _view);
             GL.UniformMatrix4(_uProj, false, ref _proj);
-
             _modelRenderer.Draw();
 
             GL.UseProgram(0);
@@ -865,6 +901,46 @@ namespace FlashEditor {
             glControl.MakeCurrent();
             GL.Viewport(0, 0, glControl.Width, glControl.Height);
             UpdateProjection();
+            glControl.Invalidate();
+        }
+
+        private void Gl_MouseDown(object? sender, MouseEventArgs e) {
+            _activeButton = e.Button;
+            _lastMousePos = e.Location;
+            glControl.Focus();
+        }
+
+        private void Gl_MouseUp(object? sender, MouseEventArgs e) {
+            _activeButton = MouseButtons.None;
+        }
+
+        private void Gl_MouseWheel(object? sender, MouseEventArgs e) {
+            float factor = 1f + e.Delta * 0.001f;
+            _distance = Math.Clamp(_distance * factor, 1.0, 50.0);
+            glControl.Invalidate();
+        }
+
+        private void Gl_MouseMove(object? sender, MouseEventArgs e) {
+            if (_activeButton == MouseButtons.None)
+                return;
+
+            int dx = e.X - _lastMousePos.X;
+            int dy = e.Y - _lastMousePos.Y;
+
+            if (_activeButton == MouseButtons.Left) {
+                _yaw += dx * OrbitSpeed;
+                _pitch -= dy * OrbitSpeed;
+                double limit = MathHelper.DegreesToRadians(89.0);
+                _pitch = Math.Clamp(_pitch, -limit, limit);
+            } else if (_activeButton == MouseButtons.Right) {
+                Vector3 camPos = CameraPosition();
+                Vector3 forward = Vector3.Normalize(_target - camPos);
+                Vector3 right = Vector3.Normalize(Vector3.Cross(forward, _up));
+                Vector3 realUp = Vector3.Normalize(Vector3.Cross(right, forward));
+                _target += (-right * dx + realUp * dy) * PanSpeed;
+            }
+
+            _lastMousePos = e.Location;
             glControl.Invalidate();
         }
 
