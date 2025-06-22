@@ -2,6 +2,7 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
@@ -10,6 +11,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System;
 using System.IO;
+using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
@@ -20,6 +23,9 @@ namespace FlashEditor {
         internal RSCache cache;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
         private readonly Dictionary<int, System.Threading.Tasks.Task<ModelDefinition>> _modelTasks = new();
+
+        private readonly ImageList _textureImageList = new ImageList();
+        private readonly ContextMenuStrip _textureContextMenu = new ContextMenuStrip();
 
         private readonly Timer _fpsTimer = new();
         private int _program;
@@ -36,6 +42,18 @@ namespace FlashEditor {
         private Point _lastMousePos;
         private const float OrbitSpeed = 0.01f;
         private const float PanSpeed = 0.005f;
+
+        private const int LVM_FIRST = 0x1000;
+        private const int LVM_SETICONSPACING = LVM_FIRST + 53;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+        private static void SetIconSpacing(ListView lv, int spacing)
+        {
+            int param = (spacing << 16) | spacing;
+            SendMessage(lv.Handle, LVM_SETICONSPACING, 0, param);
+        }
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
             -1,
@@ -67,6 +85,16 @@ namespace FlashEditor {
 
             UpdateView();
             UpdateProjection();
+
+            _textureImageList.ColorDepth = ColorDepth.Depth32Bit;
+            _textureImageList.ImageSize = new Size(100, 100);
+            TextureListView.LargeImageList = _textureImageList;
+            SetIconSpacing(TextureListView, 110);
+
+            var dummyItem = new ToolStripMenuItem("Dummy Action");
+            dummyItem.Click += (_, _) => DummyMethod();
+            _textureContextMenu.Items.Add(dummyItem);
+            TextureListView.ContextMenuStrip = _textureContextMenu;
         }
 
         private void Gl_Load(object sender, EventArgs e) {
@@ -558,6 +586,21 @@ namespace FlashEditor {
                     bgw.RunWorkerAsync();
                     break;
 
+                case RSConstants.TEXTURES:
+                    bgw.DoWork += (object? s, DoWorkEventArgs args) => {
+                        var manager = new TextureManager(cache);
+                        manager.Load();
+                        args.Result = manager.Textures;
+                    };
+
+                    bgw.RunWorkerCompleted += (_, e) => {
+                        if (e.Result is List<TextureDefinition> list)
+                            LoadTextures(list);
+                    };
+
+                    bgw.RunWorkerAsync();
+                    break;
+
                 case RSConstants.MODELS_INDEX: {
                         ProgressBar bar = ModelProgressBar;
                         Label lbl = ModelLoadingLabel;
@@ -943,6 +986,30 @@ namespace FlashEditor {
             if (_program != 0)
                 GL.DeleteProgram(_program);
             base.OnFormClosed(e);
+        }
+
+        private void DummyMethod()
+        {
+            MessageBox.Show("Dummy action executed.");
+        }
+
+        private void LoadTextures(List<TextureDefinition> textures)
+        {
+            foreach (var tex in textures)
+            {
+                Bitmap bmp = new Bitmap(100, 100);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
+                    Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                    g.Clear(c);
+                    using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
+                }
+                tex.thumb = bmp;
+                _textureImageList.Images.Add(tex.id.ToString(), bmp);
+            }
+            TextureListView.SetObjects(textures);
         }
     }
 }

@@ -1298,7 +1298,7 @@
             TextureListView.Name = "TextureListView";
             TextureListView.Size = new Size(1107, 557);
             TextureListView.TabIndex = 0;
-            TextureListView.View = View.Details;
+            TextureListView.View = View.LargeIcon;
             // 
             // Editor
             // 
