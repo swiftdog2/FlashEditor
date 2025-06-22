@@ -91,6 +91,8 @@ namespace FlashEditor {
             _textureImageList.ColorDepth = ColorDepth.Depth32Bit;
             _textureImageList.ImageSize = new Size(100, 100);
             TextureListView.LargeImageList = _textureImageList;
+            TextureListView.ImageGetter = obj =>
+                obj is TextureDefinition def ? def.id.ToString() : null;
             SetIconSpacing(TextureListView, 110);
 
             var dummyItem = new ToolStripMenuItem("Dummy Action");
