@@ -19,11 +19,12 @@ namespace FlashEditor {
     public partial class Editor : Form {
         internal RSCache cache;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
+        private GLTextureCache? _textureCache;
         private readonly Dictionary<int, System.Threading.Tasks.Task<ModelDefinition>> _modelTasks = new();
 
         private readonly Timer _fpsTimer = new();
         private int _program;
-        private int _uModel, _uView, _uProj;
+        private int _uModel, _uView, _uProj, _uTexture;
         private Matrix4 _model = Matrix4.Identity;
         private Matrix4 _view;
         private Matrix4 _proj;
@@ -72,8 +73,8 @@ namespace FlashEditor {
         private void Gl_Load(object sender, EventArgs e) {
             glControl.MakeCurrent();
 
-            int vert = CompileShader(ShaderType.VertexShader, LoadShader("basic.vert"));
-            int frag = CompileShader(ShaderType.FragmentShader, LoadShader("basic.frag"));
+            int vert = CompileShader(ShaderType.VertexShader, LoadShader("texture.vert"));
+            int frag = CompileShader(ShaderType.FragmentShader, LoadShader("texture.frag"));
 
             _program = GL.CreateProgram();
             GL.AttachShader(_program, vert);
@@ -88,9 +89,10 @@ namespace FlashEditor {
             _uModel = GL.GetUniformLocation(_program, "uModel");
             _uView = GL.GetUniformLocation(_program, "uView");
             _uProj = GL.GetUniformLocation(_program, "uProj");
-            float[] v = { -0.5f, -0.5f, 0f, 0.5f, -0.5f, 0f, 0f, 0.5f, 0f };
-            ushort[] i = { 0, 1, 2 };
-            _modelRenderer.Load(v, i);
+            _uTexture = GL.GetUniformLocation(_program, "uTexture");
+            GL.UseProgram(_program);
+            GL.Uniform1(_uTexture, 0);
+            GL.UseProgram(0);
 
             GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
@@ -234,6 +236,7 @@ namespace FlashEditor {
                 //Load the cache and the reference tables
                 RSFileStore store = new RSFileStore(directory);
                 cache = new RSCache(store);
+                _textureCache = new GLTextureCache(cache);
                 sw.Stop();
 
                 Debug("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -841,7 +844,8 @@ namespace FlashEditor {
                 // Check cache
                 if (cache.models.TryGetValue(id, out var def)) {
                     Debug($"Cache hit for model {id} – rendering immediately.", LOG_DETAIL.ADVANCED);
-                    _modelRenderer.Load(def);
+                    if (_textureCache != null)
+                        _modelRenderer.Load(def, _textureCache);
                     glControl.Invalidate();
                     return;
                 }
@@ -876,7 +880,8 @@ namespace FlashEditor {
                         _modelTasks.Remove(id);
 
                         Debug($"[UI] Rendering loaded model {id}", LOG_DETAIL.ADVANCED);
-                        _modelRenderer.Load(loaded);
+                        if (_textureCache != null)
+                            _modelRenderer.Load(loaded, _textureCache);
                         glControl.Invalidate();
                     }
                     else if (t.IsFaulted) {
@@ -940,6 +945,7 @@ namespace FlashEditor {
         protected override void OnFormClosed(FormClosedEventArgs e) {
             _fpsTimer.Stop();
             _modelRenderer.Dispose();
+            _textureCache?.Dispose();
             if (_program != 0)
                 GL.DeleteProgram(_program);
             base.OnFormClosed(e);
