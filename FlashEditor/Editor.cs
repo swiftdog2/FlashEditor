@@ -8,6 +8,8 @@ using OpenTK.Mathematics;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System;
+using System.IO;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
 
@@ -17,6 +19,13 @@ namespace FlashEditor {
         internal RSCache cache;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
         private readonly Dictionary<int, System.Threading.Tasks.Task<ModelDefinition>> _modelTasks = new();
+
+        private readonly Timer _fpsTimer = new();
+        private int _program;
+        private int _uModel, _uView, _uProj;
+        private Matrix4 _model = Matrix4.Identity;
+        private Matrix4 _view;
+        private Matrix4 _proj;
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
@@ -35,28 +44,44 @@ namespace FlashEditor {
         public Editor() {
             InitializeComponent();
 
-            // 1 – attach GL handlers
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
             glControl.Resize += Editor_Resize;
 
-            // 2 – replace busy idle‐loop with a WinForms timer @ ~30 FPS
-            var fpsTimer = new Timer { Interval = 1000 }; // ~33 ms → 30 FPS
-            fpsTimer.Tick += (_, _) => glControl.Invalidate();
-            fpsTimer.Start();
+            _fpsTimer.Interval = 1000 / 30;
+            _fpsTimer.Tick += (_, _) => glControl.Invalidate();
+            _fpsTimer.Start();
         }
 
         private void Gl_Load(object sender, EventArgs e) {
-            GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
-            CheckGLError("After PolygonMode");
+            glControl.MakeCurrent();
+
+            int vert = CompileShader(ShaderType.VertexShader, LoadShader("basic.vert"));
+            int frag = CompileShader(ShaderType.FragmentShader, LoadShader("basic.frag"));
+
+            _program = GL.CreateProgram();
+            GL.AttachShader(_program, vert);
+            GL.AttachShader(_program, frag);
+            GL.LinkProgram(_program);
+            GL.GetProgram(_program, GetProgramParameterName.LinkStatus, out int ok);
+            if (ok == 0)
+                Debug($"Program link error: {GL.GetProgramInfoLog(_program)}");
+            GL.DeleteShader(vert);
+            GL.DeleteShader(frag);
+
+            _uModel = GL.GetUniformLocation(_program, "uModel");
+            _uView = GL.GetUniformLocation(_program, "uView");
+            _uProj = GL.GetUniformLocation(_program, "uProj");
+
+            float[] v = { -0.5f, -0.5f, 0f, 0.5f, -0.5f, 0f, 0f, 0.5f, 0f };
+            ushort[] i = { 0, 1, 2 };
+            _modelRenderer.Load(v, i);
 
             GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
-            CheckGLError("After ClearColor");
-
             GL.Enable(EnableCap.DepthTest);
-            CheckGLError("After Enable(DepthTest)");
 
-            SetupViewport();
+            _view = Matrix4.LookAt(new Vector3(0, 0, 3), Vector3.Zero, Vector3.UnitY);
+            UpdateProjection();
         }
 
         /// <summary>
@@ -71,57 +96,44 @@ namespace FlashEditor {
             }
         }
 
-        private void SetupViewport() {
-            // 1) Projection
-            GL.MatrixMode(MatrixMode.Projection);
-            GL.LoadIdentity();
-            // 60° field‐of‐view, aspect, near=0.1, far=100
-            var proj =
-              Matrix4.CreatePerspectiveFieldOfView(
-                MathHelper.DegreesToRadians(60f),
-                glControl.Width / (float) glControl.Height,
-                0.1f,
-                100f
-              );
-            GL.LoadMatrix(ref proj);
-            CheckGLError("After Projection setup");
+        private static string LoadShader(string name) {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Shaders", name);
+            return File.ReadAllText(path);
+        }
 
-            // 2) Modelview (camera)
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.LoadIdentity();
-            // move the camera back so you can actually see your model
-            GL.Translate(0f, 0f, -3f);
-            CheckGLError("After Modelview setup");
+        private static int CompileShader(ShaderType type, string src) {
+            int shader = GL.CreateShader(type);
+            GL.ShaderSource(shader, src);
+            GL.CompileShader(shader);
+            GL.GetShader(shader, ShaderParameter.CompileStatus, out int ok);
+            if (ok == 0)
+                Debug($"{type} compile error: {GL.GetShaderInfoLog(shader)}");
+            return shader;
+        }
+
+        private void UpdateProjection() {
+            _proj = Matrix4.CreatePerspectiveFieldOfView(
+                MathHelper.DegreesToRadians(60f),
+                glControl.Width / (float)glControl.Height,
+                0.1f,
+                100f);
         }
 
 
         private void Gl_Paint(object sender, PaintEventArgs e) {
             glControl.MakeCurrent();
             GL.Viewport(0, 0, glControl.Width, glControl.Height);
-            CheckGLError("After Viewport");
 
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-            CheckGLError("After Clear");
 
-            Debug(">> Sanity Test: immediate‐mode triangle", LOG_DETAIL.ADVANCED);
-            GL.Disable(EnableCap.DepthTest);
-            CheckGLError("Before Sanity‐triangle Disable(DepthTest)");
+            GL.UseProgram(_program);
+            GL.UniformMatrix4(_uModel, false, ref _model);
+            GL.UniformMatrix4(_uView, false, ref _view);
+            GL.UniformMatrix4(_uProj, false, ref _proj);
 
-            GL.Begin(PrimitiveType.Triangles);
-            GL.Color3(1.0f, 0.0f, 0.0f);
-            GL.Vertex3(-0.5f, -0.5f, 0.0f);
-            GL.Vertex3(0.5f, -0.5f, 0.0f);
-            GL.Vertex3(0.0f, 0.5f, 0.0f);
-            GL.End();
-            CheckGLError("After Sanity‐triangle GL.End()");
-
-            GL.Enable(EnableCap.DepthTest);
-            CheckGLError("After Sanity‐triangle Enable(DepthTest)");
-
-            // 2) Your model draw
             _modelRenderer.Draw();
-            CheckGLError("After ModelRenderer.Draw()");
 
+            GL.UseProgram(0);
             glControl.SwapBuffers();
             CheckGLError("After SwapBuffers");
 
@@ -851,8 +863,17 @@ namespace FlashEditor {
 
         private void Editor_Resize(object sender, EventArgs e) {
             glControl.MakeCurrent();
-            SetupViewport();
+            GL.Viewport(0, 0, glControl.Width, glControl.Height);
+            UpdateProjection();
             glControl.Invalidate();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e) {
+            _fpsTimer.Stop();
+            _modelRenderer.Dispose();
+            if (_program != 0)
+                GL.DeleteProgram(_program);
+            base.OnFormClosed(e);
         }
     }
 }
