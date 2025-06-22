@@ -95,9 +95,9 @@ namespace FlashEditor {
                 obj is TextureDefinition def ? def.id.ToString() : null;
             SetIconSpacing(TextureListView, 110);
 
-            var dummyItem = new ToolStripMenuItem("Dummy Action");
-            dummyItem.Click += (_, _) => DummyMethod();
-            _textureContextMenu.Items.Add(dummyItem);
+            var exportItem = new ToolStripMenuItem("Export");
+            exportItem.Click += (_, _) => Export();
+            _textureContextMenu.Items.Add(exportItem);
             TextureListView.ContextMenuStrip = _textureContextMenu;
         }
 
@@ -1003,7 +1003,7 @@ namespace FlashEditor {
             base.OnFormClosed(e);
         }
 
-        private void DummyMethod()
+        private void Export()
         {
             MessageBox.Show("Dummy action executed.");
         }
