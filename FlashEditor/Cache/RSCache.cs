@@ -377,19 +377,23 @@ namespace FlashEditor.cache {
             // The archive size must match the highest file id, not just the number of valid files.
             // Otherwise archives with sparse file ids decode incorrectly and lookups like file=256 fail.
 
-            Debug("Reading " + RSConstants.GetContainerNameForType(type) + ", Archive" + archive + " - file " + file, LOG_DETAIL.ADVANCED);
+            Debug($"Reading index {RSConstants.GetContainerNameForType(type)}   archive {archive}   entry {file}", LOG_DETAIL.ADVANCED);
 
             //int realFiles = (type == RSConstants.MODELS_INDEX) ? 1 : entry.GetValidFileIds().Length;
 
             Debug($"Models archive {archive} has {entry.GetValidFileIds().Length} files", LOG_DETAIL.INSANE);
 
             RSContainer container = GetContainer(type, archive);
-            if (container == null)
+            if (container == null) {
                 return null;
+            }
 
             RSArchive RSarchive = GetArchive(container, entry.GetValidFileIds().Length);
-            if (RSarchive == null)
+
+            if (RSarchive == null) {
+                Debug($"Archive {archive} is null for index {type}");
                 return null;
+            }
 
             return RSarchive.GetEntry(file);
         }
@@ -400,16 +404,17 @@ namespace FlashEditor.cache {
         /// <param name="container">The container from which the archive is built</param>
         /// <param name="fileCount">The number of files contained in the archive</param>
         /// <returns>Returns the decoded archive instance</returns>
-        internal RSArchive GetArchive(RSContainer container, int fileCount) {
+        public static RSArchive GetArchive(RSContainer container, int fileCount) {
             //Has the archive already been decoded from the container data?
             if (container.GetArchive() != null)
                 return container.GetArchive();
 
             //Otherwise, construct the archive from the container
             RSArchive archive = RSArchive.Decode(container.GetStream(), fileCount);
+
             if (archive == null) {
                 Debug("Corrupted archive in container " + container.GetId(), LOG_DETAIL.ADVANCED);
-                //throw new NullReferenceException("Archive is null");
+                throw new NullReferenceException("Archive is null");
             }
 
             container.SetArchive(archive);

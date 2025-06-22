@@ -34,13 +34,12 @@ namespace FlashEditor.cache
             stream.Seek(stream.Length - 1);
             archive.chunks = stream.ReadByte();
 
-            Debug("Chunk count: " + archive.chunks, LOG_DETAIL.INSANE);
+            Debug($"Chunk count: {archive.chunks}, size {size}", LOG_DETAIL.INSANE);
 
             //Single‑file archives omit the size table entirely.
             if (size == 1)
             {
                 stream.Seek0();
-
                 byte[] allData = stream.ReadBytes(stream.Length);
 
                 JagStream data = new JagStream();
@@ -48,6 +47,7 @@ namespace FlashEditor.cache
                 data.Flip();
 
                 archive.entries[0] = data;
+
                 return archive;
             }
 
