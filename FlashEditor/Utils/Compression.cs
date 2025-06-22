@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Buffers;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using ICSharpCode.SharpZipLib.BZip2;
 using ICSharpCode.SharpZipLib.Core;
 using ICSharpCode.SharpZipLib.GZip;

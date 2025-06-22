@@ -1,8 +1,8 @@
 using FlashEditor.Cache.CheckSum;
-using static FlashEditor.utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 
 namespace FlashEditor.cache
 {

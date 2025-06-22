@@ -1,5 +1,5 @@
 ﻿using FlashEditor;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Diagnostics;
@@ -93,6 +93,8 @@ namespace FlashEditor.Definitions {
                 default:
                     throw new NotSupportedException($"Unknown model format: {modelFormat}");
             }
+
+            DebugUtil.Debug("Finished decoding");
         }
 
         /// <summary>

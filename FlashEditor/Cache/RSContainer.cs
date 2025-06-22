@@ -1,7 +1,7 @@
-﻿using static FlashEditor.utils.DebugUtil;
+﻿using static FlashEditor.Utils.DebugUtil;
 using System.IO;
 using System;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using FlashEditor.Cache.Util.Crypto;
 
 namespace FlashEditor.cache

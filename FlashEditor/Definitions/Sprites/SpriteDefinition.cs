@@ -21,7 +21,7 @@
 */
 
 using FlashEditor.cache.util;
-using static FlashEditor.utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.Collections;
 using System.Collections.Generic;
 using System.Drawing;

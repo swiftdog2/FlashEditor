@@ -1,6 +1,6 @@
-﻿using FlashEditor.utils;
+﻿using FlashEditor.Utils;
 using System;
-using static FlashEditor.utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.cache {
     /// <summary>

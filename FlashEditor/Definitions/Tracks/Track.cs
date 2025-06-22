@@ -1,5 +1,5 @@
 ﻿using System;
-using static FlashEditor.utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Tracks {
     class Track {

@@ -1,6 +1,6 @@
 using System.Buffers;
 
-namespace FlashEditor.utils
+namespace FlashEditor.Utils
 {
     internal static class MemoryUtils
     {

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace FlashEditor.utils {
+namespace FlashEditor.Utils {
     public static class DebugUtil {
         //Change the order of the indexes when you change the layout of the editor tabs
         public enum LOG_DETAIL {
@@ -17,7 +17,7 @@ namespace FlashEditor.utils {
         };
 
         //The current logging detail level, change for lower/higher detailed logs
-        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.BASIC;
+        public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.ADVANCED;
 
         /// <summary>
         /// Prints out the debug message and waits for user input

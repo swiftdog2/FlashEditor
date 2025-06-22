@@ -1,4 +1,4 @@
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using Xunit;
 
 namespace FlashEditor.Tests.Utils

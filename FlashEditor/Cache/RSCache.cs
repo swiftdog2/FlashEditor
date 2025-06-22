@@ -1,13 +1,13 @@
 ﻿using FlashEditor.cache.sprites;
 using FlashEditor.Cache.Util;
 using FlashEditor.Definitions;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using ICSharpCode.SharpZipLib.Checksum;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using static FlashEditor.utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.cache
 {
@@ -516,7 +516,7 @@ namespace FlashEditor.cache
 
         public ModelDefinition GetModelDefinition(int archive, int entry)
         {
-            int modelId = (archive << 8) | entry;
+            int modelId = archive;
             try
             {
                 JagStream data = ReadEntry(RSConstants.MODELS_INDEX, archive, entry);

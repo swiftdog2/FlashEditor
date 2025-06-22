@@ -1,6 +1,6 @@
 using FlashEditor;
 using FlashEditor.cache;
-using FlashEditor.utils;
+using FlashEditor.Utils;
 using System.Collections.Generic;
 using Xunit;
 

@@ -1,4 +1,4 @@
-﻿using static FlashEditor.utils.DebugUtil;
+﻿using static FlashEditor.Utils.DebugUtil;
 using System.IO;
 using System;
 using System.Collections.Generic;

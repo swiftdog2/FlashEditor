@@ -1,4 +1,4 @@
-﻿using FlashEditor.utils;
+﻿using FlashEditor.Utils;
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
