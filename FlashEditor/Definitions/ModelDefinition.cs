@@ -481,7 +481,8 @@ namespace FlashEditor.Definitions {
 
 
         private void DecodeOld(JagStream modelStream, int[] xteaKey) {
-            throw new NotSupportedException("Old RS2 model format not supported.");
+
+            DebugUtil.Debug("Old RS2 model format not supported.");
         }
 
         public int ModelID { get; set; }

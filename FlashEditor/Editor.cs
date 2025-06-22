@@ -144,13 +144,6 @@ namespace FlashEditor {
 
         private void UpdateView() {
             _view = Matrix4.LookAt(CameraPosition(), _target, _up);
-        private void UpdateProjection() {
-            _proj = Matrix4.CreatePerspectiveFieldOfView(
-                MathHelper.DegreesToRadians(60f),
-                glControl.Width / (float)glControl.Height,
-                0.1f,
-                100f);
-
         }
 
 
