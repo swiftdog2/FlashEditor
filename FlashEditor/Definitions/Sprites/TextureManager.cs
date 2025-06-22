@@ -28,6 +28,10 @@ namespace FlashEditor.Definitions.Sprites
             foreach (int fileId in entry.GetValidFileIds())
             {
                 JagStream data = cache.ReadEntry(RSConstants.TEXTURES, 0, fileId);
+                if(data == null) {
+                    throw new Exception("Texture entry data is null");
+                    continue;
+                }
                 var def = loader.Load(fileId, data.ToArray());
                 Textures.Add(def);
             }
