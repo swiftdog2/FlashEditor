@@ -1300,9 +1300,9 @@ namespace FlashEditor {
             // 
             // TextureImage
             // 
-            TextureImage.AspectName = "thumb";
             TextureImage.Text = "";
             TextureImage.ImageGetter = row => ((TextureDefinition) row).thumb;
+            TextureImage.IsTileViewColumn = false;
             // 
             // TextureID
             // 
