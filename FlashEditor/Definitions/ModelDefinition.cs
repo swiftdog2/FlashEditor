@@ -56,6 +56,21 @@ namespace FlashEditor.Definitions {
         public ushort ParticleEffectId { get; private set; } = 0xFFFF; // 0xFFFF == none
         public ushort[]? ParticleAnchorVert; // optional vertex IDs
 
+        /// <summary>Per-vertex surface normals computed from triangle data.</summary>
+        public VertexNormal[]? VertexNormals;
+
+        /// <summary>Per-face surface normals used when faces are drawn flat.</summary>
+        public FaceNormal[]? FaceNormals;
+
+        /// <summary>Per-face texture U coordinates (three floats per triangle).</summary>
+        public float[][]? FaceTextureUCoordinates;
+
+        /// <summary>Per-face texture V coordinates (three floats per triangle).</summary>
+        public float[][]? FaceTextureVCoordinates;
+
+        /// <summary>Lists of vertex indices keyed by animation group.</summary>
+        public int[][]? VertexGroups;
+
         #endregion
 
         #region ≡ decoding entry points
@@ -95,6 +110,10 @@ namespace FlashEditor.Definitions {
             }
 
             DebugUtil.Debug("Finished decoding");
+
+            ComputeNormals();
+            ComputeTextureUVCoordinates();
+            ComputeAnimationTables();
         }
 
         /// <summary>
@@ -706,7 +725,230 @@ namespace FlashEditor.Definitions {
         }
         */
 
+        /// <summary>
+        /// Computes per-vertex and per-face normals for lighting calculations.
+        /// </summary>
+        private void ComputeNormals()
+        {
+            if (VertexNormals != null)
+                return;
 
+            DebugUtil.Debug("[ComputeNormals] Generating normals", DebugUtil.LOG_DETAIL.ADVANCED);
+
+            VertexNormals = new VertexNormal[VertexCount];
+            for (int i = 0; i < VertexCount; ++i)
+                VertexNormals[i] = new VertexNormal();
+
+            for (int i = 0; i < TriangleCount; ++i)
+            {
+                int vertexA = faceIndices1[i];
+                int vertexB = faceIndices2[i];
+                int vertexC = faceIndices3[i];
+
+                int xA = VertX[vertexB] - VertX[vertexA];
+                int yA = VertY[vertexB] - VertY[vertexA];
+                int zA = VertZ[vertexB] - VertZ[vertexA];
+
+                int xB = VertX[vertexC] - VertX[vertexA];
+                int yB = VertY[vertexC] - VertY[vertexA];
+                int zB = VertZ[vertexC] - VertZ[vertexA];
+
+                int nx = yA * zB - yB * zA;
+                int ny = zA * xB - zB * xA;
+                int nz = xA * yB - xB * yA;
+
+                while (nx > 8192 || ny > 8192 || nz > 8192 || nx < -8192 || ny < -8192 || nz < -8192)
+                {
+                    nx >>= 1;
+                    ny >>= 1;
+                    nz >>= 1;
+                }
+
+                int length = (int)Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                if (length <= 0)
+                    length = 1;
+
+                nx = nx * 256 / length;
+                ny = ny * 256 / length;
+                nz = nz * 256 / length;
+
+                sbyte renderType = FaceRenderType == null ? (sbyte)0 : FaceRenderType[i];
+
+                if (renderType == 0)
+                {
+                    VertexNormal vn = VertexNormals[vertexA];
+                    vn.x += nx;
+                    vn.y += ny;
+                    vn.z += nz;
+                    vn.magnitude++;
+
+                    vn = VertexNormals[vertexB];
+                    vn.x += nx;
+                    vn.y += ny;
+                    vn.z += nz;
+                    vn.magnitude++;
+
+                    vn = VertexNormals[vertexC];
+                    vn.x += nx;
+                    vn.y += ny;
+                    vn.z += nz;
+                    vn.magnitude++;
+                }
+                else if (renderType == 1)
+                {
+                    if (FaceNormals == null)
+                        FaceNormals = new FaceNormal[TriangleCount];
+
+                    FaceNormal fn = FaceNormals[i] = new FaceNormal();
+                    fn.x = nx;
+                    fn.y = ny;
+                    fn.z = nz;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Computes UV coordinates for textured triangles.
+        /// </summary>
+        private void ComputeTextureUVCoordinates()
+        {
+            FaceTextureUCoordinates = new float[TriangleCount][];
+            FaceTextureVCoordinates = new float[TriangleCount][];
+
+            for (int i = 0; i < TriangleCount; i++)
+            {
+                int textureCoordinate = TextureCoordinates == null ? -1 : TextureCoordinates[i];
+                int textureIdx = FaceTextures == null ? -1 : (FaceTextures[i] & 0xFFFF);
+
+                if (textureIdx != -1)
+                {
+                    float[] u = new float[3];
+                    float[] v = new float[3];
+
+                    if (textureCoordinate == -1)
+                    {
+                        u[0] = 0f; v[0] = 1f;
+                        u[1] = 1f; v[1] = 1f;
+                        u[2] = 0f; v[2] = 0f;
+                    }
+                    else
+                    {
+                        textureCoordinate &= 0xFF;
+
+                        sbyte textureRenderType = 0;
+                        if (TextureType != null)
+                            textureRenderType = TextureType[textureCoordinate];
+
+                        if (textureRenderType == 0)
+                        {
+                            int faceVertexIdx1 = faceIndices1[i];
+                            int faceVertexIdx2 = faceIndices2[i];
+                            int faceVertexIdx3 = faceIndices3[i];
+
+                            short triangleVertexIdx1 = TexIndA![textureCoordinate];
+                            short triangleVertexIdx2 = TexIndB![textureCoordinate];
+                            short triangleVertexIdx3 = TexIndC![textureCoordinate];
+
+                            float triangleX = VertX[triangleVertexIdx1];
+                            float triangleY = VertY[triangleVertexIdx1];
+                            float triangleZ = VertZ[triangleVertexIdx1];
+
+                            float f882 = VertX[triangleVertexIdx2] - triangleX;
+                            float f883 = VertY[triangleVertexIdx2] - triangleY;
+                            float f884 = VertZ[triangleVertexIdx2] - triangleZ;
+                            float f885 = VertX[triangleVertexIdx3] - triangleX;
+                            float f886 = VertY[triangleVertexIdx3] - triangleY;
+                            float f887 = VertZ[triangleVertexIdx3] - triangleZ;
+                            float f888 = VertX[faceVertexIdx1] - triangleX;
+                            float f889 = VertY[faceVertexIdx1] - triangleY;
+                            float f890 = VertZ[faceVertexIdx1] - triangleZ;
+                            float f891 = VertX[faceVertexIdx2] - triangleX;
+                            float f892 = VertY[faceVertexIdx2] - triangleY;
+                            float f893 = VertZ[faceVertexIdx2] - triangleZ;
+                            float f894 = VertX[faceVertexIdx3] - triangleX;
+                            float f895 = VertY[faceVertexIdx3] - triangleY;
+                            float f896 = VertZ[faceVertexIdx3] - triangleZ;
+
+                            float f897 = f883 * f887 - f884 * f886;
+                            float f898 = f884 * f885 - f882 * f887;
+                            float f899 = f882 * f886 - f883 * f885;
+                            float f900 = f886 * f899 - f887 * f898;
+                            float f901 = f887 * f897 - f885 * f899;
+                            float f902 = f885 * f898 - f886 * f897;
+                            float f903 = 1.0f / (f900 * f882 + f901 * f883 + f902 * f884);
+
+                            u[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
+                            u[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
+                            u[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
+
+                            f900 = f883 * f899 - f884 * f898;
+                            f901 = f884 * f897 - f882 * f899;
+                            f902 = f882 * f898 - f883 * f897;
+                            f903 = 1.0f / (f900 * f885 + f901 * f886 + f902 * f887);
+
+                            v[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
+                            v[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
+                            v[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
+                        }
+                    }
+
+                    FaceTextureUCoordinates[i] = u;
+                    FaceTextureVCoordinates[i] = v;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds vertex animation lookup tables from packed vertex groups.
+        /// </summary>
+        private void ComputeAnimationTables()
+        {
+            if (VertSkins != null)
+            {
+                int[] groupCounts = new int[256];
+                int numGroups = 0;
+
+                for (int i = 0; i < VertexCount; ++i)
+                {
+                    int group = VertSkins[i];
+                    groupCounts[group]++;
+                    if (group > numGroups)
+                        numGroups = group;
+                }
+
+                VertexGroups = new int[numGroups + 1][];
+
+                for (int i = 0; i <= numGroups; ++i)
+                {
+                    VertexGroups[i] = new int[groupCounts[i]];
+                    groupCounts[i] = 0;
+                }
+
+                for (int i = 0; i < VertexCount; i++)
+                {
+                    int g = VertSkins[i];
+                    VertexGroups[g][groupCounts[g]++] = i;
+                }
+
+                VertSkins = null;
+            }
+        }
+
+        /// <summary>Simple container for accumulated vertex normals.</summary>
+        private sealed class VertexNormal
+        {
+            public int x, y, z, magnitude;
+        }
+
+        /// <summary>Container for face normal vectors.</summary>
+        private sealed class FaceNormal
+        {
+            public int x, y, z;
+        }
+
+        /// <summary>
+        /// Global render priority used when <see cref="FacePriority"/> is null.
+        /// </summary>
         private byte _globalPriority;
 
         #endregion
