@@ -62,7 +62,8 @@ namespace FlashEditor {
             RSConstants.NPC_DEFINITIONS_INDEX,
             RSConstants.OBJECTS_DEFINITIONS_INDEX,
             RSConstants.INTERFACE_DEFINITIONS_INDEX,
-            RSConstants.MODELS_INDEX
+            RSConstants.MODELS_INDEX,
+            RSConstants.TEXTURES
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -934,6 +935,12 @@ namespace FlashEditor {
         }
 
         private void Editor_Resize(object sender, EventArgs e) {
+            // The GLControl may not have created its underlying window yet
+            // when the form is resized before the Models tab is opened.
+            // Avoid touching OpenGL until the control has a handle.
+            if (!glControl.IsHandleCreated)
+                return;
+
             glControl.MakeCurrent();
             GL.Viewport(0, 0, glControl.Width, glControl.Height);
             UpdateProjection();
