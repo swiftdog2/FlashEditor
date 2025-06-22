@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using static FlashEditor.Utils.DebugUtil;
+using Timer = System.Windows.Forms.Timer;
 
 
 namespace FlashEditor {
@@ -40,19 +41,34 @@ namespace FlashEditor {
             glControl.Resize += Editor_Resize;
 
             // 2 – replace busy idle‐loop with a WinForms timer @ ~30 FPS
-            var fpsTimer = new System.Windows.Forms.Timer {
-                Interval = 1000 / 200   // ~33 ms → 30 FPS
-            };
+            var fpsTimer = new Timer { Interval = 1000 }; // ~33 ms → 30 FPS
             fpsTimer.Tick += (_, _) => glControl.Invalidate();
             fpsTimer.Start();
         }
 
         private void Gl_Load(object sender, EventArgs e) {
             GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
+            CheckGLError("After PolygonMode");
+
             GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
+            CheckGLError("After ClearColor");
+
             GL.Enable(EnableCap.DepthTest);
+            CheckGLError("After Enable(DepthTest)");
 
             SetupViewport();
+        }
+
+        /// <summary>
+        /// Grabs the latest GL error and logs it if non‐zero.
+        /// If you see INVALID_OPERATION on a fixed‐pipeline call,
+        /// you’re likely in a core‐profile context.
+        /// </summary>
+        private void CheckGLError(string location) {
+            var err = GL.GetError();
+            if (err != ErrorCode.NoError) {
+                Debug($"GL Error @ {location}: {err}", LOG_DETAIL.ADVANCED);
+            }
         }
 
         private void SetupViewport() {
@@ -68,24 +84,47 @@ namespace FlashEditor {
                 100f
               );
             GL.LoadMatrix(ref proj);
+            CheckGLError("After Projection setup");
 
             // 2) Modelview (camera)
             GL.MatrixMode(MatrixMode.Modelview);
             GL.LoadIdentity();
             // move the camera back so you can actually see your model
             GL.Translate(0f, 0f, -3f);
+            CheckGLError("After Modelview setup");
         }
 
 
         private void Gl_Paint(object sender, PaintEventArgs e) {
             glControl.MakeCurrent();
             GL.Viewport(0, 0, glControl.Width, glControl.Height);
+            CheckGLError("After Viewport");
 
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            CheckGLError("After Clear");
 
+            Debug(">> Sanity Test: immediate‐mode triangle", LOG_DETAIL.ADVANCED);
+            GL.Disable(EnableCap.DepthTest);
+            CheckGLError("Before Sanity‐triangle Disable(DepthTest)");
+
+            GL.Begin(PrimitiveType.Triangles);
+            GL.Color3(1.0f, 0.0f, 0.0f);
+            GL.Vertex3(-0.5f, -0.5f, 0.0f);
+            GL.Vertex3(0.5f, -0.5f, 0.0f);
+            GL.Vertex3(0.0f, 0.5f, 0.0f);
+            GL.End();
+            CheckGLError("After Sanity‐triangle GL.End()");
+
+            GL.Enable(EnableCap.DepthTest);
+            CheckGLError("After Sanity‐triangle Enable(DepthTest)");
+
+            // 2) Your model draw
             _modelRenderer.Draw();
+            CheckGLError("After ModelRenderer.Draw()");
 
             glControl.SwapBuffers();
+            CheckGLError("After SwapBuffers");
+
         }
 
         public bool IsCacheDirSet() {
