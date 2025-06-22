@@ -1291,6 +1291,7 @@
             Name = "Editor";
             Text = "Flash's 639 Editor";
             Load += Editor_Load;
+            Resize += Editor_Resize;
             menuStrip1.ResumeLayout(false);
             menuStrip1.PerformLayout();
             EditorTabControl.ResumeLayout(false);

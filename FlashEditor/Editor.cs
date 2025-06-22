@@ -2,15 +2,16 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using OpenTK.GLControl;
+using OpenTK.Graphics.OpenGL;
+using OpenTK.Mathematics;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
-using static FlashEditor.utils.DebugUtil;
-using OpenTK.Graphics.OpenGL;
+using static FlashEditor.Utils.DebugUtil;
 
 
-namespace FlashEditor
-{
+namespace FlashEditor {
     public partial class Editor : Form {
         internal RSCache cache;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
@@ -36,16 +37,45 @@ namespace FlashEditor
             // 1 – attach GL handlers
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
-            glControl.Resize += (_, _) => glControl.Invalidate();
+            glControl.Resize += Editor_Resize;
 
-            // 2 – simple game-loop (comment out if it hogs CPU later)
-            Application.Idle += (_, _) => glControl.Invalidate();
+            // 2 – replace busy idle‐loop with a WinForms timer @ ~30 FPS
+            var fpsTimer = new System.Windows.Forms.Timer {
+                Interval = 1000 / 200   // ~33 ms → 30 FPS
+            };
+            fpsTimer.Tick += (_, _) => glControl.Invalidate();
+            fpsTimer.Start();
         }
 
         private void Gl_Load(object sender, EventArgs e) {
+            GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
             GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
+
+            SetupViewport();
         }
+
+        private void SetupViewport() {
+            // 1) Projection
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.LoadIdentity();
+            // 60° field‐of‐view, aspect, near=0.1, far=100
+            var proj =
+              Matrix4.CreatePerspectiveFieldOfView(
+                MathHelper.DegreesToRadians(60f),
+                glControl.Width / (float) glControl.Height,
+                0.1f,
+                100f
+              );
+            GL.LoadMatrix(ref proj);
+
+            // 2) Modelview (camera)
+            GL.MatrixMode(MatrixMode.Modelview);
+            GL.LoadIdentity();
+            // move the camera back so you can actually see your model
+            GL.Translate(0f, 0f, -3f);
+        }
+
 
         private void Gl_Paint(object sender, PaintEventArgs e) {
             glControl.MakeCurrent();
@@ -448,20 +478,17 @@ namespace FlashEditor
                     bgw.RunWorkerAsync();
                     break;
 
-                case RSConstants.MODELS_INDEX:
-                    {
+                case RSConstants.MODELS_INDEX: {
                         ProgressBar bar = ModelProgressBar;
                         Label lbl = ModelLoadingLabel;
 
-                        bgw.DoWork += (object? s, DoWorkEventArgs args) =>
-                        {
+                        bgw.DoWork += (object? s, DoWorkEventArgs args) => {
                             var list = cache.EnumerateModelReferences().ToList();
                             args.Result = list;
                         };
 
-                        bgw.RunWorkerCompleted += (_, e) =>
-                        {
-                            var list = (List<ModelReference>)e.Result!;
+                        bgw.RunWorkerCompleted += (_, e) => {
+                            var list = (List<ModelReference>) e.Result!;
                             ModelListView.SetObjects(list);
                             lbl.Text = $"Models loaded ({list.Count})";
                         };
@@ -723,37 +750,70 @@ namespace FlashEditor
             SpriteListView.RowHeight = (int) numericUpDown1.Value;
         }
 
-        private void ModelListView_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (ModelListView.SelectedObject is ModelReference mr)
-            {
+        private void ModelListView_SelectedIndexChanged(object sender, EventArgs e) {
+            Debug("Entered ModelListView_SelectedIndexChanged", LOG_DETAIL.ADVANCED);
+
+            if (ModelListView.SelectedObject is ModelReference mr) {
+                Debug($"SelectedObject is ModelReference (ID={mr.ModelID}, Archive={mr.ArchiveId}, File={mr.FileId})", LOG_DETAIL.ADVANCED);
+
                 int id = mr.ModelID;
 
-                if (cache.models.TryGetValue(id, out var def))
-                {
+                // Check cache
+                if (cache.models.TryGetValue(id, out var def)) {
+                    Debug($"Cache hit for model {id} – rendering immediately.", LOG_DETAIL.ADVANCED);
                     _modelRenderer.Load(def);
                     glControl.Invalidate();
                     return;
                 }
 
-                if (!_modelTasks.TryGetValue(id, out var task))
-                {
-                    task = System.Threading.Tasks.Task.Run(() => cache.GetModelDefinition(mr.ArchiveId, mr.FileId));
+                Debug($"Cache miss for model {id}.", LOG_DETAIL.ADVANCED);
+
+                // See if a load is already in progress
+                if (!_modelTasks.TryGetValue(id, out var task)) {
+                    Debug($"No existing task for model {id}, starting new Task.Run…", LOG_DETAIL.ADVANCED);
+                    task = Task.Run(() => {
+                        Debug($"[BG] Calling cache.GetModelDefinition({mr.ArchiveId}, {mr.FileId})", LOG_DETAIL.ADVANCED);
+                        var result = cache.GetModelDefinition(mr.ArchiveId, mr.FileId);
+                        Debug($"[BG] Finished GetModelDefinition for {id}", LOG_DETAIL.ADVANCED);
+                        return result;
+                    });
                     _modelTasks[id] = task;
                 }
+                else {
+                    Debug($"Found existing task for model {id}, skipping new Task.Run.", LOG_DETAIL.ADVANCED);
+                }
 
-                task.ContinueWith(t =>
-                {
-                    if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
-                    {
+                // When the task completes…
+                task.ContinueWith(t => {
+                    Debug($"[UI] Task completed with status {t.Status} for model {id}", LOG_DETAIL.ADVANCED);
+
+                    if (t.Status == TaskStatus.RanToCompletion) {
                         var loaded = t.Result;
+                        Debug($"[UI] Caching loaded model {id}", LOG_DETAIL.ADVANCED);
                         cache.models[id] = loaded;
+
+                        Debug($"[UI] Removing task entry for {id}", LOG_DETAIL.ADVANCED);
                         _modelTasks.Remove(id);
+
+                        Debug($"[UI] Rendering loaded model {id}", LOG_DETAIL.ADVANCED);
                         _modelRenderer.Load(loaded);
                         glControl.Invalidate();
                     }
-                }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+                    else if (t.IsFaulted) {
+                        Debug($"[UI] Error loading model {id}: {t.Exception?.Flatten().InnerException}", LOG_DETAIL.ADVANCED);
+                        // Optionally: show a MessageBox or other UI error indicator
+                    }
+                }, TaskScheduler.FromCurrentSynchronizationContext());
             }
+            else {
+                Debug("SelectedObject was NOT a ModelReference – doing nothing.", LOG_DETAIL.ADVANCED);
+            }
+        }
+
+        private void Editor_Resize(object sender, EventArgs e) {
+            glControl.MakeCurrent();
+            SetupViewport();
+            glControl.Invalidate();
         }
     }
 }
