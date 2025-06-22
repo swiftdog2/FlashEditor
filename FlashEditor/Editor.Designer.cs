@@ -1302,7 +1302,9 @@ namespace FlashEditor {
             // 
             TextureImage.AspectName = "thumb";
             TextureImage.Text = "";
-            TextureImage.ImageGetter = row => ((TextureDefinition) row).thumb;
+            // Return the image key instead of the Bitmap so the ListView can
+            // retrieve it from the LargeImageList.
+            TextureImage.ImageGetter = row => ((TextureDefinition) row).id.ToString();
             // 
             // TextureID
             // 
