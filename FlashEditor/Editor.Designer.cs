@@ -22,8 +22,7 @@
         /// Required method for Designer support - do not modify
         /// the contents of this method with the code editor.
         /// </summary>
-        private void InitializeComponent()
-        {
+        private void InitializeComponent() {
             components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Editor));
             folderBrowserDialog1 = new FolderBrowserDialog();
@@ -145,30 +144,30 @@
             Console.SuspendLayout();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)RefTableListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) RefTableListView).BeginInit();
             tabPage2.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)ContainerListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) ContainerListView).BeginInit();
             groupBox1.SuspendLayout();
             ItemEditorTab.SuspendLayout();
             groupBox4.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)ItemListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) ItemListView).BeginInit();
             SpriteEditorTab.SuspendLayout();
             groupBox3.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)SpriteListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) numericUpDown1).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) SpriteListView).BeginInit();
             NPCEditorTab.SuspendLayout();
             groupBox6.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)NPCListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) NPCListView).BeginInit();
             ObjectEditorTab.SuspendLayout();
             groupBox5.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)ObjectListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) ObjectListView).BeginInit();
             ModelViewerTab.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
             splitContainer1.Panel2.SuspendLayout();
             splitContainer1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)ModelListView).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)eventLog1).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) eventLog1).BeginInit();
             SuspendLayout();
             // 
             // menuStrip1
@@ -228,7 +227,7 @@
             // 
             // EditorTabControl
             // 
-            EditorTabControl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            EditorTabControl.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             EditorTabControl.Controls.Add(Console);
             EditorTabControl.Controls.Add(ItemEditorTab);
             EditorTabControl.Controls.Add(SpriteEditorTab);
@@ -236,7 +235,7 @@
             EditorTabControl.Controls.Add(ObjectEditorTab);
             EditorTabControl.Controls.Add(InterfaceEditorTab);
             EditorTabControl.Controls.Add(ModelViewerTab);
-            EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
             EditorTabControl.SelectedIndex = 0;
@@ -257,7 +256,7 @@
             // 
             // tabControl1
             // 
-            tabControl1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            tabControl1.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             tabControl1.Controls.Add(tabPage1);
             tabControl1.Controls.Add(tabPage2);
             tabControl1.Font = new Font("Consolas", 11.25F);
@@ -288,7 +287,7 @@
             RefTableListView.AllColumns.Add(usesWhirlpoolCol);
             RefTableListView.AllColumns.Add(olvColumn4);
             RefTableListView.AllColumns.Add(olvColumn7);
-            RefTableListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            RefTableListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             RefTableListView.CellEditUseWholeCell = false;
             RefTableListView.Columns.AddRange(new ColumnHeader[] { typeCol, formatCol, validArchiveCountCol, versionCol, namedCol, usesWhirlpoolCol, olvColumn4, olvColumn7 });
             RefTableListView.Font = new Font("Consolas", 11.25F);
@@ -374,10 +373,10 @@
             ContainerListView.AllColumns.Add(olvColumn5);
             ContainerListView.AllColumns.Add(olvColumn3);
             ContainerListView.AllColumns.Add(olvColumn6);
-            ContainerListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            ContainerListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             ContainerListView.CellEditUseWholeCell = false;
             ContainerListView.Columns.AddRange(new ColumnHeader[] { olvColumn1, olvColumn2, CompressCol, olvColumn5, olvColumn3, olvColumn6 });
-            ContainerListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            ContainerListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
             ContainerListView.Location = new Point(-2, -1);
             ContainerListView.Name = "ContainerListView";
             ContainerListView.ShowGroups = false;
@@ -434,7 +433,7 @@
             // 
             // groupBox1
             // 
-            groupBox1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            groupBox1.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox1.BackColor = Color.White;
             groupBox1.Controls.Add(button6);
             groupBox1.Controls.Add(button5);
@@ -495,7 +494,7 @@
             // 
             // groupBox4
             // 
-            groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            groupBox4.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox4.BackColor = Color.White;
             groupBox4.Controls.Add(ItemLoadingLabel);
             groupBox4.Controls.Add(ItemProgressBar);
@@ -511,10 +510,10 @@
             // 
             // ItemLoadingLabel
             // 
-            ItemLoadingLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ItemLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ItemLoadingLabel.AutoSize = true;
             ItemLoadingLabel.BackColor = Color.Transparent;
-            ItemLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            ItemLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             ItemLoadingLabel.Location = new Point(6, 461);
             ItemLoadingLabel.Name = "ItemLoadingLabel";
             ItemLoadingLabel.Size = new Size(126, 19);
@@ -524,7 +523,7 @@
             // 
             // ItemProgressBar
             // 
-            ItemProgressBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ItemProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ItemProgressBar.ForeColor = Color.DarkRed;
             ItemProgressBar.Location = new Point(4, 483);
             ItemProgressBar.Name = "ItemProgressBar";
@@ -568,14 +567,14 @@
             ItemListView.AllColumns.Add(equipSlotColumn);
             ItemListView.AllColumns.Add(equipIdColumn);
             ItemListView.AllColumns.Add(membersOnlyColumn);
-            ItemListView.AlternateRowBackColor = Color.FromArgb(192, 255, 192);
-            ItemListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            ItemListView.AlternateRowBackColor = Color.FromArgb(  192,   255,   192);
+            ItemListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             ItemListView.BackColor = Color.White;
             ItemListView.CellEditActivation = BrightIdeasSoftware.ObjectListView.CellEditActivateMode.DoubleClick;
             ItemListView.CellEditUseWholeCell = false;
             ItemListView.CheckBoxes = true;
             ItemListView.Columns.AddRange(new ColumnHeader[] { ItemID, ItemName, InvModel, Male1, Male2, Female1, Female2, Rotate1, Rotate2, valueColumn, stackableColumn, equipSlotColumn, equipIdColumn, membersOnlyColumn });
-            ItemListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            ItemListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
             ItemListView.FullRowSelect = true;
             ItemListView.GridLines = true;
             ItemListView.Location = new Point(-2, -2);
@@ -693,7 +692,7 @@
             // 
             // groupBox3
             // 
-            groupBox3.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            groupBox3.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox3.BackColor = Color.White;
             groupBox3.Controls.Add(label1);
             groupBox3.Controls.Add(numericUpDown1);
@@ -713,7 +712,7 @@
             // label1
             // 
             label1.AutoSize = true;
-            label1.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            label1.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             label1.Location = new Point(9, 36);
             label1.Name = "label1";
             label1.Size = new Size(99, 19);
@@ -732,10 +731,10 @@
             // 
             // SpriteLoadingLabel
             // 
-            SpriteLoadingLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            SpriteLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             SpriteLoadingLabel.AutoSize = true;
             SpriteLoadingLabel.BackColor = Color.White;
-            SpriteLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            SpriteLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             SpriteLoadingLabel.Location = new Point(6, 464);
             SpriteLoadingLabel.Name = "SpriteLoadingLabel";
             SpriteLoadingLabel.Size = new Size(144, 19);
@@ -745,7 +744,7 @@
             // 
             // SpriteProgressBar
             // 
-            SpriteProgressBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            SpriteProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             SpriteProgressBar.BackColor = Color.White;
             SpriteProgressBar.ForeColor = Color.DarkRed;
             SpriteProgressBar.Location = new Point(6, 486);
@@ -793,7 +792,7 @@
             SpriteListView.AllColumns.Add(Height);
             SpriteListView.AllColumns.Add(Image);
             SpriteListView.AlternateRowBackColor = Color.White;
-            SpriteListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            SpriteListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             SpriteListView.CellEditUseWholeCell = false;
             SpriteListView.Columns.AddRange(new ColumnHeader[] { ID, Frames, Width, Height, Image });
             SpriteListView.Font = new Font("Consolas", 11.25F);
@@ -861,7 +860,7 @@
             // 
             // groupBox6
             // 
-            groupBox6.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            groupBox6.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox6.BackColor = Color.White;
             groupBox6.Controls.Add(NPCLoadingLabel);
             groupBox6.Controls.Add(NPCProgressBar);
@@ -877,10 +876,10 @@
             // 
             // NPCLoadingLabel
             // 
-            NPCLoadingLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            NPCLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             NPCLoadingLabel.AutoSize = true;
             NPCLoadingLabel.BackColor = Color.Transparent;
-            NPCLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            NPCLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             NPCLoadingLabel.Location = new Point(3, 439);
             NPCLoadingLabel.Name = "NPCLoadingLabel";
             NPCLoadingLabel.Size = new Size(117, 19);
@@ -890,7 +889,7 @@
             // 
             // NPCProgressBar
             // 
-            NPCProgressBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            NPCProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             NPCProgressBar.ForeColor = Color.DarkRed;
             NPCProgressBar.Location = new Point(0, 461);
             NPCProgressBar.Name = "NPCProgressBar";
@@ -931,11 +930,11 @@
             NPCListView.AllColumns.Add(contrastColumn);
             NPCListView.AllColumns.Add(attackCursorColumn);
             NPCListView.AllColumns.Add(visiblePriorityColumn);
-            NPCListView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            NPCListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             NPCListView.BackColor = Color.White;
             NPCListView.CellEditUseWholeCell = false;
             NPCListView.Columns.AddRange(new ColumnHeader[] { npcIdColumn, nameColumn, sizeColumn, levelColumn, olvColumn10, olvColumn9, olvColumn11, rotationColumn, ambientColumn, contrastColumn, attackCursorColumn, visiblePriorityColumn });
-            NPCListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            NPCListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
             NPCListView.FullRowSelect = true;
             NPCListView.GridLines = true;
             NPCListView.Location = new Point(0, 3);
@@ -952,11 +951,11 @@
             // 
             // npcIdColumn
             // 
-            this.npcIdColumn.AspectName = "id";
-            this.npcIdColumn.Groupable = false;
-            this.npcIdColumn.Searchable = false;
-            this.npcIdColumn.Text = "ID";
-            this.npcIdColumn.Width = 78;
+            npcIdColumn.AspectName = "id";
+            npcIdColumn.Groupable = false;
+            npcIdColumn.Searchable = false;
+            npcIdColumn.Text = "ID";
+            npcIdColumn.Width = 78;
             // 
             // nameColumn
             // 
@@ -1040,7 +1039,7 @@
             // 
             // groupBox5
             // 
-            groupBox5.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            groupBox5.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox5.BackColor = Color.White;
             groupBox5.Controls.Add(ObjectLoadingLabel);
             groupBox5.Controls.Add(ObjectProgressBar);
@@ -1056,7 +1055,7 @@
             // 
             // ObjectLoadingLabel
             // 
-            ObjectLoadingLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ObjectLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ObjectLoadingLabel.AutoSize = true;
             ObjectLoadingLabel.BackColor = Color.Transparent;
             ObjectLoadingLabel.Font = new Font("Consolas", 12F);
@@ -1069,7 +1068,7 @@
             // 
             // ObjectProgressBar
             // 
-            ObjectProgressBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ObjectProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ObjectProgressBar.ForeColor = Color.DarkRed;
             ObjectProgressBar.Location = new Point(0, 461);
             ObjectProgressBar.Name = "ObjectProgressBar";
@@ -1097,55 +1096,43 @@
             button8.UseVisualStyleBackColor = false;
             // 
             // ObjectListView
-            //
-            this.ObjectListView.AllColumns.Add(this.objectIdColumn);
-            this.ObjectListView.AllColumns.Add(this.objectNameColumn);
-            this.ObjectListView.AllColumns.Add(this.sizeXColumn);
-            this.ObjectListView.AllColumns.Add(this.sizeYColumn);
-            this.ObjectListView.AllColumns.Add(this.walkableColumn);
-            this.ObjectListView.AllColumns.Add(this.clippedColumn);
-            this.ObjectListView.AllColumns.Add(this.ambientSoundColumn);
-            this.ObjectListView.AllColumns.Add(this.morphVarbitColumn);
-            this.ObjectListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
-            | System.Windows.Forms.AnchorStyles.Left)
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.ObjectListView.BackColor = System.Drawing.Color.White;
-            this.ObjectListView.CellEditUseWholeCell = false;
-            this.ObjectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.objectIdColumn,
-            this.objectNameColumn,
-            this.sizeXColumn,
-            this.sizeYColumn,
-            this.walkableColumn,
-            this.clippedColumn,
-            this.ambientSoundColumn,
-            this.morphVarbitColumn});
-            this.ObjectListView.Cursor = System.Windows.Forms.Cursors.Default;
-            this.ObjectListView.Font = new System.Drawing.Font("Consolas", 11.25F);
-            this.ObjectListView.FullRowSelect = true;
-            this.ObjectListView.GridLines = true;
-            this.ObjectListView.HideSelection = false;
-            this.ObjectListView.Location = new System.Drawing.Point(-2, -2);
-            this.ObjectListView.Name = "ObjectListView";
-            this.ObjectListView.RowHeight = 10;
-            this.ObjectListView.ShowGroups = false;
-            this.ObjectListView.ShowImagesOnSubItems = true;
-            this.ObjectListView.Size = new System.Drawing.Size(853, 535);
-            this.ObjectListView.TabIndex = 18;
-            this.ObjectListView.UseCompatibleStateImageBehavior = false;
-            this.ObjectListView.View = System.Windows.Forms.View.Details;
-            this.ObjectListView.VirtualMode = true;
-            this.ObjectListView.CellEditFinished += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditFinished);
-            this.ObjectListView.CellEditStarting += new BrightIdeasSoftware.CellEditEventHandler(this.ObjectListView_CellEditStarting);
-            //
+            // 
+            ObjectListView.AllColumns.Add(objectIdColumn);
+            ObjectListView.AllColumns.Add(objectNameColumn);
+            ObjectListView.AllColumns.Add(sizeXColumn);
+            ObjectListView.AllColumns.Add(sizeYColumn);
+            ObjectListView.AllColumns.Add(walkableColumn);
+            ObjectListView.AllColumns.Add(clippedColumn);
+            ObjectListView.AllColumns.Add(ambientSoundColumn);
+            ObjectListView.AllColumns.Add(morphVarbitColumn);
+            ObjectListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            ObjectListView.BackColor = Color.White;
+            ObjectListView.CellEditUseWholeCell = false;
+            ObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
+            ObjectListView.Font = new Font("Consolas", 11.25F);
+            ObjectListView.FullRowSelect = true;
+            ObjectListView.GridLines = true;
+            ObjectListView.Location = new Point(-2, -2);
+            ObjectListView.Name = "ObjectListView";
+            ObjectListView.RowHeight = 10;
+            ObjectListView.ShowGroups = false;
+            ObjectListView.ShowImagesOnSubItems = true;
+            ObjectListView.Size = new Size(853, 535);
+            ObjectListView.TabIndex = 18;
+            ObjectListView.UseCompatibleStateImageBehavior = false;
+            ObjectListView.View = View.Details;
+            ObjectListView.VirtualMode = true;
+            ObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
+            ObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
+            // 
             // objectIdColumn
-            //
-            this.objectIdColumn.AspectName = "id";
-            this.objectIdColumn.Groupable = false;
-            this.objectIdColumn.Searchable = false;
-            this.objectIdColumn.Text = "ID";
-            this.objectIdColumn.Width = 78;
-            //
+            // 
+            objectIdColumn.AspectName = "id";
+            objectIdColumn.Groupable = false;
+            objectIdColumn.Searchable = false;
+            objectIdColumn.Text = "ID";
+            objectIdColumn.Width = 78;
+            // 
             // objectNameColumn
             // 
             objectNameColumn.AspectName = "name";
@@ -1228,7 +1215,7 @@
             // 
             // glControl
             // 
-            glControl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            glControl.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             glControl.API = OpenTK.Windowing.Common.ContextAPI.OpenGL;
             glControl.APIVersion = new Version(3, 3, 0, 0);
             glControl.Flags = OpenTK.Windowing.Common.ContextFlags.Default;
@@ -1250,6 +1237,7 @@
             ModelListView.TabIndex = 15;
             ModelListView.View = View.Details;
             ModelListView.VirtualMode = true;
+            ModelListView.SelectedIndexChanged += ModelListView_SelectedIndexChanged;
             // 
             // ModelID
             // 
@@ -1258,10 +1246,10 @@
             // 
             // ModelLoadingLabel
             // 
-            ModelLoadingLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ModelLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ModelLoadingLabel.AutoSize = true;
             ModelLoadingLabel.BackColor = Color.Transparent;
-            ModelLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            ModelLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             ModelLoadingLabel.Location = new Point(368, 476);
             ModelLoadingLabel.Name = "ModelLoadingLabel";
             ModelLoadingLabel.Size = new Size(135, 19);
@@ -1271,7 +1259,7 @@
             // 
             // ModelProgressBar
             // 
-            ModelProgressBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            ModelProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ModelProgressBar.ForeColor = Color.DarkRed;
             ModelProgressBar.Location = new Point(366, 498);
             ModelProgressBar.Name = "ModelProgressBar";
@@ -1297,8 +1285,8 @@
             Controls.Add(EditorTabControl);
             Controls.Add(menuStrip1);
             DoubleBuffered = true;
-            Font = new Font("Consolas", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            Icon = (Icon)resources.GetObject("$this.Icon");
+            Font = new Font("Consolas", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
+            Icon = (Icon) resources.GetObject("$this.Icon");
             MainMenuStrip = menuStrip1;
             Name = "Editor";
             Text = "Flash's 639 Editor";
@@ -1309,35 +1297,35 @@
             Console.ResumeLayout(false);
             tabControl1.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)RefTableListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) RefTableListView).EndInit();
             tabPage2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)ContainerListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) ContainerListView).EndInit();
             groupBox1.ResumeLayout(false);
             ItemEditorTab.ResumeLayout(false);
             groupBox4.ResumeLayout(false);
             groupBox4.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)ItemListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) ItemListView).EndInit();
             SpriteEditorTab.ResumeLayout(false);
             groupBox3.ResumeLayout(false);
             groupBox3.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown1).EndInit();
-            ((System.ComponentModel.ISupportInitialize)SpriteListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) numericUpDown1).EndInit();
+            ((System.ComponentModel.ISupportInitialize) SpriteListView).EndInit();
             NPCEditorTab.ResumeLayout(false);
             groupBox6.ResumeLayout(false);
             groupBox6.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)NPCListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) NPCListView).EndInit();
             ObjectEditorTab.ResumeLayout(false);
             groupBox5.ResumeLayout(false);
             groupBox5.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)ObjectListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) ObjectListView).EndInit();
             ModelViewerTab.ResumeLayout(false);
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);
             splitContainer1.Panel2.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)splitContainer1).EndInit();
+            ((System.ComponentModel.ISupportInitialize) splitContainer1).EndInit();
             splitContainer1.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)ModelListView).EndInit();
-            ((System.ComponentModel.ISupportInitialize)eventLog1).EndInit();
+            ((System.ComponentModel.ISupportInitialize) ModelListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) eventLog1).EndInit();
             ResumeLayout(false);
             PerformLayout();
 

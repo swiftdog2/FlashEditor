@@ -290,9 +290,11 @@ namespace FlashEditor.Definitions
                 case 79:
                     {
                         ambientSoundId = buf.ReadUnsignedShort();
+                        ambientSoundLoops = buf.ReadUnsignedByte();
                         int count = buf.ReadByte();
                         extraSounds = new int[count];
-                        for (int i = 0; i < count; i++) extraSounds[i] = buf.ReadUnsignedShort();
+                        for (int i = 0; i < count; i++)
+                            extraSounds[i] = buf.ReadUnsignedShort();
                         break;
                     }
 
