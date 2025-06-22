@@ -16,7 +16,7 @@ namespace FlashEditor.cache
         /// <summary>
         /// Combined model identifier (<c>archiveId &lt;&lt; 8 | fileId</c>).
         /// </summary>
-        public int ModelID => (ArchiveId << 8) | FileId;
+        public int ModelID => ArchiveId;
 
         /// <summary>Create a new model reference.</summary>
         /// <param name="archiveId">Archive identifier.</param>
