@@ -3,13 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 
-namespace FlashEditor.Definitions.Sprites
-{
+namespace FlashEditor.Definitions.Sprites {
     /// <summary>
     /// Representation of a texture definition from the RuneScape cache.
     /// </summary>
-    public class TextureDefinition : IDefinition
-    {
+    public class TextureDefinition : IDefinition {
         public int field1777;
         public bool field1778;
         public int id;
@@ -28,66 +26,63 @@ namespace FlashEditor.Definitions.Sprites
         public Bitmap? thumb;
         public int width;
 
-        public void Decode(JagStream s, int[] xteaKey = null)
-        {
+        public static TextureDefinition DecodeFromStream(int id, JagStream stream) {
+            var def = new TextureDefinition { id = id };
+            def.Decode(stream);
+            return def;
+        }
+
+        public void Decode(JagStream s, int[] xteaKey = null) {
             field1777 = s.ReadUnsignedShort();
             field1778 = s.ReadByte() != 0;
 
             int count = s.ReadUnsignedByte();
             fileIds = new int[count];
-            for (int i = 0; i < count; i++)
+            for (int i = 0 ; i < count ; i++)
                 fileIds[i] = s.ReadUnsignedShort();
 
-            if (count > 1)
-            {
+            if (count > 1) {
                 field1780 = new int[count - 1];
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0 ; i < count - 1 ; i++)
                     field1780[i] = s.ReadUnsignedByte();
 
                 field1781 = new int[count - 1];
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0 ; i < count - 1 ; i++)
                     field1781[i] = s.ReadUnsignedByte();
             }
 
             field1786 = new int[count];
-            for (int i = 0; i < count; i++)
+            for (int i = 0 ; i < count ; i++)
                 field1786[i] = s.ReadInt();
 
             animationDirection = s.ReadUnsignedByte();
             animationSpeed = s.ReadUnsignedByte();
         }
 
-        public static TextureDefinition DecodeFromStream(int id, JagStream stream)
-        {
-            var def = new TextureDefinition { id = id };
-            def.Decode(stream);
-            return def;
-        }
 
-        public JagStream Encode()
-        {
+
+        public JagStream Encode() {
             var s = new JagStream();
             s.WriteShort(field1777);
-            s.WriteByte((byte)(field1778 ? 1 : 0));
+            s.WriteByte((byte) (field1778 ? 1 : 0));
 
             int count = fileIds?.Length ?? 0;
-            s.WriteByte((byte)count);
-            for (int i = 0; i < count; i++)
-                s.WriteShort((short)fileIds[i]);
+            s.WriteByte((byte) count);
+            for (int i = 0 ; i < count ; i++)
+                s.WriteShort((short) fileIds[i]);
 
-            if (count > 1)
-            {
-                for (int i = 0; i < count - 1; i++)
-                    s.WriteByte((byte)field1780[i]);
-                for (int i = 0; i < count - 1; i++)
-                    s.WriteByte((byte)field1781[i]);
+            if (count > 1) {
+                for (int i = 0 ; i < count - 1 ; i++)
+                    s.WriteByte((byte) field1780[i]);
+                for (int i = 0 ; i < count - 1 ; i++)
+                    s.WriteByte((byte) field1781[i]);
             }
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0 ; i < count ; i++)
                 s.WriteInteger(field1786[i]);
 
-            s.WriteByte((byte)animationDirection);
-            s.WriteByte((byte)animationSpeed);
+            s.WriteByte((byte) animationDirection);
+            s.WriteByte((byte) animationSpeed);
             s.Flip();
             return s;
         }
