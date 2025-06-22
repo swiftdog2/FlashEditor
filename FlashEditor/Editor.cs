@@ -2,6 +2,7 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using static FlashEditor.utils.DebugUtil;
@@ -14,6 +15,7 @@ namespace FlashEditor
     {
         internal RSCache cache;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
+        private readonly Dictionary<int, System.Threading.Tasks.Task<ModelDefinition>> _modelTasks = new();
 
         //Change the order of the indexes when you change the layout of the editor tabs
         static readonly int[] editorTypes = {
@@ -501,73 +503,20 @@ namespace FlashEditor
                     break;
                 case RSConstants.MODELS_INDEX:
                     {
-                        // ------------------------------------------------------------------
                         ProgressBar bar = ModelProgressBar;
                         Label lbl = ModelLoadingLabel;
 
-                        bgw.WorkerReportsProgress = true;
-                        bgw.WorkerSupportsCancellation = true;
-
-                        // ---------------- BACKGROUND THREAD ----------------
                         bgw.DoWork += (object? s, DoWorkEventArgs args) =>
                         {
-                            RSReferenceTable rt = cache.GetReferenceTable(RSConstants.MODELS_INDEX);
-                            const int perArc = 256;
-                            int total = rt.GetEntryTotal() * perArc;
-                            int done = 0;
-                            int percentile = total / 100;
-
-                            var dict = new SortedDictionary<int, ModelDefinition>();
-
-
-                            foreach (var (archiveId, entry) in rt.GetEntries())
-                            {
-                                Debug($"Archive ID: {archiveId}, entry {entry.GetId()}", LOG_DETAIL.ADVANCED);
-                                foreach (int fileId in entry.GetValidFileIds())  // only existing files
-                                {
-                                    int modelId = archiveId;
-                                    Debug($"Model ID: {modelId}, file ID: {fileId}");
-
-                                    try
-                                    {
-                                        var def = cache.GetModelDefinition(archiveId, fileId);
-                                        def.ModelID = modelId;
-                                        dict[modelId] = def;
-                                        Debug("Loaded model: " + modelId, LOG_DETAIL.ADVANCED);
-                                    }
-                                    catch(Exception ex)
-                                    {
-                                        Debug($"Failed to load model {modelId}: {ex}", LOG_DETAIL.BASIC);
-                                    }
-
-                                    if (++done % percentile == 0 || done == total)
-                                        // ---- progress report ----
-                                        bgw.ReportProgress((done + 1) * 100 / total,
-                                            $"Loaded {done}/{total} models");
-
-                                }
-                            }
-
-                            args.Result = dict;                 // give result to UI thread
+                            var list = cache.EnumerateModelReferences().ToList();
+                            args.Result = list;
                         };
 
-                        // ---------------- PROGRESS BAR ----------------
-                        bgw.ProgressChanged += new ProgressChangedEventHandler((_, e) => {
-                            ModelProgressBar.Value = e.ProgressPercentage;
-                            ModelLoadingLabel.Text = e.UserState?.ToString();
-                        });
-
-                        // ---------------- UI THREAD ----------------
                         bgw.RunWorkerCompleted += (_, e) =>
                         {
-                            var dict = (SortedDictionary<int, ModelDefinition>)e.Result!;
-
-                            cache.models.Clear();
-                            foreach (var kv in dict)
-                                cache.models.Add(kv.Key, kv.Value);
-
-                            ModelListView.SetObjects(dict.Values);     // pass full objects
-                            lbl.Text = $"Models loaded ({dict.Count})";
+                            var list = (List<ModelReference>)e.Result!;
+                            ModelListView.SetObjects(list);
+                            lbl.Text = $"Models loaded ({list.Count})";
                         };
 
                         bgw.RunWorkerAsync();
@@ -861,11 +810,34 @@ namespace FlashEditor
 
         private void ModelListView_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (ModelListView.SelectedObject is int ModelID &&
-                cache.models.TryGetValue(ModelID, out var def))
+            if (ModelListView.SelectedObject is ModelReference mr)
             {
-                _modelRenderer.Load(def);      // uploads into VBO
-                glControl.Invalidate();        // triggers Paint -> Draw()
+                int id = mr.ModelID;
+
+                if (cache.models.TryGetValue(id, out var def))
+                {
+                    _modelRenderer.Load(def);
+                    glControl.Invalidate();
+                    return;
+                }
+
+                if (!_modelTasks.TryGetValue(id, out var task))
+                {
+                    task = System.Threading.Tasks.Task.Run(() => cache.GetModelDefinition(mr.ArchiveId, mr.FileId));
+                    _modelTasks[id] = task;
+                }
+
+                task.ContinueWith(t =>
+                {
+                    if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+                    {
+                        var loaded = t.Result;
+                        cache.models[id] = loaded;
+                        _modelTasks.Remove(id);
+                        _modelRenderer.Load(loaded);
+                        glControl.Invalidate();
+                    }
+                }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
             }
         }
 
