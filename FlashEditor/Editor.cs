@@ -908,7 +908,7 @@ namespace FlashEditor {
         }
 
         private void Gl_MouseWheel(object? sender, MouseEventArgs e) {
-            float factor = 1f + e.Delta * 0.001f;
+            float factor = 1f - e.Delta * 0.001f;
             _distance = Math.Clamp(_distance * factor, 1.0, 50.0);
             glControl.Invalidate();
         }
