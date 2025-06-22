@@ -23,7 +23,7 @@ namespace FlashEditor.Definitions {
     ///         639 model uses.  Older flavours are parsed just enough to avoid crashes but may omit HD‑only fields.
     ///     </para>
     /// </summary>
-    internal sealed class ModelDefinition : IDefinition {
+    public class ModelDefinition : IDefinition {
         #region ≡ public decoded fields
 
         public int VertexCount { get; private set; }
@@ -935,13 +935,13 @@ namespace FlashEditor.Definitions {
         }
 
         /// <summary>Simple container for accumulated vertex normals.</summary>
-        private sealed class VertexNormal
+        public class VertexNormal
         {
             public int x, y, z, magnitude;
         }
 
         /// <summary>Container for face normal vectors.</summary>
-        private sealed class FaceNormal
+        public class FaceNormal
         {
             public int x, y, z;
         }

@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace FlashEditor
-{
-    internal class NPCDefinition : ICloneable, IDefinition
-    {
+namespace FlashEditor {
+    public class NPCDefinition : ICloneable, IDefinition {
         sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;
         sbyte secondaryShadowModifier = -113;
@@ -100,8 +98,7 @@ namespace FlashEditor
         /// Constructs a new item definition from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
-        public NPCDefinition(JagStream stream)
-        {
+        public NPCDefinition(JagStream stream) {
             Decode(stream);
         }
 
@@ -109,12 +106,9 @@ namespace FlashEditor
         /// Overrides defaults from the stream
         /// </summary>
         /// <param name="stream"></param>
-        public void Decode(JagStream stream, int[] xteaKey = null)
-        {
-            if (stream != null)
-            {
-                while (true)
-                {
+        public void Decode(JagStream stream, int[] xteaKey = null) {
+            if (stream != null) {
+                while (true) {
                     int opcode = stream.ReadByte();
 
                     if (opcode == 0 || opcode == 255)
@@ -130,16 +124,12 @@ namespace FlashEditor
         /// </summary>
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
-        private void Decode(JagStream stream, int opcode)
-        {
-            switch (opcode)
-            {
-                case 1:
-                    {
+        private void Decode(JagStream stream, int opcode) {
+            switch (opcode) {
+                case 1: {
                         int length = stream.ReadByte();
                         modelIds = new int[length];
-                        for (int k = 0; k < length; k++)
-                        {
+                        for (int k = 0 ; k < length ; k++) {
                             int id = stream.ReadShort();
                             modelIds[k] = (id == 65535 ? -1 : id);
                         }
@@ -159,8 +149,7 @@ namespace FlashEditor
                 case 31:
                 case 32:
                 case 33:
-                case 34:
-                    {
+                case 34: {
                         int idx = opcode - 30;
                         options[idx] = stream.ReadJagexString();
                         if (string.Equals(options[idx], "Hidden", StringComparison.Ordinal))
@@ -168,38 +157,33 @@ namespace FlashEditor
                         break;
                     }
 
-                case 40:
-                    {
+                case 40: {
                         int length = stream.ReadByte();
                         recolorSrc = new int[length];
                         recolorDst = new int[length];
-                        for (int i = 0; i < length; i++)
-                        {
+                        for (int i = 0 ; i < length ; i++) {
                             recolorSrc[i] = stream.ReadShort();
                             recolorDst[i] = stream.ReadShort();
                         }
                         break;
                     }
 
-                case 41:
-                    {
+                case 41: {
                         int length = stream.ReadByte();
                         retextureSrc = new int[length];
                         retextureDst = new int[length];
-                        for (int i = 0; i < length; i++)
-                        {
+                        for (int i = 0 ; i < length ; i++) {
                             retextureSrc[i] = stream.ReadShort();
                             retextureDst[i] = stream.ReadShort();
                         }
                         break;
                     }
 
-                case 42:
-                    {
+                case 42: {
                         int length = stream.ReadByte();
                         recolorDstPalette = new byte[length];
-                        for (int i = 0; i < length; i++)
-                            recolorDstPalette[i] = (byte)stream.ReadByte();
+                        for (int i = 0 ; i < length ; i++)
+                            recolorDstPalette[i] = (byte) stream.ReadByte();
                         break;
                     }
 
@@ -211,11 +195,10 @@ namespace FlashEditor
                     op45 = stream.ReadShort();
                     break;
 
-                case 60:
-                    {
+                case 60: {
                         int length = stream.ReadByte();
                         dialogueModels = new int[length];
-                        for (int i = 0; i < length; i++)
+                        for (int i = 0 ; i < length ; i++)
                             dialogueModels[i] = stream.ReadShort();
                         break;
                     }
@@ -257,8 +240,7 @@ namespace FlashEditor
                     break;
 
                 case 106:
-                case 118:
-                    {
+                case 118: {
                         varbit = stream.ReadShort();
                         if (varbit == 65535) varbit = -1;
 
@@ -266,16 +248,14 @@ namespace FlashEditor
                         if (varp == 65535) varp = -1;
 
                         int last = -1;
-                        if (opcode == 118)
-                        {
+                        if (opcode == 118) {
                             last = stream.ReadShort();
                             if (last == 65535) last = -1;
                         }
 
                         int count = stream.ReadByte();
                         morphs = new int[count + 2];
-                        for (int i = 0; i <= count; i++)
-                        {
+                        for (int i = 0 ; i <= count ; i++) {
                             int m = stream.ReadShort();
                             morphs[i] = (m == 65535 ? -1 : m);
                         }
@@ -296,30 +276,28 @@ namespace FlashEditor
                     break;
 
                 case 112:
-                    anInt1104 = (sbyte)stream.ReadByte();
+                    anInt1104 = (sbyte) stream.ReadByte();
                     break;
 
                 case 113:
-                    primaryShadowColour = (short)stream.ReadShort();
-                    secondaryShadowColour = (short)stream.ReadShort();
+                    primaryShadowColour = (short) stream.ReadShort();
+                    secondaryShadowColour = (short) stream.ReadShort();
                     break;
 
                 case 114:
-                    primaryShadowModifier = (sbyte)stream.ReadByte();
-                    secondaryShadowModifier = (sbyte)stream.ReadByte();
+                    primaryShadowModifier = (sbyte) stream.ReadByte();
+                    secondaryShadowModifier = (sbyte) stream.ReadByte();
                     break;
 
                 case 119:
-                    walkMask = (sbyte)stream.ReadByte();
+                    walkMask = (sbyte) stream.ReadByte();
                     break;
 
                 // Translations (restored original logic)
-                case 121:
-                    {
+                case 121: {
                         translations = new int[modelIds == null ? 0 : modelIds.Length][];
                         int length = stream.ReadByte();
-                        for (int i_62_ = 0; i_62_ < length; i_62_++)
-                        {
+                        for (int i_62_ = 0 ; i_62_ < length ; i_62_++) {
                             int index = stream.ReadByte();
                             int[] translations = (this.translations[index] = new int[3]);
                             translations[0] = stream.ReadByte();
@@ -338,7 +316,7 @@ namespace FlashEditor
                     break;
 
                 case 125:
-                    respawnDirection = (byte)stream.ReadByte();
+                    respawnDirection = (byte) stream.ReadByte();
                     break;
 
                 case 127:
@@ -349,8 +327,7 @@ namespace FlashEditor
                     movementType = stream.ReadByte();
                     break;
 
-                case 134:
-                    {
+                case 134: {
                         idleSound = stream.ReadShort(); if (idleSound == 65535) idleSound = -1;
                         crawlSound = stream.ReadShort(); if (crawlSound == 65535) crawlSound = -1;
                         walkSound = stream.ReadShort(); if (walkSound == 65535) walkSound = -1;
@@ -401,8 +378,7 @@ namespace FlashEditor
                 case 151:
                 case 152:
                 case 153:
-                case 154:
-                    {
+                case 154: {
                         int idx = opcode - 150;
                         options[idx] = stream.ReadJagexString();
                         if (string.Equals(options[idx], "Hidden", StringComparison.Ordinal))
@@ -425,11 +401,10 @@ namespace FlashEditor
                     mainOptionIndex = 0;
                     break;
 
-                case 160:
-                    {
+                case 160: {
                         int length = stream.ReadByte();
                         campaigns = new int[length];
-                        for (int i = 0; i < length; i++)
+                        for (int i = 0 ; i < length ; i++)
                             campaigns[i] = stream.ReadShort();
                         break;
                     }
@@ -465,8 +440,7 @@ namespace FlashEditor
                     unknownOptions[opcode - 170] = stream.ReadShort();
                     break;
 
-                case 179:
-                    {
+                case 179: {
                         unknownByte1 = stream.ReadByte();
                         unknownByte2 = stream.ReadByte();
                         unknownByte3 = stream.ReadByte();
@@ -476,17 +450,15 @@ namespace FlashEditor
                         break;
                     }
 
-                case 249:
-                    {
+                case 249: {
                         int cfgLen = stream.ReadByte();
                         if (config == null)
                             config = new SortedDictionary<int, object>();
-                        for (int k = 0; k < cfgLen; k++)
-                        {
+                        for (int k = 0 ; k < cfgLen ; k++) {
                             bool isString = stream.ReadByte() == 1;
                             int key = stream.ReadMedium();
                             object val = isString
-                                ? (object)stream.ReadJagexString()
+                                ? (object) stream.ReadJagexString()
                                 : stream.ReadInt();
                             config[key] = val;
                         }
@@ -507,13 +479,12 @@ namespace FlashEditor
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
         // --- Encode method matching above Decode ---
-        public JagStream Encode()
-        {
+        public JagStream Encode() {
             var stream = new JagStream();
 
             // 1: modelIds
             stream.WriteByte(1);
-            stream.WriteByte((byte)modelIds.Length);
+            stream.WriteByte((byte) modelIds.Length);
             foreach (var id in modelIds)
                 stream.WriteShort(id == -1 ? 0xFFFF : id);
 
@@ -523,36 +494,33 @@ namespace FlashEditor
 
             // 12: size
             stream.WriteByte(12);
-            stream.WriteByte((byte)size);
+            stream.WriteByte((byte) size);
 
             // 30–34: options
-            for (int opc = 30; opc <= 34; opc++)
-            {
-                stream.WriteByte((byte)opc);
+            for (int opc = 30 ; opc <= 34 ; opc++) {
+                stream.WriteByte((byte) opc);
                 stream.WriteJagexString(options[opc - 30] ?? "Hidden");
             }
 
             // 40: recolor
             stream.WriteByte(40);
-            stream.WriteByte((byte)recolorSrc.Length);
-            for (int i = 0; i < recolorSrc.Length; i++)
-            {
+            stream.WriteByte((byte) recolorSrc.Length);
+            for (int i = 0 ; i < recolorSrc.Length ; i++) {
                 stream.WriteShort(recolorSrc[i]);
                 stream.WriteShort(recolorDst[i]);
             }
 
             // 41: retexture
             stream.WriteByte(41);
-            stream.WriteByte((byte)retextureSrc.Length);
-            for (int i = 0; i < retextureSrc.Length; i++)
-            {
+            stream.WriteByte((byte) retextureSrc.Length);
+            for (int i = 0 ; i < retextureSrc.Length ; i++) {
                 stream.WriteShort(retextureSrc[i]);
                 stream.WriteShort(retextureDst[i]);
             }
 
             // 42: palette
             stream.WriteByte(42);
-            stream.WriteByte((byte)recolorDstPalette.Length);
+            stream.WriteByte((byte) recolorDstPalette.Length);
             foreach (var b in recolorDstPalette)
                 stream.WriteByte(b);
 
@@ -562,7 +530,7 @@ namespace FlashEditor
 
             // 60: dialogueModels
             stream.WriteByte(60);
-            stream.WriteByte((byte)dialogueModels.Length);
+            stream.WriteByte((byte) dialogueModels.Length);
             foreach (var m in dialogueModels)
                 stream.WriteShort(m);
 
@@ -578,8 +546,8 @@ namespace FlashEditor
             if (hasRenderPriority) stream.WriteByte(99);
 
             // 100,101
-            stream.WriteByte(100); stream.WriteByte((byte)ambient);
-            stream.WriteByte(101); stream.WriteByte((byte)contrast);
+            stream.WriteByte(100); stream.WriteByte((byte) ambient);
+            stream.WriteByte(101); stream.WriteByte((byte) contrast);
 
             // 102,103
             stream.WriteByte(102); stream.WriteShort(headIcon);
@@ -588,21 +556,19 @@ namespace FlashEditor
             // 106/118: morphs
             int count = morphs.Length - 2;
             bool hasLast = morphs[count + 1] != -1;
-            if (!hasLast)
-            {
+            if (!hasLast) {
                 stream.WriteByte(106);
                 stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
                 stream.WriteShort(varp == -1 ? 0xFFFF : varp);
             }
-            else
-            {
+            else {
                 stream.WriteByte(118);
                 stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
                 stream.WriteShort(varp == -1 ? 0xFFFF : varp);
                 stream.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
             }
-            stream.WriteByte((byte)count);
-            for (int i = 0; i <= count; i++)
+            stream.WriteByte((byte) count);
+            for (int i = 0 ; i <= count ; i++)
                 stream.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
 
             // 107,109,111
@@ -627,15 +593,14 @@ namespace FlashEditor
             // 121: translations
             stream.WriteByte(121);
             int tlen = translations == null ? 0 : translations.Length;
-            stream.WriteByte((byte)tlen);
-            for (int idx = 0; idx < tlen; idx++)
-            {
+            stream.WriteByte((byte) tlen);
+            for (int idx = 0 ; idx < tlen ; idx++) {
                 var t = translations[idx];
                 if (t == null) continue;
-                stream.WriteByte((byte)idx);
-                stream.WriteByte((byte)t[0]);
-                stream.WriteByte((byte)t[1]);
-                stream.WriteByte((byte)t[2]);
+                stream.WriteByte((byte) idx);
+                stream.WriteByte((byte) t[0]);
+                stream.WriteByte((byte) t[1]);
+                stream.WriteByte((byte) t[2]);
             }
 
             // 122–128
@@ -643,7 +608,7 @@ namespace FlashEditor
             stream.WriteByte(123); stream.WriteShort(height);
             stream.WriteByte(125); stream.WriteByte(respawnDirection);
             stream.WriteByte(127); stream.WriteShort(renderTypeID);
-            stream.WriteByte(128); stream.WriteByte((byte)movementType);
+            stream.WriteByte(128); stream.WriteByte((byte) movementType);
 
             // 134: sounds
             stream.WriteByte(134);
@@ -651,32 +616,31 @@ namespace FlashEditor
             stream.WriteShort(crawlSound == -1 ? 0xFFFF : crawlSound);
             stream.WriteShort(walkSound == -1 ? 0xFFFF : walkSound);
             stream.WriteShort(runSound == -1 ? 0xFFFF : runSound);
-            stream.WriteByte((byte)soundDistance);
+            stream.WriteByte((byte) soundDistance);
 
             // 135–143
-            stream.WriteByte(135); stream.WriteByte((byte)primaryCursorOp); stream.WriteShort(primaryCursor);
-            stream.WriteByte(136); stream.WriteByte((byte)secondaryCursorOp); stream.WriteShort(secondaryCursor);
+            stream.WriteByte(135); stream.WriteByte((byte) primaryCursorOp); stream.WriteShort(primaryCursor);
+            stream.WriteByte(136); stream.WriteByte((byte) secondaryCursorOp); stream.WriteShort(secondaryCursor);
             stream.WriteByte(137); stream.WriteShort(attackOpCursor);
             stream.WriteByte(138); stream.WriteShort(armyIcon);
             stream.WriteByte(139); stream.WriteShort(spriteId);
-            stream.WriteByte(140); stream.WriteByte((byte)ambientSoundVolume);
+            stream.WriteByte(140); stream.WriteByte((byte) ambientSoundVolume);
             if (visiblePriority) stream.WriteByte(141);
             stream.WriteByte(142); stream.WriteShort(mapIcon);
             if (invisiblePriority) stream.WriteByte(143);
 
             // 150–154: options
-            for (int opc = 150; opc <= 154; opc++)
-            {
-                stream.WriteByte((byte)opc);
+            for (int opc = 150 ; opc <= 154 ; opc++) {
+                stream.WriteByte((byte) opc);
                 stream.WriteJagexString(options[opc - 150] ?? "Hidden");
             }
 
             // 155
             stream.WriteByte(155);
-            stream.WriteByte((byte)hue);
-            stream.WriteByte((byte)saturation);
-            stream.WriteByte((byte)lightness);
-            stream.WriteByte((byte)opacity);
+            stream.WriteByte((byte) hue);
+            stream.WriteByte((byte) saturation);
+            stream.WriteByte((byte) lightness);
+            stream.WriteByte((byte) opacity);
 
             // 158/159
             if (mainOptionIndex == 1) stream.WriteByte(158);
@@ -684,7 +648,7 @@ namespace FlashEditor
 
             // 160: campaigns
             stream.WriteByte(160);
-            stream.WriteByte((byte)campaigns.Length);
+            stream.WriteByte((byte) campaigns.Length);
             foreach (var c in campaigns) stream.WriteShort(c);
 
             // 162: anInt1101/anInt1090
@@ -693,43 +657,39 @@ namespace FlashEditor
             stream.WriteShort(anInt1090);
 
             // 163–168
-            stream.WriteByte(163); stream.WriteByte((byte)anInt864);
+            stream.WriteByte(163); stream.WriteByte((byte) anInt864);
             stream.WriteByte(164); stream.WriteShort(anInt848); stream.WriteShort(anInt837);
-            stream.WriteByte(165); stream.WriteByte((byte)anInt847);
-            stream.WriteByte(168); stream.WriteByte((byte)anInt828);
+            stream.WriteByte(165); stream.WriteByte((byte) anInt847);
+            stream.WriteByte(168); stream.WriteByte((byte) anInt828);
 
             // 170–175: unknownOptions
-            for (int opc = 170; opc <= 175; opc++)
-            {
+            for (int opc = 170 ; opc <= 175 ; opc++) {
                 int val = unknownOptions[opc - 170];
-                if (val != -1)
-                {
-                    stream.WriteByte((byte)opc);
+                if (val != -1) {
+                    stream.WriteByte((byte) opc);
                     stream.WriteShort(val);
                 }
             }
 
             // 179
             stream.WriteByte(179);
-            stream.WriteByte((byte)unknownByte1);
-            stream.WriteByte((byte)unknownByte2);
-            stream.WriteByte((byte)unknownByte3);
-            stream.WriteByte((byte)unknownByte4);
-            stream.WriteByte((byte)unknownByte5);
-            stream.WriteByte((byte)unknownByte6);
+            stream.WriteByte((byte) unknownByte1);
+            stream.WriteByte((byte) unknownByte2);
+            stream.WriteByte((byte) unknownByte3);
+            stream.WriteByte((byte) unknownByte4);
+            stream.WriteByte((byte) unknownByte5);
+            stream.WriteByte((byte) unknownByte6);
 
             // 249: config
-            if (config != null && config.Count > 0)
-            {
+            if (config != null && config.Count > 0) {
                 stream.WriteByte(249);
-                stream.WriteByte((byte)config.Count);
-                foreach (var kv in config)
-                {
+                stream.WriteByte((byte) config.Count);
+                foreach (var kv in config) {
                     bool isStr = kv.Value is string;
-                    stream.WriteByte((byte)(isStr ? 1 : 0));
+                    stream.WriteByte((byte) (isStr ? 1 : 0));
                     stream.WriteMedium(kv.Key);
-                    if (isStr) stream.WriteJagexString((string)kv.Value);
-                    else stream.WriteInteger((int)kv.Value);
+                    if (isStr) stream.WriteJagexString((string) kv.Value);
+                    else stream.WriteInteger((int) kv.Value);
                 }
             }
 
@@ -738,15 +698,14 @@ namespace FlashEditor
             return stream.Flip();
         }
 
-        internal void SetId(int id)
-        {
+        internal void SetId(int id) {
             this.id = id;
         }
 
         /// <summary>
         /// Creates a shallow copy of this <see cref="NPCDefinition"/>.
         /// </summary>
-        public NPCDefinition Clone() => (NPCDefinition)MemberwiseClone();
+        public NPCDefinition Clone() => (NPCDefinition) MemberwiseClone();
         object ICloneable.Clone() => Clone();
     }
 }

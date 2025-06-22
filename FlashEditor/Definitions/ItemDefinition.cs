@@ -3,15 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace FlashEditor
-{
+namespace FlashEditor {
     /// <summary>
     /// RuneScape “obj” (item-definition) – rev 639  
     /// Covers *all* opcodes in the original <code>readValues</code> plus
     /// safe raw-capture for anything unknown.
     /// </summary>
-    internal sealed class ItemDefinition : ICloneable, IDefinition
-    {
+    public class ItemDefinition : ICloneable, IDefinition {
         /*──────────────────────────*
          *  ▌   PUBLIC FIELDS      ▐ *
          *──────────────────────────*/
@@ -86,7 +84,7 @@ namespace FlashEditor
 
         private static readonly StringBuilder SharedBuilder = new();
 
-        public ItemDefinition Clone() => (ItemDefinition)MemberwiseClone();
+        public ItemDefinition Clone() => (ItemDefinition) MemberwiseClone();
         object ICloneable.Clone() => Clone();
         internal void SetId(int v) => id = v;
         public int GetId() => id;
@@ -95,12 +93,10 @@ namespace FlashEditor
          *  ▌  GLOBAL DECODE ENTRY  ▐ *
          *──────────────────────────*/
 
-        public void Decode(JagStream s, int[] xteaKey = null)
-        {
+        public void Decode(JagStream s, int[] xteaKey = null) {
             int safety = 0;
 
-            while (true)
-            {
+            while (true) {
                 int op = s.ReadByte();
                 if (op == 0) break;                       // terminator
                 DecodeOpcode(s, op);
@@ -108,8 +104,7 @@ namespace FlashEditor
             }
         }
 
-        public static ItemDefinition DecodeFromStream(JagStream s)
-        {
+        public static ItemDefinition DecodeFromStream(JagStream s) {
             var def = new ItemDefinition();
             def.Decode(s);
             return def;
@@ -119,12 +114,10 @@ namespace FlashEditor
          *  ▌  PER-OPCODE HANDLER   ▐ *
          *──────────────────────────*/
 
-        private void DecodeOpcode(JagStream buf, int op)
-        {
+        private void DecodeOpcode(JagStream buf, int op) {
             decoded[op] = true;                // (kept for debugging)
 
-            switch (op)
-            {
+            switch (op) {
                 /*──────── basic scalars ────────*/
                 case 1: inventoryModelId = buf.ReadUnsignedShort(); return;
                 case 2: name = buf.ReadJagexString(); return;
@@ -174,39 +167,34 @@ namespace FlashEditor
                     inventoryOptions[b - 35] = buf.ReadJagexString(); return;
 
                 /* recolour */
-                case 40:
-                    {
+                case 40: {
                         int n = buf.ReadByte();
                         originalModelColors = new short[n];
                         modifiedModelColors = new short[n];
-                        for (int i = 0; i < n; i++)
-                        {
-                            originalModelColors[i] = (short)buf.ReadUnsignedShort();
-                            modifiedModelColors[i] = (short)buf.ReadUnsignedShort();
+                        for (int i = 0 ; i < n ; i++) {
+                            originalModelColors[i] = (short) buf.ReadUnsignedShort();
+                            modifiedModelColors[i] = (short) buf.ReadUnsignedShort();
                         }
                         return;
                     }
 
                 /* retexture */
-                case 41:
-                    {
+                case 41: {
                         int n = buf.ReadByte();
                         textureColour1 = new short[n];
                         textureColour2 = new short[n];
-                        for (int i = 0; i < n; i++)
-                        {
-                            textureColour1[i] = (short)buf.ReadUnsignedShort();
-                            textureColour2[i] = (short)buf.ReadUnsignedShort();
+                        for (int i = 0 ; i < n ; i++) {
+                            textureColour1[i] = (short) buf.ReadUnsignedShort();
+                            textureColour2[i] = (short) buf.ReadUnsignedShort();
                         }
                         return;
                     }
 
                 /* texture priority table */
-                case 42:
-                    {
+                case 42: {
                         int n = buf.ReadByte();
                         texturePriorities = new sbyte[n];
-                        for (int i = 0; i < n; i++)
+                        for (int i = 0 ; i < n ; i++)
                             texturePriorities[i] = buf.ReadSignedByte();
                         return;
                     }
@@ -231,7 +219,7 @@ namespace FlashEditor
                     ambientSoundLoops = buf.ReadByte();
                     int c = buf.ReadByte();
                     extraSounds = new int[c];
-                    for (int i = 0; i < c; i++) extraSounds[i] = buf.ReadUnsignedShort();
+                    for (int i = 0 ; i < c ; i++) extraSounds[i] = buf.ReadUnsignedShort();
                     return;
 
                 /* colour-equip overrides */
@@ -296,8 +284,7 @@ namespace FlashEditor
                     _rawUnknown[op] = buf.ReadBytes(3); return;
 
                 /* variants list */
-                case 132:
-                    {
+                case 132: {
                         int n = buf.ReadByte();
                         _rawUnknown[op] = buf.ReadBytes(n * 2 + 1);
                         return;
@@ -318,8 +305,7 @@ namespace FlashEditor
                     _rawUnknown[op] = buf.ReadBytes(2); return;
 
                 /* multi-map icons */
-                case 160:
-                    {
+                case 160: {
                         int n = buf.ReadByte();
                         _rawUnknown[op] = buf.ReadBytes(1 + n * 2);
                         return;
@@ -347,12 +333,10 @@ namespace FlashEditor
                 case 178: _rawUnknown[op] = new byte[0]; return;
 
                 /* params */
-                case 249:
-                    {
+                case 249: {
                         int n = buf.ReadByte();
                         itemParams = new SortedDictionary<int, object>();
-                        for (int i = 0; i < n; i++)
-                        {
+                        for (int i = 0 ; i < n ; i++) {
                             bool isStr = buf.ReadByte() == 1;
                             int key = buf.ReadMedium();
                             object val = isStr ? buf.ReadJagexString() : buf.ReadInt();
@@ -372,14 +356,12 @@ namespace FlashEditor
          *  ▌  ENCODE (round-trip)  ▐ *
          *──────────────────────────*/
 
-        public JagStream Encode()
-        {
+        public JagStream Encode() {
             var o = new JagStream();
 
             /* helper */
-            void Emit(int code, Action payload = null)
-            {
-                o.WriteByte((byte)code);
+            void Emit(int code, Action payload = null) {
+                o.WriteByte((byte) code);
                 payload?.Invoke();
                 _rawUnknown.Remove(code);               // mark as written
             }
@@ -391,16 +373,16 @@ namespace FlashEditor
             Emit(4, () => o.WriteShort(modelZoom));
             Emit(5, () => o.WriteShort(modelRotation1));
             Emit(6, () => o.WriteShort(modelRotation2));
-            Emit(7, () => o.WriteShort((short)modelOffsetX));
-            Emit(8, () => o.WriteShort((short)modelOffsetY));
+            Emit(7, () => o.WriteShort((short) modelOffsetX));
+            Emit(8, () => o.WriteShort((short) modelOffsetY));
 
             /* stackable / value */
             if (stackable == 1) Emit(11);
             Emit(12, () => o.WriteInteger(value));
 
             /* equip */
-            Emit(13, () => o.WriteByte((byte)equipSlotId));
-            Emit(14, () => o.WriteByte((byte)equipId));
+            Emit(13, () => o.WriteByte((byte) equipSlotId));
+            Emit(14, () => o.WriteByte((byte) equipId));
             if (membersOnly) Emit(16);
 
             Emit(18, () => o.WriteShort(multiStackSize));
@@ -412,21 +394,19 @@ namespace FlashEditor
             Emit(26, () => o.WriteShort(femaleWearModel2));
 
             /* ground / inventory actions */
-            for (int i = 0; i < 5; i++)
+            for (int i = 0 ; i < 5 ; i++)
                 if (groundOptions[i] != null)
                     Emit(30 + i, () => o.WriteJagexString(groundOptions[i]));
 
-            for (int i = 0; i < 5; i++)
+            for (int i = 0 ; i < 5 ; i++)
                 if (inventoryOptions[i] != null)
                     Emit(35 + i, () => o.WriteJagexString(inventoryOptions[i]));
 
             /* recolour */
             if (originalModelColors != null)
-                Emit(40, () =>
-                {
-                    o.WriteByte((byte)originalModelColors.Length);
-                    for (int i = 0; i < originalModelColors.Length; i++)
-                    {
+                Emit(40, () => {
+                    o.WriteByte((byte) originalModelColors.Length);
+                    for (int i = 0 ; i < originalModelColors.Length ; i++) {
                         o.WriteShort(originalModelColors[i]);
                         o.WriteShort(modifiedModelColors[i]);
                     }
@@ -434,11 +414,9 @@ namespace FlashEditor
 
             /* retexture */
             if (textureColour1 != null)
-                Emit(41, () =>
-                {
-                    o.WriteByte((byte)textureColour1.Length);
-                    for (int i = 0; i < textureColour1.Length; i++)
-                    {
+                Emit(41, () => {
+                    o.WriteByte((byte) textureColour1.Length);
+                    for (int i = 0 ; i < textureColour1.Length ; i++) {
                         o.WriteShort(textureColour1[i]);
                         o.WriteShort(textureColour2[i]);
                     }
@@ -446,9 +424,8 @@ namespace FlashEditor
 
             /* priorities */
             if (texturePriorities != null)
-                Emit(42, () =>
-                {
-                    o.WriteByte((byte)texturePriorities.Length);
+                Emit(42, () => {
+                    o.WriteByte((byte) texturePriorities.Length);
                     foreach (sbyte b in texturePriorities) o.WriteSignedByte(b);
                 });
 
@@ -459,21 +436,18 @@ namespace FlashEditor
             if (unnoted) Emit(65);
 
             /* sound */
-            if (ambientSoundId >= 0)
-            {
+            if (ambientSoundId >= 0) {
                 if (extraSounds == null)
-                    Emit(78, () =>
-                    {
+                    Emit(78, () => {
                         o.WriteShort(ambientSoundId);
-                        o.WriteByte((byte)ambientSoundLoops);
+                        o.WriteByte((byte) ambientSoundLoops);
                     });
                 else
-                    Emit(79, () =>
-                    {
+                    Emit(79, () => {
                         o.WriteShort(ambientSoundId);
                         o.WriteShort(0);
-                        o.WriteByte((byte)ambientSoundLoops);
-                        o.WriteByte((byte)extraSounds.Length);
+                        o.WriteByte((byte) ambientSoundLoops);
+                        o.WriteByte((byte) extraSounds.Length);
                         foreach (int sid in extraSounds) o.WriteShort(sid);
                     });
             }
@@ -488,61 +462,55 @@ namespace FlashEditor
 
             /* stack variants */
             if (stackIds != null)
-                for (int i = 0; i < 10; i++)
+                for (int i = 0 ; i < 10 ; i++)
                     if (stackIds[i] != 0)
-                        Emit(100 + i, () =>
-                        {
+                        Emit(100 + i, () => {
                             o.WriteShort(stackIds[i]);
                             o.WriteShort(stackAmounts[i]);
                         });
 
             /* ambient / contrast */
-            Emit(113, () => o.WriteSignedByte((sbyte)ambient));
-            Emit(114, () => o.WriteSignedByte((sbyte)contrast));
-            Emit(115, () => o.WriteByte((byte)teamId));
+            Emit(113, () => o.WriteSignedByte((sbyte) ambient));
+            Emit(114, () => o.WriteSignedByte((sbyte) contrast));
+            Emit(115, () => o.WriteByte((byte) teamId));
 
             /* lending */
             Emit(121, () => o.WriteShort(lendId));
             Emit(122, () => o.WriteShort(lendTemplateId));
 
             /* wear offsets */
-            Emit(125, () =>
-            {
-                o.WriteSignedByte((sbyte)(manWearXOffset >> 2));
-                o.WriteSignedByte((sbyte)(manWearYOffset >> 2));
-                o.WriteSignedByte((sbyte)(manWearZOffset >> 2));
+            Emit(125, () => {
+                o.WriteSignedByte((sbyte) (manWearXOffset >> 2));
+                o.WriteSignedByte((sbyte) (manWearYOffset >> 2));
+                o.WriteSignedByte((sbyte) (manWearZOffset >> 2));
             });
-            Emit(126, () =>
-            {
-                o.WriteSignedByte((sbyte)(womanWearXOffset >> 2));
-                o.WriteSignedByte((sbyte)(womanWearYOffset >> 2));
-                o.WriteSignedByte((sbyte)(womanWearZOffset >> 2));
+            Emit(126, () => {
+                o.WriteSignedByte((sbyte) (womanWearXOffset >> 2));
+                o.WriteSignedByte((sbyte) (womanWearYOffset >> 2));
+                o.WriteSignedByte((sbyte) (womanWearZOffset >> 2));
             });
 
             /* extra inventory ops 150-154 */
-            for (int i = 0; i < 5; i++)
+            for (int i = 0 ; i < 5 ; i++)
                 if (extraInventoryOps[i] != null)
                     Emit(150 + i, () => o.WriteJagexString(extraInventoryOps[i]));
 
             /* params */
             if (itemParams != null && itemParams.Count > 0)
-                Emit(249, () =>
-                {
-                    o.WriteByte((byte)itemParams.Count);
-                    foreach (var kv in itemParams)
-                    {
+                Emit(249, () => {
+                    o.WriteByte((byte) itemParams.Count);
+                    foreach (var kv in itemParams) {
                         bool isStr = kv.Value is string;
-                        o.WriteByte((byte)(isStr ? 1 : 0));
+                        o.WriteByte((byte) (isStr ? 1 : 0));
                         o.WriteMedium(kv.Key);
-                        if (isStr) o.WriteJagexString((string)kv.Value);
-                        else o.WriteInteger((int)kv.Value);
+                        if (isStr) o.WriteJagexString((string) kv.Value);
+                        else o.WriteInteger((int) kv.Value);
                     }
                 });
 
             /*──────────── replay any raw-captured opcodes ───────────*/
-            foreach (var kv in _rawUnknown)
-            {
-                o.WriteByte((byte)kv.Key);
+            foreach (var kv in _rawUnknown) {
+                o.WriteByte((byte) kv.Key);
                 o.Write(kv.Value);
             }
 
