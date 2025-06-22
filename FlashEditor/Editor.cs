@@ -887,7 +887,7 @@ namespace FlashEditor {
                         glControl.Invalidate();
                     }
                     else if (t.IsFaulted) {
-                        Debug($"[UI] Error loading model {id}: {t.Exception?.Flatten().InnerException}", LOG_DETAIL.ADVANCED);
+            float factor = 1f - e.Delta * 0.001f;
                         // Optionally: show a MessageBox or other UI error indicator
                     }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
