@@ -111,9 +111,12 @@ namespace FlashEditor.Definitions {
 
             DebugUtil.Debug("Finished decoding");
 
-            ComputeNormals();
-            ComputeTextureUVCoordinates();
-            ComputeAnimationTables();
+            if (!modelFormat.Equals(ModelFormat.Newer)) {
+                ComputeNormals();
+                ComputeTextureUVCoordinates();
+                ComputeAnimationTables();
+            }
+
         }
 
         /// <summary>
@@ -728,19 +731,17 @@ namespace FlashEditor.Definitions {
         /// <summary>
         /// Computes per-vertex and per-face normals for lighting calculations.
         /// </summary>
-        private void ComputeNormals()
-        {
+        private void ComputeNormals() {
             if (VertexNormals != null)
                 return;
 
             DebugUtil.Debug("[ComputeNormals] Generating normals", DebugUtil.LOG_DETAIL.ADVANCED);
 
             VertexNormals = new VertexNormal[VertexCount];
-            for (int i = 0; i < VertexCount; ++i)
+            for (int i = 0 ; i < VertexCount ; ++i)
                 VertexNormals[i] = new VertexNormal();
 
-            for (int i = 0; i < TriangleCount; ++i)
-            {
+            for (int i = 0 ; i < TriangleCount ; ++i) {
                 int vertexA = faceIndices1[i];
                 int vertexB = faceIndices2[i];
                 int vertexC = faceIndices3[i];
@@ -757,14 +758,13 @@ namespace FlashEditor.Definitions {
                 int ny = zA * xB - zB * xA;
                 int nz = xA * yB - xB * yA;
 
-                while (nx > 8192 || ny > 8192 || nz > 8192 || nx < -8192 || ny < -8192 || nz < -8192)
-                {
+                while (nx > 8192 || ny > 8192 || nz > 8192 || nx < -8192 || ny < -8192 || nz < -8192) {
                     nx >>= 1;
                     ny >>= 1;
                     nz >>= 1;
                 }
 
-                int length = (int)Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                int length = (int) Math.Sqrt(nx * nx + ny * ny + nz * nz);
                 if (length <= 0)
                     length = 1;
 
@@ -772,10 +772,9 @@ namespace FlashEditor.Definitions {
                 ny = ny * 256 / length;
                 nz = nz * 256 / length;
 
-                sbyte renderType = FaceRenderType == null ? (sbyte)0 : FaceRenderType[i];
+                sbyte renderType = FaceRenderType == null ? (sbyte) 0 : FaceRenderType[i];
 
-                if (renderType == 0)
-                {
+                if (renderType == 0) {
                     VertexNormal vn = VertexNormals[vertexA];
                     vn.x += nx;
                     vn.y += ny;
@@ -794,8 +793,7 @@ namespace FlashEditor.Definitions {
                     vn.z += nz;
                     vn.magnitude++;
                 }
-                else if (renderType == 1)
-                {
+                else if (renderType == 1) {
                     if (FaceNormals == null)
                         FaceNormals = new FaceNormal[TriangleCount];
 
@@ -810,37 +808,31 @@ namespace FlashEditor.Definitions {
         /// <summary>
         /// Computes UV coordinates for textured triangles.
         /// </summary>
-        private void ComputeTextureUVCoordinates()
-        {
+        private void ComputeTextureUVCoordinates() {
             FaceTextureUCoordinates = new float[TriangleCount][];
             FaceTextureVCoordinates = new float[TriangleCount][];
 
-            for (int i = 0; i < TriangleCount; i++)
-            {
+            for (int i = 0 ; i < TriangleCount ; i++) {
                 int textureCoordinate = TextureCoordinates == null ? -1 : TextureCoordinates[i];
                 int textureIdx = FaceTextures == null ? -1 : (FaceTextures[i] & 0xFFFF);
 
-                if (textureIdx != -1)
-                {
+                if (textureIdx != -1) {
                     float[] u = new float[3];
                     float[] v = new float[3];
 
-                    if (textureCoordinate == -1)
-                    {
+                    if (textureCoordinate == -1) {
                         u[0] = 0f; v[0] = 1f;
                         u[1] = 1f; v[1] = 1f;
                         u[2] = 0f; v[2] = 0f;
                     }
-                    else
-                    {
+                    else {
                         textureCoordinate &= 0xFF;
 
                         sbyte textureRenderType = 0;
                         if (TextureType != null)
                             textureRenderType = TextureType[textureCoordinate];
 
-                        if (textureRenderType == 0)
-                        {
+                        if (textureRenderType == 0) {
                             int faceVertexIdx1 = faceIndices1[i];
                             int faceVertexIdx2 = faceIndices2[i];
                             int faceVertexIdx3 = faceIndices3[i];
@@ -901,15 +893,12 @@ namespace FlashEditor.Definitions {
         /// <summary>
         /// Builds vertex animation lookup tables from packed vertex groups.
         /// </summary>
-        private void ComputeAnimationTables()
-        {
-            if (VertSkins != null)
-            {
+        private void ComputeAnimationTables() {
+            if (VertSkins != null) {
                 int[] groupCounts = new int[256];
                 int numGroups = 0;
 
-                for (int i = 0; i < VertexCount; ++i)
-                {
+                for (int i = 0 ; i < VertexCount ; ++i) {
                     int group = VertSkins[i];
                     groupCounts[group]++;
                     if (group > numGroups)
@@ -918,14 +907,12 @@ namespace FlashEditor.Definitions {
 
                 VertexGroups = new int[numGroups + 1][];
 
-                for (int i = 0; i <= numGroups; ++i)
-                {
+                for (int i = 0 ; i <= numGroups ; ++i) {
                     VertexGroups[i] = new int[groupCounts[i]];
                     groupCounts[i] = 0;
                 }
 
-                for (int i = 0; i < VertexCount; i++)
-                {
+                for (int i = 0 ; i < VertexCount ; i++) {
                     int g = VertSkins[i];
                     VertexGroups[g][groupCounts[g]++] = i;
                 }
@@ -935,14 +922,12 @@ namespace FlashEditor.Definitions {
         }
 
         /// <summary>Simple container for accumulated vertex normals.</summary>
-        public class VertexNormal
-        {
+        public class VertexNormal {
             public int x, y, z, magnitude;
         }
 
         /// <summary>Container for face normal vectors.</summary>
-        public class FaceNormal
-        {
+        public class FaceNormal {
             public int x, y, z;
         }
 
