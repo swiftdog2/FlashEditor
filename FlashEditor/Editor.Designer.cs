@@ -1,4 +1,7 @@
-﻿namespace FlashEditor {
+﻿using BrightIdeasSoftware;
+using FlashEditor.Definitions.Sprites;
+
+namespace FlashEditor {
     partial class Editor {
         /// <summary>
         /// Required designer variable.
@@ -37,23 +40,23 @@
             Console = new TabPage();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
-            RefTableListView = new BrightIdeasSoftware.TreeListView();
-            typeCol = new BrightIdeasSoftware.OLVColumn();
-            formatCol = new BrightIdeasSoftware.OLVColumn();
-            validArchiveCountCol = new BrightIdeasSoftware.OLVColumn();
-            versionCol = new BrightIdeasSoftware.OLVColumn();
-            namedCol = new BrightIdeasSoftware.OLVColumn();
-            usesWhirlpoolCol = new BrightIdeasSoftware.OLVColumn();
-            olvColumn4 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn7 = new BrightIdeasSoftware.OLVColumn();
+            RefTableListView = new TreeListView();
+            typeCol = new OLVColumn();
+            formatCol = new OLVColumn();
+            validArchiveCountCol = new OLVColumn();
+            versionCol = new OLVColumn();
+            namedCol = new OLVColumn();
+            usesWhirlpoolCol = new OLVColumn();
+            olvColumn4 = new OLVColumn();
+            olvColumn7 = new OLVColumn();
             tabPage2 = new TabPage();
-            ContainerListView = new BrightIdeasSoftware.TreeListView();
-            olvColumn1 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn2 = new BrightIdeasSoftware.OLVColumn();
-            CompressCol = new BrightIdeasSoftware.OLVColumn();
-            olvColumn5 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn3 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn6 = new BrightIdeasSoftware.OLVColumn();
+            ContainerListView = new TreeListView();
+            olvColumn1 = new OLVColumn();
+            olvColumn2 = new OLVColumn();
+            CompressCol = new OLVColumn();
+            olvColumn5 = new OLVColumn();
+            olvColumn3 = new OLVColumn();
+            olvColumn6 = new OLVColumn();
             groupBox1 = new GroupBox();
             button6 = new Button();
             button5 = new Button();
@@ -64,21 +67,21 @@
             ItemProgressBar = new ProgressBar();
             ExportItemDatBtn = new Button();
             button9 = new Button();
-            ItemListView = new BrightIdeasSoftware.FastObjectListView();
-            ItemID = new BrightIdeasSoftware.OLVColumn();
-            ItemName = new BrightIdeasSoftware.OLVColumn();
-            InvModel = new BrightIdeasSoftware.OLVColumn();
-            Male1 = new BrightIdeasSoftware.OLVColumn();
-            Male2 = new BrightIdeasSoftware.OLVColumn();
-            Female1 = new BrightIdeasSoftware.OLVColumn();
-            Female2 = new BrightIdeasSoftware.OLVColumn();
-            Rotate1 = new BrightIdeasSoftware.OLVColumn();
-            Rotate2 = new BrightIdeasSoftware.OLVColumn();
-            valueColumn = new BrightIdeasSoftware.OLVColumn();
-            stackableColumn = new BrightIdeasSoftware.OLVColumn();
-            equipSlotColumn = new BrightIdeasSoftware.OLVColumn();
-            equipIdColumn = new BrightIdeasSoftware.OLVColumn();
-            membersOnlyColumn = new BrightIdeasSoftware.OLVColumn();
+            ItemListView = new FastObjectListView();
+            ItemID = new OLVColumn();
+            ItemName = new OLVColumn();
+            InvModel = new OLVColumn();
+            Male1 = new OLVColumn();
+            Male2 = new OLVColumn();
+            Female1 = new OLVColumn();
+            Female2 = new OLVColumn();
+            Rotate1 = new OLVColumn();
+            Rotate2 = new OLVColumn();
+            valueColumn = new OLVColumn();
+            stackableColumn = new OLVColumn();
+            equipSlotColumn = new OLVColumn();
+            equipIdColumn = new OLVColumn();
+            membersOnlyColumn = new OLVColumn();
             SpriteEditorTab = new TabPage();
             groupBox3 = new GroupBox();
             label1 = new Label();
@@ -88,59 +91,61 @@
             ExportSpriteBmpBtn = new Button();
             ExportSpriteDatBtn = new Button();
             ImportSpriteBtn = new Button();
-            SpriteListView = new BrightIdeasSoftware.TreeListView();
-            ID = new BrightIdeasSoftware.OLVColumn();
-            Frames = new BrightIdeasSoftware.OLVColumn();
-            Width = new BrightIdeasSoftware.OLVColumn();
-            Height = new BrightIdeasSoftware.OLVColumn();
-            Image = new BrightIdeasSoftware.OLVColumn();
+            SpriteListView = new TreeListView();
+            ID = new OLVColumn();
+            Frames = new OLVColumn();
+            Width = new OLVColumn();
+            Height = new OLVColumn();
+            Image = new OLVColumn();
             NPCEditorTab = new TabPage();
             groupBox6 = new GroupBox();
             NPCLoadingLabel = new Label();
             NPCProgressBar = new ProgressBar();
             button2 = new Button();
             button3 = new Button();
-            NPCListView = new BrightIdeasSoftware.FastObjectListView();
-            npcIdColumn = new BrightIdeasSoftware.OLVColumn();
-            nameColumn = new BrightIdeasSoftware.OLVColumn();
-            sizeColumn = new BrightIdeasSoftware.OLVColumn();
-            levelColumn = new BrightIdeasSoftware.OLVColumn();
-            olvColumn10 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn9 = new BrightIdeasSoftware.OLVColumn();
-            olvColumn11 = new BrightIdeasSoftware.OLVColumn();
-            rotationColumn = new BrightIdeasSoftware.OLVColumn();
-            ambientColumn = new BrightIdeasSoftware.OLVColumn();
-            contrastColumn = new BrightIdeasSoftware.OLVColumn();
-            attackCursorColumn = new BrightIdeasSoftware.OLVColumn();
-            visiblePriorityColumn = new BrightIdeasSoftware.OLVColumn();
+            NPCListView = new FastObjectListView();
+            npcIdColumn = new OLVColumn();
+            nameColumn = new OLVColumn();
+            sizeColumn = new OLVColumn();
+            levelColumn = new OLVColumn();
+            olvColumn10 = new OLVColumn();
+            olvColumn9 = new OLVColumn();
+            olvColumn11 = new OLVColumn();
+            rotationColumn = new OLVColumn();
+            ambientColumn = new OLVColumn();
+            contrastColumn = new OLVColumn();
+            attackCursorColumn = new OLVColumn();
+            visiblePriorityColumn = new OLVColumn();
             ObjectEditorTab = new TabPage();
             groupBox5 = new GroupBox();
             ObjectLoadingLabel = new Label();
             ObjectProgressBar = new ProgressBar();
             button7 = new Button();
             button8 = new Button();
-            ObjectListView = new BrightIdeasSoftware.FastObjectListView();
-            objectIdColumn = new BrightIdeasSoftware.OLVColumn();
-            objectNameColumn = new BrightIdeasSoftware.OLVColumn();
-            sizeXColumn = new BrightIdeasSoftware.OLVColumn();
-            sizeYColumn = new BrightIdeasSoftware.OLVColumn();
-            walkableColumn = new BrightIdeasSoftware.OLVColumn();
-            clippedColumn = new BrightIdeasSoftware.OLVColumn();
-            ambientSoundColumn = new BrightIdeasSoftware.OLVColumn();
-            morphVarbitColumn = new BrightIdeasSoftware.OLVColumn();
+            GameObjectListView = new FastObjectListView();
+            objectIdColumn = new OLVColumn();
+            objectNameColumn = new OLVColumn();
+            sizeXColumn = new OLVColumn();
+            sizeYColumn = new OLVColumn();
+            walkableColumn = new OLVColumn();
+            clippedColumn = new OLVColumn();
+            ambientSoundColumn = new OLVColumn();
+            morphVarbitColumn = new OLVColumn();
             InterfaceEditorTab = new TabPage();
             ModelViewerTab = new TabPage();
             splitContainer1 = new SplitContainer();
             glControl = new OpenTK.GLControl.GLControl();
-            ModelListView = new BrightIdeasSoftware.FastObjectListView();
-            ModelID = new BrightIdeasSoftware.OLVColumn();
+            ModelListView = new FastObjectListView();
+            ModelID = new OLVColumn();
             ModelLoadingLabel = new Label();
             ModelProgressBar = new ProgressBar();
+            TextureViewerTab = new TabPage();
+            TextureListView = new ObjectListView();
+            TextureImage = new OLVColumn();
+            TextureID = new OLVColumn();
             eventLog1 = new System.Diagnostics.EventLog();
             colorDialog1 = new ColorDialog();
-            EditButton = new BrightIdeasSoftware.OLVColumn();
-            TextureViewerTab = new TabPage();
-            TextureListView = new BrightIdeasSoftware.ObjectListView();
+            EditButton = new OLVColumn();
             menuStrip1.SuspendLayout();
             EditorTabControl.SuspendLayout();
             Console.SuspendLayout();
@@ -162,16 +167,16 @@
             ((System.ComponentModel.ISupportInitialize) NPCListView).BeginInit();
             ObjectEditorTab.SuspendLayout();
             groupBox5.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) ObjectListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) GameObjectListView).BeginInit();
             ModelViewerTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
             splitContainer1.Panel2.SuspendLayout();
             splitContainer1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
-            ((System.ComponentModel.ISupportInitialize) eventLog1).BeginInit();
             TextureViewerTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) TextureListView).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) eventLog1).BeginInit();
             SuspendLayout();
             // 
             // menuStrip1
@@ -575,7 +580,7 @@
             ItemListView.AlternateRowBackColor = Color.FromArgb(  192,   255,   192);
             ItemListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             ItemListView.BackColor = Color.White;
-            ItemListView.CellEditActivation = BrightIdeasSoftware.ObjectListView.CellEditActivateMode.DoubleClick;
+            ItemListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
             ItemListView.CellEditUseWholeCell = false;
             ItemListView.CheckBoxes = true;
             ItemListView.Columns.AddRange(new ColumnHeader[] { ItemID, ItemName, InvModel, Male1, Male2, Female1, Female2, Rotate1, Rotate2, valueColumn, stackableColumn, equipSlotColumn, equipIdColumn, membersOnlyColumn });
@@ -1034,7 +1039,7 @@
             // ObjectEditorTab
             // 
             ObjectEditorTab.Controls.Add(groupBox5);
-            ObjectEditorTab.Controls.Add(ObjectListView);
+            ObjectEditorTab.Controls.Add(GameObjectListView);
             ObjectEditorTab.Location = new Point(4, 28);
             ObjectEditorTab.Name = "ObjectEditorTab";
             ObjectEditorTab.Size = new Size(1113, 563);
@@ -1102,33 +1107,33 @@
             // 
             // ObjectListView
             // 
-            ObjectListView.AllColumns.Add(objectIdColumn);
-            ObjectListView.AllColumns.Add(objectNameColumn);
-            ObjectListView.AllColumns.Add(sizeXColumn);
-            ObjectListView.AllColumns.Add(sizeYColumn);
-            ObjectListView.AllColumns.Add(walkableColumn);
-            ObjectListView.AllColumns.Add(clippedColumn);
-            ObjectListView.AllColumns.Add(ambientSoundColumn);
-            ObjectListView.AllColumns.Add(morphVarbitColumn);
-            ObjectListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            ObjectListView.BackColor = Color.White;
-            ObjectListView.CellEditUseWholeCell = false;
-            ObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
-            ObjectListView.Font = new Font("Consolas", 11.25F);
-            ObjectListView.FullRowSelect = true;
-            ObjectListView.GridLines = true;
-            ObjectListView.Location = new Point(-2, -2);
-            ObjectListView.Name = "ObjectListView";
-            ObjectListView.RowHeight = 10;
-            ObjectListView.ShowGroups = false;
-            ObjectListView.ShowImagesOnSubItems = true;
-            ObjectListView.Size = new Size(853, 535);
-            ObjectListView.TabIndex = 18;
-            ObjectListView.UseCompatibleStateImageBehavior = false;
-            ObjectListView.View = View.Details;
-            ObjectListView.VirtualMode = true;
-            ObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
-            ObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
+            GameObjectListView.AllColumns.Add(objectIdColumn);
+            GameObjectListView.AllColumns.Add(objectNameColumn);
+            GameObjectListView.AllColumns.Add(sizeXColumn);
+            GameObjectListView.AllColumns.Add(sizeYColumn);
+            GameObjectListView.AllColumns.Add(walkableColumn);
+            GameObjectListView.AllColumns.Add(clippedColumn);
+            GameObjectListView.AllColumns.Add(ambientSoundColumn);
+            GameObjectListView.AllColumns.Add(morphVarbitColumn);
+            GameObjectListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            GameObjectListView.BackColor = Color.White;
+            GameObjectListView.CellEditUseWholeCell = false;
+            GameObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
+            GameObjectListView.Font = new Font("Consolas", 11.25F);
+            GameObjectListView.FullRowSelect = true;
+            GameObjectListView.GridLines = true;
+            GameObjectListView.Location = new Point(-2, -2);
+            GameObjectListView.Name = "ObjectListView";
+            GameObjectListView.RowHeight = 10;
+            GameObjectListView.ShowGroups = false;
+            GameObjectListView.ShowImagesOnSubItems = true;
+            GameObjectListView.Size = new Size(853, 535);
+            GameObjectListView.TabIndex = 18;
+            GameObjectListView.UseCompatibleStateImageBehavior = false;
+            GameObjectListView.View = View.Details;
+            GameObjectListView.VirtualMode = true;
+            GameObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
+            GameObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
             // 
             // objectIdColumn
             // 
@@ -1246,7 +1251,7 @@
             // 
             // ModelID
             // 
-            ModelID.AspectName = "ModelID";
+            ModelID.AspectName = "id";
             ModelID.Text = "ID";
             // 
             // ModelLoadingLabel
@@ -1271,16 +1276,6 @@
             ModelProgressBar.Size = new Size(240, 62);
             ModelProgressBar.TabIndex = 13;
             // 
-            // eventLog1
-            // 
-            eventLog1.SynchronizingObject = this;
-            // 
-            // EditButton
-            // 
-            EditButton.DisplayIndex = 2;
-            EditButton.IsButton = true;
-            EditButton.Width = 125;
-            // 
             // TextureViewerTab
             // 
             TextureViewerTab.Controls.Add(TextureListView);
@@ -1293,12 +1288,36 @@
             // 
             // TextureListView
             // 
-            TextureListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            TextureListView.Location = new Point(3, 3);
+            TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
+            TextureListView.Dock = DockStyle.Fill;
+            TextureListView.FullRowSelect = true;
+            TextureListView.Location = new Point(0, 0);
             TextureListView.Name = "TextureListView";
-            TextureListView.Size = new Size(1107, 557);
+            TextureListView.Size = new Size(1113, 563);
             TextureListView.TabIndex = 0;
-            TextureListView.View = View.LargeIcon;
+            TextureListView.TileSize = new Size(120, 120);
+            TextureListView.View = View.Tile;
+            // 
+            // TextureImage
+            // 
+            TextureImage.AspectName = "thumb";
+            TextureImage.Text = "";
+            TextureImage.ImageGetter = row => ((TextureDefinition) row).thumb;
+            // 
+            // TextureID
+            // 
+            TextureID.AspectName = "id";
+            TextureID.IsTileViewColumn = true;
+            // 
+            // eventLog1
+            // 
+            eventLog1.SynchronizingObject = this;
+            // 
+            // EditButton
+            // 
+            EditButton.DisplayIndex = 2;
+            EditButton.IsButton = true;
+            EditButton.Width = 125;
             // 
             // Editor
             // 
@@ -1342,7 +1361,7 @@
             ObjectEditorTab.ResumeLayout(false);
             groupBox5.ResumeLayout(false);
             groupBox5.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize) ObjectListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) GameObjectListView).EndInit();
             ModelViewerTab.ResumeLayout(false);
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);
@@ -1350,9 +1369,9 @@
             ((System.ComponentModel.ISupportInitialize) splitContainer1).EndInit();
             splitContainer1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) ModelListView).EndInit();
-            ((System.ComponentModel.ISupportInitialize) eventLog1).EndInit();
             TextureViewerTab.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) TextureListView).EndInit();
+            ((System.ComponentModel.ISupportInitialize) eventLog1).EndInit();
             ResumeLayout(false);
             PerformLayout();
 
@@ -1457,7 +1476,7 @@
         private System.Windows.Forms.ProgressBar ObjectProgressBar;
         private System.Windows.Forms.Button button7;
         private System.Windows.Forms.Button button8;
-        private BrightIdeasSoftware.FastObjectListView ObjectListView;
+        private BrightIdeasSoftware.FastObjectListView GameObjectListView;
         private BrightIdeasSoftware.OLVColumn objectIdColumn;
         private BrightIdeasSoftware.OLVColumn objectNameColumn;
         private BrightIdeasSoftware.OLVColumn sizeXColumn;
@@ -1475,6 +1494,8 @@
         private BrightIdeasSoftware.OLVColumn ModelID;
         private TabPage TextureViewerTab;
         private BrightIdeasSoftware.ObjectListView TextureListView;
+        private BrightIdeasSoftware.OLVColumn TextureID;
+        private BrightIdeasSoftware.OLVColumn TextureImage;
     }
 }
 

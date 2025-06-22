@@ -50,8 +50,7 @@ namespace FlashEditor {
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
 
-        private static void SetIconSpacing(ListView lv, int spacing)
-        {
+        private static void SetIconSpacing(ListView lv, int spacing) {
             int param = (spacing << 16) | spacing;
             SendMessage(lv.Handle, LVM_SETICONSPACING, 0, param);
         }
@@ -91,8 +90,6 @@ namespace FlashEditor {
             _textureImageList.ColorDepth = ColorDepth.Depth32Bit;
             _textureImageList.ImageSize = new Size(100, 100);
             TextureListView.LargeImageList = _textureImageList;
-            TextureListView.ImageGetter = obj =>
-                obj is TextureDefinition def ? def.id.ToString() : null;
             SetIconSpacing(TextureListView, 110);
 
             var dummyItem = new ToolStripMenuItem("Dummy Action");
@@ -161,17 +158,17 @@ namespace FlashEditor {
 
         private void UpdateProjection() {
             _proj = Matrix4.CreatePerspectiveFieldOfView(
-                MathHelper.DegreesToRadians((float)_fov),
-                glControl.Width / (float)glControl.Height,
+                MathHelper.DegreesToRadians((float) _fov),
+                glControl.Width / (float) glControl.Height,
                 0.1f,
                 100f);
         }
 
         private Vector3 CameraPosition() {
             return new Vector3(
-                _target.X + (float)(_distance * Math.Cos(_pitch) * Math.Sin(_yaw)),
-                _target.Y + (float)(_distance * Math.Sin(_pitch)),
-                _target.Z + (float)(_distance * Math.Cos(_pitch) * Math.Cos(_yaw))
+                _target.X + (float) (_distance * Math.Cos(_pitch) * Math.Sin(_yaw)),
+                _target.Y + (float) (_distance * Math.Sin(_pitch)),
+                _target.Z + (float) (_distance * Math.Cos(_pitch) * Math.Cos(_yaw))
             );
         }
 
@@ -230,7 +227,7 @@ namespace FlashEditor {
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
             ItemListView.AlwaysGroupByColumn = ItemID;
             SpriteListView.AlwaysGroupByColumn = ID;
-            ObjectListView.AlwaysGroupByColumn = objectIdColumn;
+            GameObjectListView.AlwaysGroupByColumn = objectIdColumn;
             ModelListView.AlwaysGroupByColumn = ModelID;
         }
 
@@ -582,7 +579,7 @@ namespace FlashEditor {
                             }
                         }
 
-                        ObjectListView.SetObjects(objects);
+                        GameObjectListView.SetObjects(objects);
                     };
 
                     bgw.Disposed += delegate {
@@ -600,8 +597,10 @@ namespace FlashEditor {
                     };
 
                     bgw.RunWorkerCompleted += (_, e) => {
-                        if (e.Result is List<TextureDefinition> list)
+                        if (e.Result is List<TextureDefinition> list) {
+                            Debug("Loaded textures into GUI");
                             LoadTextures(list);
+                        }
                     };
 
                     bgw.RunWorkerAsync();
@@ -836,7 +835,7 @@ namespace FlashEditor {
         }
 
         private void ObjectListView_CellEditStarting(object sender, CellEditEventArgs e) {
-            currentObject = (ObjectDefinition) ObjectListView.SelectedObject;
+            currentObject = (ObjectDefinition) GameObjectListView.SelectedObject;
             currentObject = currentObject.Clone();
         }
 
@@ -858,7 +857,7 @@ namespace FlashEditor {
         //Set the alternating row back color
         private void alternateRowsToolStripMenuItem_Click(object sender, EventArgs e) {
             TreeListView[] tlvs = { RefTableListView, ContainerListView, SpriteListView };
-            FastObjectListView[] olvs = { ItemListView, NPCListView, ObjectListView };
+            FastObjectListView[] olvs = { ItemListView, NPCListView, GameObjectListView };
             DialogResult result = colorDialog1.ShowDialog();
 
             foreach (TreeListView tlv in tlvs) {
@@ -982,7 +981,8 @@ namespace FlashEditor {
                 _pitch -= dy * OrbitSpeed;
                 double limit = MathHelper.DegreesToRadians(89.0);
                 _pitch = Math.Clamp(_pitch, -limit, limit);
-            } else if (_activeButton == MouseButtons.Right) {
+            }
+            else if (_activeButton == MouseButtons.Right) {
                 Vector3 camPos = CameraPosition();
                 Vector3 forward = Vector3.Normalize(_target - camPos);
                 Vector3 right = Vector3.Normalize(Vector3.Cross(forward, _up));
@@ -1003,20 +1003,16 @@ namespace FlashEditor {
             base.OnFormClosed(e);
         }
 
-        private void DummyMethod()
-        {
+        private void DummyMethod() {
             MessageBox.Show("Dummy action executed.");
         }
 
-        private void LoadTextures(List<TextureDefinition> textures)
-        {
-            foreach (var tex in textures)
-            {
+        private void LoadTextures(List<TextureDefinition> textures) {
+            foreach (var tex in textures) {
                 Bitmap bmp = new Bitmap(100, 100);
-                using (var g = Graphics.FromImage(bmp))
-                {
-                    int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
-                    Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                using (var g = Graphics.FromImage(bmp)) {
+                    int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int) 0xFF777777);
+                    Color c = Color.FromArgb(colVal | unchecked((int) 0xFF000000));
                     g.Clear(c);
                     using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                     g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
