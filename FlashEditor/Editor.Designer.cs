@@ -139,6 +139,8 @@
             eventLog1 = new System.Diagnostics.EventLog();
             colorDialog1 = new ColorDialog();
             EditButton = new BrightIdeasSoftware.OLVColumn();
+            TextureViewerTab = new TabPage();
+            TextureListView = new BrightIdeasSoftware.ObjectListView();
             menuStrip1.SuspendLayout();
             EditorTabControl.SuspendLayout();
             Console.SuspendLayout();
@@ -168,6 +170,8 @@
             splitContainer1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
             ((System.ComponentModel.ISupportInitialize) eventLog1).BeginInit();
+            TextureViewerTab.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize) TextureListView).BeginInit();
             SuspendLayout();
             // 
             // menuStrip1
@@ -235,6 +239,7 @@
             EditorTabControl.Controls.Add(ObjectEditorTab);
             EditorTabControl.Controls.Add(InterfaceEditorTab);
             EditorTabControl.Controls.Add(ModelViewerTab);
+            EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -1276,6 +1281,25 @@
             EditButton.IsButton = true;
             EditButton.Width = 125;
             // 
+            // TextureViewerTab
+            // 
+            TextureViewerTab.Controls.Add(TextureListView);
+            TextureViewerTab.Location = new Point(4, 28);
+            TextureViewerTab.Name = "TextureViewerTab";
+            TextureViewerTab.Size = new Size(1113, 563);
+            TextureViewerTab.TabIndex = 7;
+            TextureViewerTab.Text = "Textures";
+            TextureViewerTab.UseVisualStyleBackColor = true;
+            // 
+            // TextureListView
+            // 
+            TextureListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            TextureListView.Location = new Point(3, 3);
+            TextureListView.Name = "TextureListView";
+            TextureListView.Size = new Size(1107, 557);
+            TextureListView.TabIndex = 0;
+            TextureListView.View = View.Details;
+            // 
             // Editor
             // 
             AutoScaleDimensions = new SizeF(6F, 13F);
@@ -1327,6 +1351,8 @@
             splitContainer1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) ModelListView).EndInit();
             ((System.ComponentModel.ISupportInitialize) eventLog1).EndInit();
+            TextureViewerTab.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize) TextureListView).EndInit();
             ResumeLayout(false);
             PerformLayout();
 
@@ -1447,6 +1473,8 @@
         private ProgressBar ModelProgressBar;
         private BrightIdeasSoftware.FastObjectListView ModelListView;
         private BrightIdeasSoftware.OLVColumn ModelID;
+        private TabPage TextureViewerTab;
+        private BrightIdeasSoftware.ObjectListView TextureListView;
     }
 }
 
