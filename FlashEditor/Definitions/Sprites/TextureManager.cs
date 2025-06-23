@@ -3,35 +3,29 @@ using System.Collections.Generic;
 using System.Drawing;
 using FlashEditor.cache;
 
-namespace FlashEditor.Definitions.Sprites
-{
+namespace FlashEditor.Definitions.Sprites {
     /// <summary>
     /// Loads all texture definitions from the cache.
     /// </summary>
-    public class TextureManager
-    {
+    public class TextureManager {
         private readonly RSCache cache;
         public static readonly SortedDictionary<int, TextureDefinition> Textures = new();
 
-        public TextureManager(RSCache cache)
-        {
+        public TextureManager(RSCache cache) {
             this.cache = cache;
         }
 
-        public void Load()
-        {
+        public void Load() {
             RSReferenceTable table = cache.GetReferenceTable(RSConstants.TEXTURES);
             RSEntry entry = table.GetEntry(0);
             if (entry == null)
                 return;
 
             var loader = new TextureLoader();
-            foreach (int fileId in entry.GetValidFileIds())
-            {
+            foreach (int fileId in entry.GetValidFileIds()) {
                 JagStream data = cache.ReadEntry(RSConstants.TEXTURES, 0, fileId);
-                if(data == null) {
+                if (data == null) {
                     throw new Exception("Texture entry data is null");
-                    continue;
                 }
                 var def = loader.Load(fileId, data.ToArray());
                 Textures[def.id] = def;

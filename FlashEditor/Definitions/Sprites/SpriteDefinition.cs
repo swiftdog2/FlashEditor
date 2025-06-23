@@ -134,7 +134,7 @@ namespace FlashEditor.cache.sprites {
 
                 //Read the flags so we know whether to read horizontally or vertically
                 int flags = stream.ReadByte();
-                //Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]", LOG_DETAIL.INSANE);
+                Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]", LOG_DETAIL.INSANE);
 
                 //Read the palette indices
                 if((flags & FLAG_VERTICAL) != 0) {
@@ -146,6 +146,8 @@ namespace FlashEditor.cache.sprites {
                         for(int x = 0; x < subWidth; x++)
                             indices[x][y] = stream.ReadByte();
                 }
+
+                Debug($"SubWidth: {subWidth}, SubHeight: {subHeight}, ", LOG_DETAIL.INSANE);
 
                 //Read the alpha (if there is alpha) and convert values to ARGB
                 if((flags & FLAG_ALPHA) == 0) {
@@ -183,11 +185,13 @@ namespace FlashEditor.cache.sprites {
                     }
                 }
 
+                Debug("Finished decoding sprite", LOG_DETAIL.ADVANCED);
+
                 //First frame in the sprite is the thumb image
                 if(id == 0)
-                    this.thumb = image.GetSprite();
+                    thumb = image.GetSprite();
 
-                this.frames.Add(image);
+                frames.Add(image);
             }
         }
 

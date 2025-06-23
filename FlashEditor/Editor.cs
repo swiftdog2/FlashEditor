@@ -230,6 +230,22 @@ namespace FlashEditor {
             SpriteListView.AlwaysGroupByColumn = ID;
             GameObjectListView.AlwaysGroupByColumn = objectIdColumn;
             ModelListView.AlwaysGroupByColumn = ModelID;
+
+            TextureImage.ImageGetter = rowObject => {
+                // a) figure out a unique key for this row
+                string key = ((TextureDefinition) rowObject).id.ToString();
+
+                // b) if it’s not already in the list, load & add it
+                if (!TextureListView.LargeImageList.Images.ContainsKey(key)) {
+                    // load from DB (or cache) and force it to 100×100
+                    Image raw = TextureManager.GetThumbnailForTexture(key);
+                    var thumb = new Bitmap(raw, new Size(100, 100));
+                    TextureListView.LargeImageList.Images.Add(key, thumb);
+                }
+
+                // c) return the key so OLV will pull thumb from your LargeImageList
+                return key;
+            };
         }
 
         private void LoadCache() {
@@ -1026,18 +1042,19 @@ namespace FlashEditor {
                 if (tex.fileIds != null && tex.fileIds.Length > 0) {
                     SpriteDefinition sprite = cache.GetSprite(tex.fileIds[0]);
                     bmp = sprite.GetFrame(0).GetSprite();
-                } else {
+                }
+                else {
                     bmp = new Bitmap(100, 100);
                     using (var g = Graphics.FromImage(bmp)) {
-                        int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
-                        Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                        int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int) 0xFF777777);
+                        Color c = Color.FromArgb(colVal | unchecked((int) 0xFF000000));
                         g.Clear(c);
                         using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                         g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
                     }
                 }
 
-                Bitmap thumb = (Bitmap)CreateThumbnail(bmp);
+                Bitmap thumb = (Bitmap) CreateThumbnail(bmp);
                 tex.thumb = thumb;
                 _textureImageList.Images.Add(tex.id.ToString(), thumb);
             }

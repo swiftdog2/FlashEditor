@@ -13,7 +13,7 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing) {
-            if(disposing && (components != null)) {
+            if (disposing && (components != null)) {
                 components.Dispose();
             }
             base.Dispose(disposing);
@@ -1105,7 +1105,7 @@ namespace FlashEditor {
             button8.Text = "Import Object";
             button8.UseVisualStyleBackColor = false;
             // 
-            // ObjectListView
+            // GameObjectListView
             // 
             GameObjectListView.AllColumns.Add(objectIdColumn);
             GameObjectListView.AllColumns.Add(objectNameColumn);
@@ -1123,7 +1123,7 @@ namespace FlashEditor {
             GameObjectListView.FullRowSelect = true;
             GameObjectListView.GridLines = true;
             GameObjectListView.Location = new Point(-2, -2);
-            GameObjectListView.Name = "ObjectListView";
+            GameObjectListView.Name = "GameObjectListView";
             GameObjectListView.RowHeight = 10;
             GameObjectListView.ShowGroups = false;
             GameObjectListView.ShowImagesOnSubItems = true;
@@ -1297,37 +1297,16 @@ namespace FlashEditor {
             TextureListView.TabIndex = 0;
             TextureListView.TileSize = new Size(100, 100);
             TextureListView.View = View.Tile;
-            TextureListView.LargeImageList = new ImageList {
-                ImageSize = new Size(100, 100),
-                ColorDepth = ColorDepth.Depth32Bit
-            };
-
             // 
             // TextureImage
             // 
             TextureImage.Text = "";
-            TextureImage.IsTileViewColumn = false;
-            TextureImage.ImageGetter = rowObject => {
-                // a) figure out a unique key for this row
-                string key = ((TextureDefinition) rowObject).id.ToString();
-
-                // b) if it’s not already in the list, load & add it
-                if (!TextureListView.LargeImageList.Images.ContainsKey(key)) {
-                    // load from DB (or cache) and force it to 100×100
-                    Image raw = TextureManager.GetThumbnailForTexture(key);
-                    var thumb = new Bitmap(raw, new Size(100, 100));
-                    TextureListView.LargeImageList.Images.Add(key, thumb);
-                }
-
-                // c) return the key so OLV will pull thumb from your LargeImageList
-                return key;
-            };
-
             // 
             // TextureID
             // 
             TextureID.AspectName = "id";
             TextureID.IsTileViewColumn = true;
+            TextureID.Text = "";
             // 
             // eventLog1
             // 
