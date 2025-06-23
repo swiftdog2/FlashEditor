@@ -47,7 +47,7 @@ namespace FlashEditor.Cache.Region {
                             switch(attribute) {
                                 case 0:
                                     if(z == 0) {
-                                        //TODO Verify the height calculation was correctly ripped from client
+                                        // TODO: Verify the height calculation matches the game client
                                         tileHeights[0, x, y] = HeightCalc.Calculate(baseX, baseY, x, y) << 3;
                                     } else {
                                         tileHeights[z, x, y] = tileHeights[z - 1, x, y] - 240;
