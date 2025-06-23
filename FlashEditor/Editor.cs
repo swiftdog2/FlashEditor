@@ -614,7 +614,12 @@ namespace FlashEditor {
                     };
 
                     bgw.RunWorkerCompleted += (_, e) => {
-                        if (e.Result is SortedDictionary<int, TextureDefinition> dict) {
+                        if (e.Error != null)
+                        {
+                            Debug($"Error loading textures: {e.Error}", LOG_DETAIL.BASIC);
+                        }
+                        else if (e.Result is SortedDictionary<int, TextureDefinition> dict)
+                        {
                             Debug("Loaded textures into GUI");
                             LoadTextures(dict.Values);
                         }
@@ -1035,28 +1040,42 @@ namespace FlashEditor {
             return bmp;
         }
 
-        private void LoadTextures(IEnumerable<TextureDefinition> textures) {
-            foreach (var tex in textures) {
-                Bitmap bmp;
+        private void LoadTextures(IEnumerable<TextureDefinition> textures)
+        {
+            foreach (var tex in textures)
+            {
+                Debug($"Processing texture {tex.id}", LOG_DETAIL.ADVANCED);
+                try
+                {
+                    Bitmap bmp;
 
-                if (tex.fileIds != null && tex.fileIds.Length > 0) {
-                    SpriteDefinition sprite = cache.GetSprite(tex.fileIds[0]);
-                    bmp = sprite.GetFrame(0).GetSprite();
-                }
-                else {
-                    bmp = new Bitmap(100, 100);
-                    using (var g = Graphics.FromImage(bmp)) {
-                        int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int) 0xFF777777);
-                        Color c = Color.FromArgb(colVal | unchecked((int) 0xFF000000));
-                        g.Clear(c);
-                        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                        g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
+                    if (tex.fileIds != null && tex.fileIds.Length > 0)
+                    {
+                        Debug($"\tLoading sprite {tex.fileIds[0]}", LOG_DETAIL.ADVANCED);
+                        SpriteDefinition sprite = cache.GetSprite(tex.fileIds[0]);
+                        bmp = sprite.GetFrame(0).GetSprite();
                     }
-                }
+                    else
+                    {
+                        bmp = new Bitmap(100, 100);
+                        using (var g = Graphics.FromImage(bmp))
+                        {
+                            int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
+                            Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                            g.Clear(c);
+                            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                            g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
+                        }
+                    }
 
-                Bitmap thumb = (Bitmap) CreateThumbnail(bmp);
-                tex.thumb = thumb;
-                _textureImageList.Images.Add(tex.id.ToString(), thumb);
+                    Bitmap thumb = (Bitmap)CreateThumbnail(bmp);
+                    tex.thumb = thumb;
+                    _textureImageList.Images.Add(tex.id.ToString(), thumb);
+                }
+                catch (Exception ex)
+                {
+                    Debug($"Error processing texture {tex.id}: {ex}", LOG_DETAIL.BASIC);
+                }
             }
 
             TextureListView.SetObjects(textures);
