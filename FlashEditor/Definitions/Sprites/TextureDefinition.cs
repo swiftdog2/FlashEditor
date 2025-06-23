@@ -46,6 +46,7 @@ namespace FlashEditor.Definitions.Sprites {
                 fileIds[i] = s.ReadUnsignedShort();
                 Debug($"\tSprite file {i}: {fileIds[i]}", LOG_DETAIL.INSANE);
             }
+            Debug($"Parsed {count} sprite references", LOG_DETAIL.ADVANCED);
 
             if (count > 1) {
                 field1780 = new int[count - 1];
@@ -63,10 +64,12 @@ namespace FlashEditor.Definitions.Sprites {
                 field1786[i] = s.ReadInt();
                 Debug($"\tColor {i}: 0x{field1786[i]:X8}", LOG_DETAIL.INSANE);
             }
+            Debug("Color table loaded", LOG_DETAIL.ADVANCED);
 
             animationDirection = s.ReadUnsignedByte();
             animationSpeed = s.ReadUnsignedByte();
             Debug($"Animation dir {animationDirection}, speed {animationSpeed}", LOG_DETAIL.ADVANCED);
+            Debug("Texture decode finished", LOG_DETAIL.ADVANCED);
         }
 
 

@@ -34,6 +34,7 @@ namespace FlashEditor.Definitions.Sprites
             }
 
             Debug($"Found {entry.GetValidFileIds().Length} texture entries", LOG_DETAIL.ADVANCED);
+            Debug("Beginning texture decode", LOG_DETAIL.ADVANCED);
 
             var loader = new TextureLoader();
             foreach (int fileId in entry.GetValidFileIds())
@@ -47,6 +48,7 @@ namespace FlashEditor.Definitions.Sprites
                 }
                 Debug($"Decoding texture {fileId}", LOG_DETAIL.ADVANCED);
                 var def = loader.Load(fileId, data.ToArray());
+                Debug($"\tLoaded texture {def.id} with {def.fileIds?.Length ?? 0} sprites", LOG_DETAIL.ADVANCED);
                 Debug($"Texture {def.id} references {def.fileIds?.Length ?? 0} sprites", LOG_DETAIL.ADVANCED);
                 Textures[def.id] = def;
             }

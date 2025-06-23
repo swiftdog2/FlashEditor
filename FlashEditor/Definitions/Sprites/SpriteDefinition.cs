@@ -117,6 +117,7 @@ namespace FlashEditor.cache.sprites {
                 if(palette[index] == 0)
                     palette[index] = 1;
             }
+            Debug($"Palette loaded with {palette.Length} colours", LOG_DETAIL.ADVANCED);
 
             //Read the pixels themselves
             stream.Seek(0);
@@ -191,7 +192,7 @@ namespace FlashEditor.cache.sprites {
                     this.thumb = image.GetSprite();
 
                 this.frames.Add(image);
-                Debug($"\tFinished frame {id}", LOG_DETAIL.INSANE);
+                Debug($"\tFinished frame {id} ({subWidth}x{subHeight})", LOG_DETAIL.INSANE);
             }
             Debug("Sprite decode complete", LOG_DETAIL.ADVANCED);
         }
