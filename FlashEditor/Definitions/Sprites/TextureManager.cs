@@ -1,5 +1,6 @@
 using FlashEditor;
 using System.Collections.Generic;
+using System.Drawing;
 using FlashEditor.cache;
 
 namespace FlashEditor.Definitions.Sprites
@@ -10,7 +11,7 @@ namespace FlashEditor.Definitions.Sprites
     public class TextureManager
     {
         private readonly RSCache cache;
-        public readonly List<TextureDefinition> Textures = new List<TextureDefinition>();
+        public static readonly SortedDictionary<int, TextureDefinition> Textures = new();
 
         public TextureManager(RSCache cache)
         {
@@ -33,12 +34,15 @@ namespace FlashEditor.Definitions.Sprites
                     continue;
                 }
                 var def = loader.Load(fileId, data.ToArray());
-                Textures.Add(def);
+                Textures[def.id] = def;
             }
         }
 
         internal static Image GetThumbnailForTexture(string key) {
-            throw new NotImplementedException();
+            if (int.TryParse(key, out int id) && Textures.TryGetValue(id, out var def) && def.thumb != null)
+                return def.thumb;
+
+            return new Bitmap(100, 100);
         }
     }
 }

@@ -1306,7 +1306,6 @@ namespace FlashEditor {
             // TextureImage
             // 
             TextureImage.Text = "";
-            TextureImage.ImageGetter = row => ((TextureDefinition) row).thumb;
             TextureImage.IsTileViewColumn = false;
             TextureImage.ImageGetter = rowObject => {
                 // a) figure out a unique key for this row

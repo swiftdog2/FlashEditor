@@ -39,8 +39,7 @@ namespace FlashEditor
             if (_textures.TryGetValue(textureId, out int handle))
                 return handle;
 
-            TextureDefinition def = _manager.Textures.Find(t => t.id == textureId);
-            if (def == null || def.fileIds == null || def.fileIds.Length == 0)
+            if (!TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def) || def.fileIds == null || def.fileIds.Length == 0)
                 return 0;
 
             SpriteDefinition sprite = _cache.GetSprite(def.fileIds[0]);

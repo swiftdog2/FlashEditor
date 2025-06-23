@@ -12,6 +12,7 @@ using System.Diagnostics;
 using System;
 using System.IO;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
@@ -593,13 +594,13 @@ namespace FlashEditor {
                     bgw.DoWork += (object? s, DoWorkEventArgs args) => {
                         var manager = new TextureManager(cache);
                         manager.Load();
-                        args.Result = manager.Textures;
+                        args.Result = TextureManager.Textures;
                     };
 
                     bgw.RunWorkerCompleted += (_, e) => {
-                        if (e.Result is List<TextureDefinition> list) {
+                        if (e.Result is SortedDictionary<int, TextureDefinition> dict) {
                             Debug("Loaded textures into GUI");
-                            LoadTextures(list);
+                            LoadTextures(dict.Values);
                         }
                     };
 
@@ -1007,19 +1008,40 @@ namespace FlashEditor {
             MessageBox.Show("Dummy action executed.");
         }
 
-        private void LoadTextures(List<TextureDefinition> textures) {
-            foreach (var tex in textures) {
-                Bitmap bmp = new Bitmap(100, 100);
-                using (var g = Graphics.FromImage(bmp)) {
-                    int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int) 0xFF777777);
-                    Color c = Color.FromArgb(colVal | unchecked((int) 0xFF000000));
-                    g.Clear(c);
-                    using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                    g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
-                }
-                tex.thumb = bmp;
-                _textureImageList.Images.Add(tex.id.ToString(), bmp);
+        private static Image CreateThumbnail(Image img, int width = 100, int height = 100) {
+            var bmp = new Bitmap(width, height);
+            using (var g = Graphics.FromImage(bmp)) {
+                g.CompositingQuality = CompositingQuality.HighQuality;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.DrawImage(img, 0, 0, width, height);
             }
+            return bmp;
+        }
+
+        private void LoadTextures(IEnumerable<TextureDefinition> textures) {
+            foreach (var tex in textures) {
+                Bitmap bmp;
+
+                if (tex.fileIds != null && tex.fileIds.Length > 0) {
+                    SpriteDefinition sprite = cache.GetSprite(tex.fileIds[0]);
+                    bmp = sprite.GetFrame(0).GetSprite();
+                } else {
+                    bmp = new Bitmap(100, 100);
+                    using (var g = Graphics.FromImage(bmp)) {
+                        int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
+                        Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                        g.Clear(c);
+                        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                        g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
+                    }
+                }
+
+                Bitmap thumb = (Bitmap)CreateThumbnail(bmp);
+                tex.thumb = thumb;
+                _textureImageList.Images.Add(tex.id.ToString(), thumb);
+            }
+
             TextureListView.SetObjects(textures);
         }
     }
