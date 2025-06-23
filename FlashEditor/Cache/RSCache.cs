@@ -448,8 +448,10 @@ namespace FlashEditor.cache {
         }
 
         public SpriteDefinition GetSprite(int containerId) {
+            Debug($"GetSprite: {containerId}", LOG_DETAIL.ADVANCED);
             //Get the sprite for the given entry
             RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
+            Debug($"Container type {container.GetIndexType()} id {container.GetId()} length {container.GetStream().Length}", LOG_DETAIL.INSANE);
             return SpriteDefinition.DecodeFromStream(container.GetStream());
         }
 

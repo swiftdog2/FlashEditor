@@ -371,7 +371,7 @@ namespace FlashEditor {
                     bgw.DoWork += delegate {
                         int done = 0;
                         int total = referenceTable.GetEntryTotal() * 256;
-                        int percentile = total / 100;
+                        int percentile = Math.Max(1, total / 100);
 
                         Debug(@"  _                     _ _               _ _                     ");
                         Debug(@" | |                   | (_)             (_) |                    ");
@@ -441,7 +441,7 @@ namespace FlashEditor {
 
                         int done = 0;
                         int total = referenceTable.GetEntryTotal();
-                        int percentile = total / 100;
+                        int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading " + total + " Sprites");
                         Debug("Loading " + total + " Sprites");
@@ -505,7 +505,7 @@ namespace FlashEditor {
 
                         int done = 0;
                         int total = referenceTable.GetEntryTotal() * 128;
-                        int percentile = total / 100;
+                        int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading NPCs");
 
@@ -556,7 +556,7 @@ namespace FlashEditor {
                         int filesPerArchive = referenceTable.GetEntry(referenceTable.GetEntries().Keys.First()).GetValidFileIds().Length;
                         int total = referenceTable.GetEntryTotal() * filesPerArchive;
                         int done = 0;
-                        int percentile = total / 100;
+                        int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading Objects");
 
