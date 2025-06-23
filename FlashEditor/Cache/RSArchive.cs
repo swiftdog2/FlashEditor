@@ -85,7 +85,7 @@ namespace FlashEditor.cache
             for (int id = 0; id < size; id++)
                 archive.entries[id] = new JagStream(/*entrySizes[id]*/);
 
-            //Return the stream to 0 otherwise this shit doesn't work
+            // Reset the stream to the start before reading
             stream.Seek0();
 
             //--- allocate a single reusable heap buffer up-front

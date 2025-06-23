@@ -105,7 +105,7 @@ namespace FlashEditor.cache {
             this.hash = hash;
         }
 
-        //Pretty sure this is for naming shit so you can find it in the cache editor tho lol sneaky jagex
+        // Computes a hash used for naming entries within the cache editor
         public int CalculateHash() {
             int h = 0;
 

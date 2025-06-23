@@ -119,8 +119,7 @@ namespace FlashEditor.cache {
         public const string CACHE_ORIGINAL_COPY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache0/";
 
         /*
-         * Some spooky level shit
-         * Config sub archives
+         * Configuration sub-archive details
          */
 
         /*

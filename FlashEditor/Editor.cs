@@ -509,7 +509,7 @@ namespace FlashEditor {
 
                         bgw.ReportProgress(0, "Loading NPCs");
 
-                        Debug("Loading NPC shit xxxx");
+                        Debug("Loading NPC data");
 
                         foreach (KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
                             int archiveId = archive.Key;
