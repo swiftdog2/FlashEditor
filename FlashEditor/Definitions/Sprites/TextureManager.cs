@@ -18,6 +18,9 @@ namespace FlashEditor.Definitions.Sprites
             this.cache = cache;
         }
 
+        /// <summary>
+        /// Reads all texture definitions from the cache into <see cref="Textures"/>.
+        /// </summary>
         public void Load()
         {
             RSReferenceTable table = cache.GetReferenceTable(RSConstants.TEXTURES);
@@ -38,6 +41,9 @@ namespace FlashEditor.Definitions.Sprites
             }
         }
 
+        /// <summary>
+        /// Attempts to fetch the cached thumbnail for the given texture id string.
+        /// </summary>
         internal static Image GetThumbnailForTexture(string key) {
             if (int.TryParse(key, out int id) && Textures.TryGetValue(id, out var def) && def.thumb != null)
                 return def.thumb;
