@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
+using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor
 {
@@ -26,7 +27,9 @@ namespace FlashEditor
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _manager = new TextureManager(cache);
+            Debug("Initializing GLTextureCache", LOG_DETAIL.BASIC);
             _manager.Load();
+            Debug("Textures loaded", LOG_DETAIL.BASIC);
         }
 
         /// <summary>
@@ -36,16 +39,27 @@ namespace FlashEditor
         /// <returns>OpenGL texture handle or 0 if not found.</returns>
         public int GetTexture(int textureId)
         {
+            Debug($"Request for texture {textureId}", LOG_DETAIL.ADVANCED);
             if (_textures.TryGetValue(textureId, out int handle))
+            {
+                Debug($"Texture {textureId} cached -> handle {handle}", LOG_DETAIL.ADVANCED);
                 return handle;
+            }
 
             if (!TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def) || def.fileIds == null || def.fileIds.Length == 0)
+            {
+                Debug($"Texture definition {textureId} not found", LOG_DETAIL.BASIC);
                 return 0;
+            }
 
+            Debug($"Loading sprite {def.fileIds[0]} for texture {textureId}", LOG_DETAIL.ADVANCED);
             SpriteDefinition sprite = _cache.GetSprite(def.fileIds[0]);
+            Debug($"Creating bitmap for texture {textureId}", LOG_DETAIL.ADVANCED);
             Bitmap bmp = sprite.GetFrame(0).GetSprite();
+            Debug($"Uploading texture {textureId} to GL", LOG_DETAIL.ADVANCED);
             handle = CreateGLTexture(bmp);
             _textures[textureId] = handle;
+            Debug($"Texture {textureId} -> GL handle {handle}", LOG_DETAIL.ADVANCED);
             return handle;
         }
 

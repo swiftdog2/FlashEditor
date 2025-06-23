@@ -136,7 +136,7 @@ namespace FlashEditor {
         /// <returns>This stream.</returns>
         public JagStream Flip() {
             if (Position == 0 && Length > 0)
-                throw new IOException("Idiot you're destroying the stream");
+                throw new IOException("Cannot flip: position is zero while length is non-zero");
             Length = Position;
             Position = 0;
             return this;

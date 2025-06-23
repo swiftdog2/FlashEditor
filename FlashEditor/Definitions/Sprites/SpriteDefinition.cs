@@ -83,14 +83,17 @@ namespace FlashEditor.cache.sprites {
         /// <param name="stream">The stream.</param>
         /// <returns>The sprite.</returns>
         public void Decode(JagStream stream, int[] xteaKey = null) {
+            Debug("Decoding sprite", LOG_DETAIL.ADVANCED);
             //Find the size of this sprite set
             stream.Seek(stream.Length - 2);
             int size = stream.ReadUnsignedShort();
+            Debug($"Sprite frame count: {size}", LOG_DETAIL.ADVANCED);
 
             //Read the width, height and palette size
             stream.Seek(stream.Length - size * 8 - 7);
             int width = stream.ReadUnsignedShort();
             int height = stream.ReadUnsignedShort();
+            Debug($"Dimensions: {width}x{height}", LOG_DETAIL.ADVANCED);
             int[] palette = new int[stream.ReadByte() + 1];
 
             Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length, LOG_DETAIL.INSANE);
@@ -114,11 +117,12 @@ namespace FlashEditor.cache.sprites {
                 if(palette[index] == 0)
                     palette[index] = 1;
             }
+            Debug($"Palette loaded with {palette.Length} colours", LOG_DETAIL.ADVANCED);
 
             //Read the pixels themselves
             stream.Seek(0);
             for(int id = 0; id < size; id++) {
-                Debug("\tReading frame " + id, LOG_DETAIL.INSANE);
+                Debug($"\tReading frame {id}", LOG_DETAIL.INSANE);
 
                 //Grab some frequently used values
                 int subWidth = subWidths[id], subHeight = subHeights[id];
@@ -191,8 +195,9 @@ namespace FlashEditor.cache.sprites {
                 if(id == 0)
                     thumb = image.GetSprite();
 
-                frames.Add(image);
+                this.frames.Add(image);
             }
+            Debug("Sprite decode complete", LOG_DETAIL.ADVANCED);
         }
 
         /// <summary>

@@ -2,6 +2,7 @@ using FlashEditor;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>
@@ -33,13 +34,19 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         public void Decode(JagStream s, int[] xteaKey = null) {
+            Debug($"Decoding texture {id}", LOG_DETAIL.ADVANCED);
             field1777 = s.ReadUnsignedShort();
             field1778 = s.ReadByte() != 0;
 
             int count = s.ReadUnsignedByte();
+            Debug($"Texture has {count} sprite references", LOG_DETAIL.ADVANCED);
             fileIds = new int[count];
             for (int i = 0 ; i < count ; i++)
+            {
                 fileIds[i] = s.ReadUnsignedShort();
+                Debug($"\tSprite file {i}: {fileIds[i]}", LOG_DETAIL.INSANE);
+            }
+            Debug($"Parsed {count} sprite references", LOG_DETAIL.ADVANCED);
 
             if (count > 1) {
                 field1780 = new int[count - 1];
@@ -53,10 +60,16 @@ namespace FlashEditor.Definitions.Sprites {
 
             field1786 = new int[count];
             for (int i = 0 ; i < count ; i++)
+            {
                 field1786[i] = s.ReadInt();
+                Debug($"\tColor {i}: 0x{field1786[i]:X8}", LOG_DETAIL.INSANE);
+            }
+            Debug("Color table loaded", LOG_DETAIL.ADVANCED);
 
             animationDirection = s.ReadUnsignedByte();
             animationSpeed = s.ReadUnsignedByte();
+            Debug($"Animation dir {animationDirection}, speed {animationSpeed}", LOG_DETAIL.ADVANCED);
+            Debug("Texture decode finished", LOG_DETAIL.ADVANCED);
         }
 
 
