@@ -746,15 +746,9 @@ namespace FlashEditor.Definitions {
                 VertexNormals[i] = new VertexNormal();
 
             for (int i = 0 ; i < TriangleCount ; ++i) {
-                if (i >= faceIndices1.Length || i >= faceIndices2.Length || i >= faceIndices3.Length)
-                    break;
-
                 int vertexA = faceIndices1[i];
                 int vertexB = faceIndices2[i];
                 int vertexC = faceIndices3[i];
-
-                if (vertexA >= VertX.Length || vertexB >= VertX.Length || vertexC >= VertX.Length)
-                    continue;
 
                 int xA = VertX[vertexB] - VertX[vertexA];
                 int yA = VertY[vertexB] - VertY[vertexA];
