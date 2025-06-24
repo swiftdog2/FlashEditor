@@ -31,6 +31,7 @@ namespace FlashEditor {
 
         private readonly Timer _fpsTimer = new();
         private int _program;
+        private int _testTexture;
         private int _uModel, _uView, _uProj, _uTexture;
         private Matrix4 _model = Matrix4.Identity;
         private Matrix4 _view;
@@ -128,6 +129,15 @@ namespace FlashEditor {
 
             UpdateView();
             UpdateProjection();
+
+            _testTexture = CreateSolidTexture(Color.FromArgb(255, 255, 204, 77));
+            float[] verts = {
+                -0.5f, -0.5f, 0f, 0f, 0f,
+                 0.5f, -0.5f, 0f, 1f, 0f,
+                 0.0f,  0.5f, 0f, 0.5f, 1f
+            };
+            ushort[] idx = { 0, 1, 2 };
+            _modelRenderer.LoadSimple(verts, idx, _testTexture);
         }
 
         /// <summary>
@@ -155,6 +165,18 @@ namespace FlashEditor {
             if (ok == 0)
                 Debug($"{type} compile error: {GL.GetShaderInfoLog(shader)}");
             return shader;
+        }
+
+        private static int CreateSolidTexture(Color color)
+        {
+            int tex = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            byte[] pixel = { color.R, color.G, color.B, color.A };
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+            return tex;
         }
 
         private void UpdateProjection() {
@@ -912,7 +934,14 @@ namespace FlashEditor {
                 if (cache.models.TryGetValue(id, out var def)) {
                     Debug($"Cache hit for model {id} – rendering immediately.", LOG_DETAIL.ADVANCED);
                     if (_textureCache != null)
+                    {
+                        if (_testTexture != 0)
+                        {
+                            GL.DeleteTexture(_testTexture);
+                            _testTexture = 0;
+                        }
                         _modelRenderer.Load(def, _textureCache);
+                    }
                     glControl.Invalidate();
                     return;
                 }
@@ -948,7 +977,14 @@ namespace FlashEditor {
 
                         Debug($"[UI] Rendering loaded model {id}", LOG_DETAIL.ADVANCED);
                         if (_textureCache != null)
+                        {
+                            if (_testTexture != 0)
+                            {
+                                GL.DeleteTexture(_testTexture);
+                                _testTexture = 0;
+                            }
                             _modelRenderer.Load(loaded, _textureCache);
+                        }
                         glControl.Invalidate();
                     }
                     else if (t.IsFaulted) {
@@ -1020,6 +1056,11 @@ namespace FlashEditor {
             _fpsTimer.Stop();
             _modelRenderer.Dispose();
             _textureCache?.Dispose();
+            if (_testTexture != 0)
+            {
+                GL.DeleteTexture(_testTexture);
+                _testTexture = 0;
+            }
             if (_program != 0)
                 GL.DeleteProgram(_program);
             base.OnFormClosed(e);

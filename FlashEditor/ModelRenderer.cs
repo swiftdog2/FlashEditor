@@ -84,6 +84,36 @@ internal sealed class ModelRenderer
         }
     }
 
+    public void LoadSimple(float[] vertices, ushort[] indices, int texture)
+    {
+        Dispose();
+
+        int vao = GL.GenVertexArray();
+        int vbo = GL.GenBuffer();
+        int ebo = GL.GenBuffer();
+
+        GL.BindVertexArray(vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StaticDraw);
+        GL.EnableVertexAttribArray(0);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
+        GL.EnableVertexAttribArray(1);
+        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
+
+        GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
+        GL.BufferData(BufferTarget.ElementArrayBuffer, indices.Length * sizeof(ushort), indices, BufferUsageHint.StaticDraw);
+        GL.BindVertexArray(0);
+
+        _batches.Add(new Batch
+        {
+            VAO = vao,
+            VBO = vbo,
+            EBO = ebo,
+            IndexCount = indices.Length,
+            Texture = texture
+        });
+    }
+
     private static void AppendVertex(List<float> list, ModelDefinition def, int vert, float u, float v)
     {
         list.Add(def.VertX[vert] / 128f);
