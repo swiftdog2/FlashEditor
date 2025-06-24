@@ -456,19 +456,19 @@ namespace FlashEditor.Definitions {
                 DebugUtil.Debug($" strip[{i}]: op={op}", DebugUtil.LOG_DETAIL.INSANE);
 
                 if (op == 1) {
-                    a = ptr + var4.ReadSignedSmart();
-                    b = a + var4.ReadSignedSmart();
-                    c = b + var4.ReadSignedSmart();
+                    a = ptr + var4.ReadUnsignedSmart();
+                    b = a + var4.ReadUnsignedSmart();
+                    c = b + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
                 else if (op == 2) {
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
                 else if (op == 3) {
                     int tmp = a;
                     a = c;
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                     b = tmp;
                 }
@@ -477,7 +477,7 @@ namespace FlashEditor.Definitions {
                     int tmp = a;
                     a = b;
                     b = tmp;
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
 
