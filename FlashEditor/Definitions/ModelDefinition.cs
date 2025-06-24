@@ -456,19 +456,19 @@ namespace FlashEditor.Definitions {
                 DebugUtil.Debug($" strip[{i}]: op={op}", DebugUtil.LOG_DETAIL.INSANE);
 
                 if (op == 1) {
-                    a = ptr + var4.ReadSignedSmart();
-                    b = a + var4.ReadSignedSmart();
-                    c = b + var4.ReadSignedSmart();
+                    a = ptr + var4.ReadUnsignedSmart();
+                    b = a + var4.ReadUnsignedSmart();
+                    c = b + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
                 else if (op == 2) {
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
                 else if (op == 3) {
                     int tmp = a;
                     a = c;
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                     b = tmp;
                 }
@@ -477,7 +477,7 @@ namespace FlashEditor.Definitions {
                     int tmp = a;
                     a = b;
                     b = tmp;
-                    c = ptr + var4.ReadSignedSmart();
+                    c = ptr + var4.ReadUnsignedSmart();
                     ptr = c;
                 }
 
@@ -664,21 +664,21 @@ namespace FlashEditor.Definitions {
                 for (int i = 0 ; i < fc ; i++) {
                     int op = st8.ReadUnsignedByte();
                     if (op == 1) {
-                        a = st8.ReadSignedSmart() + idxPtr;
-                        bPrev = st8.ReadSignedSmart() + a;
-                        cPrev = st8.ReadSignedSmart() + bPrev;
+                        a = st8.ReadUnsignedSmart() + idxPtr;
+                        bPrev = st8.ReadUnsignedSmart() + a;
+                        cPrev = st8.ReadUnsignedSmart() + bPrev;
                         idxPtr = cPrev;
                     }
                     else if (op == 2) {
                         int tmp = cPrev;
-                        cPrev = st8.ReadSignedSmart() + idxPtr;
+                        cPrev = st8.ReadUnsignedSmart() + idxPtr;
                         idxPtr = cPrev;
                         bPrev = tmp;
                     }
                     else if (op == 3) {
                         int tmp = a;
                         a = cPrev;
-                        cPrev = st8.ReadSignedSmart() + idxPtr;
+                        cPrev = st8.ReadUnsignedSmart() + idxPtr;
                         idxPtr = cPrev;
                         bPrev = tmp;
                     }
@@ -686,7 +686,7 @@ namespace FlashEditor.Definitions {
                         int tmpA = a;
                         a = bPrev;
                         bPrev = tmpA;
-                        cPrev = st8.ReadSignedSmart() + idxPtr;
+                        cPrev = st8.ReadUnsignedSmart() + idxPtr;
                         idxPtr = cPrev;
                     }
 
