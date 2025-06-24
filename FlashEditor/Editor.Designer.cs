@@ -1251,7 +1251,7 @@ namespace FlashEditor {
             // 
             // ModelID
             // 
-            ModelID.AspectName = "id";
+            ModelID.AspectName = "ModelID";
             ModelID.Text = "ID";
             // 
             // ModelLoadingLabel
