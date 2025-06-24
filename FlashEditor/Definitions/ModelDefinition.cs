@@ -111,11 +111,13 @@ namespace FlashEditor.Definitions {
 
             DebugUtil.Debug("Finished decoding");
 
-            if (!modelFormat.Equals(ModelFormat.Newer)) {
-                ComputeNormals();
-                ComputeTextureUVCoordinates();
-                ComputeAnimationTables();
-            }
+            // Always compute derived data so downstream consumers like
+            // the OpenGL renderer have the arrays they expect.
+            // The helpers themselves guard against double work when
+            // the values are already present.
+            ComputeNormals();
+            ComputeTextureUVCoordinates();
+            ComputeAnimationTables();
 
         }
 
