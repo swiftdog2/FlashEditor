@@ -453,6 +453,17 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        /// Unsigned smart (cache file): one byte 0–127; two-byte (value+32768).
+        /// </summary>
+        public int ReadUnsignedSmart() {
+            // peek at next byte without advancing
+            int i2 = Get(Position) & 0xFF;
+            return i2 < 128
+                ? ReadUnsignedByte() - 64
+                : ReadUnsignedShort() - 49152;
+        }
+
+        /// <summary>
         /// Reads a “short smart” (signed): single byte −64 or ushort −0xC000.
         /// </summary>
         public int ReadShortSmart() {
@@ -460,16 +471,6 @@ namespace FlashEditor {
             return peek < 128
                 ? ReadByte() - 64
                 : ReadUnsignedShort() - 0xC000;
-        }
-
-        /// <summary>
-        /// Unsigned smart (cache file): one byte 0–127; two-byte (value+32768).
-        /// </summary>
-        public int ReadUnsignedSmart() {
-            int peek = PeekUnsignedByte();
-            return peek < 128
-                ? ReadByte()
-                : ReadUnsignedShort() - 32768;
         }
 
         /// <summary>
