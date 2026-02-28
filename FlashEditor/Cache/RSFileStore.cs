@@ -76,22 +76,6 @@ namespace FlashEditor.cache {
             return indexChannels[type];
         }
 
-        /**
-        * Writes a file.
-        * 
-        * @param type
-        *            The type of the file.
-        * @param id
-        *            The id of the file.
-        * @param data
-        *            A {@link ByteBuffer} containing the contents of the file.
-        * @param overwrite
-        *            A flag indicating if the existing file should be overwritten.
-        * @return A flag indicating if the file was written successfully.
-        * @throws IOException
-        *             if an I/O error occurs.
-        */
-
         /*
          * Imagine, hypothetically, there is an index with 3 container headers as such:
          * Container 0  Container 1 Container 2

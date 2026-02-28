@@ -23,33 +23,22 @@ namespace FlashEditor.Cache.Region {
             this.position = pos;
         }
 
-        /**
-		 * @return the id
-		 */
+        /// <summary>Gets the object id for this location.</summary>
         public int GetId() {
             return id;
         }
 
-        /**
-		 * @return the type
-		 */
-        /// <summary>
-        ///     Gets the location type value stored in the map.
-        /// </summary>
+        /// <summary>Gets the location type value stored in the map.</summary>
         public int GetLocationType() {
             return type;
         }
 
-        /**
-		 * @return the orientation
-		 */
+        /// <summary>Gets the orientation (rotation) of this location.</summary>
         public int GetOrientation() {
             return orientation;
         }
 
-        /**
-		 * @return the position
-		 */
+        /// <summary>Gets the absolute position of this location.</summary>
         public Position GetPosition() {
             return position;
         }

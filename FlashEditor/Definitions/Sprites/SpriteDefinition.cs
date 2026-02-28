@@ -1,26 +1,4 @@
-﻿/**
-* Copyright (c) OpenRS
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-* 
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-* 
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-* SOFTWARE.
-*/
-
-using FlashEditor.cache.util;
+﻿using FlashEditor.cache.util;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.Collections;
 using System.Collections.Generic;
@@ -30,7 +8,7 @@ using FlashEditor;
 
 namespace FlashEditor.cache.sprites {
     /// <summary>
-    /// Represents a {@link Sprite} which may contain one or more frames.
+    /// Represents a sprite set which may contain one or more frames.
     /// </summary>
     public class SpriteDefinition : IDefinition {
         //This flag indicates that the pixels should be read vertically instead of horizontally.
@@ -78,10 +56,10 @@ namespace FlashEditor.cache.sprites {
         }
 
         /// <summary>
-        /// Decodes the {@link Sprite} from the specified {@link ByteBuffer}.
+        /// Decodes this sprite set from the specified stream.
         /// </summary>
-        /// <param name="stream">The stream.</param>
-        /// <returns>The sprite.</returns>
+        /// <param name="stream">The stream containing encoded sprite data.</param>
+        /// <param name="xteaKey">Optional XTEA decryption key (unused for sprites).</param>
         public void Decode(JagStream stream, int[] xteaKey = null) {
             Debug("Decoding sprite", LOG_DETAIL.ADVANCED);
             //Find the size of this sprite set
@@ -228,23 +206,15 @@ namespace FlashEditor.cache.sprites {
             return height;
         }
 
-        /**
-         * Gets the width of this sprite.
-         * 
-         * @return The width of this sprite.
-         */
+        /// <summary>Gets the width of this sprite in pixels.</summary>
+        /// <returns>The width.</returns>
         public int GetWidth() {
             return width;
         }
 
-        /**
-         * Sets the frame with the specified id.
-         * 
-         * @param id
-         *            The id.
-         * @param frame
-         *            The frame.
-         */
+        /// <summary>Sets the frame with the specified id.</summary>
+        /// <param name="id">The frame index.</param>
+        /// <param name="frame">The replacement frame image.</param>
         public void SetFrame(int id, RSBufferedImage frame) {
             if(frame.GetWidth() != width || frame.GetHeight() != height)
                 throw new ArgumentException("The frame's dimensions do not match with the sprite's dimensions.");

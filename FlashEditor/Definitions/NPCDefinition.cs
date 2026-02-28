@@ -2,6 +2,10 @@
 using System.Collections.Generic;
 
 namespace FlashEditor {
+    /// <summary>
+    /// RuneScape NPC definition for rev 639. Stores appearance, interaction
+    /// options, sounds, and morph variant data.
+    /// </summary>
     public class NPCDefinition : ICloneable, IDefinition {
         sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;
@@ -21,49 +25,93 @@ namespace FlashEditor {
         int[] retextureDst;
         int[] retextureSrc;
 
+        /// <summary>Whether the NPC plays idle animations.</summary>
         public bool animateIdle = true;
+        /// <summary>Whether the NPC can be clicked on.</summary>
         public bool clickable = true;
+        /// <summary>Whether a yellow dot appears on the minimap.</summary>
         public bool drawMinimapDot = true;
+        /// <summary>Whether this NPC renders above others at the same tile.</summary>
         public bool hasRenderPriority;
+        /// <summary>Whether the NPC has invisible render priority.</summary>
         public bool invisiblePriority;
+        /// <summary>Whether the NPC uses slow walk animations.</summary>
         public bool slowWalk = true;
+        /// <summary>Whether the NPC has visible render priority.</summary>
         public bool visiblePriority;
+        /// <summary>Index of the primary right-click option.</summary>
         public byte mainOptionIndex;
+        /// <summary>Destination palette for colour remapping.</summary>
         public byte[] recolorDstPalette;
+        /// <summary>Ambient lighting modifier.</summary>
         public int ambient;
+        /// <summary>Volume level for ambient sounds.</summary>
         public int ambientSoundVolume = 255;
+        /// <summary>Army/clan icon sprite id.</summary>
         public int armyIcon = -1;
+        /// <summary>Cursor sprite used for the attack option.</summary>
         public int attackOpCursor = -1;
+        /// <summary>Contrast lighting modifier.</summary>
         public int contrast;
+        /// <summary>Sound played during crawl animations.</summary>
         public int crawlSound = -1;
+        /// <summary>Overhead prayer or status icon id.</summary>
         public int headIcon = -1;
+        /// <summary>Override height for the NPC bounding box.</summary>
         public int height = -1;
+        /// <summary>Custom hitbar sprite id.</summary>
         public int hitbarSprite = -1;
+        /// <summary>Unique NPC identifier.</summary>
         public int id;
+        /// <summary>Sound played while the NPC is idle.</summary>
         public int idleSound = -1;
+        /// <summary>Reserved field.</summary>
         public int last;
+        /// <summary>Combat level displayed on right-click.</summary>
         public int level = -1;
+        /// <summary>Icon shown on the world map.</summary>
         public int mapIcon = -1;
+        /// <summary>Movement animation type index.</summary>
         public int movementType;
+        /// <summary>Custom cursor sprite for the primary option.</summary>
         public int primaryCursor = -1;
+        /// <summary>Opcode for the primary option cursor.</summary>
         public int primaryCursorOp = -1;
+        /// <summary>Render animation set id.</summary>
         public int renderTypeID = -1;
+        /// <summary>Default facing angle in 1/2048ths of a revolution.</summary>
         public int rotation = 32;
+        /// <summary>Sound played during run animations.</summary>
         public int runSound = -1;
+        /// <summary>Horizontal scale factor (128 = normal).</summary>
         public int scaleXY = 128;
+        /// <summary>Vertical scale factor (128 = normal).</summary>
         public int scaleZ = 128;
+        /// <summary>Custom cursor sprite for the secondary option.</summary>
         public int secondaryCursor = -1;
+        /// <summary>Opcode for the secondary option cursor.</summary>
         public int secondaryCursorOp = -1;
+        /// <summary>Tile footprint size (default 1).</summary>
         public int size = 1;
+        /// <summary>Maximum distance in tiles at which sounds are audible.</summary>
         public int soundDistance;
+        /// <summary>Associated sprite id.</summary>
         public int spriteId = -1;
+        /// <summary>Varbit id used for morph variant selection.</summary>
         public int varbit = -1;
+        /// <summary>Varp id used for morph variant selection.</summary>
         public int varp = -1;
+        /// <summary>Sound played during walk animations.</summary>
         public int walkSound = -1;
+        /// <summary>Per-option cursor overrides.</summary>
         public int[] cursorOps;
+        /// <summary>Array of NPC ids this NPC can morph into.</summary>
         public int[] morphs;
+        /// <summary>Per-model translation offsets.</summary>
         public int[][] translations;
+        /// <summary>Display name shown on right-click.</summary>
         public string name = "null";
+        /// <summary>Right-click menu options.</summary>
         public string[] options = new[] { null, null, null, null, null, "Examine" };
         short primaryShadowColour;
         short secondaryShadowColour;
@@ -76,13 +124,19 @@ namespace FlashEditor {
 
         int[][] anIntArrayArray882;
 
+        /// <summary>Unknown flag (opcode undetermined).</summary>
         public bool unknownBoolean7;
+        /// <summary>Unknown byte arrays.</summary>
         public byte[] aByteArray8445, aByteArray8446;
 
+        /// <summary>Unknown short value from opcode 44.</summary>
         public int op44;
+        /// <summary>Unknown short value from opcode 45.</summary>
         public int op45;
+        /// <summary>Unknown byte values from opcode 179.</summary>
         public int unknownByte1, unknownByte2, unknownByte3, unknownByte4, unknownByte5, unknownByte6;
 
+        /// <summary>Unknown short array from opcodes 170-175.</summary>
         public int[] unknownOptions = { -1, -1, -1, -1, -1, -1 };
 
 

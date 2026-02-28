@@ -26,35 +26,58 @@ namespace FlashEditor.Definitions {
     public class ModelDefinition : IDefinition {
         #region ≡ public decoded fields
 
+        /// <summary>Total number of vertices in the model.</summary>
         public int VertexCount { get; private set; }
+        /// <summary>Total number of triangular faces in the model.</summary>
         public int TriangleCount { get; private set; }
+        /// <summary>Number of texture-mapped triangles.</summary>
         public int TexturedTriangleCount { get; private set; }
 
+        /// <summary>X coordinates for each vertex.</summary>
         public int[] VertX = Array.Empty<int>();
+        /// <summary>Y coordinates for each vertex (vertical axis).</summary>
         public int[] VertY = Array.Empty<int>();
+        /// <summary>Z coordinates for each vertex.</summary>
         public int[] VertZ = Array.Empty<int>();
+        /// <summary>Animation skin group assignment per vertex, or null if ungrouped.</summary>
         public int[]? VertSkins;
 
+        /// <summary>First vertex index of each triangle face.</summary>
         public int[] faceIndices1 = Array.Empty<int>();
+        /// <summary>Second vertex index of each triangle face.</summary>
         public int[] faceIndices2 = Array.Empty<int>();
+        /// <summary>Third vertex index of each triangle face.</summary>
         public int[] faceIndices3 = Array.Empty<int>();
 
-        public short[] FaceColour = Array.Empty<short>();      // HSL‑555, convert via HslToRgb()
-        public sbyte[]? FaceRenderType;    // 0 = flat, 1 = textured
-        public sbyte[]? FacePriority;      // 0‑255, or null if global
-        public sbyte[]? FaceAlpha;         // 0‑255
+        /// <summary>Per-face HSL-555 colour values. Convert to RGB via <see cref="HslToRgb"/>.</summary>
+        public short[] FaceColour = Array.Empty<short>();
+        /// <summary>Per-face render type (0 = flat shaded, 1 = textured), or null.</summary>
+        public sbyte[]? FaceRenderType;
+        /// <summary>Per-face render priority (0-255), or null when a global priority is used.</summary>
+        public sbyte[]? FacePriority;
+        /// <summary>Per-face alpha transparency (0-255), or null if fully opaque.</summary>
+        public sbyte[]? FaceAlpha;
+        /// <summary>Per-face animation skin group, or null.</summary>
         public sbyte[]? FaceSkin;
 
-        public sbyte[]? TextureType;       // per‑texturedFace flags (0,1,2,3)
+        /// <summary>Per-textured-face type flags (0, 1, 2, or 3), or null.</summary>
+        public sbyte[]? TextureType;
+        /// <summary>Texture coordinate index per face, mapping into TexInd arrays.</summary>
         public sbyte[] TextureCoordinates;
+        /// <summary>Texture id per face, or -1 for untextured.</summary>
         public short[] FaceTextures;
-        public short[]? TexIndA, TexIndB, TexIndC; // reference vertices for UV solve
+        /// <summary>First, second, and third reference vertex indices for UV coordinate computation.</summary>
+        public short[]? TexIndA, TexIndB, TexIndC;
 
+        /// <summary>Animaya (skeletal morph) group ids per vertex.</summary>
         public int[][] AnimayaGroups { get; private set; }
+        /// <summary>Animaya (skeletal morph) weight scales per vertex.</summary>
         public int[][] AnimayaScales { get; private set; }
 
-        public ushort ParticleEffectId { get; private set; } = 0xFFFF; // 0xFFFF == none
-        public ushort[]? ParticleAnchorVert; // optional vertex IDs
+        /// <summary>Particle effect id attached to this model (0xFFFF = none).</summary>
+        public ushort ParticleEffectId { get; private set; } = 0xFFFF;
+        /// <summary>Vertex ids to which particle effects are anchored, or null.</summary>
+        public ushort[]? ParticleAnchorVert;
 
         /// <summary>Per-vertex surface normals computed from triangle data.</summary>
         public VertexNormal[]? VertexNormals;
@@ -361,10 +384,17 @@ namespace FlashEditor.Definitions {
             }
 
             // 11) Decode animaya (morph) groups if present
+            int animayaEnd = base5 + offTextureData;
             if (hasAnimaya) {
                 DebugUtil.Debug($"Decoding animaya for {VertexCount} vertices…", DebugUtil.LOG_DETAIL.INSANE);
 
                 for (int i = 0 ; i < VertexCount ; i++) {
+                    if (var8.Position >= animayaEnd) {
+                        AnimayaGroups[i] = Array.Empty<int>();
+                        AnimayaScales[i] = Array.Empty<int>();
+                        continue;
+                    }
+
                     int mask = var8.ReadUnsignedByte();
                     //DebugUtil.Debug($" animaya[{i}]: count={mask}", DebugUtil.LOG_DETAIL.INSANE);
 
@@ -372,6 +402,7 @@ namespace FlashEditor.Definitions {
                     AnimayaScales[i] = new int[mask];
 
                     for (int j = 0 ; j < mask ; j++) {
+                        if (var8.Position + 1 >= animayaEnd) break;
                         AnimayaGroups[i][j] = var8.ReadUnsignedByte();
                         AnimayaScales[i][j] = var8.ReadUnsignedByte();
 
@@ -448,19 +479,19 @@ namespace FlashEditor.Definitions {
                 int op = var5.ReadUnsignedByte();
 
                 if (op == 1) {
-                    a = ptr + var4.ReadUnsignedSmart();
-                    b = a + var4.ReadUnsignedSmart();
-                    c = b + var4.ReadUnsignedSmart();
+                    a = ptr + var4.ReadShortSmart();
+                    b = a + var4.ReadShortSmart();
+                    c = b + var4.ReadShortSmart();
                     ptr = c;
                 }
                 else if (op == 2) {
-                    c = ptr + var4.ReadUnsignedSmart();
+                    c = ptr + var4.ReadShortSmart();
                     ptr = c;
                 }
                 else if (op == 3) {
                     int tmp = a;
                     a = c;
-                    c = ptr + var4.ReadUnsignedSmart();
+                    c = ptr + var4.ReadShortSmart();
                     ptr = c;
                     b = tmp;
                 }
@@ -469,7 +500,7 @@ namespace FlashEditor.Definitions {
                     int tmp = a;
                     a = b;
                     b = tmp;
-                    c = ptr + var4.ReadUnsignedSmart();
+                    c = ptr + var4.ReadShortSmart();
                     ptr = c;
                 }
 

@@ -11,17 +11,37 @@ using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.cache {
     public class RSCache {
+        /// <summary>
+        /// The backing file store providing index and data channel access.
+        /// </summary>
         public RSFileStore store;
+        /// <summary>
+        /// Cached reference tables, one per index type.
+        /// </summary>
         public RSReferenceTable[] referenceTables;
 
-        //Each index has their own set of containers
+        /// <summary>
+        /// Decoded containers keyed by [index type][container id].
+        /// Each index has their own set of containers.
+        /// </summary>
         public SortedDictionary<int, SortedDictionary<int, RSContainer>> containers = new SortedDictionary<int, SortedDictionary<int, RSContainer>>();
 
-        //Better to make generic type Definition and store each of them under their respective indexes but that's for later anyway
+        /// <summary>
+        /// Cached item definitions keyed by item id.
+        /// </summary>
         public SortedDictionary<int, ItemDefinition> items = new SortedDictionary<int, ItemDefinition>();
+        /// <summary>
+        /// Cached object (loc) definitions keyed by object id.
+        /// </summary>
         public SortedDictionary<int, ObjectDefinition> objects = new SortedDictionary<int, ObjectDefinition>();
+        /// <summary>
+        /// Cached NPC definitions keyed by NPC id.
+        /// </summary>
         public SortedDictionary<int, NPCDefinition> npcs = new SortedDictionary<int, NPCDefinition>();
 
+        /// <summary>
+        /// Cached model definitions keyed by model id.
+        /// </summary>
         public SortedDictionary<int, ModelDefinition> models = new SortedDictionary<int, ModelDefinition>();
 
         /// <summary>
@@ -34,14 +54,7 @@ namespace FlashEditor.cache {
         }
 
         internal void WriteCache() {
-            Debug(@"   _____             _                   ");
-            Debug(@"  / ____|           (_)                  ");
-            Debug(@" | (___   __ ___   ___ _ __   __ _       ");
-            Debug(@"  \___ \ / _` \ \ / / | '_ \ / _` |      ");
-            Debug(@"  ____) | (_| |\ V /| | | | | (_| |_ _ _ ");
-            Debug(@" |_____/ \__,_| \_/ |_|_| |_|\__, (_|_|_)");
-            Debug(@"                              __/ |      ");
-            Debug(@"                             |___/       ");
+            Debug("Writing cache to disk...");
 
             SaveDataIndex();
             SaveIndexes();
@@ -209,6 +222,12 @@ namespace FlashEditor.cache {
             return containers[type][containerId];
         }
 
+        /// <summary>
+        /// Replaces or inserts a container in the in-memory cache.
+        /// </summary>
+        /// <param name="type">The index type</param>
+        /// <param name="containerId">The container id within the index</param>
+        /// <param name="container">The container to store</param>
         public void UpdateRSContainer(int type, int containerId, RSContainer container) {
             if (!containers.ContainsKey(type))
                 containers.Add(type, new SortedDictionary<int, RSContainer>());
@@ -220,6 +239,11 @@ namespace FlashEditor.cache {
                 containers[type].Add(containerId, container);
         }
 
+        /// <summary>
+        /// Replaces the cached reference table for a given index type.
+        /// </summary>
+        /// <param name="type">The index type whose reference table should be replaced</param>
+        /// <param name="refTable">The new reference table</param>
         public void UpdateReferenceTable(int type, RSReferenceTable refTable) {
             if (type < 0 || type > referenceTables.Length)
                 throw new IndexOutOfRangeException("Invalid type when updating reference table cache");
@@ -309,15 +333,6 @@ namespace FlashEditor.cache {
         public void LoadReferenceTables() {
             //Reset the references array
             referenceTables = new RSReferenceTable[store.GetTypeCount()];
-
-            Debug(@"  _                     _ _               _____       __ _______    _     _           ");
-            Debug(@" | |                   | (_)             |  __ \     / _|__   __|  | |   | |          ");
-            Debug(@" | |     ___   __ _  __| |_ _ __   __ _  | |__) |___| |_   | | __ _| |__ | | ___  ___ ");
-            Debug(@" | |    / _ \ / _` |/ _` | | '_ \ / _` | |  _  // _ \  _|  | |/ _` | '_ \| |/ _ \/ __|");
-            Debug(@" | |___| (_) | (_| | (_| | | | | | (_| | | | \ \  __/ |    | | (_| | |_) | |  __/\__ \");
-            Debug(@" |______\___/ \__,_|\__,_|_|_| |_|\__, | |_|  \_\___|_|    |_|\__,_|_.__/|_|\___||___/");
-            Debug(@"                                   __/ |                                              ");
-            Debug(@"                                  |___/                                               ");
 
             //Attempt to load all of the reference tables
             for (int type = 0 ; type < store.GetTypeCount() ; type++) {
@@ -440,6 +455,12 @@ namespace FlashEditor.cache {
             return store;
         }
 
+        /// <summary>
+        /// Decodes and returns an item definition from the config index.
+        /// </summary>
+        /// <param name="archive">The archive containing the item entry</param>
+        /// <param name="entryId">The entry id within the archive</param>
+        /// <returns>The decoded <see cref="ItemDefinition"/></returns>
         public ItemDefinition GetItemDefinition(int archive, int entryId) {
             JagStream entry = ReadEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archive, entryId);
             ItemDefinition def = ItemDefinition.DecodeFromStream(entry);
@@ -447,6 +468,11 @@ namespace FlashEditor.cache {
             return def;
         }
 
+        /// <summary>
+        /// Decodes and returns a sprite definition from the sprites index.
+        /// </summary>
+        /// <param name="containerId">The container id of the sprite</param>
+        /// <returns>The decoded <see cref="SpriteDefinition"/></returns>
         public SpriteDefinition GetSprite(int containerId) {
             Debug($"GetSprite: {containerId}", LOG_DETAIL.ADVANCED);
             //Get the sprite for the given entry
@@ -456,6 +482,12 @@ namespace FlashEditor.cache {
             return SpriteDefinition.DecodeFromStream(container.GetStream());
         }
 
+        /// <summary>
+        /// Decodes and returns an object (loc) definition from the config index.
+        /// </summary>
+        /// <param name="archive">The archive containing the object entry</param>
+        /// <param name="entry">The entry id within the archive</param>
+        /// <returns>The decoded <see cref="ObjectDefinition"/></returns>
         public ObjectDefinition GetObjectDefinition(int archive, int entry) {
             JagStream objStream = ReadEntry(RSConstants.OBJECTS_DEFINITIONS_INDEX, archive, entry);
             ObjectDefinition def = ObjectDefinition.DecodeFromStream(objStream);
@@ -482,6 +514,12 @@ namespace FlashEditor.cache {
                     yield return new ModelReference(archiveId, fileId);
         }
 
+        /// <summary>
+        /// Decodes and returns a model definition from the models index.
+        /// </summary>
+        /// <param name="archive">The archive containing the model entry</param>
+        /// <param name="entry">The entry id within the archive</param>
+        /// <returns>The decoded <see cref="ModelDefinition"/></returns>
         public ModelDefinition GetModelDefinition(int archive, int entry) {
             int modelId = archive;
             try {

@@ -18,54 +18,81 @@ namespace FlashEditor.Definitions
         /*───────────────────────────────────────────*
          *  ▌  Public fields (RS cache values)      ▐
          *───────────────────────────────────────────*/
+        /// <summary>Unique object identifier.</summary>
         public int id;
 
         // ─── Name & menu strings ─────────────────────────
+        /// <summary>Display name shown on right-click.</summary>
         public string name;
+        /// <summary>Right-click menu options (opcodes 30-34).</summary>
         public string[] actions = new string[5];        // op-codes 30-34
+        /// <summary>Additional menu options (opcodes 150-154).</summary>
         public string[] menuOps = new string[5];        // op-codes 150-154
 
         // ─── Geometry / render flags ─────────────────────
+        /// <summary>East-west tile footprint (default 1).</summary>
         public byte sizeX = 1;          // op-code 14
+        /// <summary>North-south tile footprint (default 1).</summary>
         public byte sizeY = 1;          // op-code 15
+        /// <summary>Whether players can walk through this object.</summary>
         public bool walkable = true;
+        /// <summary>Whether the object contributes to the collision map.</summary>
         public bool isClipped = false;
+        /// <summary>Lighting parameters (brightness and contrast) for the 3D model.</summary>
         public int modelBrightness, modelContrast;
 
         // ───── misc metadata ──────────────────────────
+        /// <summary>Object category grouping id.</summary>
         public byte category;          // opcode 19
 
         // ─── Model groups (op-codes 1 / 5) ───────────────
+        /// <summary>Whether model data uses opcode 5 encoding instead of opcode 1.</summary>
         public bool usesOpcode5;                        // true → encode with 5, else 1
+        /// <summary>Render type per model group.</summary>
         public sbyte[] modelTypes;                // per group
+        /// <summary>Model ids per render type group.</summary>
         public ushort[][] modelIds;                  // per group
 
         // ─── Animation (op-code 24) ──────────────────────
+        /// <summary>Default animation played by this object.</summary>
         public int animationId = -1;
 
         // ─── Light / ambience (65-67) ────────────────────
+        /// <summary>Light ambience value.</summary>
         public int ambience;         // 65
+        /// <summary>Light contrast value.</summary>
         public int contrast;         // 66
+        /// <summary>Vertical scale factor.</summary>
         public int scaleZ;         // 67
 
         // ─── Morph varbits / varps (77 / 92) ─────────────
+        /// <summary>Varbit id for morph variant selection.</summary>
         public int morphVarbit = -1;
+        /// <summary>Varp id for morph variant selection.</summary>
         public int morphVarp = -1;
+        /// <summary>Array of object ids this object can morph into.</summary>
         public int[] morphIds;
 
         // ─── Sound / ambience (78 / 79) ──────────────────
+        /// <summary>Looping sound effect id.</summary>
         public int ambientSoundId = -1;
+        /// <summary>Number of sound loops.</summary>
         public int ambientSoundLoops;
+        /// <summary>Additional sound effect ids.</summary>
         public int[] extraSounds;
 
         // ─── Colour / texture swaps (40 / 41) ────────────
+        /// <summary>Source and destination HSL colour replacement pairs.</summary>
         public short[] recolSrc, recolDst;
+        /// <summary>Source and destination texture replacement pairs.</summary>
         public short[] retexSrc, retexDst;
 
         // ─── Minimap icons (op-code 160) ────────────────
+        /// <summary>Minimap icon sprite ids.</summary>
         public ushort[] minimapIcons;
 
         // ─── Params (op-code 249) ───────────────────────
+        /// <summary>Arbitrary key-value parameters (opcode 249).</summary>
         public SortedDictionary<int, object> parameters;
         private byte clipType;
         private int obstructsGround;
@@ -113,6 +140,7 @@ namespace FlashEditor.Definitions
         private readonly Dictionary<int, byte[]> _rawUnknown = new();
 
         // ─── Misc bookkeeping ───────────────────────────
+        /// <summary>Diagnostic flag array tracking which opcodes were read.</summary>
         public readonly bool[] decoded = new bool[256];  // opcode hit-map
 
         /*───────────────────────────────────────────*

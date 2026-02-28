@@ -14,65 +14,95 @@ namespace FlashEditor {
          *  ▌   PUBLIC FIELDS      ▐ *
          *──────────────────────────*/
 
+        /// <summary>Display name shown in-game.</summary>
         public string name;
+        /// <summary>Unique item identifier.</summary>
         public int id;
 
-        public bool[] decoded = new bool[256];                // diagnostics
+        /// <summary>Diagnostic flag array tracking which opcodes were read.</summary>
+        public bool[] decoded = new bool[256];
+        /// <summary>Right-click menu options when the item is on the ground.</summary>
         public string[] groundOptions = { null, null, "take", null, null };
+        /// <summary>Right-click menu options when the item is in the inventory.</summary>
         public string[] inventoryOptions = { null, null, null, null, "drop" };
-        public string[] extraInventoryOps = new string[5];    // 150-154
+        /// <summary>Additional inventory menu options (opcodes 150-154).</summary>
+        public string[] extraInventoryOps = new string[5];
 
-        // model + render
+        /// <summary>Model id used when rendering the item in the inventory.</summary>
         public int inventoryModelId;
+        /// <summary>Zoom level for the inventory model.</summary>
         public int modelZoom;
+        /// <summary>Primary rotation angle of the inventory model.</summary>
         public int modelRotation1;
+        /// <summary>Secondary rotation angle of the inventory model.</summary>
         public int modelRotation2;
-        public int modelOffsetX;                              // signed (op 7)
-        public int modelOffsetY;                              // signed (op 8)
+        /// <summary>Horizontal pixel offset when rendering the inventory icon.</summary>
+        public int modelOffsetX;
+        /// <summary>Vertical pixel offset when rendering the inventory icon.</summary>
+        public int modelOffsetY;
 
-        // equip models
+        /// <summary>Primary and secondary male equipment model ids.</summary>
         public int maleWearModel1, maleWearModel2;
+        /// <summary>Primary and secondary female equipment model ids.</summary>
         public int femaleWearModel1, femaleWearModel2;
 
-        // equip data ---------------------------------------------
-        public byte equipSlotId;          // opcode 13
-        public byte equipId;              // opcode 14
+        /// <summary>Equipment slot this item occupies.</summary>
+        public byte equipSlotId;
+        /// <summary>Equipment appearance identifier.</summary>
+        public byte equipId;
 
-        // wear offsets (signed << 2)
+        /// <summary>Male equipment translation offsets (pre-shifted by 2 bits).</summary>
         public int manWearXOffset, manWearYOffset, manWearZOffset;
+        /// <summary>Female equipment translation offsets (pre-shifted by 2 bits).</summary>
         public int womanWearXOffset, womanWearYOffset, womanWearZOffset;
 
-        // recolour / retexture
+        /// <summary>Source and destination HSL colour replacement pairs.</summary>
         public short[] originalModelColors, modifiedModelColors;
+        /// <summary>Source and destination texture replacement pairs.</summary>
         public short[] textureColour1, textureColour2;
+        /// <summary>Per-texture rendering priority overrides.</summary>
         public sbyte[] texturePriorities;
 
-        // flags / misc
+        /// <summary>Whether the item stacks in inventory (1 = stackable).</summary>
         public int stackable;
+        /// <summary>Base value in coins used by shops and alchemy.</summary>
         public int value;
+        /// <summary>Stack size display variant.</summary>
         public int multiStackSize;
+        /// <summary>Whether the item is restricted to members worlds.</summary>
         public bool membersOnly;
+        /// <summary>Whether this item is the unnoted form.</summary>
         public bool unnoted;
-        public int ambient, contrast;
+        /// <summary>Lighting ambient parameter for the inventory model.</summary>
+        public int ambient;
+        /// <summary>Lighting contrast parameter for the inventory model.</summary>
+        public int contrast;
+        /// <summary>Team cape identifier for PvP grouping.</summary>
         public int teamId;
-        public int nameColor; public bool hasNameColor;
+        /// <summary>Custom name text colour override.</summary>
+        public int nameColor;
+        /// <summary>Whether the colour override is active.</summary>
+        public bool hasNameColor;
 
-        // noted / lend
+        /// <summary>Item id of the noted variant and its template.</summary>
         public int notedId, notedTemplateId;
+        /// <summary>Item id of the lent variant and its template.</summary>
         public int lendId, lendTemplateId;
 
-        // colour-equip overrides
+        /// <summary>Equipped model colour overrides.</summary>
         public int colourEquip1, colourEquip2;
 
-        // ambient sound
+        /// <summary>Sound effect played while the item is equipped or nearby.</summary>
         public int ambientSoundId = -1;
+        /// <summary>Number of times the ambient sound repeats.</summary>
         public int ambientSoundLoops;
+        /// <summary>Additional sound effect ids.</summary>
         public int[] extraSounds;
 
-        // stack variants
+        /// <summary>Visual model variants at specific stack counts.</summary>
         public int[] stackIds, stackAmounts;
 
-        // arbitrary params
+        /// <summary>Arbitrary key-value parameters (opcode 249).</summary>
         public SortedDictionary<int, object> itemParams;
 
         /*──────── helper for “unknown but we must keep it” ────────*/

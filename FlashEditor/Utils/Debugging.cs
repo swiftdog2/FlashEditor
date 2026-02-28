@@ -7,8 +7,11 @@ using System.Linq;
 using System.Text;
 
 namespace FlashEditor.Utils {
+    /// <summary>
+    /// Console-based debug logging utility with configurable verbosity levels.
+    /// </summary>
     public static class DebugUtil {
-        //Change the order of the indexes when you change the layout of the editor tabs
+        /// <summary>Controls how much detail is emitted to the console.</summary>
         public enum LOG_DETAIL {
             NONE = 0,
             BASIC = 1,
@@ -16,7 +19,7 @@ namespace FlashEditor.Utils {
             INSANE = 3
         };
 
-        //The current logging detail level, change for lower/higher detailed logs
+        /// <summary>The active verbosity threshold. Messages above this level are suppressed.</summary>
         public static LOG_DETAIL LOG_LEVEL = LOG_DETAIL.BASIC;
 
         /// <summary>
@@ -30,21 +33,24 @@ namespace FlashEditor.Utils {
             Console.WriteLine(output);
         }
 
+        /// <summary>Writes a debug message if <paramref name="level"/> does not exceed <see cref="LOG_LEVEL"/>.</summary>
+        /// <param name="output">The message to print.</param>
+        /// <param name="level">The verbosity level of this message.</param>
         public static void Debug(string output, LOG_DETAIL level) {
-            //Is logging disabled?
             if(level == LOG_DETAIL.NONE)
                 return;
 
-            //Otherwise, log if the level is below or equal to current level
             if(level <= LOG_LEVEL)
                 Debug(output);
         }
+
+        /// <summary>Writes a debug message without a trailing newline.</summary>
+        /// <param name="output">The message to print.</param>
+        /// <param name="level">The verbosity level of this message.</param>
         public static void Debug2(string output, LOG_DETAIL level) {
-            //Is logging disabled?
             if(level == LOG_DETAIL.NONE)
                 return;
 
-            //Otherwise, log if the level is below or equal to current level
             if(level <= LOG_LEVEL)
                 Console.Write(output);
         }
@@ -87,6 +93,8 @@ namespace FlashEditor.Utils {
             Console.WriteLine();
         }
 
+        /// <summary>Writes a line to the console if logging is enabled.</summary>
+        /// <param name="output">The message to print.</param>
         public static void WriteLine(string output) {
             if(LOG_LEVEL == LOG_DETAIL.NONE)
                 return;
@@ -94,19 +102,26 @@ namespace FlashEditor.Utils {
             Console.WriteLine(output);
         }
 
+        /// <summary>Returns the 8-bit binary representation of a byte.</summary>
         public static string ToBitString(byte b) {
             return Convert.ToString(b, 2).PadLeft(8, '0');
         }
 
+        /// <summary>Returns the 16-bit binary representation of a short.</summary>
         public static string ToBitString(short s) {
             return Convert.ToString(s, 2).PadLeft(16, '0');
         }
 
-        //Also used for medium values
+        /// <summary>Returns the 32-bit binary representation of an int (also used for medium values).</summary>
         public static string ToBitString(int i) {
             return Convert.ToString(i, 2).PadLeft(32, '0');
         }
 
+        /// <summary>
+        /// Serializes two objects to JSON and logs any properties whose values differ.
+        /// </summary>
+        /// <param name="a">First object to compare.</param>
+        /// <param name="b">Second object to compare.</param>
         public static void PrintDifferences(object a, object b) {
             if(a == null || b == null) {
                 if(a != b)
