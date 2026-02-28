@@ -9,7 +9,6 @@ using ICSharpCode.SharpZipLib.GZip;
 namespace FlashEditor {
     public static class CompressionUtils {
         public static byte[] Gunzip(byte[] bytes) {
-            DebugUtil.PrintByteArray(bytes);
             using var input = new GZipInputStream(new MemoryStream(bytes), 4096);
             using var inflateStream = new MemoryStream();
             byte[] buffer = ArrayPool<byte>.Shared.Rent(4096);
@@ -46,7 +45,6 @@ namespace FlashEditor {
             bzip2[3] = (byte) '1';
             Array.Copy(bytes, 0, bzip2, 4, bytes.Length);
 
-            DebugUtil.PrintByteArray(bzip2);
             using var inputStream = new BZip2InputStream(new MemoryStream(bzip2));
             byte[] data = new byte[decompressedLength];
             int read = inputStream.Read(data, 0, decompressedLength);

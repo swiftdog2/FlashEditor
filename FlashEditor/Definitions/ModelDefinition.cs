@@ -174,8 +174,6 @@ namespace FlashEditor.Definitions {
             // 1) Read all bytes so we can fork multiple JagStreams
             byte[] data = modelStream.ToArray();
 
-            DebugUtil.PrintByteArray(data);
-
             // 2) Create five JagStreams to mirror the Java InputStreams (var4…var8)
             var var4 = new JagStream(data);
             var var5 = new JagStream(data);
@@ -356,11 +354,9 @@ namespace FlashEditor.Definitions {
                 VertX[i] = cx;
                 VertY[i] = cy;
                 VertZ[i] = cz;
-                DebugUtil.Debug($"v[{i}]: mask=0x{mask:X2}, dx={dx}, dy={dy}, dz={dz}, pos=({cx},{cy},{cz})", DebugUtil.LOG_DETAIL.INSANE);
 
                 if (hasVertGroup) {
                     VertSkins![i] = (byte) var8.ReadUnsignedByte();
-                    DebugUtil.Debug($"  vertGroup[{i}] = {VertSkins![i]}", DebugUtil.LOG_DETAIL.INSANE);
                 }
             }
 
@@ -401,11 +397,8 @@ namespace FlashEditor.Definitions {
             for (int i = 0 ; i < TriangleCount ; i++) {
                 FaceColour[i] = (short) var4.ReadUnsignedShort();
 
-                DebugUtil.Debug($"f[{i}]: colour=0x{FaceColour[i]:X4}", DebugUtil.LOG_DETAIL.INSANE);
-
                 if (hasFaceRender) {
                     int mask = var5.ReadUnsignedByte();
-                    DebugUtil.Debug($" f[{i}] mask=0x{mask:X2}", DebugUtil.LOG_DETAIL.INSANE);
 
                     if ((mask & 1) != 0) {
                         FaceRenderType![i] = 1;
@@ -453,7 +446,6 @@ namespace FlashEditor.Definitions {
             int a = 0, b = 0, c = 0, ptr = 0;
             for (int i = 0 ; i < TriangleCount ; i++) {
                 int op = var5.ReadUnsignedByte();
-                DebugUtil.Debug($" strip[{i}]: op={op}", DebugUtil.LOG_DETAIL.INSANE);
 
                 if (op == 1) {
                     a = ptr + var4.ReadUnsignedSmart();
@@ -481,8 +473,6 @@ namespace FlashEditor.Definitions {
                     ptr = c;
                 }
 
-                DebugUtil.Debug($"  => a={a}, b={b}, c={c}", DebugUtil.LOG_DETAIL.INSANE);
-
                 faceIndices1[i] = (ushort) a;
                 faceIndices2[i] = (ushort) b;
                 faceIndices3[i] = (ushort) c;
@@ -498,7 +488,6 @@ namespace FlashEditor.Definitions {
                     TexIndA![i] = (short) var4.ReadUnsignedShort();
                     TexIndB![i] = (short) var4.ReadUnsignedShort();
                     TexIndC![i] = (short) var4.ReadUnsignedShort();
-                    DebugUtil.Debug($" tex[{i}] = ({TexIndA![i]},{TexIndB![i]},{TexIndC![i]})", DebugUtil.LOG_DETAIL.INSANE);
                 }
             }
 

@@ -88,9 +88,7 @@ namespace FlashEditor {
             if (data.Length == 0)
                 DebugUtil.Debug($"No data read for path: {path}");
 
-            var js = new JagStream();
-            js.Write(data, 0, data.Length);
-            return js;
+            return new JagStream(data);
         }
 
         /// <summary>
@@ -143,9 +141,10 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Clears this buffer. Position=0, length=capacity.
+        /// Zeros the buffer and resets position to 0, length to capacity.
         /// </summary>
         public void Clear() {
+            Buffer.AsSpan(0, Length).Clear();
             Position = 0;
             Length = Buffer.Length;
         }
@@ -280,15 +279,18 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Writes a Java‐style varint.
+        /// Writes a MIDI-style variable-length quantity (MSB-first, matching <see cref="ReadVarInt"/>).
         /// </summary>
         public void WriteVarInt(int value) {
-            uint v = (uint) value;
-            while (v >= 0x80) {
-                WriteByte((byte) (v | 0x80));
-                v >>= 7;
+            Span<byte> buf = stackalloc byte[5];
+            int pos = 4;
+            buf[pos] = (byte) (value & 0x7F);
+            value >>>= 7;
+            while (value > 0) {
+                buf[--pos] = (byte) ((value & 0x7F) | 0x80);
+                value >>>= 7;
             }
-            WriteByte((byte) v);
+            Write(buf.Slice(pos, 5 - pos));
         }
 
         /// <summary>
@@ -309,7 +311,9 @@ namespace FlashEditor {
         /// Reads next byte as unsigned (0–255), throws at EOF.
         /// </summary>
         public int ReadUnsignedByte() {
-            return ReadByte() & 0xFF;
+            int b = ReadByte();
+            if (b < 0) throw new EndOfStreamException("End of stream");
+            return b;
         }
 
         /// <summary>
@@ -426,7 +430,7 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Reads next 3 bytes as signed medium.
+        /// Reads the next <paramref name="count"/> bytes as a big-endian integer.
         /// </summary>
         public int ReadBytesAsInt(int count) {
             if (Position + count > Length) throw new EndOfStreamException();
@@ -441,37 +445,32 @@ namespace FlashEditor {
         #region “Smart” Readers
 
         /// <summary>
-        /// **smart_v1**: 1- or 2-byte value (<128 = one-byte; otherwise ushort − 0x8000).
+        /// Signed smart: single byte 0–127 biased by −64, or unsigned short biased by −0xC000.
+        /// Range: −64 to 16383.
         /// </summary>
         public int ReadSmart() {
-            int p = Position;
-            if (p >= Length) throw new EndOfStreamException("Cannot peek Smart");
-            int peek = Buffer[p] & 0xFF;
+            int peek = Get(Position) & 0xFF;
             return peek < 128
-                ? ReadUnsignedByte()
-                : ReadUnsignedShort() - 0x8000;
-        }
-
-        /// <summary>
-        /// Unsigned smart (cache file): one byte 0–127; two-byte (value+32768).
-        /// </summary>
-        public int ReadUnsignedSmart() {
-            // peek at next byte without advancing
-            int i2 = Get(Position) & 0xFF;
-            return i2 < 128
                 ? ReadUnsignedByte() - 64
-                : ReadUnsignedShort() - 49152;
-        }
-
-        /// <summary>
-        /// Reads a “short smart” (signed): single byte −64 or ushort −0xC000.
-        /// </summary>
-        public int ReadShortSmart() {
-            int peek = Peek() & 0xFF;
-            return peek < 128
-                ? ReadByte() - 64
                 : ReadUnsignedShort() - 0xC000;
         }
+
+        /// <summary>
+        /// Unsigned smart (cache file): single byte 0–127 or unsigned short
+        /// with 32768 bias.
+        /// </summary>
+        public int ReadUnsignedSmart() {
+            int peek = Get(Position) & 0xFF;
+            return peek < 128
+                ? ReadUnsignedByte()
+                : ReadUnsignedShort() - 32768;
+        }
+
+        /// <summary>
+        /// Alias for <see cref="ReadSmart"/>: signed smart with −64 / −0xC000 bias.
+        /// </summary>
+        public int ReadShortSmart() => ReadSmart();
+
 
         /// <summary>
         /// Signed smart (delta-encoded): zig-zag decode of unsignedSmart.
@@ -528,7 +527,7 @@ namespace FlashEditor {
             int byteCount = size * 2;
             byte[]? rent = null;
             Span<byte> span = byteCount <= 2048
-                ? stackalloc byte[2048]
+                ? stackalloc byte[byteCount]
                 : (rent = ArrayPool<byte>.Shared.Rent(byteCount)).AsSpan(0, byteCount);
 
             for (int got = 0 ; got < byteCount ; got++) {
@@ -559,7 +558,6 @@ namespace FlashEditor {
                 if (b < 0) throw new EndOfStreamException();
                 sb.Append((char) b);
             }
-            DebugUtil.WriteLine("'");
             return sb.ToString();
         }
 
@@ -571,7 +569,7 @@ namespace FlashEditor {
             int b;
             while ((b = ReadByte()) != 0) {
                 if (b < 0) throw new EndOfStreamException();
-                if (b >= 127 && b < 160) {
+                if (b >= 128 && b < 160) {
                     char c = CHARACTERS[b - 128];
                     sb.Append(c == '\0' ? '?' : c);
                 }
@@ -653,7 +651,7 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Clears the buffer: position=0, length=capacity.
+        /// Writes <paramref name="count"/> bytes from <paramref name="value"/> in big-endian order.
         /// </summary>
         public void WriteBytes(int count, long value) {
             Span<byte> tmp = count <= 8 ? stackalloc byte[8] : new byte[count];
