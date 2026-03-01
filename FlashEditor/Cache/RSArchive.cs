@@ -8,13 +8,12 @@ namespace FlashEditor.cache
 {
     public class RSArchive
     {
-        public SortedDictionary<int, JagStream> entries = new SortedDictionary<int, JagStream>();
+        public SortedDictionary<int, JagStream> files = new SortedDictionary<int, JagStream>();
         public int chunks = 1;
 
         /// <summary>
-        /// Create a new Archive with <paramref name="size"/> entries
+        /// Create a new Archive
         /// </summary>
-        /// <param name="size">The number of entries</param>
         public RSArchive()
         {
         }
@@ -23,10 +22,12 @@ namespace FlashEditor.cache
         /// Constructs an Archive from an RSContainer stream
         /// </summary>
         /// <param name="stream">The stream containing the archive data</param>
-        /// <param name="size">The total number of file entries</param>
+        /// <param name="fileIds">The actual file IDs contained in the archive</param>
         /// <returns></returns>
-        public static RSArchive Decode(JagStream stream, int size)
+        public static RSArchive Decode(JagStream stream, int[] fileIds)
         {
+            int size = fileIds.Length;
+
             //Allocate a new archive object
             RSArchive archive = new RSArchive();
 
@@ -46,16 +47,16 @@ namespace FlashEditor.cache
                 data.Write(allData);
                 data.Flip();
 
-                archive.entries[0] = data;
+                archive.files[fileIds[0]] = data;
 
                 return archive;
             }
 
-            //Read the sizes of the child entries and individual chunks
+            //Read the sizes of the file entries and individual chunks
             int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(archive.chunks, size);
-            int[] entrySizes = new int[size];
+            int[] fileSizes = new int[size];
 
-            Debug("Entry count: " + size, LOG_DETAIL.INSANE);
+            Debug("File count: " + size, LOG_DETAIL.INSANE);
 
             stream.Seek(stream.Length - 1 - archive.chunks * size * 4);
 
@@ -76,14 +77,14 @@ namespace FlashEditor.cache
                     chunkSizes[chunk][id] = cumulativeChunkSize;
 
                     //And add it to the size of the whole file
-                    entrySizes[id] += cumulativeChunkSize;
-                    Debug("\t- Entry " + id + " size: " + cumulativeChunkSize, LOG_DETAIL.INSANE);
+                    fileSizes[id] += cumulativeChunkSize;
+                    Debug("\t- File " + id + " size: " + cumulativeChunkSize, LOG_DETAIL.INSANE);
                 }
             }
 
-            //Allocate the buffers for the child entries
+            //Allocate the buffers for the file entries, keyed by actual file ID
             for (int id = 0; id < size; id++)
-                archive.entries[id] = new JagStream(/*entrySizes[id]*/);
+                archive.files[fileIds[id]] = new JagStream();
 
             // Reset the stream to the start before reading
             stream.Seek0();
@@ -103,13 +104,13 @@ namespace FlashEditor.cache
                         : new byte[chunkSize];                     // allocate ONLY when > 4 KB
 
                     stream.Read(temp);
-                    archive.entries[id].Write(temp);
+                    archive.files[fileIds[id]].Write(temp);
                 }
             }
 
             //Flip all of the buffers
             for (int id = 0; id < size; id++)
-                archive.entries[id].Flip();
+                archive.files[fileIds[id]].Flip();
 
             //Return the archive
             return archive;
@@ -122,7 +123,7 @@ namespace FlashEditor.cache
         /// <remarks>
         /// <para>
         /// <b>Write–order.</b>  Like the original Jagex client, we write the
-        /// <i>chunk payloads first</i> and the <i>size-table</i> afterwards.  
+        /// <i>chunk payloads first</i> and the <i>size-table</i> afterwards.
         /// <see cref="Decode"/> therefore seeks to
         /// <c>stream.Length - 1 - (chunks ✕ fileCount ✕ 4)</c>, reads the size
         /// table, then rewinds to pull out each file unchanged.
@@ -141,12 +142,12 @@ namespace FlashEditor.cache
         ///   corresponding read-side logic. :contentReference[oaicite:0]{index=0}
         /// </para>
         /// <para>
-        /// <b>Future multi-chunk support.</b>  
+        /// <b>Future multi-chunk support.</b>
         /// When <c>chunks &gt; 1</c> you must split each file into <c>chunks</c>
         /// equal parts, write them in
         /// <c>chunk0 file0 … fileN, chunk1 file0 …</c> order, and change the
-        /// delta calculation to be “this chunk’s size minus the previous chunk’s
-        /// size of the <i>same</i> file”.
+        /// delta calculation to be "this chunk's size minus the previous chunk's
+        /// size of the <i>same</i> file".
         /// </para>
         /// </remarks>
         /// <returns>
@@ -160,7 +161,7 @@ namespace FlashEditor.cache
             //------------------------------------------------------------------
             // 1)  Write raw payloads – one contiguous block per file
             //------------------------------------------------------------------
-            foreach (var kvp in entries)
+            foreach (var kvp in files)
             {
                 kvp.Value.Seek0();          // defensive rewind
                 kvp.Value.WriteTo(stream);  // copy verbatim
@@ -169,13 +170,13 @@ namespace FlashEditor.cache
             //------------------------------------------------------------------
             // 2)  Write the delta-encoded size table (multi-file only)
             //------------------------------------------------------------------
-            int fileCount = entries.Count;
+            int fileCount = files.Count;
             if (fileCount > 1)
             {
                 for (int chunk = 0; chunk < chunks; ++chunk)            // always 1 today
                 {
                     int prev = 0;
-                    foreach (var kvp in entries)                        // sorted by key
+                    foreach (var kvp in files)                        // sorted by key
                     {
                         int chunkSize = (int)kvp.Value.Length;          // full len (1-chunk)
                         stream.WriteInteger(chunkSize - prev);          // Δ vs previous file
@@ -194,33 +195,33 @@ namespace FlashEditor.cache
 
 
         /// <summary>
-        /// Returns the file at the specified index id
+        /// Returns the file at the specified file id
         /// </summary>
-        /// <param name="id">The file entry eindex</param>
+        /// <param name="fileId">The file id</param>
         /// <returns></returns>
-        public virtual JagStream GetEntry(int id)
+        public virtual JagStream GetFile(int fileId)
         {
-            return entries[id];
+            return files[fileId];
         }
 
-        public int EntryCount()
+        public int FileCount()
         {
-            return entries.Count;
+            return files.Count;
         }
 
-        public void PutEntry(int entryId, JagStream entry)
+        public void PutFile(int fileId, JagStream data)
         {
-            if (entries.ContainsKey(entryId))
+            if (files.ContainsKey(fileId))
             {
-                //Update the entry
-                entries[entryId] = entry;
-                Debug("Updated archive entry " + entryId + ", len: " + entry.Length, LOG_DETAIL.ADVANCED);
+                //Update the file
+                files[fileId] = data;
+                Debug("Updated archive file " + fileId + ", len: " + data.Length, LOG_DETAIL.ADVANCED);
             }
             else
             {
-                //Add a new entry to the archive, expanding it
-                entries.Add(entryId, entry);
-                Debug("Added new entry " + entryId + ", len: " + entry.Length + ", total: " + entries.Count, LOG_DETAIL.INSANE);
+                //Add a new file to the archive, expanding it
+                files.Add(fileId, data);
+                Debug("Added new file " + fileId + ", len: " + data.Length + ", total: " + files.Count, LOG_DETAIL.INSANE);
             }
         }
     }

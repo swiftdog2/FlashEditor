@@ -29,7 +29,7 @@ namespace FlashEditor.Tests.Cache
             string dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             try
             {
-                var store = CreateStore(dir);
+                using var store = CreateStore(dir);
 
                 var payload = new JagStream(new byte[] {1,2,3,4});
                 var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,

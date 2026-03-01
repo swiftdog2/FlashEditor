@@ -8,7 +8,7 @@ namespace FlashEditor.Definitions.Sprites {
     /// <summary>
     /// Representation of a texture definition from the RuneScape cache.
     /// </summary>
-    public class TextureDefinition : IDefinition {
+    public class TextureDefinition : IDefinition, IDisposable {
         public int field1777;
         public bool field1778;
         public int id;
@@ -98,6 +98,11 @@ namespace FlashEditor.Definitions.Sprites {
             s.WriteByte((byte) animationSpeed);
             s.Flip();
             return s;
+        }
+
+        public void Dispose() {
+            thumb?.Dispose();
+            thumb = null;
         }
     }
 }

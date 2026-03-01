@@ -75,6 +75,12 @@ namespace FlashEditor.Cache.Util {
             Disposed = true;
             Bitmap.Dispose();
             BitsHandle.Free();
+            GC.SuppressFinalize(this);
+        }
+
+        ~DirectBitmap() {
+            if(!Disposed && BitsHandle.IsAllocated)
+                BitsHandle.Free();
         }
     }
 }

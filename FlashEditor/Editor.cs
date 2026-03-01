@@ -300,6 +300,9 @@ namespace FlashEditor {
             NPCListView.Refresh();
 
             try {
+                //Dispose old resources before loading new cache
+                DisposeOldResources();
+
                 //Load the cache and the reference tables
                 RSFileStore store = new RSFileStore(directory);
                 cache = new RSCache(store);
@@ -408,7 +411,7 @@ namespace FlashEditor {
 
                     bgw.DoWork += delegate {
                         int done = 0;
-                        int total = referenceTable.GetEntryTotal() * 256;
+                        int total = referenceTable.GetArchiveCount() * 256;
                         int percentile = Math.Max(1, total / 100);
 
                         Debug(@"  _                     _ _               _ _                     ");
@@ -421,7 +424,7 @@ namespace FlashEditor {
                         Debug(@"                                  |___/                           ");
                         Debug(@"Loading Items");
 
-                        foreach (KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
+                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
                             int archiveId = archive.Key;
 
                             Debug("Loading archive " + archive.Key);
@@ -478,12 +481,12 @@ namespace FlashEditor {
                         List<SpriteDefinition> sprites = new List<SpriteDefinition>();
 
                         int done = 0;
-                        int total = referenceTable.GetEntryTotal();
+                        int total = referenceTable.GetArchiveCount();
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading " + total + " Sprites");
                         Debug("Loading " + total + " Sprites");
-                        foreach (KeyValuePair<int, RSEntry> entry in referenceTable.GetEntries()) {
+                        foreach (KeyValuePair<int, RSArchiveEntry> entry in referenceTable.GetArchiveEntries()) {
                             try {
                                 Debug("Loading sprite: " + entry.Key, LOG_DETAIL.ADVANCED);
 
@@ -542,14 +545,14 @@ namespace FlashEditor {
                         List<NPCDefinition> npcs = new List<NPCDefinition>();
 
                         int done = 0;
-                        int total = referenceTable.GetEntryTotal() * 128;
+                        int total = referenceTable.GetArchiveCount() * 128;
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading NPCs");
 
                         Debug("Loading NPC data");
 
-                        foreach (KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
+                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
                             int archiveId = archive.Key;
 
                             Debug("Loading archive " + archiveId);
@@ -591,14 +594,14 @@ namespace FlashEditor {
                     bgw.DoWork += delegate {
                         List<ObjectDefinition> objects = new List<ObjectDefinition>();
 
-                        int filesPerArchive = referenceTable.GetEntry(referenceTable.GetEntries().Keys.First()).GetValidFileIds().Length;
-                        int total = referenceTable.GetEntryTotal() * filesPerArchive;
+                        int filesPerArchive = referenceTable.GetArchiveEntry(referenceTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
+                        int total = referenceTable.GetArchiveCount() * filesPerArchive;
                         int done = 0;
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading Objects");
 
-                        foreach (KeyValuePair<int, RSEntry> archive in referenceTable.GetEntries()) {
+                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
                             int archiveId = archive.Key;
                             for (int file = 0 ; file < filesPerArchive ; file++) {
                                 try {
@@ -737,7 +740,7 @@ namespace FlashEditor {
             //Update the entry in the container's archive   
             JagStream newItemStream = newDefinition.Encode();
 
-            cache.WriteEntry(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
+            cache.WriteFile(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
 
             PrintDifferences(newDefinition, currentItem);
         }
@@ -747,12 +750,12 @@ namespace FlashEditor {
             cache.objects[newDef.id] = newDef;
 
             var refTable = cache.GetReferenceTable(RSConstants.OBJECTS_DEFINITIONS_INDEX);
-            int filesPerArchive = refTable.GetEntry(refTable.GetEntries().Keys.First()).GetValidFileIds().Length;
+            int filesPerArchive = refTable.GetArchiveEntry(refTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
             int archiveId = newDef.id / filesPerArchive;
             int entryId = newDef.id % filesPerArchive;
 
             JagStream data = newDef.Encode();
-            cache.WriteEntry(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, entryId, data);
+            cache.WriteFile(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, entryId, data);
 
             PrintDifferences(newDef, currentObject);
         }
@@ -765,7 +768,7 @@ namespace FlashEditor {
             int entryId = newDef.id % 128;
 
             JagStream data = newDef.Encode();
-            cache.WriteEntry(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, entryId, data);
+            cache.WriteFile(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, entryId, data);
 
             PrintDifferences(newDef, currentNpc);
         }
@@ -988,6 +991,7 @@ namespace FlashEditor {
                         glControl.Invalidate();
                     }
                     else if (t.IsFaulted) {
+                        _modelTasks.Remove(id);
                         Debug($"[UI] Error loading model {id}: {t.Exception?.Flatten().InnerException}", LOG_DETAIL.ADVANCED);
                         // Optionally: show a MessageBox or other UI error indicator
                     }
@@ -1052,10 +1056,24 @@ namespace FlashEditor {
             glControl.Invalidate();
         }
 
+        private void DisposeOldResources() {
+            if(SpriteListView.Objects != null) {
+                foreach(object obj in SpriteListView.Objects) {
+                    if(obj is SpriteDefinition sprite)
+                        sprite.Dispose();
+                }
+            }
+            TextureManager.Clear();
+            _textureImageList.Images.Clear();
+            _textureCache?.Dispose();
+            _textureCache = null;
+            cache?.store?.Dispose();
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e) {
             _fpsTimer.Stop();
+            DisposeOldResources();
             _modelRenderer.Dispose();
-            _textureCache?.Dispose();
             if (_testTexture != 0)
             {
                 GL.DeleteTexture(_testTexture);

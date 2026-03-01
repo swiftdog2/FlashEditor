@@ -41,8 +41,16 @@ internal sealed class ModelRenderer
             int b = def.faceIndices2[i];
             int c = def.faceIndices3[i];
 
+            if ((uint)a >= (uint)def.VertexCount ||
+                (uint)b >= (uint)def.VertexCount ||
+                (uint)c >= (uint)def.VertexCount)
+                continue;
+
             float[] u = def.FaceTextureUCoordinates[i];
             float[] v = def.FaceTextureVCoordinates[i];
+
+            if (u == null || v == null)
+                continue;
 
             AppendVertex(vList, def, a, u[0], v[0]);
             indices[texId].Add((ushort)vertIndex++);

@@ -11,15 +11,24 @@ namespace FlashEditor.Definitions.Sprites {
     public class TextureManager {
         private readonly RSCache cache;
         public static readonly SortedDictionary<int, TextureDefinition> Textures = new();
+        private static readonly Bitmap _fallbackThumb = new Bitmap(100, 100);
 
         public TextureManager(RSCache cache) {
             this.cache = cache;
         }
 
+        public static void Clear() {
+            foreach(var def in Textures.Values)
+                def?.Dispose();
+            Textures.Clear();
+        }
+
         public void Load()
         {
+            Clear();
+
             RSReferenceTable table = cache.GetReferenceTable(RSConstants.TEXTURES);
-            RSEntry entry = table.GetEntry(0);
+            RSArchiveEntry entry = table.GetArchiveEntry(0);
             if (entry == null)
             {
                 Debug("Texture archive 0 not found", LOG_DETAIL.BASIC);
@@ -32,9 +41,9 @@ namespace FlashEditor.Definitions.Sprites {
             var loader = new TextureLoader();
             foreach (int fileId in entry.GetValidFileIds())
             {
-                JagStream data = cache.ReadEntry(RSConstants.TEXTURES, 0, fileId);
+                JagStream data = cache.ReadFile(RSConstants.TEXTURES, 0, fileId);
                 if(data == null) {
-                    throw new Exception("Texture entry data is null");
+                    throw new System.Exception("Texture entry data is null");
                 }
                 Debug($"Decoding texture {fileId}", LOG_DETAIL.ADVANCED);
                 var def = loader.Load(fileId, data.ToArray());
@@ -52,7 +61,7 @@ namespace FlashEditor.Definitions.Sprites {
             if (int.TryParse(key, out int id) && Textures.TryGetValue(id, out var def) && def.thumb != null)
                 return def.thumb;
 
-            return new Bitmap(100, 100);
+            return _fallbackThumb;
         }
     }
 }

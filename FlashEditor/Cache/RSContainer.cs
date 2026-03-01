@@ -7,7 +7,7 @@ using FlashEditor.Cache.Util.Crypto;
 namespace FlashEditor.cache {
     public class RSContainer {
         private JagStream stream; //the archive stream
-        public int type;
+        public int indexId;
         public int id;
         public int length;
         public byte compressionType = 0;
@@ -17,12 +17,26 @@ namespace FlashEditor.cache {
         //The archive that is represented by the container
         public RSArchive archive;
 
+        /// <summary>Whether this container has been modified and must not be evicted.</summary>
+        public bool Dirty { get; set; }
+
+        /// <summary>Whether this container still holds decoded data.</summary>
+        public bool HasData => stream != null;
+
+        /// <summary>Releases decoded data to save memory, unless the container is dirty.</summary>
+        public void ReleaseData() {
+            if(!Dirty) {
+                stream = null;
+                archive = null;
+            }
+        }
+
         public RSContainer() {
 
         }
 
         public RSContainer(RSContainer container) {
-            type = container.GetIndexType();
+            indexId = container.GetIndexId();
             id = container.GetId();
             length = container.GetLength();
             compressionType = container.GetCompressionType();
@@ -30,8 +44,8 @@ namespace FlashEditor.cache {
             decompressedLength = container.GetDecompressedLength();
         }
 
-        public RSContainer(int type, int id, byte compressionType, JagStream stream, int version) {
-            this.type = type;
+        public RSContainer(int indexId, int id, byte compressionType, JagStream stream, int version) {
+            this.indexId = indexId;
             this.id = id;
             this.compressionType = compressionType;
             this.stream = stream;
@@ -67,7 +81,7 @@ namespace FlashEditor.cache {
 
             Debug("Data Length: " + container.GetDataLength(), LOG_DETAIL.ADVANCED);
             Debug("Compression type: " + compressionName, LOG_DETAIL.ADVANCED);
-            Debug("Decompressed length: " + container.GetDecompressedLength());
+            Debug("Decompressed length: " + container.GetDecompressedLength(), LOG_DETAIL.ADVANCED);
 
             byte[] payload = stream.ReadBytes(container.GetDataLength());
 
@@ -233,16 +247,16 @@ namespace FlashEditor.cache {
             this.archive = archive;
         }
 
-        internal void SetType(int type) {
-            this.type = type;
+        internal void SetIndexId(int indexId) {
+            this.indexId = indexId;
         }
 
         internal void SetId(int id) {
             this.id = id;
         }
 
-        public int GetIndexType() {
-            return type;
+        public int GetIndexId() {
+            return indexId;
         }
 
         public int GetId() {

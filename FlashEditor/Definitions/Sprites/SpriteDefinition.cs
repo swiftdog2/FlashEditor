@@ -10,7 +10,7 @@ namespace FlashEditor.cache.sprites {
     /// <summary>
     /// Represents a sprite set which may contain one or more frames.
     /// </summary>
-    public class SpriteDefinition : IDefinition {
+    public class SpriteDefinition : IDefinition, IDisposable {
         //This flag indicates that the pixels should be read vertically instead of horizontally.
         public static readonly int FLAG_VERTICAL = 0x01;
 
@@ -244,6 +244,15 @@ namespace FlashEditor.cache.sprites {
         /// <returns>Serialized sprite data.</returns>
         public JagStream Encode() {
             throw new NotImplementedException();
+        }
+
+        public void Dispose() {
+            if(frames != null) {
+                foreach(var frame in frames)
+                    frame?.Dispose();
+                frames = null;
+            }
+            thumb = null;
         }
     }
 }
