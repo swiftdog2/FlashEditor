@@ -4,7 +4,7 @@ using System;
 namespace FlashEditor.cache {
     /// <summary>
     ///     An <seealso cref="RSSector" /> contains a header and data. The header contains information
-    ///     used to verify the integrity of the cache like the current file id, type and
+    ///     used to verify the integrity of the cache like the current file id, index and
     ///     chunk. It also contains a pointer to the next sector such that the sectors
     ///     form a singly-linked list. The data is simply up to 512 bytes of the file.
     /// </summary>
@@ -16,18 +16,18 @@ namespace FlashEditor.cache {
         private byte[] data;
         private int id;
         private int nextSector;
-        private int type;
+        private int indexId;
 
         /// <summary>
         /// Constructs a sector record.
         /// </summary>
-        /// <param name="type">Index the sector belongs to.</param>
-        /// <param name="id">Container id.</param>
-        /// <param name="chunk">Chunk number within the container.</param>
+        /// <param name="indexId">Index the sector belongs to.</param>
+        /// <param name="id">Archive id.</param>
+        /// <param name="chunk">Chunk number within the archive.</param>
         /// <param name="nextSector">Pointer to the next sector.</param>
         /// <param name="data">Sector payload.</param>
-        public RSSector(int type, int id, int chunk, int nextSector, byte[] data) {
-            this.type = type;
+        public RSSector(int indexId, int id, int chunk, int nextSector, byte[] data) {
+            this.indexId = indexId;
             this.id = id;
             this.chunk = chunk;
             this.nextSector = nextSector;
@@ -48,18 +48,18 @@ namespace FlashEditor.cache {
              * File ID      Unsigned Short	    The file that this Sector belongs to
              * Chunk ID     Unsigned Short	    Which chunk of the file the data of the Sector is
              * Sector ID    Medium (3 Bytes)	Which Sector of the data file this is
-             * Type ID      Unsigned Byte	    The type of file this Sector belongs to
+             * Index ID     Unsigned Byte	    The index this Sector belongs to
              * Data         512 Bytes	        The raw data that this Section contains
              */
 
             int id = stream.ReadUnsignedShort();
             int chunk = stream.ReadUnsignedShort();
             int nextSector = stream.ReadMedium();
-            int type = stream.ReadByte();
+            int indexId = stream.ReadByte();
             byte[] data = new byte[DATA_LEN];
             stream.Read(data, 0, data.Length);
 
-            return new RSSector(type, id, chunk, nextSector, data);
+            return new RSSector(indexId, id, chunk, nextSector, data);
         }
 
 
@@ -72,22 +72,22 @@ namespace FlashEditor.cache {
             stream.WriteShort(id);
             stream.WriteShort(chunk);
             stream.WriteMedium(nextSector);
-            stream.WriteByte((byte) type);
+            stream.WriteByte((byte) indexId);
             stream.Write(data, 0, data.Length);
             return stream.Flip();
         }
 
-        /// <summary>Gets the sector type (index).</summary>
-        public new int GetType() {
-            return type;
+        /// <summary>Gets the index id for this sector.</summary>
+        public int GetIndexId() {
+            return indexId;
         }
 
-        /// <summary>Container id for this sector.</summary>
+        /// <summary>Archive id for this sector.</summary>
         public int GetId() {
             return id;
         }
 
-        /// <summary>Chunk number within the container.</summary>
+        /// <summary>Chunk number within the archive.</summary>
         public int GetChunk() {
             return chunk;
         }

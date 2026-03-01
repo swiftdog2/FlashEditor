@@ -165,7 +165,7 @@ namespace FlashEditor {
                 while (true) {
                     int opcode = stream.ReadByte();
 
-                    if (opcode == 0 || opcode == 255)
+                    if (opcode <= 0 || opcode == 255)
                         break;
 
                     Decode(stream, opcode);

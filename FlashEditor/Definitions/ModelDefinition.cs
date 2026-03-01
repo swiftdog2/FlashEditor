@@ -770,6 +770,11 @@ namespace FlashEditor.Definitions {
                 int vertexB = faceIndices2[i];
                 int vertexC = faceIndices3[i];
 
+                if ((uint)vertexA >= (uint)VertexCount ||
+                    (uint)vertexB >= (uint)VertexCount ||
+                    (uint)vertexC >= (uint)VertexCount)
+                    continue;
+
                 int xA = VertX[vertexB] - VertX[vertexA];
                 int yA = VertY[vertexB] - VertY[vertexA];
                 int zA = VertZ[vertexB] - VertZ[vertexA];
@@ -853,7 +858,7 @@ namespace FlashEditor.Definitions {
                         textureCoordinate &= 0xFF;
 
                         sbyte textureRenderType = 0;
-                        if (TextureType != null)
+                        if (TextureType != null && textureCoordinate < TextureType.Length)
                             textureRenderType = TextureType[textureCoordinate];
 
                         if (textureRenderType == 0) {
@@ -861,9 +866,22 @@ namespace FlashEditor.Definitions {
                             int faceVertexIdx2 = faceIndices2[i];
                             int faceVertexIdx3 = faceIndices3[i];
 
-                            short triangleVertexIdx1 = TexIndA![textureCoordinate];
+                            if ((uint)faceVertexIdx1 >= (uint)VertexCount ||
+                                (uint)faceVertexIdx2 >= (uint)VertexCount ||
+                                (uint)faceVertexIdx3 >= (uint)VertexCount)
+                                continue;
+
+                            if (TexIndA == null || textureCoordinate >= TexIndA.Length)
+                                continue;
+
+                            short triangleVertexIdx1 = TexIndA[textureCoordinate];
                             short triangleVertexIdx2 = TexIndB![textureCoordinate];
                             short triangleVertexIdx3 = TexIndC![textureCoordinate];
+
+                            if ((uint)triangleVertexIdx1 >= (uint)VertexCount ||
+                                (uint)triangleVertexIdx2 >= (uint)VertexCount ||
+                                (uint)triangleVertexIdx3 >= (uint)VertexCount)
+                                continue;
 
                             float triangleX = VertX[triangleVertexIdx1];
                             float triangleY = VertY[triangleVertexIdx1];

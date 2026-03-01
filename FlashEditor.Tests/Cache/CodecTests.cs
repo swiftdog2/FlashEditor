@@ -24,15 +24,15 @@ namespace FlashEditor.Tests.Cache
                 flags = 0
             };
 
-            var entry = new RSEntry(0);
+            var entry = new RSArchiveEntry(0);
             entry.SetVersion(1);
             entry.SetValidFileIds(new int[] { 0 });
-            entry.SetChildEntries(new SortedDictionary<int, RSChildEntry>
+            entry.SetFileEntries(new SortedDictionary<int, RSFileEntry>
             {
-                { 0, new RSChildEntry(0) }
+                { 0, new RSFileEntry(0) }
             });
 
-            table.PutEntry(0, entry);
+            table.PutArchiveEntry(0, entry);
 
             // Act
             JagStream encoded = ReferenceTableCodec.Encode(table);
@@ -68,8 +68,8 @@ namespace FlashEditor.Tests.Cache
         public void Container_MultiFile_RoundTrips(byte compression)
         {
             var archive = new RSArchive();
-            archive.PutEntry(0, new JagStream(new byte[] { 1, 2 }));
-            archive.PutEntry(1, new JagStream(new byte[] { 3, 4, 5 }));
+            archive.PutFile(0, new JagStream(new byte[] { 1, 2 }));
+            archive.PutFile(1, new JagStream(new byte[] { 3, 4, 5 }));
 
             var container = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 0,
                                             compression, archive.Encode(), 1);
@@ -86,12 +86,12 @@ namespace FlashEditor.Tests.Cache
         {
             // Arrange
             var archive = new RSArchive();
-            archive.PutEntry(0, new JagStream(new byte[] { 1, 2, 3 }));
-            archive.PutEntry(1, new JagStream(new byte[] { 4, 5 }));
+            archive.PutFile(0, new JagStream(new byte[] { 1, 2, 3 }));
+            archive.PutFile(1, new JagStream(new byte[] { 4, 5 }));
 
             // Act
             JagStream encoded = archive.Encode();
-            RSArchive decoded = RSArchive.Decode(new JagStream(encoded.ToArray()), archive.EntryCount());
+            RSArchive decoded = RSArchive.Decode(new JagStream(encoded.ToArray()), new int[] { 0, 1 });
             JagStream reencoded = decoded.Encode();
 
             // Assert
@@ -120,8 +120,8 @@ namespace FlashEditor.Tests.Cache
             Assert.Equal(initial.ToArray(), re.ToArray());
 
             var archive = new RSArchive();
-            archive.PutEntry(0, payload);
-            archive.PutEntry(1, new JagStream(System.Text.Encoding.ASCII.GetBytes("bye")));
+            archive.PutFile(0, payload);
+            archive.PutFile(1, new JagStream(System.Text.Encoding.ASCII.GetBytes("bye")));
 
             var multi = new RSContainer(RSConstants.ITEM_DEFINITIONS_INDEX, 1,
                                         compression, archive.Encode(), 1);

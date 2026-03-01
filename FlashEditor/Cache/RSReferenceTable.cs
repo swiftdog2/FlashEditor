@@ -8,8 +8,8 @@ using FlashEditor.Utils;
 namespace FlashEditor.cache
 {
     ///<summary>
-    ///A<seealso cref="RSReferenceTable" /> holds details for all the files with a single type,
-    ///such as checksums, versions and archive members. There are also optional
+    ///A<seealso cref="RSReferenceTable" /> holds details for all the archives within a single index,
+    ///such as checksums, versions and file members. There are also optional
     ///fields for identifier hashes and whirlpool digests.
     /// </summary>
     public class RSReferenceTable
@@ -24,7 +24,7 @@ namespace FlashEditor.cache
         public bool entryHashes;
         public bool sizes;
 
-        internal SortedDictionary<int, RSEntry> entries = new SortedDictionary<int, RSEntry>();
+        internal SortedDictionary<int, RSArchiveEntry> archiveEntries = new SortedDictionary<int, RSArchiveEntry>();
 
         public int version;
         public int format;
@@ -32,17 +32,17 @@ namespace FlashEditor.cache
 
         public int validArchivesCount;
         public int[] validArchiveIds;
-        public int type;
+        public int indexId;
 
         internal RSIdentifiers identifiers;
 
         /// <summary>
-        /// Updates CRC, XTEA flag and version for a single group,
+        /// Updates CRC, XTEA flag and version for a single archive,
         /// then marks the table dirty by incrementing <see cref="version"/>.
         /// </summary>
         public void UpdateGroup(int groupId, uint crc, bool usesXtea, int versionInc = 1)
         {
-            if (!entries.TryGetValue(groupId, out var e))
+            if (!archiveEntries.TryGetValue(groupId, out var e))
                 return;
 
             e.SetCrc((int)crc);
@@ -54,44 +54,44 @@ namespace FlashEditor.cache
         }
 
         /// <summary>
-        /// Gets the maximum number of entries in this table.
+        /// Gets the maximum number of archive entries in this table.
         /// </summary>
-        /// <returns>The maximum number of entries</returns>
+        /// <returns>The maximum number of archive entries</returns>
         public int Capacity()
         {
-            if (entries.Count == 0)
+            if (archiveEntries.Count == 0)
                 return 0;
-            return entries.Keys.Last() + 1;
+            return archiveEntries.Keys.Last() + 1;
         }
 
         /// <summary>
-        /// Returns the specified entry
+        /// Returns the specified archive entry
         /// </summary>
-        /// <param name="id">The entry index</param>
-        /// <returns>The entry at the index <paramref name="id"/></returns>
-        internal RSEntry GetEntry(int id)
+        /// <param name="id">The archive id</param>
+        /// <returns>The archive entry at <paramref name="id"/></returns>
+        internal RSArchiveEntry GetArchiveEntry(int id)
         {
-            if (!entries.ContainsKey(id))
+            if (!archiveEntries.ContainsKey(id))
                 return null;
-            return entries[id];
+            return archiveEntries[id];
         }
 
-        public void PutEntry(int containerId, RSEntry entry)
+        public void PutArchiveEntry(int archiveId, RSArchiveEntry entry)
         {
-            if (entries.ContainsKey(containerId))
-                entries[containerId] = entry;
+            if (archiveEntries.ContainsKey(archiveId))
+                archiveEntries[archiveId] = entry;
             else
-                entries.Add(containerId, entry);
+                archiveEntries.Add(archiveId, entry);
         }
 
 
         /// <summary>
-        /// Returns the number of entries in the reference table
+        /// Returns the number of archive entries in the reference table
         /// </summary>
         /// <returns>The number of archives</returns>
-        internal int GetEntryTotal()
+        internal int GetArchiveCount()
         {
-            return entries.Count;
+            return archiveEntries.Count;
         }
 
         /// <summary>
@@ -103,14 +103,14 @@ namespace FlashEditor.cache
             return version;
         }
 
-        internal SortedDictionary<int, RSEntry> GetEntries()
+        internal SortedDictionary<int, RSArchiveEntry> GetArchiveEntries()
         {
-            return entries;
+            return archiveEntries;
         }
 
-        internal void SetType(int type)
+        internal void SetIndexId(int indexId)
         {
-            this.type = type;
+            this.indexId = indexId;
         }
     }
 }

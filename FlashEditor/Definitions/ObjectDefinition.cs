@@ -160,9 +160,8 @@ namespace FlashEditor.Definitions
             while (true)
             {
                 int op = stream.ReadByte();
+                if (op <= 0) break;          // 0 = terminator, -1 = EOF
                 decoded[op] = true;
-
-                if (op == 0) break;          // terminator
                 Decode(stream, op);
 
                 if (++safeGuard > 256)
