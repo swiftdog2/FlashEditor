@@ -35,11 +35,11 @@ namespace FlashEditor.Tests.Definitions
             var loader = new TextureLoader();
 
             var archive = new RSArchive();
-            archive.PutFile(0, new JagStream(BuildTexture(1, new ushort[] { 10 }, new int[] { 0x11223344 })));
-            archive.PutFile(1, new JagStream(BuildTexture(2, new ushort[] { 20, 21 }, new int[] { 1, 2 })));
+            archive.PutEntry(0, new JagStream(BuildTexture(1, new ushort[] { 10 }, new int[] { 0x11223344 })));
+            archive.PutEntry(1, new JagStream(BuildTexture(2, new ushort[] { 20, 21 }, new int[] { 1, 2 })));
 
             var defs = new List<TextureDefinition>();
-            foreach (var kvp in archive.files)
+            foreach (var kvp in archive.entries)
                 defs.Add(loader.Load(kvp.Key, kvp.Value.ToArray()));
 
             Assert.Equal(2, defs.Count);

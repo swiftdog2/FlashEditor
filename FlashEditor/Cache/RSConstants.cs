@@ -14,7 +14,7 @@ namespace FlashEditor.cache {
          */
         public const int FRAMES_INDEX = 0,
             SKINS = 1,
-            CONFIG = 2,
+            CONFIG = 2, 
             INTERFACE_DEFINITIONS_INDEX = 3,
             SOUND_EFFECTS = 4,
             MAPS_INDEX = 5,
@@ -51,7 +51,7 @@ namespace FlashEditor.cache {
             VORBIS = 36,
             META_INDEX = 255;
 
-        public static string[] indexNames = new [] {"FRAMES",
+        public static string[] containerNames = new [] {"FRAMES",
             "SKINS",
             "CONFIG",
             "INTERFACE_DEFINITIONS",
@@ -93,18 +93,18 @@ namespace FlashEditor.cache {
         /// Return a short, user-friendly name for a cache index.
         /// </summary>
         /// <remarks>
-        /// This is mainly for GUI display (tab titles, labels, logging).
+        /// This is mainly for GUI display (tab titles, labels, logging).  
         /// If you add new indexes later, extend the <c>switch</c>.
         /// </remarks>
 
-        internal static string GetIndexName(int indexId) {
-            if(indexId >= indexNames.Length) {
-                if(indexId == META_INDEX)
+        internal static string GetContainerNameForType(int type) {
+            if(type >= containerNames.Length) {
+                if(type == META_INDEX)
                     return "CRCTABLE";
                 else
                     return "NULL";
             } else {
-                return indexNames[indexId];
+                return containerNames[type];
             }
         }
 

@@ -54,7 +54,7 @@ namespace FlashEditor.Cache.Util
 
             uint crc = ComputeCrc32(encoded.ToArray().AsSpan(0, lenWithoutVersion));
 
-            var entry = table.GetArchiveEntry(groupId);
+            var entry = table.GetEntry(groupId);
             if (entry != null)
             {
                 entry.SetCrc((int)crc);

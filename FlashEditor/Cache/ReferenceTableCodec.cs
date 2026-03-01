@@ -46,14 +46,14 @@ namespace FlashEditor.cache
             {
                 lastArchiveId += stream.ReadUnsignedShort();
                 table.validArchiveIds[i] = lastArchiveId;
-                table.GetArchiveEntries().Add(lastArchiveId, new RSArchiveEntry(i));
+                table.GetEntries().Add(lastArchiveId, new RSEntry(i));
             }
 
             /* ── Optional 32-bit identifier hashes ─────────────────── */
-            int[] identifiersTmp = new int[table.GetArchiveEntries().Keys.Max() + 1];
+            int[] identifiersTmp = new int[table.GetEntries().Keys.Max() + 1];
             if (table.hasIdentifiers)
             {
-                foreach (var kv in table.GetArchiveEntries())
+                foreach (var kv in table.GetEntries())
                 {
                     int ident = stream.ReadInt();
                     identifiersTmp[kv.Key] = ident;
@@ -64,10 +64,10 @@ namespace FlashEditor.cache
 
             /* ── CRC-32 for each archive (always) ───────────────────── */
             for (int i = 0; i < table.validArchivesCount; i++)
-                table.GetArchiveEntries()[table.validArchiveIds[i]].SetCrc(stream.ReadInt());
+                table.GetEntries()[table.validArchiveIds[i]].SetCrc(stream.ReadInt());
 
             /* ── Archive versions (always) ──────────────────────────── */
-            foreach (var kv in table.GetArchiveEntries())
+            foreach (var kv in table.GetEntries())
                 kv.Value.SetVersion(stream.ReadInt());
 
             /* ── Archive-flags (format 7+)  bit-0 ⇢ XTEA ───────────── */
@@ -76,13 +76,13 @@ namespace FlashEditor.cache
                 for (int i = 0; i < table.validArchivesCount; i++)
                 {
                     byte flagByte = (byte) stream.ReadByte();
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
+                    table.GetEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
                 }
             }
 
             /* ── Optional entry hash (32-bit) ───────────────────────── */
             if (table.entryHashes)
-                foreach (var kv in table.GetArchiveEntries())
+                foreach (var kv in table.GetEntries())
                     kv.Value.SetHash(stream.ReadInt());
 
             /* ── Optional Whirlpool digests (64 bytes each) ─────────── */
@@ -92,28 +92,28 @@ namespace FlashEditor.cache
                 {
                     Span<byte> whirl = stackalloc byte[64];
                     stream.Read(whirl);
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].SetWhirlpool(whirl);
+                    table.GetEntries()[table.validArchiveIds[i]].SetWhirlpool(whirl);
                 }
             }
 
             /* ── Optional compressed / uncompressed sizes ───────────── */
             if (table.sizes)
             {
-                foreach (var kv in table.GetArchiveEntries())
+                foreach (var kv in table.GetEntries())
                 {
                     kv.Value.compressed = stream.ReadInt();
                     kv.Value.uncompressed = stream.ReadInt();
                 }
             }
 
-            /* ── File counts (one 16-bit per archive) ──────────────── */
-            foreach (var kv in table.GetArchiveEntries())
+            /* ── Child counts (one 16-bit per archive) ──────────────── */
+            foreach (var kv in table.GetEntries())
                 kv.Value.SetValidFileIds(new int[stream.ReadUnsignedShort()]);
 
-            /* ── File IDs, delta-encoded ───────────────────────────── */
+            /* ── Child IDs, delta-encoded ───────────────────────────── */
             for (int i = 0; i < table.validArchivesCount; i++)
             {
-                RSArchiveEntry entry = table.GetArchiveEntries()[table.validArchiveIds[i]];
+                RSEntry entry = table.GetEntries()[table.validArchiveIds[i]];
                 int lastFileId = 0;
 
                 for (int j = 0; j < entry.GetValidFileIds().Length; j++)
@@ -122,19 +122,19 @@ namespace FlashEditor.cache
                     entry.GetValidFileIds()[j] = lastFileId;
                 }
 
-                entry.SetFileEntries(new SortedDictionary<int, RSFileEntry>());
+                entry.SetChildEntries(new SortedDictionary<int, RSChildEntry>());
                 foreach (int id in entry.GetValidFileIds())
-                    entry.GetFileEntries()[id] = new RSFileEntry();
+                    entry.GetChildEntries()[id] = new RSChildEntry();
             }
 
-            /* ── Optional per-file hashes when identifiers present ─── */
+            /* ── Optional per-child hashes when identifiers present ─── */
             if (table.hasIdentifiers)
             {
                 for (int i = 0; i < table.validArchivesCount; i++)
                 {
-                    RSArchiveEntry entry = table.GetArchiveEntries()[table.validArchiveIds[i]];
+                    RSEntry entry = table.GetEntries()[table.validArchiveIds[i]];
                     foreach (int fileId in entry.GetValidFileIds())
-                        entry.GetFileEntries()[fileId].SetHash(stream.ReadInt());
+                        entry.GetChildEntries()[fileId].SetHash(stream.ReadInt());
                 }
             }
 
@@ -146,7 +146,7 @@ namespace FlashEditor.cache
         /// </summary>
         public static JagStream Encode(RSReferenceTable table)
         {
-            Debug("Encoding Reference Table " + table.indexId);
+            Debug("Encoding Reference Table " + table.type);
 
             JagStream stream = new JagStream();
             var sb = new System.Text.StringBuilder();
@@ -159,10 +159,10 @@ namespace FlashEditor.cache
                 stream.WriteInteger(table.version);
 
             stream.WriteByte((byte)table.flags);
-            stream.WriteShort(table.GetArchiveEntries().Count);
+            stream.WriteShort(table.GetEntries().Count);
 
             int last = 0;
-            foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+            foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
             {
                 int delta = kvp.Key - last;
                 last = kvp.Key;
@@ -172,7 +172,7 @@ namespace FlashEditor.cache
             if (table.hasIdentifiers)
             {
                 Debug("Writing identifiers", LOG_DETAIL.INSANE);
-                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+                foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
                 {
                     int ident = kvp.Value.GetIdentifier();
                     sb.Clear();
@@ -183,7 +183,7 @@ namespace FlashEditor.cache
             }
 
             Debug("Writing CRCs", LOG_DETAIL.INSANE);
-            foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+            foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
             {
                 int crc = kvp.Value.GetCrc();
                 sb.Clear();
@@ -193,7 +193,7 @@ namespace FlashEditor.cache
             }
 
             if (table.entryHashes)
-                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+                foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
                 {
                     int hash = kvp.Value.CalculateHash();
                     stream.WriteInteger(hash);
@@ -205,7 +205,7 @@ namespace FlashEditor.cache
             if (table.usesWhirlpool)
             {
                 Debug("Writing whirlpool hash", LOG_DETAIL.INSANE);
-                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+                foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
                 {
                     byte[] whirl = kvp.Value.GetWhirlpool();
                     PrintByteArray(whirl);
@@ -215,7 +215,7 @@ namespace FlashEditor.cache
 
             if (table.sizes)
             {
-                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+                foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
                 {
                     int comp = kvp.Value.compressed;
                     int uncomp = kvp.Value.uncompressed;
@@ -231,7 +231,7 @@ namespace FlashEditor.cache
             }
 
             Debug("Writing versions", LOG_DETAIL.INSANE);
-            foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+            foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
             {
                 int version = kvp.Value.GetVersion();
                 stream.WriteInteger(kvp.Value.GetVersion());
@@ -240,21 +240,21 @@ namespace FlashEditor.cache
                 Debug(sb.ToString());
             }
 
-            Debug("Writing number of non-null file entries", LOG_DETAIL.INSANE);
-            foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+            Debug("Writing number of non-null child entries", LOG_DETAIL.INSANE);
+            foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
             {
-                int nnce = kvp.Value.GetFileEntries().Count;
+                int nnce = kvp.Value.GetChildEntries().Count;
                 stream.WriteShort(nnce);
                 sb.Clear();
                 sb.Append('\t').Append('|').Append(nnce);
                 Debug(sb.ToString());
             }
 
-            Debug("Writing file IDs", LOG_DETAIL.INSANE);
-            foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+            Debug("Writing child IDs", LOG_DETAIL.INSANE);
+            foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
             {
                 last = 0;
-                for (int id = 0; id < kvp.Value.GetFileEntries().Count; id++)
+                for (int id = 0; id < kvp.Value.GetChildEntries().Count; id++)
                 {
                     int delta = id - last;
                     stream.WriteShort(delta);
@@ -265,13 +265,13 @@ namespace FlashEditor.cache
             if (table.hasIdentifiers)
             {
                 Debug("Writing identifiers", LOG_DETAIL.INSANE);
-                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
-                    foreach (KeyValuePair<int, RSFileEntry> file in kvp.Value.GetFileEntries())
+                foreach (KeyValuePair<int, RSEntry> kvp in table.GetEntries())
+                    foreach (KeyValuePair<int, RSChildEntry> child in kvp.Value.GetChildEntries())
                     {
-                        int fileIdent = file.Value.GetIdentifier();
-                        stream.WriteInteger(fileIdent);
+                        int childIdent = child.Value.GetIdentifier();
+                        stream.WriteInteger(childIdent);
                         sb.Clear();
-                        sb.Append('\t').Append('|').Append(fileIdent);
+                        sb.Append('\t').Append('|').Append(childIdent);
                         Debug(sb.ToString());
                     }
             }
