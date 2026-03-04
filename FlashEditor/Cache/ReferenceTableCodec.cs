@@ -66,20 +66,6 @@ namespace FlashEditor.cache
             for (int i = 0; i < table.validArchivesCount; i++)
                 table.GetArchiveEntries()[table.validArchiveIds[i]].SetCrc(stream.ReadInt());
 
-            /* ── Archive versions (always) ──────────────────────────── */
-            foreach (var kv in table.GetArchiveEntries())
-                kv.Value.SetVersion(stream.ReadInt());
-
-            /* ── Archive-flags (format 7+)  bit-0 ⇢ XTEA ───────────── */
-            if (table.format >= 7)
-            {
-                for (int i = 0; i < table.validArchivesCount; i++)
-                {
-                    byte flagByte = (byte) stream.ReadByte();
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
-                }
-            }
-
             /* ── Optional entry hash (32-bit) ───────────────────────── */
             if (table.entryHashes)
                 foreach (var kv in table.GetArchiveEntries())
@@ -103,6 +89,20 @@ namespace FlashEditor.cache
                 {
                     kv.Value.compressed = stream.ReadInt();
                     kv.Value.uncompressed = stream.ReadInt();
+                }
+            }
+
+            /* ── Archive versions (always) ──────────────────────────── */
+            foreach (var kv in table.GetArchiveEntries())
+                kv.Value.SetVersion(stream.ReadInt());
+
+            /* ── Archive-flags (format 7+)  bit-0 ⇢ XTEA ───────────── */
+            if (table.format >= 7)
+            {
+                for (int i = 0; i < table.validArchivesCount; i++)
+                {
+                    byte flagByte = (byte) stream.ReadByte();
+                    table.GetArchiveEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
                 }
             }
 

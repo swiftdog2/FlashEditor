@@ -23,7 +23,7 @@ namespace FlashEditor.cache {
 
         private void MapFile() {
             long fileLen = Math.Max(_fileStream.Length, 1);
-            _mappedLength = fileLen + (fileLen / 4); // over-map by 1.25x
+            _mappedLength = fileLen;
             _mmf = MemoryMappedFile.CreateFromFile(
                 _fileStream,
                 mapName: null,

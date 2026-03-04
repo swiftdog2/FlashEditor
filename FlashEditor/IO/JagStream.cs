@@ -481,6 +481,17 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        /// Writes an unsigned smart: single byte for 0–127, two-byte short
+        /// (value + 32768) for 128–32767. Inverse of <see cref="ReadUnsignedSmart"/>.
+        /// </summary>
+        public void WriteUnsignedSmart(int value) {
+            if (value < 128)
+                WriteByte((byte) value);
+            else
+                WriteShort((short) (value + 32768));
+        }
+
+        /// <summary>
         /// Special smart: single-byte-1 or unsignedShort-32769.
         /// </summary>
         public int ReadSpecialSmart() {

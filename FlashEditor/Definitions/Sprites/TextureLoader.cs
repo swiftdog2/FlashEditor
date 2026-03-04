@@ -1,11 +1,8 @@
-using FlashEditor;
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>
-    /// Decodes raw texture definition data.
+    /// Placeholder — texture definitions are now decoded in columnar format
+    /// by <see cref="TextureManager.DecodeColumnar"/>.
     /// </summary>
     public class TextureLoader {
-        public TextureDefinition Load(int id, byte[] data) {
-            return TextureDefinition.DecodeFromStream(id, new JagStream(data));
-        }
     }
 }

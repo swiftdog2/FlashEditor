@@ -116,6 +116,7 @@ namespace FlashEditor {
             contrastColumn = new OLVColumn();
             attackCursorColumn = new OLVColumn();
             visiblePriorityColumn = new OLVColumn();
+            npcModelIdsColumn = new OLVColumn();
             ObjectEditorTab = new TabPage();
             groupBox5 = new GroupBox();
             ObjectLoadingLabel = new Label();
@@ -601,6 +602,7 @@ namespace FlashEditor {
             ItemListView.VirtualMode = true;
             ItemListView.CellEditFinished += ItemListView_CellEditFinished;
             ItemListView.CellEditStarting += ItemListView_CellEditStarting;
+            ItemListView.SelectedIndexChanged += ItemListView_SelectedIndexChanged;
             // 
             // ItemID
             // 
@@ -940,10 +942,11 @@ namespace FlashEditor {
             NPCListView.AllColumns.Add(contrastColumn);
             NPCListView.AllColumns.Add(attackCursorColumn);
             NPCListView.AllColumns.Add(visiblePriorityColumn);
+            NPCListView.AllColumns.Add(npcModelIdsColumn);
             NPCListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             NPCListView.BackColor = Color.White;
             NPCListView.CellEditUseWholeCell = false;
-            NPCListView.Columns.AddRange(new ColumnHeader[] { npcIdColumn, nameColumn, sizeColumn, levelColumn, olvColumn10, olvColumn9, olvColumn11, rotationColumn, ambientColumn, contrastColumn, attackCursorColumn, visiblePriorityColumn });
+            NPCListView.Columns.AddRange(new ColumnHeader[] { npcIdColumn, nameColumn, sizeColumn, levelColumn, olvColumn10, olvColumn9, olvColumn11, rotationColumn, ambientColumn, contrastColumn, attackCursorColumn, visiblePriorityColumn, npcModelIdsColumn });
             NPCListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
             NPCListView.FullRowSelect = true;
             NPCListView.GridLines = true;
@@ -958,6 +961,7 @@ namespace FlashEditor {
             NPCListView.UseCompatibleStateImageBehavior = false;
             NPCListView.View = View.Details;
             NPCListView.VirtualMode = true;
+            NPCListView.SelectedIndexChanged += NPCListView_SelectedIndexChanged;
             // 
             // npcIdColumn
             // 
@@ -1035,6 +1039,12 @@ namespace FlashEditor {
             visiblePriorityColumn.CheckBoxes = true;
             visiblePriorityColumn.Text = "VisiblePrio";
             visiblePriorityColumn.Width = 90;
+            //
+            // npcModelIdsColumn
+            //
+            npcModelIdsColumn.AspectName = "ModelIdList";
+            npcModelIdsColumn.Text = "Model IDs";
+            npcModelIdsColumn.Width = 180;
             // 
             // ObjectEditorTab
             // 
@@ -1134,6 +1144,7 @@ namespace FlashEditor {
             GameObjectListView.VirtualMode = true;
             GameObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
             GameObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
+            GameObjectListView.SelectedIndexChanged += GameObjectListView_SelectedIndexChanged;
             // 
             // objectIdColumn
             // 
@@ -1466,6 +1477,7 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn contrastColumn;
         private BrightIdeasSoftware.OLVColumn attackCursorColumn;
         private BrightIdeasSoftware.OLVColumn visiblePriorityColumn;
+        private BrightIdeasSoftware.OLVColumn npcModelIdsColumn;
         private System.Windows.Forms.ToolStripMenuItem viewToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem alternateRowsToolStripMenuItem;
         private System.Windows.Forms.Label label1;

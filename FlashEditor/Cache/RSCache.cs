@@ -208,6 +208,9 @@ namespace FlashEditor.cache {
                     containers[indexId][archiveId] = reloaded;
                     return reloaded;
                 }
+
+                //Evicted container could not be reloaded
+                throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
             }
 
             //Read the data from the index
@@ -223,9 +226,9 @@ namespace FlashEditor.cache {
             container.SetId(archiveId);
 
             //Cache the container for later usage
-            containers[indexId].Add(archiveId, container);
+            containers[indexId][archiveId] = container;
 
-            return containers[indexId][archiveId];
+            return container;
         }
 
         /// <summary>
@@ -474,6 +477,8 @@ namespace FlashEditor.cache {
             Debug($"GetSprite: {containerId}", LOG_DETAIL.ADVANCED);
             //Get the sprite for the given archive
             RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
+            if (container == null || container.GetStream() == null)
+                throw new FileNotFoundException($"Sprite container {containerId} not found or has no data");
             Debug($"Container index {container.GetIndexId()} id {container.GetId()} length {container.GetStream().Length}", LOG_DETAIL.INSANE);
             Debug($"Decoding sprite container {containerId}", LOG_DETAIL.ADVANCED);
             SpriteDefinition sprite = SpriteDefinition.DecodeFromStream(container.GetStream());

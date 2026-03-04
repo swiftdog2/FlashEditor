@@ -19,11 +19,12 @@ namespace FlashEditor {
 
         int[] campaigns;
         int[] dialogueModels;
-        int[] modelIds;
-        int[] recolorDst;
-        int[] recolorSrc;
-        int[] retextureDst;
-        int[] retextureSrc;
+        /// <summary>Model IDs used for this NPC's appearance.</summary>
+        public int[] modelIds;
+        internal int[] recolorDst;
+        internal int[] recolorSrc;
+        internal int[] retextureDst;
+        internal int[] retextureSrc;
 
         /// <summary>Whether the NPC plays idle animations.</summary>
         public bool animateIdle = true;
@@ -109,6 +110,8 @@ namespace FlashEditor {
         public int[] morphs;
         /// <summary>Per-model translation offsets.</summary>
         public int[][] translations;
+        /// <summary>Comma-separated model IDs for display in list views.</summary>
+        public string ModelIdList => modelIds == null ? "" : string.Join(", ", modelIds);
         /// <summary>Display name shown on right-click.</summary>
         public string name = "null";
         /// <summary>Right-click menu options.</summary>
@@ -354,9 +357,9 @@ namespace FlashEditor {
                         for (int i_62_ = 0 ; i_62_ < length ; i_62_++) {
                             int index = stream.ReadByte();
                             int[] translations = (this.translations[index] = new int[3]);
-                            translations[0] = stream.ReadByte();
-                            translations[1] = stream.ReadByte();
-                            translations[2] = stream.ReadByte();
+                            translations[0] = stream.ReadSignedByte();
+                            translations[1] = stream.ReadSignedByte();
+                            translations[2] = stream.ReadSignedByte();
                         }
                         break;
                     }

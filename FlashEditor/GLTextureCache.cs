@@ -13,6 +13,10 @@ namespace FlashEditor
 {
     /// <summary>
     /// Creates OpenGL texture objects from cache texture definitions and memoises them.
+    /// With the Hydra columnar format, texture metadata (Class238) doesn't contain
+    /// direct sprite references — those live in the per-texture operation graphs
+    /// (index 9). For now, textures are rendered as solid colours derived from
+    /// field1835 (which encodes an RGB tint).
     /// </summary>
     public sealed class GLTextureCache
     {
@@ -20,9 +24,6 @@ namespace FlashEditor
         private readonly Dictionary<int, int> _textures = new();
         private readonly TextureManager _manager;
 
-        /// <summary>
-        /// Initializes a new instance for the given cache and loads all texture definitions.
-        /// </summary>
         public GLTextureCache(RSCache cache)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -32,11 +33,6 @@ namespace FlashEditor
             Debug("Textures loaded", LOG_DETAIL.BASIC);
         }
 
-        /// <summary>
-        /// Gets the OpenGL texture handle for the given texture id, loading it on demand.
-        /// </summary>
-        /// <param name="textureId">Texture definition id.</param>
-        /// <returns>OpenGL texture handle or 0 if not found.</returns>
         public int GetTexture(int textureId)
         {
             Debug($"Request for texture {textureId}", LOG_DETAIL.ADVANCED);
@@ -46,18 +42,52 @@ namespace FlashEditor
                 return handle;
             }
 
-            if (!TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def) || def.fileIds == null || def.fileIds.Length == 0)
+            if (!TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def))
             {
                 Debug($"Texture definition {textureId} not found", LOG_DETAIL.BASIC);
                 return 0;
             }
 
-            Debug($"Loading sprite {def.fileIds[0]} for texture {textureId}", LOG_DETAIL.ADVANCED);
-            SpriteDefinition sprite = _cache.GetSprite(def.fileIds[0]);
-            Debug($"Creating bitmap for texture {textureId}", LOG_DETAIL.ADVANCED);
-            Bitmap bmp = sprite.GetFrame(0).GetSprite();
-            Debug($"Uploading texture {textureId} to GL", LOG_DETAIL.ADVANCED);
-            handle = CreateGLTexture(bmp);
+            // Try loading the actual sprite texture from the cache
+            if (def.spriteFileIds != null && def.spriteFileIds.Length > 0)
+            {
+                try
+                {
+                    var sprite = _cache.GetSprite(def.spriteFileIds[0]);
+                    if (sprite?.GetFrameCount() > 0)
+                    {
+                        var frame = sprite.GetFrame(0);
+                        if (frame?.thumb != null)
+                        {
+                            Debug($"Creating GL texture {textureId} from sprite {def.spriteFileIds[0]} ({frame.thumb.Width}x{frame.thumb.Height})", LOG_DETAIL.ADVANCED);
+                            handle = CreateGLTexture(frame.thumb);
+                            _textures[textureId] = handle;
+                            return handle;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug($"Failed to load sprite for texture {textureId}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                }
+            }
+
+            // Fall back to solid-colour 1x1 texture from the tint value.
+            // field1835 == 0 means "no tint" — use white so the greyscale
+            // vertex lighting passes through at the correct brightness.
+            {
+                int rgb = def.field1835;
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+                if (r == 0 && g == 0 && b == 0) { r = 255; g = 255; b = 255; }
+
+                Debug($"Generating solid texture {textureId} (rgb={r},{g},{b})", LOG_DETAIL.BASIC);
+
+                using var bmp = new Bitmap(1, 1);
+                bmp.SetPixel(0, 0, Color.FromArgb(255, r, g, b));
+                handle = CreateGLTexture(bmp);
+            }
             _textures[textureId] = handle;
             Debug($"Texture {textureId} -> GL handle {handle}", LOG_DETAIL.ADVANCED);
             return handle;
@@ -78,9 +108,6 @@ namespace FlashEditor
             return tex;
         }
 
-        /// <summary>
-        /// Deletes all OpenGL textures managed by this instance.
-        /// </summary>
         public void Dispose()
         {
             foreach (var kvp in _textures)

@@ -35,6 +35,10 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="FlashEditor.Tests" />
+	</ItemGroup>
+
 	<!-- ───── Debug configuration: best debugging experience ───── -->
 	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
 		<Optimize>false</Optimize>

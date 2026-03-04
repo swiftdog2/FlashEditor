@@ -8,6 +8,7 @@ using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Diagnostics;
 using System;
 using System.IO;
@@ -15,6 +16,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using FlashEditor.Utils;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
 
@@ -32,7 +34,8 @@ namespace FlashEditor {
         private readonly Timer _fpsTimer = new();
         private int _program;
         private int _testTexture;
-        private int _uModel, _uView, _uProj, _uTexture;
+        private int _uModel, _uView, _uProj, _uTexture, _uTexOffset;
+        private readonly Stopwatch _animStopwatch = new();
         private Matrix4 _model = Matrix4.Identity;
         private Matrix4 _view;
         private Matrix4 _proj;
@@ -120,21 +123,30 @@ namespace FlashEditor {
             _uView = GL.GetUniformLocation(_program, "uView");
             _uProj = GL.GetUniformLocation(_program, "uProj");
             _uTexture = GL.GetUniformLocation(_program, "uTexture");
+            _uTexOffset = GL.GetUniformLocation(_program, "uTexOffset");
             GL.UseProgram(_program);
             GL.Uniform1(_uTexture, 0);
+            GL.Uniform2(_uTexOffset, 0f, 0f);
             GL.UseProgram(0);
 
-            GL.ClearColor(0.1f, 0.15f, 0.20f, 1.0f);
+            GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Enable(EnableCap.CullFace);
+            GL.CullFace(CullFaceMode.Back);
 
             UpdateView();
             UpdateProjection();
 
+            _animStopwatch.Start();
+
             _testTexture = CreateSolidTexture(Color.FromArgb(255, 255, 204, 77));
             float[] verts = {
-                -0.5f, -0.5f, 0f, 0f, 0f,
-                 0.5f, -0.5f, 0f, 1f, 0f,
-                 0.0f,  0.5f, 0f, 0.5f, 1f
+                // pos(3), uv(2), alpha(1), colour(3) = 9 floats per vertex
+                -0.5f, -0.5f, 0f, 0f, 0f, 1f, 1f, 0.8f, 0.3f,
+                 0.5f, -0.5f, 0f, 1f, 0f, 1f, 1f, 0.8f, 0.3f,
+                 0.0f,  0.5f, 0f, 0.5f, 1f, 1f, 1f, 0.8f, 0.3f
             };
             ushort[] idx = { 0, 1, 2 };
             _modelRenderer.LoadSimple(verts, idx, _testTexture);
@@ -213,7 +225,8 @@ namespace FlashEditor {
             GL.UniformMatrix4(_uModel, false, ref _model);
             GL.UniformMatrix4(_uView, false, ref _view);
             GL.UniformMatrix4(_uProj, false, ref _proj);
-            _modelRenderer.Draw();
+            float elapsed = (float)_animStopwatch.Elapsed.TotalSeconds;
+            _modelRenderer.Draw(elapsed, _uTexOffset);
 
             GL.UseProgram(0);
             glControl.SwapBuffers();
@@ -318,6 +331,7 @@ namespace FlashEditor {
                 LoadEditorTab(EditorTabControl.SelectedIndex);
             }
             catch (Exception ex) {
+                Debug("Cache failed to load: " + ex.Message);
                 Debug(ex.StackTrace);
             }
         }
@@ -1002,6 +1016,194 @@ namespace FlashEditor {
             }
         }
 
+        /// <summary>
+        /// Applies NPC recolouring, retexturing, and per-model translation
+        /// offsets to a loaded model, matching the RS client merge pipeline.
+        /// </summary>
+        private static void ApplyNpcTransforms(ModelDefinition def, NPCDefinition npc, int modelIndex) {
+            // Recolour: replace face HSL colours matching src → dst
+            if (npc.recolorSrc != null && npc.recolorDst != null) {
+                for (int f = 0; f < def.TriangleCount; f++) {
+                    for (int c = 0; c < npc.recolorSrc.Length; c++) {
+                        if (def.FaceColour[f] == (short)npc.recolorSrc[c]) {
+                            // Opcode 42 palette plumbing
+                            if (npc.recolorDstPalette != null && c < npc.recolorDstPalette.Length) {
+                                int idx = npc.recolorDstPalette[c] & 0xFF;
+                                if (idx < ColourPalette.Entries.Length && ColourPalette.Entries[idx] != 0)
+                                    def.FaceColour[f] = ColourPalette.Entries[idx];
+                                else
+                                    def.FaceColour[f] = (short)npc.recolorDst[c];
+                            } else {
+                                def.FaceColour[f] = (short)npc.recolorDst[c];
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Retexture: replace texture IDs matching src → dst
+            if (npc.retextureSrc != null && npc.retextureDst != null && def.FaceTextures != null) {
+                for (int f = 0; f < def.TriangleCount; f++) {
+                    for (int t = 0; t < npc.retextureSrc.Length; t++) {
+                        if (def.FaceTextures[f] == (short)npc.retextureSrc[t]) {
+                            def.FaceTextures[f] = (short)npc.retextureDst[t];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Per-model translation offset (opcode 121)
+            if (npc.translations != null && modelIndex < npc.translations.Length
+                && npc.translations[modelIndex] != null) {
+                int[] t = npc.translations[modelIndex];
+                for (int v = 0; v < def.VertexCount; v++) {
+                    def.VertX[v] += t[0];
+                    def.VertY[v] += t[1];
+                    def.VertZ[v] += t[2];
+                }
+            }
+
+            // NPC scale application (opcodes 97/98)
+            if (npc.scaleXY != 128 || npc.scaleZ != 128) {
+                for (int v = 0; v < def.VertexCount; v++) {
+                    def.VertX[v] = def.VertX[v] * npc.scaleXY / 128;
+                    def.VertY[v] = def.VertY[v] * npc.scaleZ / 128;
+                    def.VertZ[v] = def.VertZ[v] * npc.scaleXY / 128;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Applies item recolouring and retexturing to a loaded model.
+        /// </summary>
+        private static void ApplyItemTransforms(ModelDefinition def, ItemDefinition item) {
+            if (item.originalModelColors != null && item.modifiedModelColors != null) {
+                for (int f = 0; f < def.TriangleCount; f++) {
+                    for (int c = 0; c < item.originalModelColors.Length; c++) {
+                        if (def.FaceColour[f] == item.originalModelColors[c]) {
+                            def.FaceColour[f] = item.modifiedModelColors[c];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (item.textureColour1 != null && item.textureColour2 != null && def.FaceTextures != null) {
+                for (int f = 0; f < def.TriangleCount; f++) {
+                    for (int t = 0; t < item.textureColour1.Length; t++) {
+                        if (def.FaceTextures[f] == item.textureColour1[t]) {
+                            def.FaceTextures[f] = item.textureColour2[t];
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void NPCListView_SelectedIndexChanged(object sender, EventArgs e) {
+            if (NPCListView.SelectedObject is not NPCDefinition npc) return;
+            if (_textureCache == null) return;
+
+            var ids = npc.modelIds?.Where(id => id >= 0).ToArray();
+            if (ids == null || ids.Length == 0) return;
+
+            Debug($"NPC {npc.id} '{npc.name}': loading {ids.Length} models [{string.Join(", ", ids)}]");
+
+            Task.Run(() => {
+                var defs = new List<ModelDefinition>();
+                for (int i = 0; i < ids.Length; i++) {
+                    try {
+                        var def = cache.GetModelDefinition(ids[i], 0).CloneForRendering();
+                        // Find the original index in modelIds for translation lookup
+                        int modelIndex = Array.IndexOf(npc.modelIds, ids[i]);
+                        ApplyNpcTransforms(def, npc, modelIndex);
+                        defs.Add(def);
+                        Debug($"  Model {ids[i]}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
+                    }
+                    catch (Exception ex) {
+                        Debug($"  Model {ids[i]}: FAILED - {ex.Message}");
+                    }
+                }
+                Debug($"NPC {npc.id}: loaded {defs.Count}/{ids.Length} models");
+                return defs;
+            }).ContinueWith(t => {
+                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
+                if (!glControl.IsHandleCreated) return;
+                glControl.MakeCurrent();
+                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
+                _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                glControl.Invalidate();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void ItemListView_SelectedIndexChanged(object sender, EventArgs e) {
+            if (ItemListView.SelectedObject is not ItemDefinition item) return;
+            if (_textureCache == null) return;
+
+            int modelId = item.inventoryModelId;
+            if (modelId <= 0) return;
+
+            Debug($"Item {item.id} '{item.name}': loading model {modelId}");
+
+            Task.Run(() => {
+                var defs = new List<ModelDefinition>();
+                try {
+                    var def = cache.GetModelDefinition(modelId, 0).CloneForRendering();
+                    ApplyItemTransforms(def, item);
+                    defs.Add(def);
+                    Debug($"  Model {modelId}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
+                }
+                catch (Exception ex) {
+                    Debug($"  Model {modelId}: FAILED - {ex.Message}");
+                }
+                return defs;
+            }).ContinueWith(t => {
+                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
+                if (!glControl.IsHandleCreated) return;
+                glControl.MakeCurrent();
+                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
+                _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                glControl.Invalidate();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void GameObjectListView_SelectedIndexChanged(object sender, EventArgs e) {
+            if (GameObjectListView.SelectedObject is not ObjectDefinition obj) return;
+            if (_textureCache == null) return;
+
+            // Use the first render group (default orientation)
+            if (obj.modelIds == null || obj.modelIds.Length == 0 || obj.modelIds[0] == null) return;
+            var ids = obj.modelIds[0].Where(id => id > 0).Select(id => (int)id).ToArray();
+            if (ids.Length == 0) return;
+
+            Debug($"Object {obj.id} '{obj.name}': loading {ids.Length} models [{string.Join(", ", ids)}]");
+
+            Task.Run(() => {
+                var defs = new List<ModelDefinition>();
+                foreach (int id in ids) {
+                    try {
+                        var def = cache.GetModelDefinition(id, 0);
+                        defs.Add(def);
+                        Debug($"  Model {id}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
+                    }
+                    catch (Exception ex) {
+                        Debug($"  Model {id}: FAILED - {ex.Message}");
+                    }
+                }
+                Debug($"Object {obj.id}: loaded {defs.Count}/{ids.Length} models");
+                return defs;
+            }).ContinueWith(t => {
+                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
+                if (!glControl.IsHandleCreated) return;
+                glControl.MakeCurrent();
+                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
+                _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                glControl.Invalidate();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
         private void Editor_Resize(object sender, EventArgs e) {
             // The GLControl may not have created its underlying window yet
             // when the form is resized before the Models tab is opened.
@@ -1027,7 +1229,7 @@ namespace FlashEditor {
 
         private void Gl_MouseWheel(object? sender, MouseEventArgs e) {
             float factor = 1f - e.Delta * 0.001f;
-            _distance = Math.Clamp(_distance * factor, 1.0, 50.0);
+            _distance = Math.Max(_distance * factor, 0.1);
             glControl.Invalidate();
         }
 
@@ -1101,43 +1303,50 @@ namespace FlashEditor {
 
         private void LoadTextures(IEnumerable<TextureDefinition> textures)
         {
-            foreach (var tex in textures)
+            var textureList = new List<TextureDefinition>(textures);
+            Debug($"LoadTextures: {textureList.Count} definitions to process", LOG_DETAIL.BASIC);
+
+            int errors = 0;
+
+            foreach (var tex in textureList)
             {
-                Debug($"Processing texture {tex.id}", LOG_DETAIL.ADVANCED);
                 try
                 {
-                    Bitmap bmp;
-
-                    if (tex.fileIds != null && tex.fileIds.Length > 0)
-                    {
-                        Debug($"\tLoading sprite {tex.fileIds[0]}", LOG_DETAIL.ADVANCED);
-                        SpriteDefinition sprite = cache.GetSprite(tex.fileIds[0]);
-                        bmp = sprite.GetFrame(0).GetSprite();
-                    }
-                    else
-                    {
-                        bmp = new Bitmap(100, 100);
+                    Bitmap thumb;
+                    if (tex.thumb != null) {
+                        // Use real sprite thumbnail loaded from TEXTURES index
+                        thumb = (Bitmap)CreateThumbnail(tex.thumb);
+                    } else {
+                        // Fall back to colour swatch from field1835 (tint colour)
+                        var bmp = new Bitmap(100, 100);
                         using (var g = Graphics.FromImage(bmp))
                         {
-                            int colVal = (tex.field1786 != null && tex.field1786.Length > 0) ? tex.field1786[0] : unchecked((int)0xFF777777);
-                            Color c = Color.FromArgb(colVal | unchecked((int)0xFF000000));
+                            int rgb = tex.field1835;
+                            int r = (rgb >> 16) & 0xFF;
+                            int gv = (rgb >> 8) & 0xFF;
+                            int b = rgb & 0xFF;
+                            if (r == 0 && gv == 0 && b == 0) { r = 119; gv = 119; b = 119; }
+                            Color c = Color.FromArgb(255, r, gv, b);
                             g.Clear(c);
                             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                             g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
                         }
+                        thumb = (Bitmap)CreateThumbnail(bmp);
                     }
 
-                    Bitmap thumb = (Bitmap)CreateThumbnail(bmp);
                     tex.thumb = thumb;
-                    _textureImageList.Images.Add(tex.id.ToString(), thumb);
+                    if (!_textureImageList.Images.ContainsKey(tex.id.ToString()))
+                        _textureImageList.Images.Add(tex.id.ToString(), thumb);
                 }
                 catch (Exception ex)
                 {
-                    Debug($"Error processing texture {tex.id}: {ex}", LOG_DETAIL.BASIC);
+                    Debug($"Error processing texture {tex.id}: {ex.Message}", LOG_DETAIL.BASIC);
+                    errors++;
                 }
             }
 
-            TextureListView.SetObjects(textures);
+            Debug($"LoadTextures complete: {textureList.Count} textures, {errors} errors", LOG_DETAIL.BASIC);
+            TextureListView.SetObjects(textureList);
         }
     }
 }

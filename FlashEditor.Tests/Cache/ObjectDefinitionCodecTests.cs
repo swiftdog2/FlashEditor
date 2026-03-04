@@ -11,26 +11,28 @@ namespace FlashEditor.Tests.Cache
         {
             var s = new JagStream();
 
-            /*  5  • model list (format-2)  */
+            /*  5  - model list (format-2) + mandatory extra model block  */
             s.WriteByte(5);
-            s.WriteByte(1);
-            s.WriteSignedByte(-1);
-            s.WriteByte(1);
-            s.WriteShort(101);
+            s.WriteByte(1);             // 1 group
+            s.WriteSignedByte(-1);      // type
+            s.WriteByte(1);             // 1 model
+            s.WriteShort(101);          // model id
+            // Extra model group block for opcode 5 (skipReadModelIds)
+            s.WriteByte(0);             // 0 extra groups
 
             /*  basic scalars  */
             s.WriteByte(2); s.WriteJagexString("AllOpcodes");
             s.WriteByte(14); s.WriteByte(2);        // sizeX
             s.WriteByte(15); s.WriteByte(3);        // sizeY
-            s.WriteByte(17);                        // walkable=false
+            s.WriteByte(17);                        // walkable=false, clipType=0
             s.WriteByte(19); s.WriteByte(4);        // category
-            s.WriteByte(21); s.WriteByte(1);        // clipType
+            s.WriteByte(21);                        // contourGroundType=1 (flag only, 0 bytes)
             s.WriteByte(22);                        // isClipped flag
             s.WriteByte(23);                        // obstructsGround = 1
             s.WriteByte(24); s.WriteShort(10);      // animationId
-            s.WriteByte(27);                        // randomAnimStart
-            s.WriteByte(28); s.WriteByte(1);        // brightness
-            s.WriteByte(29); s.WriteSignedByte(-5); // contrast
+            s.WriteByte(27);                        // clipType=1
+            s.WriteByte(28); s.WriteByte(1);        // decorDisplacement (1 byte)
+            s.WriteByte(29); s.WriteSignedByte(-5); // ambientLighting (1 signed byte)
 
             /*  action strings 30-34  */
             for (int i = 0; i < 5; i++)
@@ -65,14 +67,14 @@ namespace FlashEditor.Tests.Cache
             s.WriteByte(68); s.WriteShort(5);   // mapSceneId
             s.WriteByte(69); s.WriteByte(2);    // minimapForceClip
 
-            /* signed offsets (<<2 inside decoder) */
-            s.WriteByte(70); s.WriteShort(1);
-            s.WriteByte(71); s.WriteShort(2);
-            s.WriteByte(72); s.WriteShort(3);
+            /* offsets */
+            s.WriteByte(70); s.WriteShort(1);   // offsetX (signed short)
+            s.WriteByte(71); s.WriteShort(2);   // offsetY (signed short)
+            s.WriteByte(72); s.WriteByte(3);    // offsetZ (1 UByte, NOT Short!)
 
-            s.WriteByte(73);                 // obstructsWheelchair
-            s.WriteByte(74);                 // isSolid
-            s.WriteByte(75); s.WriteByte(1); // supportItems
+            s.WriteByte(73);                    // obstructsWheelchair (flag)
+            s.WriteByte(74);                    // isSolid (flag)
+            s.WriteByte(75);                    // flag only (0 bytes)
 
             /*  morph table (92)  */
             s.WriteByte(92);
@@ -82,9 +84,11 @@ namespace FlashEditor.Tests.Cache
             s.WriteByte(0);        // count
             s.WriteShort(0xFFFF);  // morphIds[0]
 
-            /* ambient sound – opcode 79 */
+            /* ambient sound - opcode 79 */
             s.WriteByte(79);
-            s.WriteShort(1002);   // soundId
+            s.WriteShort(1002);   // ambientSoundId (anInt3900)
+            s.WriteShort(500);    // ambientSoundExtra (anInt3905) -- was missing!
+            s.WriteByte(1);       // ambientSoundLoops (anInt3904)
             s.WriteByte(1);       // extraSound count
             s.WriteShort(300);    // extraSound[0]
 

@@ -113,6 +113,7 @@ namespace FlashEditor {
         public int cursor2Op = -1, cursor2Id = -1;
         public int cursor3Op = -1, cursor3Id = -1;
         public int cursor4Op = -1, cursor4Id = -1;
+        public int cursor5Op = -1, cursor5Id = -1;
 
         /// <summary>Arbitrary key-value parameters (opcode 249).</summary>
         public SortedDictionary<int, object> itemParams;
@@ -299,6 +300,10 @@ namespace FlashEditor {
                     cursor4Op = buf.ReadByte();
                     cursor4Id = buf.ReadUnsignedShort();
                     return;
+                case 131:
+                    cursor5Op = buf.ReadByte();
+                    cursor5Id = buf.ReadUnsignedShort();
+                    return;
 
                 /* quest requirements */
                 case 132: {
@@ -470,6 +475,7 @@ namespace FlashEditor {
             if (cursor2Op >= 0) Emit(128, () => { o.WriteByte((byte) cursor2Op); o.WriteShort(cursor2Id); });
             if (cursor3Op >= 0) Emit(129, () => { o.WriteByte((byte) cursor3Op); o.WriteShort(cursor3Id); });
             if (cursor4Op >= 0) Emit(130, () => { o.WriteByte((byte) cursor4Op); o.WriteShort(cursor4Id); });
+            if (cursor5Op >= 0) Emit(131, () => { o.WriteByte((byte) cursor5Op); o.WriteShort(cursor5Id); });
 
             /* quest requirements */
             if (quests != null && quests.Length > 0)
