@@ -187,7 +187,7 @@ namespace FlashEditor {
                         int length = stream.ReadByte();
                         modelIds = new int[length];
                         for (int k = 0 ; k < length ; k++) {
-                            int id = stream.ReadShort();
+                            int id = stream.ReadUnsignedShort();
                             modelIds[k] = (id == 65535 ? -1 : id);
                         }
                         break;
@@ -256,7 +256,7 @@ namespace FlashEditor {
                         int length = stream.ReadByte();
                         dialogueModels = new int[length];
                         for (int i = 0 ; i < length ; i++)
-                            dialogueModels[i] = stream.ReadShort();
+                            dialogueModels[i] = stream.ReadUnsignedShort();
                         break;
                     }
 
@@ -298,22 +298,22 @@ namespace FlashEditor {
 
                 case 106:
                 case 118: {
-                        varbit = stream.ReadShort();
+                        varbit = stream.ReadUnsignedShort();
                         if (varbit == 65535) varbit = -1;
 
-                        varp = stream.ReadShort();
+                        varp = stream.ReadUnsignedShort();
                         if (varp == 65535) varp = -1;
 
                         int last = -1;
                         if (opcode == 118) {
-                            last = stream.ReadShort();
+                            last = stream.ReadUnsignedShort();
                             if (last == 65535) last = -1;
                         }
 
                         int count = stream.ReadByte();
                         morphs = new int[count + 2];
                         for (int i = 0 ; i <= count ; i++) {
-                            int m = stream.ReadShort();
+                            int m = stream.ReadUnsignedShort();
                             morphs[i] = (m == 65535 ? -1 : m);
                         }
                         morphs[count + 1] = last;
