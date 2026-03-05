@@ -118,8 +118,8 @@ namespace FlashEditor.Definitions {
             byte[] rawBytes = stream.ToArray();
             JagStream rawStream = new JagStream(rawBytes);
 
-            // Parse the last 2 bytes to get the model format
-            ModelFormat modelFormat = GetModelFormat(rawStream);
+            // Parse the last 2 bytes to get the model format (or use model ID for newProtocol models)
+            ModelFormat modelFormat = GetModelFormat(rawStream, ModelID);
 
             DebugUtil.Debug($"Decoding Model (Format: {modelFormat})");
 
@@ -161,9 +161,14 @@ namespace FlashEditor.Definitions {
         /// ModelFormat.Newer  for 0xFF FE or 0xFF FF,
         /// ModelFormat.Old    otherwise.
         /// </returns>
-        public static ModelFormat GetModelFormat(JagStream stream) {
+        public static ModelFormat GetModelFormat(JagStream stream, int modelId = -1) {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
+
+            // Models 63607-63613 use the newProtocol variant of the Newest format,
+            // identified by model ID rather than a sentinel (matches Java client).
+            if (modelId >= 63607 && modelId <= 63613)
+                return ModelFormat.Newest;
 
             long length = stream.Length;
             if (length < 2)
@@ -173,13 +178,15 @@ namespace FlashEditor.Definitions {
             byte last = stream.Get((int) (length - 1));
             byte penultimate = stream.Get((int) (length - 2));
 
-            // Only 0xFF FF is a valid newer-format sentinel (matches Java client exactly).
-            // 0xFF FE / 0xFF FD can appear naturally as the last short of an old-format footer
-            // (faceIndexDataLen) and must NOT be treated as sentinels.
+            // 0xFF FF = Newer format (23-byte footer, no per-face textures in flags)
             if (penultimate == 0xFF && last == 0xFF)
                 return ModelFormat.Newer;
 
-            // anything else => old RS2-legacy format
+            // 0xFF FD = Newest format (23-byte footer, with per-face texture data)
+            if (penultimate == 0xFF && last == 0xFD)
+                return ModelFormat.Newest;
+
+            // anything else => old RS2-legacy format (18-byte footer)
             return ModelFormat.Old;
         }
 
@@ -784,20 +791,43 @@ namespace FlashEditor.Definitions {
             var st6 = new JagStream(b);
             var st7 = new JagStream(b);
 
-            // 1) Seek to the 26-byte footer (non-newProtocol path: 23-byte position)
-            //    For the "Newest" format detected by 0xFF 0xFD sentinel,
-            //    the footer is at length - 23 (same layout as Newer but with texture data).
-            st1.Seek(b.Length - 23);
+            // Models 63607-63613 use the newProtocol variant (3-byte header, 26-byte footer)
+            bool newProtocol = (ModelID >= 63607 && ModelID <= 63613);
+
+            // 1) Read header (newProtocol only) and seek to footer
+            if (newProtocol) {
+                int version = st1.ReadUnsignedByte();
+                if (version != 1)
+                    throw new InvalidDataException($"newProtocol model {ModelID}: expected version 1, got {version}");
+                st1.ReadUnsignedByte();                     // unused
+                FormatType = st1.ReadUnsignedByte();        // format type from header
+                st1.Seek(b.Length - 26);
+            } else {
+                st1.Seek(b.Length - 23);
+            }
 
             // 2) Read counts & flags
             int vc = st1.ReadUnsignedShort();
             int fc = st1.ReadUnsignedShort();
-            int tfc = st1.ReadUnsignedByte();
+            int tfc = newProtocol ? st1.ReadUnsignedShort() : st1.ReadUnsignedByte();
 
-            // Packed flags byte
+            // Packed flags byte — newProtocol uses all 8 bits
             int flagsByte = st1.ReadUnsignedByte();
             bool hasFaceType = (flagsByte & 0x1) == 1;
             bool hasTextures = (flagsByte & 0x2) == 2;
+            bool hasFormatInFooter = (flagsByte & 0x8) == 8;   // bit 3
+            int explicitVertSkin = (flagsByte & 0x10) != 0 ? 1 : 0;  // bit 4 (i1)
+            int explicitFaceSkin = (flagsByte & 0x20) != 0 ? 1 : 0;  // bit 5 (i2)
+
+            // If bit 3 is set, formatType lives 7 bytes before current position
+            if (hasFormatInFooter) {
+                long saved = st1.Position;
+                st1.Seek(saved - 7);
+                FormatType = st1.ReadUnsignedByte();
+                st1.Seek(saved);
+            } else if (!newProtocol) {
+                FormatType = 13;  // default for non-newProtocol newest
+            }
 
             int i5 = st1.ReadUnsignedByte();  // priority: 255 = per-face
             int i6 = st1.ReadUnsignedByte();  // alpha: 1 = yes
@@ -806,20 +836,39 @@ namespace FlashEditor.Definitions {
             int i9 = st1.ReadUnsignedByte();  // vertex skins: 1 = yes
 
             // Explicit block-length offsets from footer
-            int offVertexData = st1.ReadUnsignedShort();
-            int offFaceColour = st1.ReadUnsignedShort();
-            int offFaceData = st1.ReadUnsignedShort();
-            int offFaceIndex = st1.ReadUnsignedShort();
-            int offTextureData = st1.ReadUnsignedShort();
+            int i10 = st1.ReadUnsignedShort();   // vertex data len
+            int i11 = st1.ReadUnsignedShort();   // face colour len
+            int i12 = st1.ReadUnsignedShort();   // face data len
+            int i13 = st1.ReadUnsignedShort();   // face index len
+            int i14 = st1.ReadUnsignedShort();   // texture data len
 
-            // Vertex skin / face skin lengths
-            int vertSkinLen = (i9 == 1) ? vc : 0;
-            int faceSkinLen = (i7 == 1) ? fc : 0;
+            // Vertex skin / face skin lengths (i15/i16) — logic differs by protocol
+            int i15, i16;
+            if (newProtocol) {
+                i15 = st1.ReadUnsignedShort();
+                i16 = st1.ReadUnsignedShort();
+                if (explicitVertSkin == 0) {
+                    i15 = (i9 == 1) ? vc : 0;
+                }
+                if (explicitFaceSkin == 0) {
+                    i16 = (i7 == 1) ? fc : 0;
+                }
+            } else {
+                if (explicitVertSkin != 0)
+                    i15 = st1.ReadUnsignedShort();
+                else
+                    i15 = (i9 == 1) ? vc : 0;
 
-            // 3) Compute block offsets (same cumulative pattern as Newer)
-            int texturedFaceTypeOff = 0;  // texture types come first for newest format
+                if (explicitFaceSkin != 0)
+                    i16 = st1.ReadUnsignedShort();
+                else
+                    i16 = (i7 == 1) ? fc : 0;
+            }
 
-            int vertexFlagsOff = tfc;
+            // 3) Compute block offsets
+            int dataStart = newProtocol ? tfc + 3 : tfc;   // newProtocol has 3-byte header
+
+            int vertexFlagsOff = dataStart;
             int faceTypeOff = vertexFlagsOff + vc;
 
             int faceIndexOpcodesOff = faceTypeOff;
@@ -833,38 +882,38 @@ namespace FlashEditor.Definitions {
                 offset += fc;
 
             int faceSkinOff = offset;
-            offset += faceSkinLen;
+            offset += i16;
 
             int vertSkinOff = offset;
-            offset += vertSkinLen;
+            offset += i15;
 
             int faceAlphaOff = offset;
             if (i6 == 1)
                 offset += fc;
 
             int faceIndexSmartOff = offset;
-            offset += offFaceIndex;
+            offset += i13;
 
             int faceTextureOff = offset;
             if (i8 == 1)
                 offset += fc * 2;
 
             int faceTexCoordOff = offset;
-            offset += offTextureData;
+            offset += i14;
 
             int faceColourOff = offset;
             offset += fc * 2;
 
             int vertexXOff = offset;
-            offset += offVertexData;
+            offset += i10;
 
             int vertexYOff = offset;
-            offset += offFaceColour;
+            offset += i11;
 
             int vertexZOff = offset;
+            offset += i12;
 
             // 4) Populate counts
-            FormatType = 13; // Newest format — no vertex scaling needed
             VertexCount = vc;
             TriangleCount = fc;
             TexturedTriangleCount = tfc;
@@ -897,9 +946,12 @@ namespace FlashEditor.Definitions {
             if (i9 == 1)
                 VertSkins = new int[vc];
 
+            if (i8 == 1) {
+                FaceTextures = new short[fc];
+            }
+
             if (i8 == 1 && tfc > 0) {
                 TextureCoordinates = new sbyte[fc];
-                FaceTextures = new short[fc];
             }
 
             if (tfc > 0) {
@@ -909,9 +961,9 @@ namespace FlashEditor.Definitions {
                 TexIndC = new short[tfc];
             }
 
-            // 6) Decode textured face types (at the start of data for newest)
+            // 6) Decode textured face types (at the start of data section)
             if (tfc > 0) {
-                st1.Seek(texturedFaceTypeOff);
+                st1.Seek(newProtocol ? 3 : 0);
                 for (int i = 0; i < tfc; i++)
                     TextureType![i] = st1.ReadSignedByte();
             }
@@ -932,8 +984,14 @@ namespace FlashEditor.Definitions {
                 VertX[i] = px;
                 VertY[i] = py;
                 VertZ[i] = pz;
-                if (i9 == 1)
-                    VertSkins![i] = st5.ReadUnsignedByte();
+                if (i9 == 1) {
+                    if (explicitVertSkin != 0)
+                        VertSkins![i] = st5.ReadSpecialSmart();
+                    else {
+                        int id = st5.ReadUnsignedByte();
+                        VertSkins![i] = (id == 255) ? -1 : id;
+                    }
+                }
             }
 
             // 8) Decode face data — each field from its own stream to avoid caret collision
@@ -943,6 +1001,7 @@ namespace FlashEditor.Definitions {
             st4.Seek(faceAlphaOff);      // alpha (if i6==1)
             st5.Seek(faceSkinOff);       // face skins (if i7==1)
             st6.Seek(faceTextureOff);    // face textures (if i8==1)
+            st7.Seek(faceTexCoordOff);   // texture coords (if i8==1 && tfc>0)
 
             for (int i = 0; i < fc; i++) {
                 FaceColour[i] = (short) st1.ReadUnsignedShort();
@@ -956,11 +1015,26 @@ namespace FlashEditor.Definitions {
                 if (i6 == 1)
                     FaceAlpha![i] = st4.ReadSignedByte();
 
-                if (i7 == 1)
-                    FaceSkin![i] = st5.ReadSignedByte();
+                if (i7 == 1) {
+                    if (explicitFaceSkin != 0)
+                        FaceSkin![i] = (sbyte) st5.ReadSpecialSmart();
+                    else {
+                        int id = st5.ReadUnsignedByte();
+                        FaceSkin![i] = (id == 255) ? (sbyte) -1 : (sbyte) id;
+                    }
+                }
 
                 if (i8 == 1) {
-                    FaceTextures![i] = (short) st6.ReadUnsignedShort();
+                    FaceTextures![i] = (short) (st6.ReadUnsignedShort() - 1);
+                }
+
+                if (TextureCoordinates != null) {
+                    if (FaceTextures![i] == -1)
+                        TextureCoordinates[i] = -1;
+                    else if (FormatType >= 16)
+                        TextureCoordinates[i] = (sbyte) (st7.ReadShortSmart() - 1);
+                    else
+                        TextureCoordinates[i] = (sbyte) (st7.ReadUnsignedByte() - 1);
                 }
             }
 
@@ -970,7 +1044,8 @@ namespace FlashEditor.Definitions {
 
             int a = 0, bPrev = 0, cPrev = 0, idxPtr = 0;
             for (int i = 0; i < fc; i++) {
-                int op = st2.ReadUnsignedByte();
+                int raw = st2.ReadUnsignedByte();
+                int op = newProtocol ? (raw & 0x7) : raw;  // newProtocol masks to 3 bits
                 if (op == 1) {
                     a = st1.ReadShortSmart() + idxPtr;
                     bPrev = st1.ReadShortSmart() + a;
@@ -997,21 +1072,20 @@ namespace FlashEditor.Definitions {
                 faceIndices3[i] = cPrev;
             }
 
-            // 10) Decode textured face references
+            // 10) Decode textured face references (type 0 = simple triangles)
             if (tfc > 0) {
-                st1.Seek(faceTexCoordOff);
+                // Seek past the complex texture geometry to the type-0 block
+                // The offset layout was already computed above
+                st1.Seek(offset);  // vertexZOff + i12 = end of vertex Z data = start of tex geometry
                 for (int i = 0; i < tfc; i++) {
-                    TextureType![i] = 0;  // type 0 for simple textures
-                    TexIndA![i] = (short) st1.ReadUnsignedShort();
-                    TexIndB![i] = (short) st1.ReadUnsignedShort();
-                    TexIndC![i] = (short) st1.ReadUnsignedShort();
+                    int type = TextureType != null ? (TextureType[i] & 0xFF) : 0;
+                    if (type == 0) {
+                        TexIndA![i] = (short) st1.ReadUnsignedShort();
+                        TexIndB![i] = (short) st1.ReadUnsignedShort();
+                        TexIndC![i] = (short) st1.ReadUnsignedShort();
+                    }
                 }
             }
-
-            // 11) Compute derived data
-            ComputeNormals();
-            ComputeTextureUVCoordinates();
-            ComputeAnimationTables();
         }
 
         /// <summary>
@@ -1171,20 +1245,36 @@ namespace FlashEditor.Definitions {
                             float f900 = f886 * f899 - f887 * f898;
                             float f901 = f887 * f897 - f885 * f899;
                             float f902 = f885 * f898 - f886 * f897;
-                            float f903 = 1.0f / (f900 * f882 + f901 * f883 + f902 * f884);
+                            float denom1 = f900 * f882 + f901 * f883 + f902 * f884;
+                            if (MathF.Abs(denom1) < 1e-6f)
+                            {
+                                u[0] = 0f; u[1] = 1f; u[2] = 0f;
+                                v[0] = 1f; v[1] = 1f; v[2] = 0f;
+                            }
+                            else
+                            {
+                                float f903 = 1.0f / denom1;
 
-                            u[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
-                            u[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
-                            u[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
+                                u[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
+                                u[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
+                                u[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
 
-                            f900 = f883 * f899 - f884 * f898;
-                            f901 = f884 * f897 - f882 * f899;
-                            f902 = f882 * f898 - f883 * f897;
-                            f903 = 1.0f / (f900 * f885 + f901 * f886 + f902 * f887);
-
-                            v[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
-                            v[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
-                            v[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
+                                f900 = f883 * f899 - f884 * f898;
+                                f901 = f884 * f897 - f882 * f899;
+                                f902 = f882 * f898 - f883 * f897;
+                                float denom2 = f900 * f885 + f901 * f886 + f902 * f887;
+                                if (MathF.Abs(denom2) < 1e-6f)
+                                {
+                                    v[0] = 1f; v[1] = 1f; v[2] = 0f;
+                                }
+                                else
+                                {
+                                    f903 = 1.0f / denom2;
+                                    v[0] = (f900 * f888 + f901 * f889 + f902 * f890) * f903;
+                                    v[1] = (f900 * f891 + f901 * f892 + f902 * f893) * f903;
+                                    v[2] = (f900 * f894 + f901 * f895 + f902 * f896) * f903;
+                                }
+                            }
                         }
                     }
 
@@ -1199,26 +1289,31 @@ namespace FlashEditor.Definitions {
         /// </summary>
         private void ComputeAnimationTables() {
             if (VertSkins != null) {
-                int[] groupCounts = new int[256];
+                // First pass: find max group, skipping negative sentinels (-1 = no group)
                 int numGroups = 0;
-
-                for (int i = 0 ; i < VertexCount ; ++i) {
+                for (int i = 0; i < VertexCount; ++i) {
                     int group = VertSkins[i];
-                    groupCounts[group]++;
                     if (group > numGroups)
                         numGroups = group;
                 }
 
-                VertexGroups = new int[numGroups + 1][];
+                int[] groupCounts = new int[numGroups + 1];
+                for (int i = 0; i < VertexCount; ++i) {
+                    int group = VertSkins[i];
+                    if (group >= 0)
+                        groupCounts[group]++;
+                }
 
-                for (int i = 0 ; i <= numGroups ; ++i) {
+                VertexGroups = new int[numGroups + 1][];
+                for (int i = 0; i <= numGroups; ++i) {
                     VertexGroups[i] = new int[groupCounts[i]];
                     groupCounts[i] = 0;
                 }
 
-                for (int i = 0 ; i < VertexCount ; i++) {
+                for (int i = 0; i < VertexCount; i++) {
                     int g = VertSkins[i];
-                    VertexGroups[g][groupCounts[g]++] = i;
+                    if (g >= 0)
+                        VertexGroups[g][groupCounts[g]++] = i;
                 }
 
                 VertSkins = null;
@@ -1342,6 +1437,83 @@ namespace FlashEditor.Definitions {
                         colours[vi] = HslToRgb((repacked & 0xFF80) | litChroma);
                     }
                     result[i] = colours;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Computes per-face vertex base colours WITHOUT directional lighting applied.
+        /// Returns <c>int[TriangleCount][3]</c> of packed 0xRRGGBB at full brightness,
+        /// suitable for dynamic lighting in the GPU shader.
+        /// </summary>
+        public int[][] ComputeUnlitColours() {
+            var result = new int[TriangleCount][];
+
+            for (int i = 0; i < TriangleCount; i++) {
+                int a = faceIndices1[i];
+                int b = faceIndices2[i];
+                int c = faceIndices3[i];
+
+                if ((uint)a >= (uint)VertexCount ||
+                    (uint)b >= (uint)VertexCount ||
+                    (uint)c >= (uint)VertexCount) {
+                    result[i] = new int[] { 0x808080, 0x808080, 0x808080 };
+                    continue;
+                }
+
+                int baseHsl = FaceColour != null ? (FaceColour[i] & 0xFFFF) : 0;
+                int repacked = RepackHsl(baseHsl);
+                int rgb = HslToRgb(repacked);
+                result[i] = new int[] { rgb, rgb, rgb };
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Returns normalised normal vectors for each vertex of each face.
+        /// For flat-shaded faces (renderType==1), all three vertices share the face normal.
+        /// For Gouraud-shaded faces, each vertex uses its accumulated vertex normal.
+        /// Components are transformed to match the rendering coordinate system (Y and Z negated).
+        /// Returns <c>float[TriangleCount][9]</c> — three (x,y,z) triples per face.
+        /// </summary>
+        public float[][] ComputeFaceVertexNormals() {
+            if (VertexNormals == null)
+                ComputeNormals();
+
+            var result = new float[TriangleCount][];
+
+            for (int i = 0; i < TriangleCount; i++) {
+                int a = faceIndices1[i], b = faceIndices2[i], c = faceIndices3[i];
+
+                if ((uint)a >= (uint)VertexCount ||
+                    (uint)b >= (uint)VertexCount ||
+                    (uint)c >= (uint)VertexCount) {
+                    result[i] = new float[] { 0, 1, 0, 0, 1, 0, 0, 1, 0 };
+                    continue;
+                }
+
+                sbyte renderType = FaceRenderType != null ? FaceRenderType[i] : (sbyte)0;
+                result[i] = new float[9];
+
+                if (renderType == 1 && FaceNormals != null && FaceNormals[i] != null) {
+                    FaceNormal fn = FaceNormals[i];
+                    float mag = MathF.Sqrt(fn.x * fn.x + fn.y * fn.y + fn.z * fn.z);
+                    if (mag < 1) mag = 1;
+                    float nx = fn.x / mag, ny = -fn.y / mag, nz = -fn.z / mag;
+                    result[i] = new float[] { nx, ny, nz, nx, ny, nz, nx, ny, nz };
+                } else {
+                    int[] verts = { a, b, c };
+                    for (int vi = 0; vi < 3; vi++) {
+                        VertexNormal vn = VertexNormals![verts[vi]];
+                        float mag = MathF.Sqrt(vn.x * vn.x + vn.y * vn.y + vn.z * vn.z);
+                        if (mag < 1) mag = 1;
+                        result[i][vi * 3 + 0] = vn.x / mag;
+                        result[i][vi * 3 + 1] = -vn.y / mag;
+                        result[i][vi * 3 + 2] = -vn.z / mag;
+                    }
                 }
             }
 

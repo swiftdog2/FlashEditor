@@ -14,7 +14,7 @@ internal sealed class ModelRenderer
     private readonly List<int> _ownedTextures = new();
     private int _whiteTexture;
 
-    private const int Stride = 9; // pos(3) + uv(2) + alpha(1) + colour(3)
+    private const int Stride = 12; // pos(3) + normal(3) + uv(2) + alpha(1) + colour(3)
 
     private class Batch
     {
@@ -51,13 +51,14 @@ internal sealed class ModelRenderer
     private void LoadInternal(IList<ModelDefinition> defs, GLTextureCache textures)
     {
         // Collect all faces with sort keys
-        var allFaces = new List<(ModelDefinition def, int faceIdx, int[][] colours)>();
+        var allFaces = new List<(ModelDefinition def, int faceIdx, int[][] colours, float[][] normals)>();
 
         foreach (var def in defs)
         {
-            int[][] vertColours = def.ComputeVertexColours();
+            int[][] vertColours = def.ComputeUnlitColours();
+            float[][] vertNormals = def.ComputeFaceVertexNormals();
             for (int i = 0; i < def.TriangleCount; i++)
-                allFaces.Add((def, i, vertColours));
+                allFaces.Add((def, i, vertColours, vertNormals));
         }
 
         // Sort faces: opaque first, then translucent; within each group, ascending priority
@@ -74,9 +75,9 @@ internal sealed class ModelRenderer
         // Group sorted faces into batches by texture key
         // We use an ordered approach: accumulate faces into batches, starting a new batch
         // when the texture key changes or when we cross the opaque/translucent boundary.
-        var groups = new List<(int key, bool translucent, List<float> verts, List<ushort> indices, int vertCount)>();
+        var groups = new List<(int key, bool translucent, List<float> verts, List<uint> indices, int vertCount)>();
 
-        foreach (var (def, faceIdx, colours) in allFaces)
+        foreach (var (def, faceIdx, colours, normals) in allFaces)
         {
             int a = def.faceIndices1[faceIdx];
             int b = def.faceIndices2[faceIdx];
@@ -126,17 +127,18 @@ internal sealed class ModelRenderer
             var group = groups.Count > 0 ? groups[^1] : default;
             if (groups.Count == 0 || group.key != key || group.translucent != translucent)
             {
-                group = (key, translucent, new List<float>(), new List<ushort>(), 0);
+                group = (key, translucent, new List<float>(), new List<uint>(), 0);
                 groups.Add(group);
             }
 
+            float[] fn = normals[faceIdx];
             int vi = group.vertCount;
-            AppendVertex(group.verts, def, a, u0, v0, alpha, rgb0);
-            group.indices.Add((ushort)vi++);
-            AppendVertex(group.verts, def, b, u1, v1, alpha, rgb1);
-            group.indices.Add((ushort)vi++);
-            AppendVertex(group.verts, def, c, u2, v2, alpha, rgb2);
-            group.indices.Add((ushort)vi++);
+            AppendVertex(group.verts, def, a, fn[0], fn[1], fn[2], u0, v0, alpha, rgb0);
+            group.indices.Add((uint)vi++);
+            AppendVertex(group.verts, def, b, fn[3], fn[4], fn[5], u1, v1, alpha, rgb1);
+            group.indices.Add((uint)vi++);
+            AppendVertex(group.verts, def, c, fn[6], fn[7], fn[8], u2, v2, alpha, rgb2);
+            group.indices.Add((uint)vi++);
 
             // Update vertCount in the list (structs are value types)
             groups[^1] = (group.key, group.translucent, group.verts, group.indices, vi);
@@ -146,7 +148,7 @@ internal sealed class ModelRenderer
         foreach (var (key, translucent, vertList, idxList, _) in groups)
         {
             float[] verts = vertList.ToArray();
-            ushort[] idx = idxList.ToArray();
+            uint[] idx = idxList.ToArray();
             if (idx.Length == 0) continue;
 
             int vao = GL.GenVertexArray();
@@ -160,18 +162,21 @@ internal sealed class ModelRenderer
             // location 0: position (3 floats)
             GL.EnableVertexAttribArray(0);
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 0);
-            // location 1: UV (2 floats)
+            // location 1: normal (3 floats)
             GL.EnableVertexAttribArray(1);
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, Stride * sizeof(float), 3 * sizeof(float));
-            // location 2: alpha (1 float)
+            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 3 * sizeof(float));
+            // location 2: UV (2 floats)
             GL.EnableVertexAttribArray(2);
-            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, Stride * sizeof(float), 5 * sizeof(float));
-            // location 3: colour (3 floats)
+            GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, Stride * sizeof(float), 6 * sizeof(float));
+            // location 3: alpha (1 float)
             GL.EnableVertexAttribArray(3);
-            GL.VertexAttribPointer(3, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 6 * sizeof(float));
+            GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, Stride * sizeof(float), 8 * sizeof(float));
+            // location 4: colour (3 floats)
+            GL.EnableVertexAttribArray(4);
+            GL.VertexAttribPointer(4, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 9 * sizeof(float));
 
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-            GL.BufferData(BufferTarget.ElementArrayBuffer, idx.Length * sizeof(ushort), idx, BufferUsageHint.StaticDraw);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, idx.Length * sizeof(uint), idx, BufferUsageHint.StaticDraw);
             GL.BindVertexArray(0);
 
             int texture;
@@ -226,7 +231,7 @@ internal sealed class ModelRenderer
         return tex;
     }
 
-    public void LoadSimple(float[] vertices, ushort[] indices, int texture)
+    public void LoadSimple(float[] vertices, uint[] indices, int texture)
     {
         Dispose();
 
@@ -240,14 +245,16 @@ internal sealed class ModelRenderer
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 0);
         GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, Stride * sizeof(float), 3 * sizeof(float));
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 3 * sizeof(float));
         GL.EnableVertexAttribArray(2);
-        GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, Stride * sizeof(float), 5 * sizeof(float));
+        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, Stride * sizeof(float), 6 * sizeof(float));
         GL.EnableVertexAttribArray(3);
-        GL.VertexAttribPointer(3, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 6 * sizeof(float));
+        GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, Stride * sizeof(float), 8 * sizeof(float));
+        GL.EnableVertexAttribArray(4);
+        GL.VertexAttribPointer(4, 3, VertexAttribPointerType.Float, false, Stride * sizeof(float), 9 * sizeof(float));
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, indices.Length * sizeof(ushort), indices, BufferUsageHint.StaticDraw);
+        GL.BufferData(BufferTarget.ElementArrayBuffer, indices.Length * sizeof(uint), indices, BufferUsageHint.StaticDraw);
         GL.BindVertexArray(0);
 
         _opaqueBatches.Add(new Batch
@@ -261,11 +268,15 @@ internal sealed class ModelRenderer
     }
 
     private static void AppendVertex(List<float> list, ModelDefinition def, int vert,
+        float nx, float ny, float nz,
         float u, float v, float alpha, int rgb)
     {
         list.Add(def.VertX[vert] / 128f);
         list.Add(-def.VertY[vert] / 128f);
         list.Add(-def.VertZ[vert] / 128f);
+        list.Add(nx);
+        list.Add(ny);
+        list.Add(nz);
         list.Add(u);
         list.Add(v);
         list.Add(alpha);
@@ -308,7 +319,7 @@ internal sealed class ModelRenderer
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, b.Texture);
         GL.BindVertexArray(b.VAO);
-        GL.DrawElements(PrimitiveType.Triangles, b.IndexCount, DrawElementsType.UnsignedShort, 0);
+        GL.DrawElements(PrimitiveType.Triangles, b.IndexCount, DrawElementsType.UnsignedInt, 0);
     }
 
     public void Dispose()

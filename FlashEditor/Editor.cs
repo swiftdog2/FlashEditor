@@ -34,7 +34,7 @@ namespace FlashEditor {
         private readonly Timer _fpsTimer = new();
         private int _program;
         private int _testTexture;
-        private int _uModel, _uView, _uProj, _uTexture, _uTexOffset;
+        private int _uModel, _uView, _uProj, _uTexture, _uTexOffset, _uLightDir;
         private readonly Stopwatch _animStopwatch = new();
         private Matrix4 _model = Matrix4.Identity;
         private Matrix4 _view;
@@ -124,9 +124,11 @@ namespace FlashEditor {
             _uProj = GL.GetUniformLocation(_program, "uProj");
             _uTexture = GL.GetUniformLocation(_program, "uTexture");
             _uTexOffset = GL.GetUniformLocation(_program, "uTexOffset");
+            _uLightDir = GL.GetUniformLocation(_program, "uLightDir");
             GL.UseProgram(_program);
             GL.Uniform1(_uTexture, 0);
             GL.Uniform2(_uTexOffset, 0f, 0f);
+            GL.Uniform3(_uLightDir, 0f, 0f, 1f);
             GL.UseProgram(0);
 
             GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
@@ -143,12 +145,12 @@ namespace FlashEditor {
 
             _testTexture = CreateSolidTexture(Color.FromArgb(255, 255, 204, 77));
             float[] verts = {
-                // pos(3), uv(2), alpha(1), colour(3) = 9 floats per vertex
-                -0.5f, -0.5f, 0f, 0f, 0f, 1f, 1f, 0.8f, 0.3f,
-                 0.5f, -0.5f, 0f, 1f, 0f, 1f, 1f, 0.8f, 0.3f,
-                 0.0f,  0.5f, 0f, 0.5f, 1f, 1f, 1f, 0.8f, 0.3f
+                // pos(3), normal(3), uv(2), alpha(1), colour(3) = 12 floats per vertex
+                -0.5f, -0.5f, 0f, 0f, 0f, 1f, 0f, 0f, 1f, 1f, 0.8f, 0.3f,
+                 0.5f, -0.5f, 0f, 0f, 0f, 1f, 1f, 0f, 1f, 1f, 0.8f, 0.3f,
+                 0.0f,  0.5f, 0f, 0f, 0f, 1f, 0.5f, 1f, 1f, 1f, 0.8f, 0.3f
             };
-            ushort[] idx = { 0, 1, 2 };
+            uint[] idx = { 0, 1, 2 };
             _modelRenderer.LoadSimple(verts, idx, _testTexture);
         }
 
@@ -211,6 +213,47 @@ namespace FlashEditor {
             _view = Matrix4.LookAt(CameraPosition(), _target, _up);
         }
 
+        /// <summary>
+        /// Resets the camera to frame the given model definitions so the full
+        /// model is visible with a default viewing angle.
+        /// </summary>
+        private void FrameModel(IList<ModelDefinition> defs) {
+            if (defs == null || defs.Count == 0) return;
+
+            float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
+            int totalVerts = 0;
+
+            foreach (var def in defs) {
+                for (int i = 0; i < def.VertexCount; i++) {
+                    // Same transform as AppendVertex / ModelRenderer
+                    float x = def.VertX[i] / 128f;
+                    float y = -def.VertY[i] / 128f;
+                    float z = -def.VertZ[i] / 128f;
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (z < minZ) minZ = z;
+                    if (x > maxX) maxX = x;
+                    if (y > maxY) maxY = y;
+                    if (z > maxZ) maxZ = z;
+                    totalVerts++;
+                }
+            }
+
+            if (totalVerts == 0) return;
+
+            _target = new Vector3((minX + maxX) / 2f, (minY + maxY) / 2f, (minZ + maxZ) / 2f);
+
+            float dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+            float radius = MathF.Sqrt(dx * dx + dy * dy + dz * dz) / 2f;
+
+            float halfFovRad = MathHelper.DegreesToRadians((float)_fov) / 2f;
+            _distance = Math.Max(radius / Math.Sin(halfFovRad), 0.5);
+
+            _yaw = 0.0;
+            _pitch = 0.0;
+        }
+
 
         private void Gl_Paint(object sender, PaintEventArgs e) {
             glControl.MakeCurrent();
@@ -225,6 +268,9 @@ namespace FlashEditor {
             GL.UniformMatrix4(_uModel, false, ref _model);
             GL.UniformMatrix4(_uView, false, ref _view);
             GL.UniformMatrix4(_uProj, false, ref _proj);
+            // Light follows the camera so shading updates as you orbit
+            Vector3 lightDir = Vector3.Normalize(CameraPosition() - _target);
+            GL.Uniform3(_uLightDir, lightDir.X, lightDir.Y, lightDir.Z);
             float elapsed = (float)_animStopwatch.Elapsed.TotalSeconds;
             _modelRenderer.Draw(elapsed, _uTexOffset);
 
@@ -319,6 +365,7 @@ namespace FlashEditor {
                 //Load the cache and the reference tables
                 RSFileStore store = new RSFileStore(directory);
                 cache = new RSCache(store);
+                cache.TryAutoLoadXTEAKeys(directory);
                 _textureCache = new GLTextureCache(cache);
                 sw.Stop();
 
@@ -958,6 +1005,7 @@ namespace FlashEditor {
                             _testTexture = 0;
                         }
                         _modelRenderer.Load(def, _textureCache);
+                        FrameModel(new[] { def });
                     }
                     glControl.Invalidate();
                     return;
@@ -1001,6 +1049,7 @@ namespace FlashEditor {
                                 _testTexture = 0;
                             }
                             _modelRenderer.Load(loaded, _textureCache);
+                            FrameModel(new[] { loaded });
                         }
                         glControl.Invalidate();
                     }
@@ -1134,6 +1183,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                FrameModel(t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -1165,6 +1215,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                FrameModel(t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -1200,6 +1251,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                FrameModel(t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
