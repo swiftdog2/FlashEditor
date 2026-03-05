@@ -92,7 +92,7 @@ namespace FlashEditor.Tests.IO
         }
 
         [Fact]
-        public void ReadJagexString_WithExtendedCharacters_DecodesCorrectly()
+        public void ReadJagexString_NullTerminatedAscii_DecodesCorrectly()
         {
             // Arrange
             byte[] bytes = { (byte)'H', (byte)'i', 0 };
@@ -103,6 +103,20 @@ namespace FlashEditor.Tests.IO
 
             // Assert
             Assert.Equal("Hi", result);
+        }
+
+        [Fact]
+        public void ReadJagexString_WithExtendedCharacters_DecodesCP1252()
+        {
+            // Arrange - byte 128 = euro sign, byte 153 = trademark
+            byte[] bytes = { 128, (byte)'x', 153, 0 };
+            var stream = new JagStream(bytes);
+
+            // Act
+            string result = stream.ReadJagexString();
+
+            // Assert - CP-1252 mapping: 128 → U+20AC (€), 153 → U+2122 (™)
+            Assert.Equal("\u20ACx\u2122", result);
         }
 
         [Fact]

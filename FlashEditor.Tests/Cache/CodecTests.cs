@@ -116,8 +116,12 @@ namespace FlashEditor.Tests.Cache
             JagStream initial = container.Encode();
             RSContainer decoded = RSContainer.Decode(new JagStream(initial.ToArray()));
             JagStream re = decoded.Encode();
-            RSContainer again = RSContainer.Decode(new JagStream(re.ToArray()));
             Assert.Equal(initial.ToArray(), re.ToArray());
+
+            // Second cycle: decode the re-encoded bytes and verify they still produce identical output
+            RSContainer again = RSContainer.Decode(new JagStream(re.ToArray()));
+            JagStream re2 = again.Encode();
+            Assert.Equal(initial.ToArray(), re2.ToArray());
 
             var archive = new RSArchive();
             archive.PutFile(0, payload);
@@ -129,8 +133,12 @@ namespace FlashEditor.Tests.Cache
             JagStream initArchive = multi.Encode();
             RSContainer decArchive = RSContainer.Decode(new JagStream(initArchive.ToArray()));
             JagStream reArchive = decArchive.Encode();
-            RSContainer againArchive = RSContainer.Decode(new JagStream(reArchive.ToArray()));
             Assert.Equal(initArchive.ToArray(), reArchive.ToArray());
+
+            // Second cycle for multi-file archive
+            RSContainer againArchive = RSContainer.Decode(new JagStream(reArchive.ToArray()));
+            JagStream reArchive2 = againArchive.Encode();
+            Assert.Equal(initArchive.ToArray(), reArchive2.ToArray());
         }
     }
 }

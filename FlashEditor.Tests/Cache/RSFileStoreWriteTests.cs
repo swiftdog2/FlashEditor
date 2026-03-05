@@ -24,7 +24,7 @@ namespace FlashEditor.Tests.Cache
         }
 
         [Fact]
-        public void Write_NewAndResizedContainers_RoundTrip()
+        public void Write_NewAndResizedContainers_SucceedsWithInternalVerification()
         {
             string dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             try
