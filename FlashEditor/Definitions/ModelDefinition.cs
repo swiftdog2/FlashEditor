@@ -994,6 +994,15 @@ namespace FlashEditor.Definitions {
                 }
             }
 
+            // 7b) Scale vertices for old-format models (FormatType < 13)
+            if (FormatType < 13) {
+                for (int i = 0; i < vc; i++) {
+                    VertX[i] <<= 2;
+                    VertY[i] <<= 2;
+                    VertZ[i] <<= 2;
+                }
+            }
+
             // 8) Decode face data — each field from its own stream to avoid caret collision
             st1.Seek(faceColourOff);     // face colours
             st2.Seek(faceTypeOff);       // face render type (if hasFaceType)
