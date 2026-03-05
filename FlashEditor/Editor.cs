@@ -135,8 +135,7 @@ namespace FlashEditor {
             GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-            GL.Enable(EnableCap.CullFace);
-            GL.CullFace(CullFaceMode.Back);
+            GL.Disable(EnableCap.CullFace);
 
             UpdateView();
             UpdateProjection();
@@ -198,7 +197,7 @@ namespace FlashEditor {
                 MathHelper.DegreesToRadians((float) _fov),
                 glControl.Width / (float) glControl.Height,
                 0.1f,
-                100f);
+                10000f);
         }
 
         private Vector3 CameraPosition() {
