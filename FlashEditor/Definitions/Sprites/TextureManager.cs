@@ -16,6 +16,7 @@ namespace FlashEditor.Definitions.Sprites {
         private readonly RSCache cache;
         public static readonly SortedDictionary<int, TextureDefinition> Textures = new();
         private static readonly Bitmap _fallbackThumb = new Bitmap(100, 100);
+        private static RSCache _cacheRef;
 
         /// <summary>
         /// Raw bytes of the entire columnar file for lossless round-trip.
@@ -35,6 +36,7 @@ namespace FlashEditor.Definitions.Sprites {
 
         public void Load() {
             Clear();
+            _cacheRef = cache;
 
             // Step 1: Load Materials metadata (index 26) — the full set of texture IDs
             try {
@@ -107,19 +109,8 @@ namespace FlashEditor.Definitions.Sprites {
                             var def = Textures.ContainsKey(textureId) ? Textures[textureId] : new TextureDefinition { id = textureId };
                             def.spriteFileIds = tex.FileIds;
 
-                            // Load the first sprite as a thumbnail for the GUI
-                            if (tex.Count > 0) {
-                                try {
-                                    SpriteDefinition sprite = cache.GetSprite(tex.FileIds[0]);
-                                    if (sprite != null && sprite.GetFrameCount() > 0) {
-                                        var frame = sprite.GetFrame(0);
-                                        if (frame?.thumb != null)
-                                            def.thumb = new Bitmap(frame.thumb);
-                                    }
-                                } catch (Exception ex) {
-                                    Debug($"TextureManager: failed to load sprite for texture {textureId}: {ex.Message}", LOG_DETAIL.ADVANCED);
-                                }
-                            }
+                            // Store graph for lazy rendering (don't render at load time)
+                            def.graph = tex.Graph;
 
                             Textures[textureId] = def;
                             loaded++;
@@ -392,9 +383,52 @@ namespace FlashEditor.Definitions.Sprites {
             return s;
         }
 
+        /// <summary>
+        /// Lazily loads a texture thumbnail if it hasn't been loaded yet.
+        /// Prefers sprite thumbnails (proven path) over graph rendering
+        /// (experimental) to keep model rendering correct.
+        /// </summary>
+        public static void EnsureRendered(TextureDefinition def) {
+            if (def == null || def.thumb != null || _cacheRef == null)
+                return;
+
+            // Try sprite thumbnail first — this matches the pre-evaluator
+            // behaviour and produces correct results for model rendering.
+            if (def.spriteFileIds != null && def.spriteFileIds.Length > 0) {
+                try {
+                    SpriteDefinition sprite = _cacheRef.GetSprite(def.spriteFileIds[0]);
+                    if (sprite != null && sprite.GetFrameCount() > 0) {
+                        var frame = sprite.GetFrame(0);
+                        if (frame?.thumb != null) {
+                            def.thumb = new Bitmap(frame.thumb);
+                            return;
+                        }
+                    }
+                } catch (Exception ex) {
+                    Debug($"TextureManager: failed to load sprite for texture {def.id}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                }
+            }
+
+            // Fall back to graph rendering for textures without sprites
+            if (def.graph != null) {
+                try {
+                    Bitmap rendered = TextureGraphEvaluator.Render(def.graph, 128, 128, _cacheRef);
+                    if (rendered != null) {
+                        def.thumb = rendered;
+                        return;
+                    }
+                } catch (Exception ex) {
+                    Debug($"TextureManager: failed to render texture {def.id}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                }
+            }
+        }
+
         internal static Image GetThumbnailForTexture(string key) {
-            if (int.TryParse(key, out int id) && Textures.TryGetValue(id, out var def) && def.thumb != null)
-                return def.thumb;
+            if (int.TryParse(key, out int id) && Textures.TryGetValue(id, out var def)) {
+                EnsureRendered(def);
+                if (def.thumb != null)
+                    return def.thumb;
+            }
 
             return _fallbackThumb;
         }

@@ -994,13 +994,15 @@ namespace FlashEditor.Definitions {
                 }
             }
 
-            // 7b) Scale vertices for old-format models (FormatType < 13)
-            if (FormatType < 13) {
-                for (int i = 0; i < vc; i++) {
-                    VertX[i] <<= 2;
-                    VertY[i] <<= 2;
-                    VertZ[i] <<= 2;
-                }
+            // 7b) Scale vertices to match DecodeRS2/DecodeOld coordinate space.
+            // The Java reference for rev 639 has no <<2 in any decoder, but our
+            // DecodeRS2 and DecodeOld paths both apply it unconditionally. Without
+            // this, models decoded here are 4× smaller than models from the other
+            // decoders, causing mismatched body parts on multi-model NPCs.
+            for (int i = 0; i < vc; i++) {
+                VertX[i] <<= 2;
+                VertY[i] <<= 2;
+                VertZ[i] <<= 2;
             }
 
             // 8) Decode face data — each field from its own stream to avoid caret collision
@@ -1188,7 +1190,7 @@ namespace FlashEditor.Definitions {
 
             for (int i = 0 ; i < TriangleCount ; i++) {
                 int textureCoordinate = TextureCoordinates == null ? -1 : TextureCoordinates[i];
-                int textureIdx = FaceTextures == null ? -1 : (FaceTextures[i] & 0xFFFF);
+                int textureIdx = FaceTextures == null ? -1 : FaceTextures[i];
 
                 if (textureIdx != -1) {
                     float[] u = new float[3];

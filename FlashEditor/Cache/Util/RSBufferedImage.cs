@@ -27,6 +27,20 @@ namespace FlashEditor.cache.util {
             return thumb;
         }
 
+        /// <summary>Returns a copy of the raw ARGB pixel data as an int array.</summary>
+        public int[] GetPixels() {
+            if (_directBitmap == null || _directBitmap.Bits == null)
+                return Array.Empty<int>();
+            return (int[])_directBitmap.Bits.Clone();
+        }
+
+        /// <summary>Gets the underlying pixel buffer directly (no copy).</summary>
+        internal int[] GetPixelsDirect() {
+            if (_directBitmap == null)
+                return null;
+            return _directBitmap.Bits;
+        }
+
         /// <summary>Sets the pixel at (<paramref name="x"/>, <paramref name="y"/>) to the given ARGB value.</summary>
         public void SetRGB(int x, int y, int rgb) {
             if(_directBitmap == null)

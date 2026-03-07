@@ -12,12 +12,14 @@ namespace FlashEditor.cache {
         private MemoryMappedFile _mmf;
         private MemoryMappedViewAccessor _accessor;
         private long _mappedLength;
+        private long _dataLength;
 
-        /// <summary>The actual length of the underlying file.</summary>
-        public long Length => _fileStream.Length;
+        /// <summary>The actual data length (excludes Remap padding).</summary>
+        public long Length => _dataLength;
 
         public MappedDataChannel(string path) {
             _fileStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            _dataLength = _fileStream.Length;
             MapFile();
         }
 
@@ -61,8 +63,7 @@ namespace FlashEditor.cache {
             if(required > _mappedLength)
                 Remap(required);
             _accessor.WriteArray(position, data, offset, count);
-            if(required > _fileStream.Length)
-                _fileStream.SetLength(required);
+            _dataLength = Math.Max(_dataLength, required);
         }
 
         /// <summary>Flushes pending writes to disk.</summary>
@@ -71,19 +72,36 @@ namespace FlashEditor.cache {
             _fileStream.Flush();
         }
 
-        /// <summary>Flushes and copies the backing file to <paramref name="destPath"/>.</summary>
+        /// <summary>Flushes and copies only the actual data bytes to <paramref name="destPath"/>.</summary>
         public void SaveTo(string destPath) {
             Flush();
-            File.Copy(_fileStream.Name, destPath, overwrite: true);
+            using var dest = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            _fileStream.Position = 0;
+            CopyBytes(_fileStream, dest, _dataLength);
+        }
+
+        private static void CopyBytes(Stream source, Stream dest, long count) {
+            byte[] buf = new byte[81920];
+            while (count > 0) {
+                int toRead = (int)Math.Min(buf.Length, count);
+                int read = source.Read(buf, 0, toRead);
+                if (read == 0) break;
+                dest.Write(buf, 0, read);
+                count -= read;
+            }
         }
 
         public void Dispose() {
             _accessor?.Dispose();
             _mmf?.Dispose();
-            _fileStream?.Dispose();
             _accessor = null;
             _mmf = null;
-            _fileStream = null;
+
+            if (_fileStream != null) {
+                _fileStream.SetLength(_dataLength);
+                _fileStream.Dispose();
+                _fileStream = null;
+            }
         }
     }
 }

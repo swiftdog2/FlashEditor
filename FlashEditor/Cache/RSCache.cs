@@ -1,5 +1,6 @@
 ﻿using FlashEditor.cache.sprites;
 using FlashEditor.Cache.Util;
+using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Definitions;
 using FlashEditor.Utils;
 using ICSharpCode.SharpZipLib.Checksum;
@@ -43,6 +44,11 @@ namespace FlashEditor.cache {
         /// Cached model definitions keyed by model id.
         /// </summary>
         public SortedDictionary<int, ModelDefinition> models = new SortedDictionary<int, ModelDefinition>();
+
+        /// <summary>
+        /// XTEA key table for decrypting encrypted archives (e.g. map data).
+        /// </summary>
+        private XTEAKeyTable xteaKeys;
 
         /// <summary>
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables
@@ -201,7 +207,7 @@ namespace FlashEditor.cache {
 
                 //Re-load evicted container from disk
                 JagStream evictedData = LoadContainer(indexId, archiveId);
-                RSContainer reloaded = RSContainer.Decode(evictedData);
+                RSContainer reloaded = RSContainer.Decode(evictedData, ResolveXTEAKey(indexId, archiveId));
                 if (reloaded != null) {
                     reloaded.SetIndexId(indexId);
                     reloaded.SetId(archiveId);
@@ -217,7 +223,7 @@ namespace FlashEditor.cache {
             JagStream data = LoadContainer(indexId, archiveId);
 
             //Decode the container
-            RSContainer container = RSContainer.Decode(data);
+            RSContainer container = RSContainer.Decode(data, ResolveXTEAKey(indexId, archiveId));
 
             if (container == null)
                 throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
@@ -529,8 +535,8 @@ namespace FlashEditor.cache {
             try {
                 JagStream data = ReadFile(RSConstants.MODELS_INDEX, archiveId, fileId);
                 var def = new ModelDefinition();
-                def.Decode(data);
                 def.ModelID = modelId;
+                def.Decode(data);
                 return def;
             }
             catch (Exception ex) {
@@ -558,6 +564,52 @@ namespace FlashEditor.cache {
                 Debug(sb.ToString(), LOG_DETAIL.ADVANCED);
                 throw;                               // re-throw so outer loop still logs "failed"
             }
+        }
+
+        /// <summary>
+        /// Resolves the XTEA key for the given index/archive pair, if the
+        /// archive is flagged as encrypted and a key is available.
+        /// </summary>
+        private int[] ResolveXTEAKey(int indexId, int archiveId) {
+            if (xteaKeys == null)
+                return null;
+
+            // Reference tables (META_INDEX 255) are never encrypted
+            if (indexId == RSConstants.META_INDEX)
+                return null;
+
+            // Check whether the reference table flags this archive as XTEA-encrypted
+            if (referenceTables != null && indexId < referenceTables.Length && referenceTables[indexId] != null) {
+                RSArchiveEntry entry = referenceTables[indexId].GetArchiveEntry(archiveId);
+                if (entry != null && !entry.UsesXtea)
+                    return null;
+            }
+
+            return xteaKeys.GetKey(indexId, archiveId);
+        }
+
+        /// <summary>
+        /// Loads XTEA keys from the specified JSON file.
+        /// </summary>
+        public void LoadXTEAKeys(string filePath) {
+            xteaKeys = XTEAKeyTable.LoadFromFile(filePath);
+            Debug("Loaded " + xteaKeys.Count + " XTEA keys from " + filePath);
+        }
+
+        /// <summary>
+        /// Attempts to auto-discover and load XTEA keys from near the cache directory.
+        /// </summary>
+        public void TryAutoLoadXTEAKeys(string cacheDir) {
+            string keyFile = XTEAKeyTable.FindKeyFile(cacheDir);
+            if (keyFile != null)
+                LoadXTEAKeys(keyFile);
+        }
+
+        /// <summary>
+        /// Returns the current XTEA key table, or null if none loaded.
+        /// </summary>
+        public XTEAKeyTable GetXTEAKeyTable() {
+            return xteaKeys;
         }
     }
 }

@@ -48,28 +48,15 @@ namespace FlashEditor
                 return 0;
             }
 
-            // Try loading the actual sprite texture from the cache
-            if (def.spriteFileIds != null && def.spriteFileIds.Length > 0)
+            // Lazily render the texture if not yet done
+            TextureManager.EnsureRendered(def);
+
+            if (def.thumb != null)
             {
-                try
-                {
-                    var sprite = _cache.GetSprite(def.spriteFileIds[0]);
-                    if (sprite?.GetFrameCount() > 0)
-                    {
-                        var frame = sprite.GetFrame(0);
-                        if (frame?.thumb != null)
-                        {
-                            Debug($"Creating GL texture {textureId} from sprite {def.spriteFileIds[0]} ({frame.thumb.Width}x{frame.thumb.Height})", LOG_DETAIL.ADVANCED);
-                            handle = CreateGLTexture(frame.thumb);
-                            _textures[textureId] = handle;
-                            return handle;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug($"Failed to load sprite for texture {textureId}: {ex.Message}", LOG_DETAIL.ADVANCED);
-                }
+                Debug($"Creating GL texture {textureId} from pre-loaded thumbnail ({def.thumb.Width}x{def.thumb.Height})", LOG_DETAIL.ADVANCED);
+                handle = CreateGLTexture(def.thumb);
+                _textures[textureId] = handle;
+                return handle;
             }
 
             // Fall back to solid-colour 1x1 texture from the tint value.

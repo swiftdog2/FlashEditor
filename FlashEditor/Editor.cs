@@ -790,6 +790,12 @@ namespace FlashEditor {
             //Get the object represented by the ListView
             ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
 
+            //Skip write if nothing actually changed
+            byte[] newBytes = newDefinition.Encode().ToArray();
+            byte[] oldBytes = currentItem.Encode().ToArray();
+            if (newBytes.AsSpan().SequenceEqual(oldBytes))
+                return;
+
             //Update the items archive with the new definition
             cache.items[newDefinition.id] = newDefinition;
 
@@ -797,8 +803,8 @@ namespace FlashEditor {
             int archiveId = newDefinition.id / 256;
             int entryId = newDefinition.id % 256;
 
-            //Update the entry in the container's archive   
-            JagStream newItemStream = newDefinition.Encode();
+            //Update the entry in the container's archive
+            JagStream newItemStream = new JagStream(newBytes);
 
             cache.WriteFile(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
 
@@ -807,6 +813,13 @@ namespace FlashEditor {
 
         private void ObjectListView_CellEditFinished(object sender, CellEditEventArgs e) {
             ObjectDefinition newDef = (ObjectDefinition) e.RowObject;
+
+            //Skip write if nothing actually changed
+            byte[] newBytes = newDef.Encode().ToArray();
+            byte[] oldBytes = currentObject.Encode().ToArray();
+            if (newBytes.AsSpan().SequenceEqual(oldBytes))
+                return;
+
             cache.objects[newDef.id] = newDef;
 
             var refTable = cache.GetReferenceTable(RSConstants.OBJECTS_DEFINITIONS_INDEX);
@@ -814,7 +827,7 @@ namespace FlashEditor {
             int archiveId = newDef.id / filesPerArchive;
             int entryId = newDef.id % filesPerArchive;
 
-            JagStream data = newDef.Encode();
+            JagStream data = new JagStream(newBytes);
             cache.WriteFile(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, entryId, data);
 
             PrintDifferences(newDef, currentObject);
@@ -822,12 +835,19 @@ namespace FlashEditor {
 
         private void NPCListView_CellEditFinished(object sender, CellEditEventArgs e) {
             NPCDefinition newDef = (NPCDefinition) e.RowObject;
+
+            //Skip write if nothing actually changed
+            byte[] newBytes = newDef.Encode().ToArray();
+            byte[] oldBytes = currentNpc.Encode().ToArray();
+            if (newBytes.AsSpan().SequenceEqual(oldBytes))
+                return;
+
             cache.npcs[newDef.id] = newDef;
 
             int archiveId = newDef.id / 128;
             int entryId = newDef.id % 128;
 
-            JagStream data = newDef.Encode();
+            JagStream data = new JagStream(newBytes);
             cache.WriteFile(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, entryId, data);
 
             PrintDifferences(newDef, currentNpc);
@@ -1342,8 +1362,9 @@ namespace FlashEditor {
         }
 
         private static Image CreateThumbnail(Image img, int width = 100, int height = 100) {
-            var bmp = new Bitmap(width, height);
+            var bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp)) {
+                g.Clear(Color.Black);
                 g.CompositingQuality = CompositingQuality.HighQuality;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.SmoothingMode = SmoothingMode.HighQuality;
@@ -1358,6 +1379,8 @@ namespace FlashEditor {
             Debug($"LoadTextures: {textureList.Count} definitions to process", LOG_DETAIL.BASIC);
 
             int errors = 0;
+            int withSprite = 0;
+            int withoutSprite = 0;
 
             foreach (var tex in textureList)
             {
@@ -1367,6 +1390,7 @@ namespace FlashEditor {
                     if (tex.thumb != null) {
                         // Use real sprite thumbnail loaded from TEXTURES index
                         thumb = (Bitmap)CreateThumbnail(tex.thumb);
+                        withSprite++;
                     } else {
                         // Fall back to colour swatch from field1835 (tint colour)
                         var bmp = new Bitmap(100, 100);
@@ -1383,6 +1407,7 @@ namespace FlashEditor {
                             g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
                         }
                         thumb = (Bitmap)CreateThumbnail(bmp);
+                        withoutSprite++;
                     }
 
                     tex.thumb = thumb;
@@ -1396,7 +1421,7 @@ namespace FlashEditor {
                 }
             }
 
-            Debug($"LoadTextures complete: {textureList.Count} textures, {errors} errors", LOG_DETAIL.BASIC);
+            Debug($"LoadTextures complete: {textureList.Count} textures, {withSprite} with sprites, {withoutSprite} without, {errors} errors", LOG_DETAIL.BASIC);
             TextureListView.SetObjects(textureList);
         }
     }

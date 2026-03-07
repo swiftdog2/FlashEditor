@@ -36,12 +36,16 @@ namespace FlashEditor.Definitions.Sprites {
         /// <summary>Sprite file IDs decoded from the TEXTURES index (9).</summary>
         public int[] spriteFileIds;
 
+        /// <summary>Parsed procedural texture graph for lazy rendering.</summary>
+        public TextureGraph graph;
+
         /// <summary>Thumbnail for GUI display.</summary>
         public Bitmap? thumb;
 
         public void Dispose() {
             thumb?.Dispose();
             thumb = null;
+            graph = null;
         }
     }
 }
