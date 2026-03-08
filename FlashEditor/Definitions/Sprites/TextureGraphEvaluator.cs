@@ -38,6 +38,9 @@ namespace FlashEditor.Definitions.Sprites {
         public int GradientCount;
         public int SpriteId = -1;
 
+        // Cached gradient colour LUT for type 10 (built on first use)
+        internal int[] GradientColourLUT;
+
         // Runtime buffers
         internal int[] MonoCache;
         internal int[][] ColourCache; // [3][width] for RGB
@@ -290,6 +293,11 @@ namespace FlashEditor.Definitions.Sprites {
 
         // Get colour output from a node, with auto-promotion from mono if needed
         private static int[][] GetColour(TextureNode node, int row) {
+            if (node.ColourCache == null) {
+                // Node was never allocated — return a safe fallback
+                return _fallbackColour ??= new int[][] { new int[1], new int[1], new int[1] };
+            }
+
             if (node.CachedRow == row && !node.CachedIsMono)
                 return node.ColourCache;
 
@@ -309,6 +317,9 @@ namespace FlashEditor.Definitions.Sprites {
             node.CachedIsMono = false;
             return node.ColourCache;
         }
+
+        [ThreadStatic]
+        private static int[][]? _fallbackColour;
 
         private static int Clamp12(int v) {
             if (v < 0) return 0;
@@ -342,9 +353,9 @@ namespace FlashEditor.Definitions.Sprites {
                 case 16: EvalThreshold(node, output, w, row); break;
                 case 17: EvalBlur(node, output, w, row); break;
                 case 19: EvalPolarDistortionMono(node, output, w, row); break;
-                case 20: EvalClamp(node, output, w, row); break;
+                case 20: EvalTileMono(node, output, w, row); break;
                 case 21: EvalEmboss(node, output, w, row); break;
-                case 22: EvalFlipH(node, output, w, row); break;
+                case 22: EvalInvertMono(node, output, w, row); break;
                 case 23: EvalFlipV(node, output, w, row); break;
                 case 25: EvalCurveRemap(node, output, w, row); break;
                 case 26: EvalTurbulence(node, output, w, row); break;
@@ -381,16 +392,33 @@ namespace FlashEditor.Definitions.Sprites {
                 case 7: EvalColourBlend(node, output, w, row); break;
                 case 9: EvalMirrorFlipColour(node, output, w, row); break;
                 case 11: EvalHSLAdjust(node, output, w, row); break;
+                case 10: EvalGradientRemapColour(node, output, w, row); break;
+                case 17: EvalHSLAdjust17(node, output, w, row); break;
                 case 18: // falls through to 39
                 case 39: EvalSpriteSource(node, output, w, row); break;
                 case 19: EvalPolarDistortionColour(node, output, w, row); break;
+                case 20: EvalTileColour(node, output, w, row); break;
+                case 21: goto default; // Emboss — no colour variant
+                case 22: EvalInvertColour(node, output, w, row); break;
+                case 23: EvalFlipVColour(node, output, w, row); break;
                 case 24: EvalMergeRGB(node, output, w, row); break;
+                case 25: goto default; // CurveRemap — no colour variant
+                case 30: goto default; // EdgeDetect — no colour variant
+                case 33: goto default; // Offset — no colour variant
                 default:
-                    // Colour-capable node without dedicated colour eval — promote from mono
-                    EvalMono(node, row);
-                    Array.Copy(node.MonoCache, output[0], w);
-                    Array.Copy(node.MonoCache, output[1], w);
-                    Array.Copy(node.MonoCache, output[2], w);
+                    // Colour-capable node without dedicated colour eval —
+                    // pass through child colour if available, else promote from mono
+                    if (node.Children != null && node.Children.Length >= 1 && node.Children[0] != null) {
+                        int[][] childC = GetColour(node.Children[0], row);
+                        Array.Copy(childC[0], output[0], w);
+                        Array.Copy(childC[1], output[1], w);
+                        Array.Copy(childC[2], output[2], w);
+                    } else {
+                        EvalMono(node, row);
+                        Array.Copy(node.MonoCache, output[0], w);
+                        Array.Copy(node.MonoCache, output[1], w);
+                        Array.Copy(node.MonoCache, output[2], w);
+                    }
                     break;
             }
         }
@@ -816,6 +844,182 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
+        //  TYPE 10: Gradient Remap — Colour Output (Hydra Sub33)
+        //  Maps mono child through a 257-entry packed RGB LUT built from
+        //  gradient stops (preset or custom), extracting R/G/B channels.
+        // ===================================================================
+        private static void EvalGradientRemapColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int[] child = GetMono(node.Children[0], row);
+            int[] lut = GetOrBuildGradientColourLUT(node);
+
+            for (int x = 0; x < w; x++) {
+                int idx = child[x] >> 4; // 12-bit → 8-bit index (0-256)
+                if (idx < 0) idx = 0;
+                if (idx > 256) idx = 256;
+                int packed = lut[idx];
+                output[0][x] = (packed >> 12) & 0xFF0; // R in 12-bit
+                output[1][x] = (packed >> 4) & 0xFF0;  // G in 12-bit
+                output[2][x] = (packed << 4) & 0xFF0;  // B in 12-bit
+            }
+        }
+
+        private static int[] GetOrBuildGradientColourLUT(TextureNode node) {
+            if (node.GradientColourLUT != null) return node.GradientColourLUT;
+            node.GradientColourLUT = BuildGradientColourLUT(node);
+            return node.GradientColourLUT;
+        }
+
+        private static int[] BuildGradientColourLUT(TextureNode node) {
+            int[][] stops;
+
+            if (node.GradientPreset != 0) {
+                stops = GetPresetGradientData(node.GradientPreset);
+            } else if (node.GradientData != null && node.GradientData.Length > 0) {
+                // Custom gradient data: FlashEditor stores R/G/B as raw 8-bit,
+                // but Hydra expects 12-bit. Convert to 12-bit for interpolation.
+                stops = new int[node.GradientData.Length][];
+                for (int i = 0; i < node.GradientData.Length; i++) {
+                    stops[i] = new int[4];
+                    stops[i][0] = node.GradientData[i][0];      // position (already 0-4096)
+                    stops[i][1] = node.GradientData[i][1] << 4; // R: 8-bit → 12-bit
+                    stops[i][2] = node.GradientData[i][2] << 4; // G: 8-bit → 12-bit
+                    stops[i][3] = node.GradientData[i][3] << 4; // B: 8-bit → 12-bit
+                }
+            } else {
+                // No gradient data — identity grayscale ramp
+                int[] identity = new int[257];
+                for (int i = 0; i <= 256; i++) {
+                    int v = Math.Clamp(i, 0, 255);
+                    identity[i] = (v << 16) | (v << 8) | v;
+                }
+                return identity;
+            }
+
+            int numStops = stops.Length;
+            int[] lut = new int[257];
+
+            for (int i = 0; i <= 256; i++) {
+                int pos = i << 4; // map 0-256 → 0-4096
+
+                // Find how many stops have position <= pos
+                int seg = 0;
+                for (int s = 0; s < numStops; s++) {
+                    if (pos < stops[s][0]) break;
+                    seg++;
+                }
+
+                int r12, g12, b12;
+
+                if (seg > 0 && seg < numStops) {
+                    // Between two stops — interpolate
+                    int[] prev = stops[seg - 1];
+                    int[] next = stops[seg];
+                    int range = next[0] - prev[0];
+                    if (range <= 0) {
+                        r12 = next[1]; g12 = next[2]; b12 = next[3];
+                    } else {
+                        int t = ((pos - prev[0]) << 12) / range;
+                        int invT = FP_ONE - t;
+                        r12 = (next[1] * t + prev[1] * invT) >> 12;
+                        g12 = (next[2] * t + prev[2] * invT) >> 12;
+                        b12 = (next[3] * t + prev[3] * invT) >> 12;
+                    }
+                } else if (seg == 0) {
+                    // Before first stop
+                    r12 = stops[0][1]; g12 = stops[0][2]; b12 = stops[0][3];
+                } else {
+                    // Past last stop
+                    int last = numStops - 1;
+                    r12 = stops[last][1]; g12 = stops[last][2]; b12 = stops[last][3];
+                }
+
+                // Convert 12-bit to 8-bit, clamp, and pack as (R<<16)|(G<<8)|B
+                int r8 = Math.Clamp(r12 >> 4, 0, 255);
+                int g8 = Math.Clamp(g12 >> 4, 0, 255);
+                int b8 = Math.Clamp(b12 >> 4, 0, 255);
+
+                lut[i] = (r8 << 16) | (g8 << 8) | b8;
+            }
+
+            return lut;
+        }
+
+        /// <summary>
+        /// Returns preset gradient stop data in 12-bit format.
+        /// Format: int[n][4] = { position, R_12bit, G_12bit, B_12bit }.
+        /// Matches Hydra Node_Sub10_Sub33.method1100 presets 1-6.
+        /// </summary>
+        private static int[][] GetPresetGradientData(int preset) {
+            switch (preset) {
+                case 1: return new[] { // Black → White
+                    new[] { 0, 0, 0, 0 },
+                    new[] { 4096, 4096, 4096, 4096 }
+                };
+                case 2: return new[] { // Warm earth tones
+                    new[] { 0, 2650, 2602, 2361 },
+                    new[] { 2867, 2313, 1799, 1558 },
+                    new[] { 3072, 2618, 1734, 1413 },
+                    new[] { 3276, 2296, 1220, 947 },
+                    new[] { 3481, 2072, 963, 722 },
+                    new[] { 3686, 2730, 2152, 1766 },
+                    new[] { 3891, 2232, 1060, 915 },
+                    new[] { 4096, 1686, 1413, 1140 }
+                };
+                case 3: return new[] { // Full spectrum rainbow
+                    new[] { 0, 0, 0, 4096 },
+                    new[] { 663, 0, 4096, 4096 },
+                    new[] { 1363, 0, 4096, 0 },
+                    new[] { 2048, 4096, 4096, 0 },
+                    new[] { 2727, 4096, 0, 0 },
+                    new[] { 3411, 4096, 0, 4096 },
+                    new[] { 4096, 0, 0, 4096 }
+                };
+                case 4: return new[] { // Cyan-Yellow-Red
+                    new[] { 2048, 0, 4096, 0 },
+                    new[] { 2867, 4096, 4096, 0 },
+                    new[] { 3276, 4096, 4096, 0 },
+                    new[] { 4096, 4096, 0, 0 }
+                };
+                case 5: return new[] { // Fire/Lava
+                    new[] { 0, 0, 0, 0 },
+                    new[] { 1843, 0, 0, 1493 },
+                    new[] { 2457, 0, 0, 2939 },
+                    new[] { 2781, 0, 1124, 3565 },
+                    new[] { 3481, 546, 3084, 4031 },
+                    new[] { 4096, 4096, 4096, 4096 }
+                };
+                case 6: return new[] { // Earth tones (16 stops)
+                    new[] { 0, 80, 192, 321 },
+                    new[] { 155, 321, 449, 562 },
+                    new[] { 389, 578, 690, 803 },
+                    new[] { 671, 947, 995, 1140 },
+                    new[] { 897, 1285, 1397, 1509 },
+                    new[] { 1175, 1525, 1429, 1413 },
+                    new[] { 1368, 1734, 1461, 1333 },
+                    new[] { 1507, 1413, 1525, 1702 },
+                    new[] { 1736, 1108, 1590, 2056 },
+                    new[] { 2088, 1766, 2056, 2666 },
+                    new[] { 2355, 2409, 2586, 3276 },
+                    new[] { 2691, 3116, 3148, 3228 },
+                    new[] { 3031, 3806, 3710, 3196 },
+                    new[] { 3522, 3437, 3421, 3019 },
+                    new[] { 3727, 3116, 3148, 3228 },
+                    new[] { 4096, 2377, 2505, 2746 }
+                };
+                default: return new[] { // Unknown preset — linear grayscale
+                    new[] { 0, 0, 0, 0 },
+                    new[] { 4096, 4096, 4096, 4096 }
+                };
+            }
+        }
+
+        // ===================================================================
         //  TYPE 11: HSL Adjust
         // ===================================================================
         private static void EvalHSLAdjust(TextureNode node, int[][] output, int w, int row) {
@@ -872,6 +1076,51 @@ namespace FlashEditor.Definitions.Sprites {
             if (t < FP_ONE / 2) return q;
             if (t < FP_ONE * 2 / 3) return p + Mul12(q - p, (FP_ONE * 2 / 3 - t) * 6);
             return p;
+        }
+
+        // ===================================================================
+        //  TYPE 17: HSL Adjust (Hydra Sub6 — NOT blur)
+        //  Adjusts hue/saturation/lightness of a colour child input.
+        //  IntParam0 = hue shift (signed short), IntParam1/2 = S/L adjust
+        //  (signed bytes, scaled by << 12 / 100 per Hydra).
+        // ===================================================================
+        private static void EvalHSLAdjust17(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int[][] child = GetColour(node.Children[0], row);
+
+            // Hydra: hShift = readShort() (signed), sAdj/lAdj = (readSignedByte() << 12) / 100
+            int hShift = (short)node.IntParam0;
+            int sAdj = (node.IntParam1 << 12) / 100;
+            int lAdj = (node.IntParam2 << 12) / 100;
+
+            for (int x = 0; x < w; x++) {
+                int r = child[0][x], g = child[1][x], b = child[2][x];
+                RGBtoHSL(r, g, b, out int h, out int s, out int l);
+
+                h += hShift;
+                s += sAdj;
+                l += lAdj;
+
+                // Wrap hue to [0, 4096)
+                while (h < 0) h += FP_ONE;
+                while (h > FP_ONE) h -= FP_ONE;
+
+                // Clamp saturation and lightness to [0, 4096]
+                if (s < 0) s = 0;
+                if (s > FP_ONE) s = FP_ONE;
+                if (l < 0) l = 0;
+                if (l > FP_ONE) l = FP_ONE;
+
+                HSLtoRGB(h, s, l, out int or_, out int og, out int ob);
+                output[0][x] = or_;
+                output[1][x] = og;
+                output[2][x] = ob;
+            }
         }
 
         // ===================================================================
@@ -1108,7 +1357,8 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         private static void EvalPolarDistortionColour(TextureNode node, int[][] output, int w, int row) {
-            if (node.Children == null || node.Children.Length < 3) {
+            if (node.Children == null || node.Children.Length < 3 ||
+                node.Children[0] == null || node.Children[1] == null || node.Children[2] == null) {
                 Array.Fill(output[0], 2040, 0, w);
                 Array.Fill(output[1], 2040, 0, w);
                 Array.Fill(output[2], 2040, 0, w);
@@ -1132,19 +1382,44 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 20: Clamp
+        //  TYPE 20: Tile/Scale (Hydra Sub29 — divides image into tiles)
         // ===================================================================
-        private static void EvalClamp(TextureNode node, int[] output, int w, int row) {
+        private static void EvalTileMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
-            int[] child = GetMono(node.Children[0], row);
-            int lo = node.IntParam0, hi = node.IntParam1;
-            if (hi < lo) { int t = lo; lo = hi; hi = t; }
+            int xDiv = Math.Max(1, node.IntParam0);
+            int yDiv = Math.Max(1, node.IntParam1);
+            int tileW = w / xDiv;
+            int tileH = node.Height / yDiv;
+            int srcRow = tileH > 0 ? (row % tileH) * node.Height / tileH : 0;
+            int[] childRow = GetMono(node.Children[0], srcRow);
             for (int x = 0; x < w; x++) {
-                int v = child[x];
-                output[x] = v < lo ? lo : v > hi ? hi : v;
+                int srcX = tileW > 0 ? (x % tileW) * w / tileW : 0;
+                if (srcX >= w) srcX = w - 1;
+                output[x] = childRow[srcX];
+            }
+        }
+
+        private static void EvalTileColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int xDiv = Math.Max(1, node.IntParam0);
+            int yDiv = Math.Max(1, node.IntParam1);
+            int tileW = w / xDiv;
+            int tileH = node.Height / yDiv;
+            int srcRow = tileH > 0 ? (row % tileH) * node.Height / tileH : 0;
+            int[][] childRow = GetColour(node.Children[0], srcRow);
+            for (int x = 0; x < w; x++) {
+                int srcX = tileW > 0 ? (x % tileW) * w / tileW : 0;
+                if (srcX >= w) srcX = w - 1;
+                for (int ch = 0; ch < 3; ch++)
+                    output[ch][x] = childRow[ch][srcX];
             }
         }
 
@@ -1172,16 +1447,29 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 22: Flip Horizontal
+        //  TYPE 22: Invert (Hydra Sub39 — 4096 - value)
         // ===================================================================
-        private static void EvalFlipH(TextureNode node, int[] output, int w, int row) {
+        private static void EvalInvertMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
             int[] child = GetMono(node.Children[0], row);
             for (int x = 0; x < w; x++)
-                output[x] = child[w - 1 - x];
+                output[x] = FP_ONE - child[x];
+        }
+
+        private static void EvalInvertColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int[][] child = GetColour(node.Children[0], row);
+            for (int ch = 0; ch < 3; ch++)
+                for (int x = 0; x < w; x++)
+                    output[ch][x] = FP_ONE - child[ch][x];
         }
 
         // ===================================================================
@@ -1195,6 +1483,19 @@ namespace FlashEditor.Definitions.Sprites {
             int mirrorRow = node.Height - 1 - row;
             int[] child = GetMono(node.Children[0], mirrorRow);
             Array.Copy(child, output, w);
+        }
+
+        private static void EvalFlipVColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int mirrorRow = node.Height - 1 - row;
+            int[][] child = GetColour(node.Children[0], mirrorRow);
+            for (int ch = 0; ch < 3; ch++)
+                Array.Copy(child[ch], output[ch], w);
         }
 
         // ===================================================================
@@ -1230,6 +1531,26 @@ namespace FlashEditor.Definitions.Sprites {
                 }
             } else {
                 Array.Copy(child, output, w);
+            }
+        }
+
+        private static void EvalCurveRemapColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int[][] child = GetColour(node.Children[0], row);
+            if (node.CurveData != null && node.CurveData.Length == 256) {
+                for (int ch = 0; ch < 3; ch++)
+                    for (int x = 0; x < w; x++) {
+                        int idx = Clamp12(child[ch][x]) >> 4;
+                        output[ch][x] = node.CurveData[idx];
+                    }
+            } else {
+                for (int ch = 0; ch < 3; ch++)
+                    Array.Copy(child[ch], output[ch], w);
             }
         }
 

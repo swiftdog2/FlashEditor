@@ -274,9 +274,9 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }       // mono flag
                     return false;
 
-                case 20: // Clamp (Sub29)
-                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte() << 4; return true; }
-                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte() << 4; return true; }
+                case 20: // Tile/Scale (Sub29) — tile division counts, NOT 12-bit values
+                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte(); return true; }
+                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
                     return false;
 
                 case 21: // Emboss (Sub12)
