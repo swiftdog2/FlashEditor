@@ -226,6 +226,17 @@ namespace FlashEditor.Definitions {
             int flagsByte    = st1.ReadUnsignedByte();
             bool hasFaceType = (flagsByte & 0x1) == 1;   // face render type present
 
+            // ── 1b) Determine format type ────────────────────────────────────
+            // Hydra client (line 401-405): immediately after flags byte, caret
+            // is at length-17.  caret -= 7 reads from length-24, then caret += 6
+            // restores to length-17 so the rest of the footer reads normally.
+            if ((flagsByte & 0x8) == 8) {
+                long saved = st1.Position;           // data.Length - 17
+                st1.Seek(saved - 7);                 // data.Length - 24
+                FormatType = st1.ReadUnsignedByte();
+                st1.Seek(saved);                     // restore to data.Length - 17
+            }
+
             int priorityFlag  = st1.ReadUnsignedByte();  // 255 = per-face priority
             int alphaFlag     = st1.ReadUnsignedByte();   // 1 = per-face alpha
             int faceSkinFlag  = st1.ReadUnsignedByte();   // 1 = per-face skin group
@@ -297,13 +308,6 @@ namespace FlashEditor.Definitions {
             pos += vertexZLen;
 
             int texFaceGeomOff = pos;   // type-0 texture geometry (6 bytes each)
-
-            // ── 3b) Determine format type ────────────────────────────────────
-            // Rev 639 models always use old-style vertex coordinates that need
-            // the <<= 2 shift.  Bit 3 of the flags byte is NOT an "old format"
-            // indicator in this revision — checking it caused some model parts
-            // to be 4× smaller than others within the same NPC.
-            FormatType = 12;
 
             // ── 4) Populate counts ──────────────────────────────────────────────
             VertexCount = vc;
@@ -994,15 +998,15 @@ namespace FlashEditor.Definitions {
                 }
             }
 
-            // 7b) Scale vertices to match DecodeRS2/DecodeOld coordinate space.
-            // The Java reference for rev 639 has no <<2 in any decoder, but our
-            // DecodeRS2 and DecodeOld paths both apply it unconditionally. Without
-            // this, models decoded here are 4× smaller than models from the other
-            // decoders, causing mismatched body parts on multi-model NPCs.
-            for (int i = 0; i < vc; i++) {
-                VertX[i] <<= 2;
-                VertY[i] <<= 2;
-                VertZ[i] <<= 2;
+            // 7b) Upscale old-format models to match the coordinate space.
+            // Hydra client (Class141:1170) only shifts for formatType < 13;
+            // newer models (formatType >= 13) already use full-scale coordinates.
+            if (FormatType < 13) {
+                for (int i = 0; i < vc; i++) {
+                    VertX[i] <<= 2;
+                    VertY[i] <<= 2;
+                    VertZ[i] <<= 2;
+                }
             }
 
             // 8) Decode face data — each field from its own stream to avoid caret collision
