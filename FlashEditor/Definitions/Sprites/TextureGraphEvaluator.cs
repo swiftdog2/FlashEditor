@@ -80,9 +80,19 @@ namespace FlashEditor.Definitions.Sprites {
         private const int FP_ONE = 4096;
         private const int FP_MAX = 4080; // 255/256 * 4096
 
-        public static Bitmap Render(TextureGraph graph, int width, int height, RSCache cache) {
-            if (graph == null || graph.Nodes == null || graph.Nodes.Length == 0)
+        public static Bitmap Render(TextureGraph graph, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
+            if (graph == null || graph.Nodes == null || graph.Nodes.Length == 0) {
+                Debug($"[GraphEval] tex {textureDefId}: null/empty graph", LOG_DETAIL.ADVANCED);
                 return null;
+            }
+
+            Debug($"[GraphEval] tex {textureDefId}: BEGIN — {graph.Nodes.Length} nodes, {width}x{height}, " +
+                  $"colourOut={graph.ColourOutputIndex}, alphaOut={graph.AlphaOutputIndex}, transpose={transpose}", LOG_DETAIL.ADVANCED);
+
+            // Build gamma LUT: pow(i/255.0, 0.7) * 255
+            byte[] gammaLUT = new byte[256];
+            for (int i = 0; i < 256; i++)
+                gammaLUT[i] = (byte)(Math.Pow(i / 255.0, 0.7) * 255.0 + 0.5);
 
             // Build coordinate LUTs
             int[] xCoord = new int[width];
@@ -93,36 +103,76 @@ namespace FlashEditor.Definitions.Sprites {
                 yCoord[i] = (i << 12) / height;
 
             // Allocate node buffers and load sprites
-            foreach (var node in graph.Nodes) {
+            int spriteNodesLoaded = 0, spriteNodesFailed = 0;
+            for (int ni = 0; ni < graph.Nodes.Length; ni++) {
+                var node = graph.Nodes[ni];
                 if (node == null) continue;
                 node.Allocate(width, height, xCoord, yCoord);
-                if ((node.Type == 18 || node.Type == 39) && node.SpriteId >= 0)
-                    LoadSpriteForNode(node, cache);
+                if ((node.Type == 18 || node.Type == 39) && node.SpriteId >= 0) {
+                    Debug($"[GraphEval] tex {textureDefId}: node[{ni}] type={node.Type} loading sprite {node.SpriteId}", LOG_DETAIL.ADVANCED);
+                    LoadSpriteForNode(node, cache, textureDefId);
+                    if (node.SpritePixels != null) {
+                        spriteNodesLoaded++;
+                        Debug($"[GraphEval] tex {textureDefId}: node[{ni}] sprite loaded OK — {node.SpriteWidth}x{node.SpriteHeight}, {node.SpritePixels.Length} pixels", LOG_DETAIL.ADVANCED);
+                    } else {
+                        spriteNodesFailed++;
+                        Debug($"[GraphEval] tex {textureDefId}: node[{ni}] sprite {node.SpriteId} FAILED to load — SpritePixels is null", LOG_DETAIL.BASIC);
+                    }
+                }
             }
+            if (spriteNodesLoaded + spriteNodesFailed > 0)
+                Debug($"[GraphEval] tex {textureDefId}: sprites loaded={spriteNodesLoaded}, failed={spriteNodesFailed}", LOG_DETAIL.ADVANCED);
 
             // Evaluate row-by-row
             int colourIdx = graph.ColourOutputIndex;
-            if (colourIdx < 0 || colourIdx >= graph.Nodes.Length || graph.Nodes[colourIdx] == null)
+            if (colourIdx < 0 || colourIdx >= graph.Nodes.Length || graph.Nodes[colourIdx] == null) {
+                Debug($"[GraphEval] tex {textureDefId}: invalid colourOutputIndex={colourIdx} (nodes={graph.Nodes.Length}) — returning null", LOG_DETAIL.BASIC);
                 return null;
+            }
 
             var pixels = new int[width * height];
             var colourNode = graph.Nodes[colourIdx];
             bool outputIsMono = IsMonochrome(colourNode);
 
+            // Alpha output node — DISABLED.  Many textures store a sentinel
+            // value (often 0) for the alpha index that points to a constant-0
+            // node, producing fully transparent textures.  Model-level FaceAlpha
+            // already handles per-face transparency correctly, so we render all
+            // graph textures as fully opaque.
+            TextureNode alphaNode = null;
+
             for (int y = 0; y < height; y++) {
+                int[] alphaMono = alphaNode != null ? GetMono(alphaNode, y) : null;
+
                 if (outputIsMono) {
                     int[] mono = GetMono(colourNode, y);
                     for (int x = 0; x < width; x++) {
-                        int v = Clamp12(mono[x]) >> 4;
-                        pixels[y * width + x] = unchecked((int)0xFF000000) | (v << 16) | (v << 8) | v;
+                        int v = gammaLUT[Clamp12(mono[x]) >> 4];
+                        int alpha;
+                        if (alphaMono != null) {
+                            alpha = Math.Clamp(alphaMono[x] >> 4, 0, 255);
+                            if (v == 0) alpha = 0;
+                        } else {
+                            alpha = 0xFF;
+                        }
+                        int idx = transpose ? x * width + y : y * width + x;
+                        pixels[idx] = (alpha << 24) | (v << 16) | (v << 8) | v;
                     }
                 } else {
                     int[][] rgb = GetColour(colourNode, y);
                     for (int x = 0; x < width; x++) {
-                        int r = Clamp12(rgb[0][x]) >> 4;
-                        int g = Clamp12(rgb[1][x]) >> 4;
-                        int b = Clamp12(rgb[2][x]) >> 4;
-                        pixels[y * width + x] = unchecked((int)0xFF000000) | (r << 16) | (g << 8) | b;
+                        int r = gammaLUT[Clamp12(rgb[0][x]) >> 4];
+                        int g = gammaLUT[Clamp12(rgb[1][x]) >> 4];
+                        int b = gammaLUT[Clamp12(rgb[2][x]) >> 4];
+                        int alpha;
+                        if (alphaMono != null) {
+                            alpha = Math.Clamp(alphaMono[x] >> 4, 0, 255);
+                            if (r == 0 && g == 0 && b == 0) alpha = 0;
+                        } else {
+                            alpha = 0xFF;
+                        }
+                        int idx = transpose ? x * width + y : y * width + x;
+                        pixels[idx] = (alpha << 24) | (r << 16) | (g << 8) | b;
                     }
                 }
             }
@@ -131,36 +181,88 @@ namespace FlashEditor.Definitions.Sprites {
             foreach (var node in graph.Nodes)
                 node?.Release();
 
+            // Diagnostic: check if image is all-black or all-transparent
+            int nonBlack = 0, nonTransparent = 0;
+            for (int i = 0; i < pixels.Length && i < 1000; i++) {
+                if ((pixels[i] & 0x00FFFFFF) != 0) nonBlack++;
+                if (((pixels[i] >> 24) & 0xFF) != 0) nonTransparent++;
+            }
+            int sampled = Math.Min(pixels.Length, 1000);
+            Debug($"[GraphEval] tex {textureDefId}: pixel sample ({sampled}px): {nonBlack} non-black, {nonTransparent} non-transparent", LOG_DETAIL.ADVANCED);
+            if (nonBlack == 0)
+                Debug($"[GraphEval] tex {textureDefId}: WARNING — all sampled pixels are black!", LOG_DETAIL.BASIC);
+
             // Build bitmap using LockBits for safe pixel copy
             var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             var data = bmp.LockBits(new Rectangle(0, 0, width, height),
                 ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
             Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
             bmp.UnlockBits(data);
+            Debug($"[GraphEval] tex {textureDefId}: COMPLETE — returning {bmp.Width}x{bmp.Height} bitmap", LOG_DETAIL.ADVANCED);
             return bmp;
         }
 
-        private static void LoadSpriteForNode(TextureNode node, RSCache cache) {
-            if (cache == null || node.SpriteId < 0) return;
+        // Sprite ID override table for texture IDs 939-945
+        private static readonly Dictionary<int, int> _spriteOverrides = new() {
+            { 939, 523 }, { 940, 524 }, { 941, 525 }, { 942, 526 },
+            { 943, 527 }, { 944, 528 }, { 945, 1069 }
+        };
+
+        private static void LoadSpriteForNode(TextureNode node, RSCache cache, int textureDefId = -1) {
+            if (cache == null) {
+                Debug($"[SpriteLoad] tex {textureDefId}: cache is null", LOG_DETAIL.BASIC);
+                return;
+            }
+            if (node.SpriteId < 0) {
+                Debug($"[SpriteLoad] tex {textureDefId}: spriteId={node.SpriteId} (negative, skipping)", LOG_DETAIL.ADVANCED);
+                return;
+            }
+            int origSpriteId = node.SpriteId;
+            int spriteId = origSpriteId;
+            if (textureDefId >= 0 && _spriteOverrides.TryGetValue(textureDefId, out int overrideId)) {
+                spriteId = overrideId;
+                Debug($"[SpriteLoad] tex {textureDefId}: sprite override {origSpriteId} → {spriteId}", LOG_DETAIL.ADVANCED);
+            }
             try {
-                SpriteDefinition sprite = cache.GetSprite(node.SpriteId);
-                if (sprite != null && sprite.GetFrameCount() > 0) {
-                    var frame = sprite.GetFrame(0);
-                    if (frame != null) {
-                        node.SpritePixels = frame.GetPixels();
-                        node.SpriteWidth = frame.GetWidth();
-                        node.SpriteHeight = frame.GetHeight();
-                    }
+                Debug($"[SpriteLoad] tex {textureDefId}: GetSprite({spriteId}) ...", LOG_DETAIL.INSANE);
+                SpriteDefinition sprite = cache.GetSprite(spriteId);
+                if (sprite == null) {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — GetSprite returned null", LOG_DETAIL.ADVANCED);
+                    return;
+                }
+                int frameCount = sprite.GetFrameCount();
+                if (frameCount == 0) {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — 0 frames", LOG_DETAIL.ADVANCED);
+                    return;
+                }
+                var frame = sprite.GetFrame(0);
+                if (frame == null) {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — frame 0 null", LOG_DETAIL.ADVANCED);
+                    return;
+                }
+                node.SpritePixels = frame.GetPixels();
+                node.SpriteWidth = frame.GetWidth();
+                node.SpriteHeight = frame.GetHeight();
+                if (node.SpritePixels == null || node.SpritePixels.Length == 0) {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — GetPixels returned null/empty (w={node.SpriteWidth}, h={node.SpriteHeight})", LOG_DETAIL.BASIC);
+                    node.SpritePixels = null;
+                } else {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — OK {node.SpriteWidth}x{node.SpriteHeight}, {node.SpritePixels.Length} pixels", LOG_DETAIL.ADVANCED);
                 }
             } catch (Exception ex) {
-                Debug($"TextureGraphEvaluator: failed to load sprite {node.SpriteId}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} FAILED — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                Debug($"[SpriteLoad] tex {textureDefId}: stack: {ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}", LOG_DETAIL.ADVANCED);
             }
         }
 
         private static bool IsMonochrome(TextureNode node) {
             switch (node.Type) {
-                case 1: case 7: case 8: case 11: case 18: case 24: case 39:
+                // Colour nodes (super(n, false) in Hydra)
+                case 1: case 5: case 6: case 7: case 9: case 10: case 11:
+                case 17: case 18: case 19: case 20: case 21: case 22: case 23:
+                case 25: case 30: case 33: case 36: case 39:
                     return false;
+                // Everything else is mono
                 default:
                     return true;
             }
@@ -228,9 +330,10 @@ namespace FlashEditor.Definitions.Sprites {
                 case 2: EvalHorizontalGrad(node, output, w); break;
                 case 3: EvalVerticalGrad(node, output, w, row); break;
                 case 4: EvalBrick(node, output, w, row); break;
-                case 5: EvalBrightness(node, output, w, row); break;
-                case 6: EvalBlend(node, output, w, row); break;
-                case 9: EvalInvert(node, output, w, row); break;
+                case 5: EvalBoxBlurMono(node, output, w, row); break;
+                case 6: EvalClampNodeMono(node, output, w, row); break;
+                case 8: EvalCurveTransfer(node, output, w, row); break;
+                case 9: EvalMirrorFlipMono(node, output, w, row); break;
                 case 10: EvalGradientRemap(node, output, w, row); break;
                 case 12: EvalNoise(node, output, w, row); break;
                 case 13: EvalVoronoi(node, output, w, row); break;
@@ -238,7 +341,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 15: EvalPerlin(node, output, w, row); break;
                 case 16: EvalThreshold(node, output, w, row); break;
                 case 17: EvalBlur(node, output, w, row); break;
-                case 19: EvalWeave(node, output, w, row); break;
+                case 19: EvalPolarDistortionMono(node, output, w, row); break;
                 case 20: EvalClamp(node, output, w, row); break;
                 case 21: EvalEmboss(node, output, w, row); break;
                 case 22: EvalFlipH(node, output, w, row); break;
@@ -253,7 +356,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 32: EvalPolarWarp(node, output, w, row); break;
                 case 33: EvalOffset(node, output, w, row); break;
                 case 34: EvalCurveRemap2(node, output, w, row); break;
-                case 35: EvalScale(node, output, w, row); break;
+                case 35: EvalBumpMap(node, output, w, row); break;
                 case 36: EvalCheckerboard(node, output, w, row); break;
                 case 37: EvalAbsMirror(node, output, w, row); break;
                 case 38: EvalTileWrap(node, output, w, row); break;
@@ -273,16 +376,21 @@ namespace FlashEditor.Definitions.Sprites {
 
             switch (node.Type) {
                 case 1: EvalConstantColour(node, output, w); break;
+                case 5: EvalBoxBlurColour(node, output, w, row); break;
+                case 6: EvalClampNodeColour(node, output, w, row); break;
                 case 7: EvalColourBlend(node, output, w, row); break;
-                case 8: EvalColourRamp(node, output, w, row); break;
+                case 9: EvalMirrorFlipColour(node, output, w, row); break;
                 case 11: EvalHSLAdjust(node, output, w, row); break;
                 case 18: // falls through to 39
                 case 39: EvalSpriteSource(node, output, w, row); break;
+                case 19: EvalPolarDistortionColour(node, output, w, row); break;
                 case 24: EvalMergeRGB(node, output, w, row); break;
                 default:
-                    Array.Fill(output[0], 2040, 0, w);
-                    Array.Fill(output[1], 2040, 0, w);
-                    Array.Fill(output[2], 2040, 0, w);
+                    // Colour-capable node without dedicated colour eval — promote from mono
+                    EvalMono(node, row);
+                    Array.Copy(node.MonoCache, output[0], w);
+                    Array.Copy(node.MonoCache, output[1], w);
+                    Array.Copy(node.MonoCache, output[2], w);
                     break;
             }
         }
@@ -357,60 +465,113 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 5: Brightness
+        //  TYPE 5: Box Blur (separable)
         // ===================================================================
-        private static void EvalBrightness(TextureNode node, int[] output, int w, int row) {
+        private static void EvalBoxBlurMono(TextureNode node, int[] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output, 2040, 0, w);
+                return;
+            }
+            int radiusH = node.IntParam0;
+            int radiusV = node.IntParam1;
+
+            // Vertical pass: average rows [row-radiusV..row+radiusV]
+            int[] vSum = new int[w];
+            int vCount = 0;
+            for (int dy = -radiusV; dy <= radiusV; dy++) {
+                int sy = ((row + dy) % node.Height + node.Height) % node.Height;
+                int[] childRow = GetMono(node.Children[0], sy);
+                vCount++;
+                for (int x = 0; x < w; x++)
+                    vSum[x] += childRow[x];
+            }
+            if (vCount > 0)
+                for (int x = 0; x < w; x++)
+                    vSum[x] /= vCount;
+
+            // Horizontal pass: sliding window average
+            for (int x = 0; x < w; x++) {
+                int s = 0, c = 0;
+                for (int dx = -radiusH; dx <= radiusH; dx++) {
+                    int sx = ((x + dx) % w + w) % w;
+                    s += vSum[sx];
+                    c++;
+                }
+                output[x] = s / c;
+            }
+        }
+
+        private static void EvalBoxBlurColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int radiusH = node.IntParam0;
+            int radiusV = node.IntParam1;
+
+            int[][] vSum = { new int[w], new int[w], new int[w] };
+            int vCount = 0;
+            for (int dy = -radiusV; dy <= radiusV; dy++) {
+                int sy = ((row + dy) % node.Height + node.Height) % node.Height;
+                int[][] childRow = GetColour(node.Children[0], sy);
+                vCount++;
+                for (int ch = 0; ch < 3; ch++)
+                    for (int x = 0; x < w; x++)
+                        vSum[ch][x] += childRow[ch][x];
+            }
+            if (vCount > 0)
+                for (int ch = 0; ch < 3; ch++)
+                    for (int x = 0; x < w; x++)
+                        vSum[ch][x] /= vCount;
+
+            for (int x = 0; x < w; x++) {
+                int[] s = { 0, 0, 0 };
+                int c = 0;
+                for (int dx = -radiusH; dx <= radiusH; dx++) {
+                    int sx = ((x + dx) % w + w) % w;
+                    for (int ch = 0; ch < 3; ch++)
+                        s[ch] += vSum[ch][sx];
+                    c++;
+                }
+                for (int ch = 0; ch < 3; ch++)
+                    output[ch][x] = s[ch] / c;
+            }
+        }
+
+        // ===================================================================
+        //  TYPE 6: Clamp Node (mono path)
+        // ===================================================================
+        private static void EvalClampNodeMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
             int[] child = GetMono(node.Children[0], row);
-            int factor = node.IntParam0; // 0-255 byte mapped to 12-bit
-            for (int x = 0; x < w; x++)
-                output[x] = Mul12(child[x], factor);
+            int lo = node.IntParam0; // default 0
+            int hi = node.IntParam1 == 0 ? FP_ONE : node.IntParam1; // default 4096
+            for (int x = 0; x < w; x++) {
+                int v = child[x];
+                output[x] = v < lo ? lo : v > hi ? hi : v;
+            }
         }
 
-        // ===================================================================
-        //  TYPE 6: Blend (mono)
-        // ===================================================================
-        private static void EvalBlend(TextureNode node, int[] output, int w, int row) {
-            if (node.Children == null || node.Children.Length < 2) {
-                Array.Fill(output, 2040, 0, w);
+        private static void EvalClampNodeColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
                 return;
             }
-            int[] a = GetMono(node.Children[0], row);
-            int[] b = GetMono(node.Children[1], row);
-            int factor = node.IntParam0;  // blend factor 0-4096
-            int mode = node.BlendMode;
-
-            for (int x = 0; x < w; x++) {
-                int va = a[x], vb = b[x];
-                int blended = BlendOp(va, vb, mode);
-                // lerp between a and blended by factor
-                output[x] = va + (Mul12(blended - va, factor));
-            }
-        }
-
-        private static int BlendOp(int a, int b, int mode) {
-            switch (mode) {
-                case 0: return b; // normal
-                case 1: return a + b; // add
-                case 2: return a - b; // subtract
-                case 3: return Mul12(a, b); // multiply
-                case 4: return b == 0 ? FP_MAX : (a << 12) / b; // divide
-                case 5: return a + b - Mul12(a, b); // screen
-                case 6: return Math.Min(a, b); // min/darken
-                case 7: return Math.Max(a, b); // max/lighten
-                case 8: return Math.Abs(a - b); // difference
-                case 9: // overlay
-                    return a < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
-                case 10: // hard light
-                    return b < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
-                case 11: // soft light
-                    int t = Mul12(a, b);
-                    return t + Mul12(a, FP_MAX - Mul12(FP_MAX - a, FP_MAX - b) - t);
-                default: return b;
-            }
+            int[][] child = GetColour(node.Children[0], row);
+            int lo = node.IntParam0;
+            int hi = node.IntParam1 == 0 ? FP_ONE : node.IntParam1;
+            for (int ch = 0; ch < 3; ch++)
+                for (int x = 0; x < w; x++) {
+                    int v = child[ch][x];
+                    output[ch][x] = v < lo ? lo : v > hi ? hi : v;
+                }
         }
 
         // ===================================================================
@@ -437,88 +598,140 @@ namespace FlashEditor.Definitions.Sprites {
             }
         }
 
+        private static int BlendOp(int a, int b, int mode) {
+            switch (mode) {
+                case 0: return b;
+                case 1: return a + b;
+                case 2: return a - b;
+                case 3: return Mul12(a, b);
+                case 4: return b == 0 ? FP_MAX : (a << 12) / b;
+                case 5: return a + b - Mul12(a, b);
+                case 6: return Math.Min(a, b);
+                case 7: return Math.Max(a, b);
+                case 8: return Math.Abs(a - b);
+                case 9:
+                    return a < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
+                case 10:
+                    return b < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
+                case 11:
+                    int t = Mul12(a, b);
+                    return t + Mul12(a, FP_MAX - Mul12(FP_MAX - a, FP_MAX - b) - t);
+                default: return b;
+            }
+        }
+
         // ===================================================================
-        //  TYPE 8: Colour Ramp
+        //  TYPE 8: Curve/Spline Transfer (mono)
         // ===================================================================
-        private static void EvalColourRamp(TextureNode node, int[][] output, int w, int row) {
+        private static void EvalCurveTransfer(TextureNode node, int[] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output, 2040, 0, w);
+                return;
+            }
+            int[] child = GetMono(node.Children[0], row);
+            int[] lut = BuildCurveTransferLUT(node);
+            for (int x = 0; x < w; x++) {
+                int idx = Math.Clamp(child[x] >> 4, 0, 256);
+                output[x] = lut[idx];
+            }
+        }
+
+        private static int[] BuildCurveTransferLUT(TextureNode node) {
+            int[] lut = new int[257];
+            if (node.GradientData == null || node.GradientData.Length == 0) {
+                for (int i = 0; i <= 256; i++)
+                    lut[i] = i << 4;
+                return lut;
+            }
+
+            var pts = node.GradientData;
+            int mode = node.GradientPreset; // 0=linear, 1=cosine, 2=catmull-rom
+            int n = pts.Length;
+
+            for (int i = 0; i <= 256; i++) {
+                int pos = i << 4; // 0..4096
+                // Find surrounding control points
+                int seg = 0;
+                for (int j = 1; j < n; j++) {
+                    if (pts[j][0] > pos) break;
+                    seg = j;
+                }
+
+                if (n == 1) {
+                    lut[i] = pts[0][1];
+                } else if (seg >= n - 1) {
+                    lut[i] = pts[n - 1][1];
+                } else {
+                    int x0 = pts[seg][0], y0 = pts[seg][1];
+                    int x1 = pts[seg + 1][0], y1 = pts[seg + 1][1];
+                    int range = x1 - x0;
+                    if (range <= 0) {
+                        lut[i] = y1;
+                    } else {
+                        double t = (pos - x0) / (double)range;
+                        switch (mode) {
+                            case 1: // cosine
+                                t = (1.0 - Math.Cos(t * Math.PI)) * 0.5;
+                                lut[i] = (int)(y0 + (y1 - y0) * t);
+                                break;
+                            case 2: // catmull-rom
+                                int ym1 = seg > 0 ? pts[seg - 1][1] : y0;
+                                int y2 = seg + 2 < n ? pts[seg + 2][1] : y1;
+                                lut[i] = CatmullRom(ym1, y0, y1, y2, t);
+                                break;
+                            default: // linear
+                                lut[i] = y0 + (int)((y1 - y0) * t);
+                                break;
+                        }
+                    }
+                }
+            }
+            return lut;
+        }
+
+        private static int CatmullRom(int p0, int p1, int p2, int p3, double t) {
+            double t2 = t * t, t3 = t2 * t;
+            return (int)(0.5 * ((2 * p1) +
+                (-p0 + p2) * t +
+                (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                (-p0 + 3 * p1 - 3 * p2 + p3) * t3));
+        }
+
+        // ===================================================================
+        //  TYPE 9: Mirror/Flip
+        // ===================================================================
+        private static void EvalMirrorFlipMono(TextureNode node, int[] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                Array.Fill(output, 2040, 0, w);
+                return;
+            }
+            int srcRow = (node.IntParam1 != 0) ? (node.Height - 1 - row) : row;
+            int[] child = GetMono(node.Children[0], srcRow);
+            if (node.IntParam0 != 0) {
+                for (int x = 0; x < w; x++)
+                    output[x] = child[w - 1 - x];
+            } else {
+                Array.Copy(child, output, w);
+            }
+        }
+
+        private static void EvalMirrorFlipColour(TextureNode node, int[][] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output[0], 2040, 0, w);
                 Array.Fill(output[1], 2040, 0, w);
                 Array.Fill(output[2], 2040, 0, w);
                 return;
             }
-            int[] child = GetMono(node.Children[0], row);
-            int[] rampR, rampG, rampB;
-            BuildColourRampLUT(node, out rampR, out rampG, out rampB);
-
-            for (int x = 0; x < w; x++) {
-                int idx = Clamp12(child[x]) >> 4; // 0-255
-                output[0][x] = rampR[idx];
-                output[1][x] = rampG[idx];
-                output[2][x] = rampB[idx];
+            int srcRow = (node.IntParam1 != 0) ? (node.Height - 1 - row) : row;
+            int[][] child = GetColour(node.Children[0], srcRow);
+            if (node.IntParam0 != 0) {
+                for (int ch = 0; ch < 3; ch++)
+                    for (int x = 0; x < w; x++)
+                        output[ch][x] = child[ch][w - 1 - x];
+            } else {
+                for (int ch = 0; ch < 3; ch++)
+                    Array.Copy(child[ch], output[ch], w);
             }
-        }
-
-        private static void BuildColourRampLUT(TextureNode node, out int[] rampR, out int[] rampG, out int[] rampB) {
-            rampR = new int[256];
-            rampG = new int[256];
-            rampB = new int[256];
-
-            if (node.GradientData == null || node.GradientData.Length == 0) {
-                // Default: greyscale ramp
-                for (int i = 0; i < 256; i++) {
-                    rampR[i] = i << 4;
-                    rampG[i] = i << 4;
-                    rampB[i] = i << 4;
-                }
-                return;
-            }
-
-            // Sort gradient stops by position
-            var stops = node.GradientData;
-            // Interpolate between stops
-            int prevPos = 0, prevR = 0, prevG = 0, prevB = 0;
-            int stopIdx = 0;
-            int nextPos = stops[0][0] >> 4; // convert from 12-bit to 8-bit
-            int nextR = stops[0][1] << 4, nextG = stops[0][2] << 4, nextB = stops[0][3] << 4;
-
-            for (int i = 0; i < 256; i++) {
-                while (stopIdx < stops.Length - 1 && i >= nextPos) {
-                    prevPos = nextPos;
-                    prevR = nextR;
-                    prevG = nextG;
-                    prevB = nextB;
-                    stopIdx++;
-                    nextPos = stops[stopIdx][0] >> 4;
-                    nextR = stops[stopIdx][1] << 4;
-                    nextG = stops[stopIdx][2] << 4;
-                    nextB = stops[stopIdx][3] << 4;
-                }
-                int range = nextPos - prevPos;
-                if (range <= 0) {
-                    rampR[i] = nextR;
-                    rampG[i] = nextG;
-                    rampB[i] = nextB;
-                } else {
-                    int t = ((i - prevPos) << 12) / range;
-                    rampR[i] = prevR + Mul12(nextR - prevR, t);
-                    rampG[i] = prevG + Mul12(nextG - prevG, t);
-                    rampB[i] = prevB + Mul12(nextB - prevB, t);
-                }
-            }
-        }
-
-        // ===================================================================
-        //  TYPE 9: Invert
-        // ===================================================================
-        private static void EvalInvert(TextureNode node, int[] output, int w, int row) {
-            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
-                Array.Fill(output, 2040, 0, w);
-                return;
-            }
-            int[] child = GetMono(node.Children[0], row);
-            for (int x = 0; x < w; x++)
-                output[x] = FP_MAX - child[x];
         }
 
         // ===================================================================
@@ -559,6 +772,11 @@ namespace FlashEditor.Definitions.Sprites {
                     return (int)(Math.Sin(val * Math.PI / (2.0 * FP_ONE)) * FP_ONE);
                 case 5: // cosine
                     return FP_ONE - (int)(Math.Cos(val * Math.PI / (2.0 * FP_ONE)) * FP_ONE);
+                case 6: { // smoothstep
+                    double t = val / (double)FP_ONE;
+                    t = t * t * (3.0 - 2.0 * t);
+                    return (int)(t * FP_ONE);
+                }
                 default: return val;
             }
         }
@@ -762,14 +980,20 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 16: Threshold
+        //  TYPE 16: Threshold (uses child[0] mono input)
         // ===================================================================
         private static void EvalThreshold(TextureNode node, int[] output, int w, int row) {
             int thresh = node.IntParam0;
             int below = node.IntParam1;
             int above = node.IntParam2;
-            for (int x = 0; x < w; x++)
-                output[x] = node.XCoord[x] < thresh ? below : above;
+            if (node.Children != null && node.Children.Length >= 1 && node.Children[0] != null) {
+                int[] child = GetMono(node.Children[0], row);
+                for (int x = 0; x < w; x++)
+                    output[x] = child[x] < thresh ? below : above;
+            } else {
+                for (int x = 0; x < w; x++)
+                    output[x] = node.XCoord[x] < thresh ? below : above;
+            }
         }
 
         // ===================================================================
@@ -847,25 +1071,63 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 19: Weave
+        //  TYPE 19: Polar Distortion
         // ===================================================================
-        private static void EvalWeave(TextureNode node, int[] output, int w, int row) {
+        private static readonly int[] _sinLUT = BuildSinCosLUT(false);
+        private static readonly int[] _cosLUT = BuildSinCosLUT(true);
+
+        private static int[] BuildSinCosLUT(bool isCos) {
+            int[] lut = new int[256];
+            for (int i = 0; i < 256; i++) {
+                double angle = i * 2.0 * Math.PI / 256.0;
+                lut[i] = (int)((isCos ? Math.Cos(angle) : Math.Sin(angle)) * 4096);
+            }
+            return lut;
+        }
+
+        private static void EvalPolarDistortionMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 3) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
-            int[] warp = GetMono(node.Children[0], row);
-            int[] weft = GetMono(node.Children[1], row);
-            int[] mask = GetMono(node.Children[2], row);
+            int scale = node.IntParam0 == 0 ? 32768 : node.IntParam0;
+            int[] source = GetMono(node.Children[0], row);
+            int[] angleField = GetMono(node.Children[1], row);
+            int[] magField = GetMono(node.Children[2], row);
 
-            int freq = Math.Max(1, node.IntParam0);
             for (int x = 0; x < w; x++) {
-                int xp = (node.XCoord[x] * freq) >> 12;
-                int yp = (node.YCoord[row] * freq) >> 12;
-                output[x] = ((xp + yp) & 1) == 0 ? Mul12(warp[x], mask[x]) >> 12 * 0 + warp[x]
-                    : Mul12(weft[x], mask[x]) >> 12 * 0 + weft[x];
-                // Simplified: alternate warp/weft based on position
-                output[x] = ((xp + yp) & 1) == 0 ? warp[x] : weft[x];
+                int angle = (angleField[x] >> 4) & 0xFF;
+                int mag = (scale * magField[x]) >> 12;
+                int dx = (_sinLUT[angle] * mag) >> 12;
+                int dy = (_cosLUT[angle] * mag) >> 12;
+                int sx = ((x + (dx >> 12)) % w + w) % w;
+                int sy = ((row + (dy >> 12)) % node.Height + node.Height) % node.Height;
+                int[] srcRow = GetMono(node.Children[0], sy);
+                output[x] = srcRow[sx];
+            }
+        }
+
+        private static void EvalPolarDistortionColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 3) {
+                Array.Fill(output[0], 2040, 0, w);
+                Array.Fill(output[1], 2040, 0, w);
+                Array.Fill(output[2], 2040, 0, w);
+                return;
+            }
+            int scale = node.IntParam0 == 0 ? 32768 : node.IntParam0;
+            int[] angleField = GetMono(node.Children[1], row);
+            int[] magField = GetMono(node.Children[2], row);
+
+            for (int x = 0; x < w; x++) {
+                int angle = (angleField[x] >> 4) & 0xFF;
+                int mag = (scale * magField[x]) >> 12;
+                int dx = (_sinLUT[angle] * mag) >> 12;
+                int dy = (_cosLUT[angle] * mag) >> 12;
+                int sx = ((x + (dx >> 12)) % w + w) % w;
+                int sy = ((row + (dy >> 12)) % node.Height + node.Height) % node.Height;
+                int[][] srcRow = GetColour(node.Children[0], sy);
+                for (int ch = 0; ch < 3; ch++)
+                    output[ch][x] = srcRow[ch][sx];
             }
         }
 
@@ -1161,21 +1423,28 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 35: Scale
+        //  TYPE 35: Normal/Bump Map
         // ===================================================================
-        private static void EvalScale(TextureNode node, int[] output, int w, int row) {
+        private static void EvalBumpMap(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
-            int scaleX = Math.Max(1, node.IntParam0);
-            int srcRow = (row * FP_ONE / scaleX) % node.Height;
-            if (srcRow < 0) srcRow += node.Height;
-            int[] child = GetMono(node.Children[0], srcRow);
+            int intensity = Math.Max(1, node.IntParam0);
+            int prevRow = ((row - 1) % node.Height + node.Height) % node.Height;
+            int nextRow = ((row + 1) % node.Height + node.Height) % node.Height;
+            int[] cur = GetMono(node.Children[0], row);
+            int[] above = GetMono(node.Children[0], prevRow);
+            int[] below = GetMono(node.Children[0], nextRow);
+
             for (int x = 0; x < w; x++) {
-                int sx = (x * FP_ONE / scaleX) % w;
-                if (sx < 0) sx += w;
-                output[x] = child[sx];
+                int xl = ((x - 1) + w) % w;
+                int xr = (x + 1) % w;
+                long dX = (long)intensity * (cur[xr] - cur[xl]);
+                long dY = (long)intensity * (below[x] - above[x]);
+                long len = (long)Math.Sqrt((double)(dX * dX + dY * dY + (long)FP_ONE * FP_ONE));
+                if (len == 0) len = 1;
+                output[x] = (int)(FP_ONE - (long)FP_ONE * FP_ONE / len);
             }
         }
 

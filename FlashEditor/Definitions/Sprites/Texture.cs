@@ -30,7 +30,7 @@ namespace FlashEditor.Definitions.Sprites
         // Node type → child input count (from super() calls in client)
         private static readonly int[] ChildCounts = {
         //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
-            0, 0, 0, 0, 0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 3,
+            0, 0, 0, 0, 0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 3,
         // 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39
             1, 3, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0,
         };
@@ -163,16 +163,16 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 7) { node.IntParam7 = buf.ReadUnsignedShort(); return true; }
                     return false;
 
-                case 5: // Brightness (Sub24)
-                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte() << 4; return true; }
-                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
-                    if (opcode == 2) { node.IntParam2 = buf.ReadUnsignedByte(); return true; }
+                case 5: // BoxBlur (Sub24)
+                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte(); return true; } // horizontal radius
+                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; } // vertical radius
+                    if (opcode == 2) { node.IntParam2 = buf.ReadUnsignedByte(); return true; } // mono flag
                     return false;
 
-                case 6: // Blend mono (Sub15)
-                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort(); return true; }
-                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedShort(); return true; }
-                    if (opcode == 2) { node.BlendMode = buf.ReadUnsignedByte(); return true; }
+                case 6: // Clamp (Sub15)
+                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort(); return true; } // lower bound
+                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedShort(); return true; } // upper bound
+                    if (opcode == 2) { node.IntParam2 = buf.ReadUnsignedByte(); return true; }  // mono flag
                     return false;
 
                 case 7: // ColourBlend (Sub7)
@@ -180,22 +180,18 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 1) { node.BlendMode = buf.ReadUnsignedByte(); return true; }
                     return false;
 
-                case 8: // ColourRamp (Sub9) — variable opcode 0
+                case 8: // CurveTransfer (Sub9) — mono spline/curve
                     if (opcode == 0)
                     {
-                        node.GradientPreset = buf.ReadUnsignedByte();
+                        node.GradientPreset = buf.ReadUnsignedByte(); // interp: 0=linear, 1=cosine, 2=catmull-rom
                         int count = buf.ReadUnsignedByte();
                         node.GradientCount = count;
                         node.GradientData = new int[count][];
                         for (int i = 0; i < count; i++)
                         {
-                            node.GradientData[i] = new int[4];
-                            node.GradientData[i][0] = buf.ReadUnsignedShort(); // position
-                            int packed = buf.ReadUnsignedShort(); // packed RGB565 or similar
-                            // The second short is the colour packed as RGB
-                            node.GradientData[i][1] = (packed >> 10) & 0x1F;  // R 5-bit
-                            node.GradientData[i][2] = (packed >> 5) & 0x1F;   // G 5-bit
-                            node.GradientData[i][3] = packed & 0x1F;          // B 5-bit
+                            node.GradientData[i] = new int[2];
+                            node.GradientData[i][0] = buf.ReadUnsignedShort(); // x position
+                            node.GradientData[i][1] = buf.ReadUnsignedShort(); // y value
                         }
                         return true;
                     }
@@ -273,9 +269,9 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 0) { node.SpriteId = buf.ReadUnsignedShort(); return true; }
                     return false;
 
-                case 19: // Weave (Sub2)
-                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort(); return true; }
-                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
+                case 19: // PolarDistortion (Sub2)
+                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort() << 4; return true; } // scale, default 32768
+                    if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }       // mono flag
                     return false;
 
                 case 20: // Clamp (Sub29)

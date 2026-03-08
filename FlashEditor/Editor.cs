@@ -32,6 +32,7 @@ namespace FlashEditor {
         private readonly ContextMenuStrip _textureContextMenu = new ContextMenuStrip();
 
         private readonly Timer _fpsTimer = new();
+        private readonly ToolTip _modelTooltip = new() { InitialDelay = 300, AutoPopDelay = 30000, ReshowDelay = 100 };
         private int _program;
         private int _testTexture;
         private int _uModel, _uView, _uProj, _uTexture, _uTexOffset, _uLightDir;
@@ -196,7 +197,7 @@ namespace FlashEditor {
             _proj = Matrix4.CreatePerspectiveFieldOfView(
                 MathHelper.DegreesToRadians((float) _fov),
                 glControl.Width / (float) glControl.Height,
-                0.1f,
+                1f,
                 10000f);
         }
 
@@ -210,6 +211,73 @@ namespace FlashEditor {
 
         private void UpdateView() {
             _view = Matrix4.LookAt(CameraPosition(), _target, _up);
+        }
+
+        /// <summary>
+        /// Builds and sets the GL viewport tooltip with model statistics.
+        /// </summary>
+        private void UpdateModelTooltip(string source, IList<int> modelIds, IList<ModelDefinition> defs) {
+            if (defs == null || defs.Count == 0) {
+                _modelTooltip.SetToolTip(glControl, null);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(source);
+            sb.AppendLine(new string('-', 32));
+
+            int totalVerts = 0, totalTris = 0, totalTexTris = 0;
+            var allTextureIds = new HashSet<int>();
+
+            for (int m = 0; m < defs.Count; m++) {
+                var def = defs[m];
+                int id = m < modelIds.Count ? modelIds[m] : -1;
+
+                if (defs.Count > 1)
+                    sb.AppendLine($"  Model {(id >= 0 ? id.ToString() : "?")}:");
+
+                sb.AppendLine($"  Vertices: {def.VertexCount}");
+                sb.AppendLine($"  Triangles: {def.TriangleCount}");
+                if (def.TexturedTriangleCount > 0)
+                    sb.AppendLine($"  Textured tris: {def.TexturedTriangleCount}");
+                sb.AppendLine($"  Format: {def.FormatType}");
+
+                // Collect unique texture IDs
+                if (def.FaceTextures != null) {
+                    foreach (short tex in def.FaceTextures) {
+                        if (tex >= 0) allTextureIds.Add(tex);
+                    }
+                }
+
+                if (def.FaceAlpha != null) {
+                    int transCount = 0;
+                    for (int i = 0; i < def.TriangleCount; i++)
+                        if ((def.FaceAlpha[i] & 0xFF) > 0) transCount++;
+                    if (transCount > 0)
+                        sb.AppendLine($"  Translucent faces: {transCount}");
+                }
+
+                if (def.ParticleEffectId != 0xFFFF)
+                    sb.AppendLine($"  Particle effect: {def.ParticleEffectId}");
+
+                totalVerts += def.VertexCount;
+                totalTris += def.TriangleCount;
+                totalTexTris += def.TexturedTriangleCount;
+
+                if (defs.Count > 1) sb.AppendLine();
+            }
+
+            if (defs.Count > 1) {
+                sb.AppendLine(new string('-', 32));
+                sb.AppendLine($"Total: {totalVerts} verts, {totalTris} tris");
+            }
+
+            if (allTextureIds.Count > 0) {
+                var sorted = allTextureIds.OrderBy(x => x);
+                sb.AppendLine($"Textures: {string.Join(", ", sorted)}");
+            }
+
+            _modelTooltip.SetToolTip(glControl, sb.ToString().TrimEnd());
         }
 
         /// <summary>
@@ -692,25 +760,9 @@ namespace FlashEditor {
                     break;
 
                 case RSConstants.TEXTURES:
-                    bgw.DoWork += (object? s, DoWorkEventArgs args) => {
-                        var manager = new TextureManager(cache);
-                        manager.Load();
-                        args.Result = TextureManager.Textures;
-                    };
-
-                    bgw.RunWorkerCompleted += (_, e) => {
-                        if (e.Error != null)
-                        {
-                            Debug($"Error loading textures: {e.Error}", LOG_DETAIL.BASIC);
-                        }
-                        else if (e.Result is SortedDictionary<int, TextureDefinition> dict)
-                        {
-                            Debug("Loaded textures into GUI");
-                            LoadTextures(dict.Values);
-                        }
-                    };
-
-                    bgw.RunWorkerAsync();
+                    // Textures already loaded by GLTextureCache during cache open.
+                    // Just populate the ListView from the existing static dict.
+                    LoadTextures(TextureManager.Textures.Values);
                     break;
 
                 case RSConstants.MODELS_INDEX: {
@@ -1025,6 +1077,7 @@ namespace FlashEditor {
                         }
                         _modelRenderer.Load(def, _textureCache);
                         FrameModel(new[] { def });
+                        UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { def });
                     }
                     glControl.Invalidate();
                     return;
@@ -1069,13 +1122,13 @@ namespace FlashEditor {
                             }
                             _modelRenderer.Load(loaded, _textureCache);
                             FrameModel(new[] { loaded });
+                            UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { loaded });
                         }
                         glControl.Invalidate();
                     }
                     else if (t.IsFaulted) {
                         _modelTasks.Remove(id);
                         Debug($"[UI] Error loading model {id}: {t.Exception?.Flatten().InnerException}", LOG_DETAIL.ADVANCED);
-                        // Optionally: show a MessageBox or other UI error indicator
                     }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
             }
@@ -1123,6 +1176,8 @@ namespace FlashEditor {
             }
 
             // Per-model translation offset (opcode 121)
+            // Hydra client (Class141:1175) applies raw signed byte values directly
+            // after the conditional <<2 upscale — no additional shift on translations.
             if (npc.translations != null && modelIndex < npc.translations.Length
                 && npc.translations[modelIndex] != null) {
                 int[] t = npc.translations[modelIndex];
@@ -1203,6 +1258,7 @@ namespace FlashEditor {
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
                 FrameModel(t.Result);
+                UpdateModelTooltip($"NPC {npc.id} '{npc.name}'", ids, t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -1235,6 +1291,7 @@ namespace FlashEditor {
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
                 FrameModel(t.Result);
+                UpdateModelTooltip($"Item {item.id} '{item.name}' (model {modelId})", new[] { modelId }, t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -1271,6 +1328,7 @@ namespace FlashEditor {
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
                 FrameModel(t.Result);
+                UpdateModelTooltip($"Object {obj.id} '{obj.name}'", ids, t.Result);
                 glControl.Invalidate();
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -1378,6 +1436,42 @@ namespace FlashEditor {
             var textureList = new List<TextureDefinition>(textures);
             Debug($"LoadTextures: {textureList.Count} definitions to process", LOG_DETAIL.BASIC);
 
+            // Phase 1: Render all texture graphs in parallel (CPU-bound work)
+            int rendered = 0;
+            Debug($"LoadTextures: rendering graphs with 20 threads...", LOG_DETAIL.BASIC);
+            int timedOut = 0;
+            var sw2 = System.Diagnostics.Stopwatch.StartNew();
+            System.Threading.Tasks.Parallel.ForEach(textureList,
+                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 20 },
+                tex => {
+                    try {
+                        var texSw = System.Diagnostics.Stopwatch.StartNew();
+                        var task = System.Threading.Tasks.Task.Run(() => TextureManager.EnsureRendered(tex));
+                        if (!task.Wait(15000)) {
+                            System.Threading.Interlocked.Increment(ref timedOut);
+                            Debug($"Texture {tex.id} timed out (15s) — graph={tex.graph != null}, sprites={tex.spriteFileIds?.Length ?? 0}", LOG_DETAIL.BASIC);
+                        } else {
+                            texSw.Stop();
+                            if (texSw.ElapsedMilliseconds > 1000)
+                                Debug($"Texture {tex.id} slow render: {texSw.ElapsedMilliseconds}ms, thumb={tex.thumb != null}", LOG_DETAIL.BASIC);
+                        }
+                    } catch (AggregateException aex) {
+                        var inner = aex.Flatten().InnerException;
+                        Debug($"Error rendering texture {tex.id}: {inner?.GetType().Name}: {inner?.Message}", LOG_DETAIL.BASIC);
+                        Debug($"  Stack: {inner?.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}", LOG_DETAIL.BASIC);
+                    } catch (Exception ex) {
+                        Debug($"Error rendering texture {tex.id}: {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                    }
+                    int count = System.Threading.Interlocked.Increment(ref rendered);
+                    if (count % 100 == 0 || count == textureList.Count)
+                        Debug($"LoadTextures: rendered {count}/{textureList.Count}", LOG_DETAIL.BASIC);
+                });
+            sw2.Stop();
+            Debug($"LoadTextures: Phase 1 complete in {sw2.ElapsedMilliseconds}ms, {timedOut} timed out", LOG_DETAIL.BASIC);
+
+            Debug($"LoadTextures: graph rendering complete, building UI...", LOG_DETAIL.BASIC);
+
+            // Phase 2: Build UI image list (must be sequential — WinForms ImageList)
             int errors = 0;
             int withSprite = 0;
             int withoutSprite = 0;
@@ -1386,10 +1480,10 @@ namespace FlashEditor {
             {
                 try
                 {
-                    Bitmap thumb;
+                    Bitmap listThumb;
                     if (tex.thumb != null) {
-                        // Use real sprite thumbnail loaded from TEXTURES index
-                        thumb = (Bitmap)CreateThumbnail(tex.thumb);
+                        // Use real sprite/rendered thumbnail
+                        listThumb = (Bitmap)CreateThumbnail(tex.thumb);
                         withSprite++;
                     } else {
                         // Fall back to colour swatch from field1835 (tint colour)
@@ -1406,13 +1500,14 @@ namespace FlashEditor {
                             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                             g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
                         }
-                        thumb = (Bitmap)CreateThumbnail(bmp);
+                        listThumb = (Bitmap)CreateThumbnail(bmp);
                         withoutSprite++;
                     }
 
-                    tex.thumb = thumb;
+                    // Only add to the image list — don't overwrite tex.thumb
+                    // so GLTextureCache can use the full-resolution sprite/render
                     if (!_textureImageList.Images.ContainsKey(tex.id.ToString()))
-                        _textureImageList.Images.Add(tex.id.ToString(), thumb);
+                        _textureImageList.Images.Add(tex.id.ToString(), listThumb);
                 }
                 catch (Exception ex)
                 {
@@ -1422,6 +1517,7 @@ namespace FlashEditor {
             }
 
             Debug($"LoadTextures complete: {textureList.Count} textures, {withSprite} with sprites, {withoutSprite} without, {errors} errors", LOG_DETAIL.BASIC);
+            TextureManager.PrintDiagnostics();
             TextureListView.SetObjects(textureList);
         }
     }

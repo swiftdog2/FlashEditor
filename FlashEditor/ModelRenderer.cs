@@ -316,10 +316,18 @@ internal sealed class ModelRenderer
         if (uTexOffsetLoc >= 0)
             GL.Uniform2(uTexOffsetLoc, uOff, vOff);
 
+        // Additive blend for textures with field1818 == 2
+        bool additive = b.TexDef?.field1818 == 2;
+        if (additive)
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
+
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, b.Texture);
         GL.BindVertexArray(b.VAO);
         GL.DrawElements(PrimitiveType.Triangles, b.IndexCount, DrawElementsType.UnsignedInt, 0);
+
+        if (additive)
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
     }
 
     public void Dispose()

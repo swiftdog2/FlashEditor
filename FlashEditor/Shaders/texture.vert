@@ -19,7 +19,7 @@ void main() {
     // Dynamic directional lighting — the light direction follows the camera
     vec3 normal = normalize(mat3(uModel) * in_normal);
     float NdotL = max(dot(normal, uLightDir), 0.0);
-    float lighting = 0.3 + 0.7 * NdotL;
+    float lighting = 1.2 * (0.3 + 0.7 * NdotL);
     vColour = in_colour * lighting;
 
     gl_Position = uProj * uView * uModel * vec4(in_position, 1.0);

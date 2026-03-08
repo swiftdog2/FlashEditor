@@ -1,7 +1,5 @@
 using FlashEditor.cache;
 using FlashEditor.Definitions.Sprites;
-using FlashEditor.cache.util;
-using FlashEditor.cache.sprites;
 using OpenTK.Graphics.OpenGL;
 using System;
 using System.Collections.Generic;
@@ -22,14 +20,12 @@ namespace FlashEditor
     {
         private readonly RSCache _cache;
         private readonly Dictionary<int, int> _textures = new();
-        private readonly TextureManager _manager;
-
         public GLTextureCache(RSCache cache)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _manager = new TextureManager(cache);
             Debug("Initializing GLTextureCache", LOG_DETAIL.BASIC);
-            _manager.Load();
+            var manager = new TextureManager(cache);
+            manager.Load();
             Debug("Textures loaded", LOG_DETAIL.BASIC);
         }
 
@@ -86,6 +82,8 @@ namespace FlashEditor
             GL.BindTexture(TextureTarget.Texture2D, tex);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
 
             BitmapData data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, bmp.Width, bmp.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0);

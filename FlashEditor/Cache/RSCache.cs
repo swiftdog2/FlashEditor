@@ -13,6 +13,12 @@ using static FlashEditor.Utils.DebugUtil;
 namespace FlashEditor.cache {
     public class RSCache {
         /// <summary>
+        /// Lock protecting <see cref="containers"/> from concurrent access
+        /// (e.g. Parallel.ForEach in texture loading).
+        /// </summary>
+        private readonly object _containerLock = new object();
+
+        /// <summary>
         /// The backing file store providing index and data channel access.
         /// </summary>
         public RSFileStore store;
@@ -195,46 +201,48 @@ namespace FlashEditor.cache {
             if (archiveId < 0 || archiveId >= store.GetFileCount(indexId))
                 throw new FileNotFoundException("Could not find container for index " + indexId);
 
-            //Initialise the container dictionary
-            if (!containers.ContainsKey(indexId))
-                containers.Add(indexId, new SortedDictionary<int, RSContainer>());
+            lock (_containerLock) {
+                //Initialise the container dictionary
+                if (!containers.ContainsKey(indexId))
+                    containers.Add(indexId, new SortedDictionary<int, RSContainer>());
 
-            //Return the container if already cached and still has data
-            if (containers[indexId].ContainsKey(archiveId)) {
-                RSContainer cached = containers[indexId][archiveId];
-                if (cached.HasData)
-                    return cached;
+                //Return the container if already cached and still has data
+                if (containers[indexId].ContainsKey(archiveId)) {
+                    RSContainer cached = containers[indexId][archiveId];
+                    if (cached.HasData)
+                        return cached;
 
-                //Re-load evicted container from disk
-                JagStream evictedData = LoadContainer(indexId, archiveId);
-                RSContainer reloaded = RSContainer.Decode(evictedData, ResolveXTEAKey(indexId, archiveId));
-                if (reloaded != null) {
-                    reloaded.SetIndexId(indexId);
-                    reloaded.SetId(archiveId);
-                    containers[indexId][archiveId] = reloaded;
-                    return reloaded;
+                    //Re-load evicted container from disk
+                    JagStream evictedData = LoadContainer(indexId, archiveId);
+                    RSContainer reloaded = RSContainer.Decode(evictedData, ResolveXTEAKey(indexId, archiveId));
+                    if (reloaded != null) {
+                        reloaded.SetIndexId(indexId);
+                        reloaded.SetId(archiveId);
+                        containers[indexId][archiveId] = reloaded;
+                        return reloaded;
+                    }
+
+                    //Evicted container could not be reloaded
+                    throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
                 }
 
-                //Evicted container could not be reloaded
-                throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
+                //Read the data from the index
+                JagStream data = LoadContainer(indexId, archiveId);
+
+                //Decode the container
+                RSContainer container = RSContainer.Decode(data, ResolveXTEAKey(indexId, archiveId));
+
+                if (container == null)
+                    throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
+
+                container.SetIndexId(indexId);
+                container.SetId(archiveId);
+
+                //Cache the container for later usage
+                containers[indexId][archiveId] = container;
+
+                return container;
             }
-
-            //Read the data from the index
-            JagStream data = LoadContainer(indexId, archiveId);
-
-            //Decode the container
-            RSContainer container = RSContainer.Decode(data, ResolveXTEAKey(indexId, archiveId));
-
-            if (container == null)
-                throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
-
-            container.SetIndexId(indexId);
-            container.SetId(archiveId);
-
-            //Cache the container for later usage
-            containers[indexId][archiveId] = container;
-
-            return container;
         }
 
         /// <summary>

@@ -1039,9 +1039,9 @@ namespace FlashEditor {
             visiblePriorityColumn.CheckBoxes = true;
             visiblePriorityColumn.Text = "VisiblePrio";
             visiblePriorityColumn.Width = 90;
-            //
+            // 
             // npcModelIdsColumn
-            //
+            // 
             npcModelIdsColumn.AspectName = "ModelIdList";
             npcModelIdsColumn.Text = "Model IDs";
             npcModelIdsColumn.Width = 180;
@@ -1231,7 +1231,7 @@ namespace FlashEditor {
             splitContainer1.Panel2.Controls.Add(ModelLoadingLabel);
             splitContainer1.Panel2.Controls.Add(ModelProgressBar);
             splitContainer1.Size = new Size(1113, 563);
-            splitContainer1.SplitterDistance = 500;
+            splitContainer1.SplitterDistance = 862;
             splitContainer1.TabIndex = 0;
             // 
             // glControl
@@ -1245,7 +1245,7 @@ namespace FlashEditor {
             glControl.Name = "glControl";
             glControl.Profile = OpenTK.Windowing.Common.ContextProfile.Core;
             glControl.SharedContext = null;
-            glControl.Size = new Size(494, 557);
+            glControl.Size = new Size(856, 557);
             glControl.TabIndex = 0;
             // 
             // ModelListView
@@ -1254,7 +1254,7 @@ namespace FlashEditor {
             ModelListView.Location = new Point(3, 3);
             ModelListView.Name = "ModelListView";
             ModelListView.ShowGroups = false;
-            ModelListView.Size = new Size(603, 470);
+            ModelListView.Size = new Size(241, 470);
             ModelListView.TabIndex = 15;
             ModelListView.View = View.Details;
             ModelListView.VirtualMode = true;
@@ -1271,7 +1271,7 @@ namespace FlashEditor {
             ModelLoadingLabel.AutoSize = true;
             ModelLoadingLabel.BackColor = Color.Transparent;
             ModelLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ModelLoadingLabel.Location = new Point(368, 476);
+            ModelLoadingLabel.Location = new Point(6, 476);
             ModelLoadingLabel.Name = "ModelLoadingLabel";
             ModelLoadingLabel.Size = new Size(135, 19);
             ModelLoadingLabel.TabIndex = 14;
@@ -1282,7 +1282,7 @@ namespace FlashEditor {
             // 
             ModelProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ModelProgressBar.ForeColor = Color.DarkRed;
-            ModelProgressBar.Location = new Point(366, 498);
+            ModelProgressBar.Location = new Point(4, 498);
             ModelProgressBar.Name = "ModelProgressBar";
             ModelProgressBar.Size = new Size(240, 62);
             ModelProgressBar.TabIndex = 13;
@@ -1497,16 +1497,16 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn ambientSoundColumn;
         private BrightIdeasSoftware.OLVColumn morphVarbitColumn;
         private TabPage ModelViewerTab;
-        private SplitContainer splitContainer1;
-        private OpenTK.GLControl.GLControl glControl;
-        private Label ModelLoadingLabel;
-        private ProgressBar ModelProgressBar;
-        private BrightIdeasSoftware.FastObjectListView ModelListView;
-        private BrightIdeasSoftware.OLVColumn ModelID;
         private TabPage TextureViewerTab;
         private BrightIdeasSoftware.ObjectListView TextureListView;
         private BrightIdeasSoftware.OLVColumn TextureID;
         private BrightIdeasSoftware.OLVColumn TextureImage;
+        private SplitContainer splitContainer1;
+        private OpenTK.GLControl.GLControl glControl;
+        private FastObjectListView ModelListView;
+        private OLVColumn ModelID;
+        private Label ModelLoadingLabel;
+        private ProgressBar ModelProgressBar;
     }
 }
 

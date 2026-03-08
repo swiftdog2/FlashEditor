@@ -2,6 +2,8 @@ using FlashEditor;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using static FlashEditor.Utils.DebugUtil;
@@ -84,7 +86,7 @@ namespace FlashEditor.Definitions.Sprites {
             // Textures in index 9 are stored as multiple files within archive 0.
             // Each file = one texture definition. The file ID = texture ID.
             // Texture.Decode extracts sprite file IDs referenced from SPRITES (index 8).
-            int loaded = 0, errors = 0, withSprites = 0;
+            int loaded = 0, errors = 0, withSprites = 0, withGraphs = 0, graphBails = 0;
             foreach (var (archiveId, archiveEntry) in table.GetArchiveEntries()) {
                 try {
                     int[] fileIds = archiveEntry.GetValidFileIds();
@@ -103,7 +105,10 @@ namespace FlashEditor.Definitions.Sprites {
                             stream.Seek0();
 
                             Texture tex = Texture.Decode(stream);
-                            int textureId = fileId;
+
+                            // Texture index stores one graph per archive: archiveId = texture ID.
+                            // fileId is always 0 within each archive.
+                            int textureId = (fileIds.Length == 1 && fileId == 0) ? archiveId : fileId;
 
                             // Merge into existing entry from Materials, or create new
                             var def = Textures.ContainsKey(textureId) ? Textures[textureId] : new TextureDefinition { id = textureId };
@@ -115,20 +120,22 @@ namespace FlashEditor.Definitions.Sprites {
                             Textures[textureId] = def;
                             loaded++;
                             if (tex.Count > 0) withSprites++;
+                            if (tex.Graph != null) withGraphs++;
+                            else graphBails++;
                         } catch (Exception ex) {
-                            Debug($"TextureManager: error decoding texture file {fileId} in archive {archiveId}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                            Debug($"TextureManager: error decoding texture file {fileId} in archive {archiveId}: {ex.Message}", LOG_DETAIL.BASIC);
                             errors++;
                         }
                     }
 
                     container.ReleaseData();
                 } catch (Exception ex) {
-                    Debug($"TextureManager: error loading texture archive {archiveId}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                    Debug($"TextureManager: error loading texture archive {archiveId}: {ex.Message}", LOG_DETAIL.BASIC);
                     errors++;
                 }
             }
 
-            Debug($"LoadFromTextureIndex: loaded {loaded} textures ({withSprites} with sprite IDs), {errors} errors", LOG_DETAIL.BASIC);
+            Debug($"LoadFromTextureIndex: loaded {loaded} textures ({withSprites} with sprite IDs, {withGraphs} with graphs, {graphBails} graph bails), {errors} errors", LOG_DETAIL.BASIC);
         }
 
         /// <summary>
@@ -388,39 +395,159 @@ namespace FlashEditor.Definitions.Sprites {
         /// Prefers sprite thumbnails (proven path) over graph rendering
         /// (experimental) to keep model rendering correct.
         /// </summary>
-        public static void EnsureRendered(TextureDefinition def) {
-            if (def == null || def.thumb != null || _cacheRef == null)
-                return;
+        // Diagnostic counters for BASIC-level summary logging
+        private static int _diagSpriteOk, _diagSpriteFail, _diagGraphOk, _diagGraphFail, _diagNoData;
 
-            // Try sprite thumbnail first — this matches the pre-evaluator
-            // behaviour and produces correct results for model rendering.
-            if (def.spriteFileIds != null && def.spriteFileIds.Length > 0) {
-                try {
-                    SpriteDefinition sprite = _cacheRef.GetSprite(def.spriteFileIds[0]);
-                    if (sprite != null && sprite.GetFrameCount() > 0) {
-                        var frame = sprite.GetFrame(0);
-                        if (frame?.thumb != null) {
-                            def.thumb = new Bitmap(frame.thumb);
-                            return;
-                        }
-                    }
-                } catch (Exception ex) {
-                    Debug($"TextureManager: failed to load sprite for texture {def.id}: {ex.Message}", LOG_DETAIL.ADVANCED);
-                }
+        public static void EnsureRendered(TextureDefinition def) {
+            if (def == null) {
+                Debug("TextureManager.EnsureRendered: def is NULL", LOG_DETAIL.ADVANCED);
+                return;
+            }
+            if (def.thumb != null) {
+                Debug($"Tex {def.id}: already rendered ({def.thumb.Width}x{def.thumb.Height})", LOG_DETAIL.INSANE);
+                return;
+            }
+            if (_cacheRef == null) {
+                Debug("TextureManager.EnsureRendered: _cacheRef is NULL — cannot render anything!", LOG_DETAIL.BASIC);
+                return;
             }
 
-            // Fall back to graph rendering for textures without sprites
-            if (def.graph != null) {
+            bool hasGraph = def.graph != null;
+            bool hasSprites = def.spriteFileIds != null && def.spriteFileIds.Length > 0;
+            int nodeCount = hasGraph ? (def.graph.Nodes?.Length ?? 0) : 0;
+            Debug($"Tex {def.id}: BEGIN — graph={hasGraph} (nodes={nodeCount}), sprites={hasSprites} ({def.spriteFileIds?.Length ?? 0} ids), " +
+                  $"tint=0x{def.field1835:X6}, transpose={def.field1824}", LOG_DETAIL.ADVANCED);
+
+            // Try graph rendering first — this evaluates the full procedural
+            // texture pipeline and produces the most accurate result.
+            if (hasGraph) {
+                var graphSw = System.Diagnostics.Stopwatch.StartNew();
                 try {
-                    Bitmap rendered = TextureGraphEvaluator.Render(def.graph, 128, 128, _cacheRef);
+                    Debug($"Tex {def.id}: graph render starting — colourOut={def.graph.ColourOutputIndex}, " +
+                          $"alphaOut={def.graph.AlphaOutputIndex}, brightnessOut={def.graph.BrightnessOutputIndex}", LOG_DETAIL.ADVANCED);
+
+                    // Log node types in the graph for diagnosis
+                    if (def.graph.Nodes != null) {
+                        var nodeTypes = new System.Collections.Generic.Dictionary<int, int>();
+                        int spriteNodes = 0;
+                        foreach (var n in def.graph.Nodes) {
+                            if (n == null) continue;
+                            nodeTypes[n.Type] = nodeTypes.GetValueOrDefault(n.Type) + 1;
+                            if ((n.Type == 18 || n.Type == 39) && n.SpriteId >= 0)
+                                spriteNodes++;
+                        }
+                        Debug($"Tex {def.id}: graph node types: [{string.Join(", ", nodeTypes.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}x{kv.Value}"))}], " +
+                              $"spriteNodes={spriteNodes}", LOG_DETAIL.ADVANCED);
+                    }
+
+                    Bitmap rendered = TextureGraphEvaluator.Render(def.graph, 128, 128, _cacheRef, def.field1824, def.id);
+                    graphSw.Stop();
+
                     if (rendered != null) {
+                        Debug($"Tex {def.id}: graph render OK in {graphSw.ElapsedMilliseconds}ms — {rendered.Width}x{rendered.Height}", LOG_DETAIL.ADVANCED);
+                        if (def.field1835 != 0) {
+                            Debug($"Tex {def.id}: applying tint 0x{def.field1835:X6}", LOG_DETAIL.ADVANCED);
+                            ApplyTint(rendered, def.field1835);
+                        }
                         def.thumb = rendered;
+                        System.Threading.Interlocked.Increment(ref _diagGraphOk);
                         return;
                     }
+                    Debug($"Tex {def.id}: graph render returned NULL in {graphSw.ElapsedMilliseconds}ms", LOG_DETAIL.BASIC);
                 } catch (Exception ex) {
-                    Debug($"TextureManager: failed to render texture {def.id}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                    graphSw.Stop();
+                    Debug($"Tex {def.id}: graph render FAILED in {graphSw.ElapsedMilliseconds}ms — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                    Debug($"Tex {def.id}: graph stack: {ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}", LOG_DETAIL.ADVANCED);
                 }
+                System.Threading.Interlocked.Increment(ref _diagGraphFail);
             }
+
+            // Fall back to loading a sprite thumbnail directly from the cache.
+            // Try ALL referenced sprite IDs, not just the first one.
+            if (hasSprites) {
+                Debug($"Tex {def.id}: sprite fallback — trying IDs: [{string.Join(", ", def.spriteFileIds)}]", LOG_DETAIL.ADVANCED);
+                for (int si = 0; si < def.spriteFileIds.Length; si++) {
+                    int spriteId = def.spriteFileIds[si];
+                    try {
+                        Debug($"Tex {def.id}: loading sprite {spriteId} (index {si}/{def.spriteFileIds.Length})", LOG_DETAIL.INSANE);
+                        SpriteDefinition sprite = _cacheRef.GetSprite(spriteId);
+                        if (sprite == null) {
+                            Debug($"Tex {def.id}: sprite {spriteId} — GetSprite returned null", LOG_DETAIL.ADVANCED);
+                            continue;
+                        }
+                        int frameCount = sprite.GetFrameCount();
+                        Debug($"Tex {def.id}: sprite {spriteId} — {frameCount} frames", LOG_DETAIL.ADVANCED);
+                        if (frameCount > 0) {
+                            var frame = sprite.GetFrame(0);
+                            if (frame == null) {
+                                Debug($"Tex {def.id}: sprite {spriteId} — frame 0 is null", LOG_DETAIL.ADVANCED);
+                                continue;
+                            }
+                            if (frame.thumb == null) {
+                                Debug($"Tex {def.id}: sprite {spriteId} — frame 0 thumb is null (w={frame.GetWidth()}, h={frame.GetHeight()})", LOG_DETAIL.ADVANCED);
+                                continue;
+                            }
+                            Debug($"Tex {def.id}: sprite {spriteId} — frame 0 OK ({frame.thumb.Width}x{frame.thumb.Height})", LOG_DETAIL.ADVANCED);
+                            def.thumb = new Bitmap(frame.thumb);
+                            System.Threading.Interlocked.Increment(ref _diagSpriteOk);
+                            return;
+                        }
+                    } catch (Exception ex) {
+                        Debug($"Tex {def.id}: sprite {spriteId} FAILED — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.ADVANCED);
+                    }
+                }
+                Debug($"Tex {def.id}: ALL {def.spriteFileIds.Length} sprite IDs failed", LOG_DETAIL.BASIC);
+                System.Threading.Interlocked.Increment(ref _diagSpriteFail);
+            }
+
+            if (!hasGraph && !hasSprites) {
+                Debug($"Tex {def.id}: NO DATA — no graph and no sprite IDs", LOG_DETAIL.ADVANCED);
+                System.Threading.Interlocked.Increment(ref _diagNoData);
+            } else {
+                Debug($"Tex {def.id}: EXHAUSTED all paths — no thumb produced", LOG_DETAIL.BASIC);
+            }
+        }
+
+        /// <summary>Prints a diagnostic summary of texture rendering results.</summary>
+        public static void PrintDiagnostics() {
+            int total = _diagSpriteOk + _diagSpriteFail + _diagGraphOk + _diagGraphFail + _diagNoData;
+            Debug($"=== TEXTURE DIAGNOSTICS ===", LOG_DETAIL.BASIC);
+            Debug($"  Graph rendered OK: {_diagGraphOk}", LOG_DETAIL.BASIC);
+            Debug($"  Graph render FAIL: {_diagGraphFail}", LOG_DETAIL.BASIC);
+            Debug($"  Sprite fallback OK: {_diagSpriteOk}", LOG_DETAIL.BASIC);
+            Debug($"  Sprite fallback FAIL: {_diagSpriteFail}", LOG_DETAIL.BASIC);
+            Debug($"  No graph or sprites: {_diagNoData}", LOG_DETAIL.BASIC);
+            Debug($"  Total attempted: {total}", LOG_DETAIL.BASIC);
+            Debug($"===========================", LOG_DETAIL.BASIC);
+            _diagSpriteOk = _diagSpriteFail = _diagGraphOk = _diagGraphFail = _diagNoData = 0;
+        }
+
+        /// <summary>
+        /// Multiplies every pixel in <paramref name="bmp"/> by the RGB tint
+        /// encoded in <paramref name="tintRgb"/> (0x00RRGGBB).
+        /// </summary>
+        private static void ApplyTint(Bitmap bmp, int tintRgb) {
+            int tR = (tintRgb >> 16) & 0xFF;
+            int tG = (tintRgb >> 8) & 0xFF;
+            int tB = tintRgb & 0xFF;
+            if (tR == 0 && tG == 0 && tB == 0) return; // 0 = no tint
+
+            var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+            var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+            int byteCount = data.Stride * data.Height;
+            byte[] px = new byte[byteCount];
+            Marshal.Copy(data.Scan0, px, 0, byteCount);
+
+            for (int i = 0; i < byteCount; i += 4) {
+                // Format32bppArgb is BGRA in memory
+                px[i]     = (byte)(px[i]     * tB / 255); // B
+                px[i + 1] = (byte)(px[i + 1] * tG / 255); // G
+                px[i + 2] = (byte)(px[i + 2] * tR / 255); // R
+                // alpha (px[i+3]) unchanged
+            }
+
+            Marshal.Copy(px, 0, data.Scan0, byteCount);
+            bmp.UnlockBits(data);
         }
 
         internal static Image GetThumbnailForTexture(string key) {
