@@ -184,10 +184,11 @@ namespace FlashEditor {
             // 
             menuStrip1.BackColor = Color.White;
             menuStrip1.Font = new Font("Consolas", 11.25F);
+            menuStrip1.ImageScalingSize = new Size(24, 24);
             menuStrip1.Items.AddRange(new ToolStripItem[] { openToolStripMenuItem, viewToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
-            menuStrip1.Size = new Size(1145, 30);
+            menuStrip1.Size = new Size(1145, 42);
             menuStrip1.TabIndex = 1;
             menuStrip1.Text = "menuStrip1";
             // 
@@ -196,27 +197,27 @@ namespace FlashEditor {
             openToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveAllToolStripMenuItem, setDirectoryToolStripMenuItem, openDirectoryToolStripMenuItem });
             openToolStripMenuItem.Font = new Font("Consolas", 14.25F);
             openToolStripMenuItem.Name = "openToolStripMenuItem";
-            openToolStripMenuItem.Size = new Size(72, 26);
+            openToolStripMenuItem.Size = new Size(111, 38);
             openToolStripMenuItem.Text = "Cache";
             // 
             // saveAllToolStripMenuItem
             // 
             saveAllToolStripMenuItem.Name = "saveAllToolStripMenuItem";
-            saveAllToolStripMenuItem.Size = new Size(220, 26);
+            saveAllToolStripMenuItem.Size = new Size(344, 42);
             saveAllToolStripMenuItem.Text = "Save All";
             saveAllToolStripMenuItem.Click += saveAllToolStripMenuItem_Click_1;
             // 
             // setDirectoryToolStripMenuItem
             // 
             setDirectoryToolStripMenuItem.Name = "setDirectoryToolStripMenuItem";
-            setDirectoryToolStripMenuItem.Size = new Size(220, 26);
+            setDirectoryToolStripMenuItem.Size = new Size(344, 42);
             setDirectoryToolStripMenuItem.Text = "Set Directory";
             setDirectoryToolStripMenuItem.Click += SetDirectoryToolStripMenuItem_Click;
             // 
             // openDirectoryToolStripMenuItem
             // 
             openDirectoryToolStripMenuItem.Name = "openDirectoryToolStripMenuItem";
-            openDirectoryToolStripMenuItem.Size = new Size(220, 26);
+            openDirectoryToolStripMenuItem.Size = new Size(344, 42);
             openDirectoryToolStripMenuItem.Text = "Open Directory";
             openDirectoryToolStripMenuItem.Click += OpenDirectoryToolStripMenuItem_Click;
             // 
@@ -225,13 +226,13 @@ namespace FlashEditor {
             viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { alternateRowsToolStripMenuItem });
             viewToolStripMenuItem.Font = new Font("Consolas", 14.25F);
             viewToolStripMenuItem.Name = "viewToolStripMenuItem";
-            viewToolStripMenuItem.Size = new Size(62, 26);
+            viewToolStripMenuItem.Size = new Size(95, 38);
             viewToolStripMenuItem.Text = "View";
             // 
             // alternateRowsToolStripMenuItem
             // 
             alternateRowsToolStripMenuItem.Name = "alternateRowsToolStripMenuItem";
-            alternateRowsToolStripMenuItem.Size = new Size(290, 26);
+            alternateRowsToolStripMenuItem.Size = new Size(456, 42);
             alternateRowsToolStripMenuItem.Text = "Alternate Row Colours";
             alternateRowsToolStripMenuItem.Click += alternateRowsToolStripMenuItem_Click;
             // 
@@ -259,9 +260,9 @@ namespace FlashEditor {
             Console.BackColor = Color.White;
             Console.Controls.Add(tabControl1);
             Console.Controls.Add(groupBox1);
-            Console.Location = new Point(4, 28);
+            Console.Location = new Point(4, 37);
             Console.Name = "Console";
-            Console.Size = new Size(1113, 563);
+            Console.Size = new Size(1113, 554);
             Console.TabIndex = 2;
             Console.Text = "Meta";
             // 
@@ -280,10 +281,10 @@ namespace FlashEditor {
             // tabPage1
             // 
             tabPage1.Controls.Add(RefTableListView);
-            tabPage1.Location = new Point(4, 27);
+            tabPage1.Location = new Point(4, 36);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(863, 513);
+            tabPage1.Size = new Size(863, 504);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Reference Tables";
             tabPage1.UseVisualStyleBackColor = true;
@@ -305,7 +306,7 @@ namespace FlashEditor {
             RefTableListView.Location = new Point(-2, -1);
             RefTableListView.Name = "RefTableListView";
             RefTableListView.ShowGroups = false;
-            RefTableListView.Size = new Size(866, 515);
+            RefTableListView.Size = new Size(866, 506);
             RefTableListView.TabIndex = 0;
             RefTableListView.UseCompatibleStateImageBehavior = false;
             RefTableListView.View = View.Details;
@@ -368,10 +369,10 @@ namespace FlashEditor {
             // tabPage2
             // 
             tabPage2.Controls.Add(ContainerListView);
-            tabPage2.Location = new Point(4, 27);
+            tabPage2.Location = new Point(4, 36);
             tabPage2.Name = "tabPage2";
             tabPage2.Padding = new Padding(3);
-            tabPage2.Size = new Size(863, 513);
+            tabPage2.Size = new Size(863, 504);
             tabPage2.TabIndex = 1;
             tabPage2.Text = "Containers";
             tabPage2.UseVisualStyleBackColor = true;
@@ -391,7 +392,7 @@ namespace FlashEditor {
             ContainerListView.Location = new Point(-2, -1);
             ContainerListView.Name = "ContainerListView";
             ContainerListView.ShowGroups = false;
-            ContainerListView.Size = new Size(866, 516);
+            ContainerListView.Size = new Size(866, 507);
             ContainerListView.TabIndex = 1;
             ContainerListView.UseCompatibleStateImageBehavior = false;
             ContainerListView.View = View.Details;
@@ -495,10 +496,10 @@ namespace FlashEditor {
             // 
             ItemEditorTab.Controls.Add(groupBox4);
             ItemEditorTab.Controls.Add(ItemListView);
-            ItemEditorTab.Location = new Point(4, 28);
+            ItemEditorTab.Location = new Point(4, 37);
             ItemEditorTab.Name = "ItemEditorTab";
             ItemEditorTab.Padding = new Padding(3);
-            ItemEditorTab.Size = new Size(1113, 563);
+            ItemEditorTab.Size = new Size(1113, 554);
             ItemEditorTab.TabIndex = 0;
             ItemEditorTab.Text = "Items";
             ItemEditorTab.UseVisualStyleBackColor = true;
@@ -514,7 +515,7 @@ namespace FlashEditor {
             groupBox4.Font = new Font("Consolas", 12.25F);
             groupBox4.Location = new Point(860, 6);
             groupBox4.Name = "groupBox4";
-            groupBox4.Size = new Size(250, 551);
+            groupBox4.Size = new Size(250, 542);
             groupBox4.TabIndex = 11;
             groupBox4.TabStop = false;
             groupBox4.Text = "Editor Controls";
@@ -525,9 +526,9 @@ namespace FlashEditor {
             ItemLoadingLabel.AutoSize = true;
             ItemLoadingLabel.BackColor = Color.Transparent;
             ItemLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ItemLoadingLabel.Location = new Point(6, 461);
+            ItemLoadingLabel.Location = new Point(6, 452);
             ItemLoadingLabel.Name = "ItemLoadingLabel";
-            ItemLoadingLabel.Size = new Size(126, 19);
+            ItemLoadingLabel.Size = new Size(181, 28);
             ItemLoadingLabel.TabIndex = 12;
             ItemLoadingLabel.Text = "Loading Items";
             ItemLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -536,7 +537,7 @@ namespace FlashEditor {
             // 
             ItemProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ItemProgressBar.ForeColor = Color.DarkRed;
-            ItemProgressBar.Location = new Point(4, 483);
+            ItemProgressBar.Location = new Point(4, 474);
             ItemProgressBar.Name = "ItemProgressBar";
             ItemProgressBar.Size = new Size(240, 62);
             ItemProgressBar.TabIndex = 8;
@@ -694,10 +695,10 @@ namespace FlashEditor {
             // 
             SpriteEditorTab.Controls.Add(groupBox3);
             SpriteEditorTab.Controls.Add(SpriteListView);
-            SpriteEditorTab.Location = new Point(4, 28);
+            SpriteEditorTab.Location = new Point(4, 37);
             SpriteEditorTab.Name = "SpriteEditorTab";
             SpriteEditorTab.Padding = new Padding(3);
-            SpriteEditorTab.Size = new Size(1113, 563);
+            SpriteEditorTab.Size = new Size(1113, 554);
             SpriteEditorTab.TabIndex = 1;
             SpriteEditorTab.Text = "Sprites";
             SpriteEditorTab.UseVisualStyleBackColor = true;
@@ -716,7 +717,7 @@ namespace FlashEditor {
             groupBox3.Font = new Font("Consolas", 12.25F);
             groupBox3.Location = new Point(875, 3);
             groupBox3.Name = "groupBox3";
-            groupBox3.Size = new Size(232, 554);
+            groupBox3.Size = new Size(232, 545);
             groupBox3.TabIndex = 9;
             groupBox3.TabStop = false;
             groupBox3.Text = "Editor Controls";
@@ -727,7 +728,7 @@ namespace FlashEditor {
             label1.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             label1.Location = new Point(9, 36);
             label1.Name = "label1";
-            label1.Size = new Size(99, 19);
+            label1.Size = new Size(142, 28);
             label1.TabIndex = 11;
             label1.Text = "Row Height";
             // 
@@ -736,7 +737,7 @@ namespace FlashEditor {
             numericUpDown1.Location = new Point(114, 34);
             numericUpDown1.Maximum = new decimal(new int[] { 256, 0, 0, 0 });
             numericUpDown1.Name = "numericUpDown1";
-            numericUpDown1.Size = new Size(112, 27);
+            numericUpDown1.Size = new Size(112, 36);
             numericUpDown1.TabIndex = 12;
             numericUpDown1.Value = new decimal(new int[] { 21, 0, 0, 0 });
             numericUpDown1.ValueChanged += numericUpDown1_ValueChanged_1;
@@ -747,9 +748,9 @@ namespace FlashEditor {
             SpriteLoadingLabel.AutoSize = true;
             SpriteLoadingLabel.BackColor = Color.White;
             SpriteLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            SpriteLoadingLabel.Location = new Point(6, 464);
+            SpriteLoadingLabel.Location = new Point(6, 455);
             SpriteLoadingLabel.Name = "SpriteLoadingLabel";
-            SpriteLoadingLabel.Size = new Size(144, 19);
+            SpriteLoadingLabel.Size = new Size(207, 28);
             SpriteLoadingLabel.TabIndex = 10;
             SpriteLoadingLabel.Text = "Loading Sprites";
             SpriteLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -759,7 +760,7 @@ namespace FlashEditor {
             SpriteProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             SpriteProgressBar.BackColor = Color.White;
             SpriteProgressBar.ForeColor = Color.DarkRed;
-            SpriteProgressBar.Location = new Point(6, 486);
+            SpriteProgressBar.Location = new Point(6, 477);
             SpriteProgressBar.Name = "SpriteProgressBar";
             SpriteProgressBar.Size = new Size(220, 62);
             SpriteProgressBar.TabIndex = 8;
@@ -814,7 +815,7 @@ namespace FlashEditor {
             SpriteListView.Name = "SpriteListView";
             SpriteListView.RowHeight = 20;
             SpriteListView.ShowGroups = false;
-            SpriteListView.Size = new Size(866, 551);
+            SpriteListView.Size = new Size(866, 542);
             SpriteListView.TabIndex = 6;
             SpriteListView.TintSortColumn = true;
             SpriteListView.UseAlternatingBackColors = true;
@@ -863,9 +864,9 @@ namespace FlashEditor {
             // 
             NPCEditorTab.Controls.Add(groupBox6);
             NPCEditorTab.Controls.Add(NPCListView);
-            NPCEditorTab.Location = new Point(4, 28);
+            NPCEditorTab.Location = new Point(4, 37);
             NPCEditorTab.Name = "NPCEditorTab";
-            NPCEditorTab.Size = new Size(1113, 563);
+            NPCEditorTab.Size = new Size(1113, 554);
             NPCEditorTab.TabIndex = 3;
             NPCEditorTab.Text = "NPCs";
             NPCEditorTab.UseVisualStyleBackColor = true;
@@ -894,7 +895,7 @@ namespace FlashEditor {
             NPCLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             NPCLoadingLabel.Location = new Point(3, 439);
             NPCLoadingLabel.Name = "NPCLoadingLabel";
-            NPCLoadingLabel.Size = new Size(117, 19);
+            NPCLoadingLabel.Size = new Size(168, 28);
             NPCLoadingLabel.TabIndex = 17;
             NPCLoadingLabel.Text = "Loading NPCs";
             NPCLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -1050,9 +1051,9 @@ namespace FlashEditor {
             // 
             ObjectEditorTab.Controls.Add(groupBox5);
             ObjectEditorTab.Controls.Add(GameObjectListView);
-            ObjectEditorTab.Location = new Point(4, 28);
+            ObjectEditorTab.Location = new Point(4, 37);
             ObjectEditorTab.Name = "ObjectEditorTab";
-            ObjectEditorTab.Size = new Size(1113, 563);
+            ObjectEditorTab.Size = new Size(1113, 554);
             ObjectEditorTab.TabIndex = 4;
             ObjectEditorTab.Text = "Objects";
             ObjectEditorTab.UseVisualStyleBackColor = true;
@@ -1081,7 +1082,7 @@ namespace FlashEditor {
             ObjectLoadingLabel.Font = new Font("Consolas", 12F);
             ObjectLoadingLabel.Location = new Point(3, 439);
             ObjectLoadingLabel.Name = "ObjectLoadingLabel";
-            ObjectLoadingLabel.Size = new Size(144, 19);
+            ObjectLoadingLabel.Size = new Size(207, 28);
             ObjectLoadingLabel.TabIndex = 17;
             ObjectLoadingLabel.Text = "Loading Objects";
             ObjectLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -1198,9 +1199,9 @@ namespace FlashEditor {
             // 
             // InterfaceEditorTab
             // 
-            InterfaceEditorTab.Location = new Point(4, 28);
+            InterfaceEditorTab.Location = new Point(4, 37);
             InterfaceEditorTab.Name = "InterfaceEditorTab";
-            InterfaceEditorTab.Size = new Size(1113, 563);
+            InterfaceEditorTab.Size = new Size(1113, 554);
             InterfaceEditorTab.TabIndex = 5;
             InterfaceEditorTab.Text = "Interfaces";
             InterfaceEditorTab.UseVisualStyleBackColor = true;
@@ -1208,9 +1209,9 @@ namespace FlashEditor {
             // ModelViewerTab
             // 
             ModelViewerTab.Controls.Add(splitContainer1);
-            ModelViewerTab.Location = new Point(4, 28);
+            ModelViewerTab.Location = new Point(4, 37);
             ModelViewerTab.Name = "ModelViewerTab";
-            ModelViewerTab.Size = new Size(1113, 563);
+            ModelViewerTab.Size = new Size(1113, 554);
             ModelViewerTab.TabIndex = 6;
             ModelViewerTab.Text = "Models";
             ModelViewerTab.UseVisualStyleBackColor = true;
@@ -1230,7 +1231,7 @@ namespace FlashEditor {
             splitContainer1.Panel2.Controls.Add(ModelListView);
             splitContainer1.Panel2.Controls.Add(ModelLoadingLabel);
             splitContainer1.Panel2.Controls.Add(ModelProgressBar);
-            splitContainer1.Size = new Size(1113, 563);
+            splitContainer1.Size = new Size(1113, 554);
             splitContainer1.SplitterDistance = 862;
             splitContainer1.TabIndex = 0;
             // 
@@ -1245,7 +1246,7 @@ namespace FlashEditor {
             glControl.Name = "glControl";
             glControl.Profile = OpenTK.Windowing.Common.ContextProfile.Core;
             glControl.SharedContext = null;
-            glControl.Size = new Size(856, 557);
+            glControl.Size = new Size(856, 548);
             glControl.TabIndex = 0;
             // 
             // ModelListView
@@ -1271,9 +1272,9 @@ namespace FlashEditor {
             ModelLoadingLabel.AutoSize = true;
             ModelLoadingLabel.BackColor = Color.Transparent;
             ModelLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ModelLoadingLabel.Location = new Point(6, 476);
+            ModelLoadingLabel.Location = new Point(6, 467);
             ModelLoadingLabel.Name = "ModelLoadingLabel";
-            ModelLoadingLabel.Size = new Size(135, 19);
+            ModelLoadingLabel.Size = new Size(194, 28);
             ModelLoadingLabel.TabIndex = 14;
             ModelLoadingLabel.Text = "Loading Models";
             ModelLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -1282,7 +1283,7 @@ namespace FlashEditor {
             // 
             ModelProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
             ModelProgressBar.ForeColor = Color.DarkRed;
-            ModelProgressBar.Location = new Point(4, 498);
+            ModelProgressBar.Location = new Point(4, 489);
             ModelProgressBar.Name = "ModelProgressBar";
             ModelProgressBar.Size = new Size(240, 62);
             ModelProgressBar.TabIndex = 13;
@@ -1290,9 +1291,9 @@ namespace FlashEditor {
             // TextureViewerTab
             // 
             TextureViewerTab.Controls.Add(TextureListView);
-            TextureViewerTab.Location = new Point(4, 28);
+            TextureViewerTab.Location = new Point(4, 37);
             TextureViewerTab.Name = "TextureViewerTab";
-            TextureViewerTab.Size = new Size(1113, 563);
+            TextureViewerTab.Size = new Size(1113, 554);
             TextureViewerTab.TabIndex = 7;
             TextureViewerTab.Text = "Textures";
             TextureViewerTab.UseVisualStyleBackColor = true;
@@ -1304,7 +1305,7 @@ namespace FlashEditor {
             TextureListView.FullRowSelect = true;
             TextureListView.Location = new Point(0, 0);
             TextureListView.Name = "TextureListView";
-            TextureListView.Size = new Size(1113, 563);
+            TextureListView.Size = new Size(1113, 554);
             TextureListView.TabIndex = 0;
             TextureListView.TileSize = new Size(100, 100);
             TextureListView.View = View.Tile;
@@ -1331,7 +1332,7 @@ namespace FlashEditor {
             // 
             // Editor
             // 
-            AutoScaleDimensions = new SizeF(6F, 13F);
+            AutoScaleDimensions = new SizeF(9F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.White;
             ClientSize = new Size(1145, 648);
