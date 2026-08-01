@@ -2,6 +2,7 @@
 using FlashEditor.Utils;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.cache
@@ -217,6 +218,33 @@ namespace FlashEditor.cache
         public int FileCount()
         {
             return files.Count;
+        }
+
+        /// <summary>
+        /// Whether the archive holds a file under <paramref name="fileId"/>.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="GetFile"/> indexes the backing dictionary directly and throws for an
+        /// absent id, so callers walking a candidate id range must test with this first.
+        /// </remarks>
+        /// <param name="fileId">The file id to test</param>
+        /// <returns><c>true</c> if the file is present</returns>
+        public bool HasFile(int fileId)
+        {
+            return files.ContainsKey(fileId);
+        }
+
+        /// <summary>
+        /// Returns the file ids the archive actually holds, in ascending order.
+        /// </summary>
+        /// <remarks>
+        /// A snapshot, so callers can add files while iterating it. File ids are sparse in
+        /// real caches, so this is not interchangeable with <c>0..FileCount()</c>.
+        /// </remarks>
+        /// <returns>The file ids present in the archive</returns>
+        public int[] GetFileIds()
+        {
+            return files.Keys.ToArray();
         }
 
         public void PutFile(int fileId, JagStream data)

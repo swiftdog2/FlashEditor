@@ -7,6 +7,7 @@ using ICSharpCode.SharpZipLib.Checksum;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using static FlashEditor.Utils.DebugUtil;
 
@@ -107,6 +108,11 @@ namespace FlashEditor.cache {
                 Debug("Generating archive entry for RefTable(" + indexId + ", " + archiveId + ", file " + fileId, LOG_DETAIL.INSANE);
             }
 
+            //The file ids describing the payload as it currently sits on disk, captured
+            //before the edit adds its own. RSArchive.Decode is driven by this list, so it
+            //has to describe what was encoded, not what is about to be.
+            int[] existingFileIds = archiveEntry.GetFileEntries().Keys.ToArray();
+
             //Add a file entry if one does not exist
             if (archiveEntry.GetFileEntry(fileId) == null) {
                 archiveEntry.PutFileEntry(fileId, new RSFileEntry(fileId));
@@ -123,26 +129,48 @@ namespace FlashEditor.cache {
 
             container.Dirty = true;
 
-            //Create a new archive for the container, if necessary
             RSArchive archive = container.GetArchive();
             if (archive == null) {
-                Debug("Added new archive", LOG_DETAIL.INSANE);
-                container.SetArchive(archive = new RSArchive());
+                if (container.HasData && existingFileIds.Length > 0) {
+                    //Rehydrate from the container payload rather than starting blank.
+                    //ReadFile releases the decoded archive as soon as it has handed the
+                    //caller its file, so by edit time this is routinely null - and editing
+                    //from an empty archive drops every other file in the group.
+                    Debug("Rehydrated archive from container", LOG_DETAIL.INSANE);
+                    archive = RSArchive.Decode(container.GetStream(), existingFileIds);
+                }
+                else {
+                    Debug("Added new archive", LOG_DETAIL.INSANE);
+                    archive = new RSArchive();
+                }
+                container.SetArchive(archive);
             }
 
             //Create or update the file in the archive
             archive.PutFile(fileId, data);
 
+            /* Reconcile the archive against its reference table entry over ACTUAL file ids,
+               in both directions. Decode reads the archive through the entry's id list, so
+               the two sets have to match exactly or the size table is read against the wrong
+               number of files. The loop this replaces walked an ordinal counter from 0 to
+               FileCount() and indexed the archive directly, so a sparse archive threw
+               KeyNotFoundException on the first gap, and where it did not throw it
+               re-registered every file under an ordinal id - reinstating exactly the
+               renumbering the reference table encoder was fixed to stop. */
+            foreach (int id in archiveEntry.GetFileEntries().Keys.ToArray())
+                if (!archive.HasFile(id))
+                    archive.PutFile(id, new JagStream(0));
+
+            foreach (int id in archive.GetFileIds())
+                if (archiveEntry.GetFileEntry(id) == null)
+                    archiveEntry.PutFileEntry(id, new RSFileEntry(id));
+
+            //The valid file id list is the one Decode is handed, so it has to follow the
+            //file entries. Left stale, a reloaded container decodes with the wrong ids.
+            archiveEntry.SetValidFileIds(archiveEntry.GetFileEntries().Keys.ToArray());
+
             //Wrap the archive back into a container
             container.SetStream(archive.Encode());
-
-            //Create 'dummy' file entries
-            for (int id = 0 ; id < archive.FileCount() ; id++) {
-                if (archive.GetFile(id) == null) {
-                    archiveEntry.PutFileEntry(id, new RSFileEntry(id));
-                    archive.PutFile(id, new JagStream(1));
-                }
-            }
 
             //Grab the bytes we need for the checksum
             JagStream stream = container.Encode(); //already checked definitely correct upto this point

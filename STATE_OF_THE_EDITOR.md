@@ -160,8 +160,11 @@ asymmetry. **Fixed 2026-08-02**, each fix pinned by a round-trip test in `CodecT
   matching how the archive-level identifier is already handled.
 - Still open: `FLAG_SIZES` values are never recomputed after an edit - they go stale
   immediately. That belongs to `RSCache.WriteFile`, not the codec; tracked as s.9 item 7c.
-- Still open: the sparse-file-ID fix above is defeated downstream by `RSCache.WriteFile`,
-  and the format-7 flags byte round trips bit 0 only. Tracked as s.9 items 7a and 7b.
+- ~~Still open: the sparse-file-ID fix above is defeated downstream by `RSCache.WriteFile`.~~
+  Fixed 2026-08-02 - `WriteFile` now reconciles the archive and its entry over actual file
+  ids and rehydrates the archive before editing it, so sparse ids survive a save and reopen.
+  See s.9 item 7a.
+- Still open: the format-7 flags byte round trips bit 0 only. Tracked as s.9 item 7b.
 
 **Archive codec:** ~~`RSArchive.Decode` special-cases a 1-file archive by taking the whole
 buffer including the trailing chunk byte (`:41-53`), while `Encode` always writes that
@@ -354,12 +357,23 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    Done 2026-08-02 - plus the per-file identifier asymmetry found alongside them (s.4).
 7. ~~Fix the `RSArchive` single-file chunk-byte asymmetry (silent 1-byte growth per
    save).~~ Done 2026-08-02 (s.4).
-7a. **Fix the dummy-file-entry loop in `RSCache.WriteFile:139-145`, which defeats the
-   sparse-file-ID fix in item 6.** It walks `id` from `0` to `archive.FileCount()` and
-   calls `archive.GetFile(id)`, a bare `files[fileId]` indexer with no containment check,
-   so any sparse archive throws `KeyNotFoundException` on the first gap. Where it does not
-   throw it re-registers file entries under ordinal ids, restoring exactly the renumbering
-   the codec fix removed. **Item 6 is not observable end to end until this is fixed.**
+7a. ~~Fix the dummy-file-entry loop in `RSCache.WriteFile:139-145`, which defeats the
+   sparse-file-ID fix in item 6.~~ **Done 2026-08-02.** The loop walked `id` from `0` to
+   `archive.FileCount()` and called `archive.GetFile(id)`, a bare `files[fileId]` indexer
+   with no containment check, so any sparse archive threw `KeyNotFoundException` on the
+   first gap. It now reconciles the archive against its reference-table entry over actual
+   file ids, in both directions, using the new `RSArchive.HasFile`/`GetFileIds`, and runs
+   *before* the archive is re-encoded so backfilled entries reach the payload.
+   Two defects had to be fixed alongside it for item 6 to be observable end to end:
+   - `WriteFile` started from an **empty** archive whenever `container.GetArchive()` was
+     null, which is the normal case: `ReadFile` calls `ReleaseData()` and drops the decoded
+     archive as soon as it has handed the caller its file. Every edit therefore replaced the
+     whole group with the single file being written. It now rehydrates the archive from the
+     container payload, decoded against the file ids the entry held *before* the edit.
+   - `validFileIds` was never updated when a file entry was added, so a reloaded container
+     decoded against a stale id list. It is now refreshed from the file entries.
+   Pinned by `RSCacheWriteFileTests`, which drives `WriteFile` against a synthetic on-disk
+   cache and asserts after a save-and-reopen cycle.
 7b. Make the format-7 archive-flags byte lossless. Decode keeps only bit 0 (the XTEA
    marker, `ReferenceTableCodec.cs:115`) and encode writes only bit 0, so any other bit
    set in a real table is silently zeroed on re-encode. No longer a field shift, but not
