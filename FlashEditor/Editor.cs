@@ -78,6 +78,11 @@ namespace FlashEditor {
         public Editor() {
             InitializeComponent();
 
+            //Added here rather than in the designer so the generated file stays untouched
+            ToolStripMenuItem saveAsItem = new ToolStripMenuItem("Save As...");
+            saveAsItem.Click += saveAsToolStripMenuItem_Click;
+            openToolStripMenuItem.DropDownItems.Insert(1, saveAsItem);
+
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
             glControl.Resize += Editor_Resize;
@@ -412,6 +417,10 @@ namespace FlashEditor {
                     return;
                 }
             }
+
+            //Opening another cache discards anything staged, so offer to save first
+            if(!ConfirmDiscardOrSave())
+                return;
 
             //Clear off the previous crap
             workers.Clear();
@@ -961,8 +970,64 @@ namespace FlashEditor {
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void saveAllToolStripMenuItem_Click_1(object sender, EventArgs e) {
-            //Saves the data streams
-            cache.WriteCache();
+            SaveCache(GetCacheDir());
+        }
+
+        /// <summary>Prompts for a directory and writes a complete copy of the cache there.</summary>
+        private void saveAsToolStripMenuItem_Click(object sender, EventArgs e) {
+            if(folderBrowserDialog1.ShowDialog() == DialogResult.OK)
+                SaveCache(folderBrowserDialog1.SelectedPath);
+        }
+
+        /// <summary>
+        ///     Commits the staged cache to <paramref name="directory"/>. Returns false when the
+        ///     save failed, so a caller guarding a close can keep the window open.
+        /// </summary>
+        private bool SaveCache(string directory) {
+            if(cache == null)
+                return true;
+
+            try {
+                cache.WriteCache(directory);
+                Debug("Saved cache to " + directory);
+                return true;
+            }
+            catch(Exception ex) {
+                Debug("Save failed: " + ex.Message);
+                MessageBox.Show(this,
+                    "Could not save the cache to:" + Environment.NewLine + directory +
+                    Environment.NewLine + Environment.NewLine + ex.Message,
+                    "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        /// <summary>
+        ///     Offers to save when edits are staged. Returns false to abort whatever the caller
+        ///     was about to do, whether that is closing the window or opening another cache.
+        /// </summary>
+        private bool ConfirmDiscardOrSave() {
+            if(cache == null || !cache.HasUnsavedChanges)
+                return true;
+
+            DialogResult choice = MessageBox.Show(this,
+                "Save changes to the cache before continuing?",
+                "Unsaved changes", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+
+            if(choice == DialogResult.Cancel)
+                return false;
+            if(choice == DialogResult.No)
+                return true;
+
+            return SaveCache(GetCacheDir());
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e) {
+            //OnFormClosed runs after the window is gone and cannot cancel, so the guard is here
+            if(!ConfirmDiscardOrSave())
+                e.Cancel = true;
+
+            base.OnFormClosing(e);
         }
 
         private void button4_Click(object sender, EventArgs e) {

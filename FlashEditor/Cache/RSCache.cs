@@ -65,37 +65,19 @@ namespace FlashEditor.cache {
             LoadReferenceTables();
         }
 
-        internal void WriteCache() {
-            Debug("Writing cache to disk...");
-
-            SaveDataIndex();
-            SaveIndexes();
-        }
-
         /// <summary>
-        /// Write the main data (dat2) to file
+        ///     Writes the staged cache to <paramref name="cacheDir"/>. The dat2 and every index
+        ///     file are committed together, so the saved cache is never half-updated. Until this
+        ///     runs, no edit has touched the disk at all.
         /// </summary>
-        internal void SaveDataIndex() {
-            store.dataChannel.SaveTo(RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache.dat2");
+        /// <param name="cacheDir">Destination directory, which may be the one the cache was opened from.</param>
+        internal void WriteCache(string cacheDir) {
+            Debug("Writing cache to " + cacheDir);
+            store.SaveTo(cacheDir);
         }
 
-        /// <summary>
-        /// Write the index streams to files
-        /// </summary>
-        internal void SaveIndexes() {
-            var sb = new StringBuilder();
-            foreach (KeyValuePair<int, RSIndex> index in GetStore().indexChannels) {
-                sb.Clear();
-                sb.Append("idx");
-                sb.Append(index.Key);
-                SaveIndex(index.Value, sb.ToString());
-            }
-        }
-
-        internal void SaveIndex(RSIndex index, string directory) {
-            Debug("Saving " + directory);
-            JagStream.Save(index.GetStream(), RSConstants.CACHE_OUTPUT_DIRECTORY + "main_file_cache." + directory);
-        }
+        /// <summary>Whether any edit is staged and not yet saved.</summary>
+        internal bool HasUnsavedChanges => store != null && store.IsDirty;
 
         /// <summary>
         /// Writes a file contained in an archive to the cache.
@@ -284,7 +266,7 @@ namespace FlashEditor.cache {
             RSIndex index = store.GetIndexEntry(indexId);
 
             //Find the beginning of the index
-            long pos = archiveId * RSIndex.SIZE;
+            long pos = (long) archiveId * RSIndex.SIZE;
 
             if (pos < 0 || pos >= index.GetStream().Length)
                 throw new FileNotFoundException("Position is out of bounds for index " + indexId + ", archive " + archiveId);
@@ -293,7 +275,9 @@ namespace FlashEditor.cache {
             index.ReadContainerHeader(archiveId);
 
             //If the sector could not be located in the data stream
-            if (index.GetSectorID() <= 0 || index.GetSectorID() > store.dataChannel.Length / RSSector.SIZE)
+            //Sector ids are zero-based, so id == Length/SIZE is already one sector past the
+            //end of the data. Accepting it reads a sector that was never written.
+            if (index.GetSectorID() <= 0 || index.GetSectorID() >= store.dataChannel.Length / RSSector.SIZE)
                 return null;
 
             //Allocate buffers for the data and sector
@@ -304,7 +288,7 @@ namespace FlashEditor.cache {
             int sectorId = index.GetSectorID();
 
             //Point to the start of the sector
-            pos = sectorId * RSSector.SIZE;
+            pos = (long) sectorId * RSSector.SIZE;
 
             do {
                 Debug("\tReading sector " + sectorId + " @ " + pos, LOG_DETAIL.INSANE);
@@ -330,7 +314,7 @@ namespace FlashEditor.cache {
                         throw new IOException("Chunk mismatch, " + sector.GetChunk() + ", " + chunk);
 
                     //Then move the pointer to the next sector
-                    pos = (sectorId = sector.GetNextSector()) * RSSector.SIZE;
+                    pos = (long) (sectorId = sector.GetNextSector()) * RSSector.SIZE;
                 }
                 else {
                     //Otherwise if the amount remaining is less than the sector size, put it down

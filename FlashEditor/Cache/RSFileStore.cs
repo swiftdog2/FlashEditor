@@ -1,34 +1,44 @@
-﻿using static FlashEditor.Utils.DebugUtil;
+using static FlashEditor.Utils.DebugUtil;
 using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
 namespace FlashEditor.cache {
     public class RSFileStore : IDisposable {
-        internal MappedDataChannel dataChannel;
+        internal StagedDataChannel dataChannel;
         internal SortedDictionary<int, RSIndex> indexChannels = new SortedDictionary<int, RSIndex>();
+
+        private readonly string _cacheDir;
+        private bool _dirty;
+
+        /// <summary>
+        ///     Whether any edit has been made since the cache was opened or last saved. Set
+        ///     before the first mutation in <see cref="Write"/> so a write that fails part way
+        ///     through still counts as dirty.
+        /// </summary>
+        internal bool IsDirty => _dirty;
 
         /// <summary>
         /// Loads the main data, metadata, and index files into a corresponding <c>JagStream</c>
         /// </summary>
         /// <param name="cacheDir">the base directory for the cache files</param>
         public RSFileStore(string cacheDir) {
-            cacheDir += "/main_file_cache.";
+            _cacheDir = cacheDir;
 
-            //Load the dat2 via memory-mapped file
-            dataChannel = new MappedDataChannel(cacheDir + "dat2");
+            //The dat2 is staged: the source file is opened read-only and never modified
+            dataChannel = new StagedDataChannel(DataFile(cacheDir, "dat2"));
 
             //And load in the data from the meta indexes, including reference tables
-            var sb = new StringBuilder();
-            for(int k = 0; k <= RSConstants.META_INDEX; k++) {
-                sb.Clear();
-                sb.Append(cacheDir).Append("idx").Append(k);
-                string path = sb.ToString();
+            for(int k = 0 ; k <= RSConstants.META_INDEX ; k++) {
+                string path = DataFile(cacheDir, "idx" + k);
                 if(File.Exists(path))
                     indexChannels.Add(k, LoadIndex(path));
             }
+        }
+
+        private static string DataFile(string cacheDir, string suffix) {
+            return Path.Combine(cacheDir, "main_file_cache." + suffix);
         }
 
         /// <summary>
@@ -85,19 +95,23 @@ namespace FlashEditor.cache {
          */
 
         /// <summary>
-        ///     Writes an archive's payload to <c>main_file_cache.dat2</c> and updates
-        ///     the corresponding six byte record inside the index file.
-        ///     Any additional sectors required are appended to the end of the data file.
+        ///     Stages an archive's payload and updates the corresponding six byte record inside
+        ///     the index. Neither becomes durable until <see cref="SaveTo"/> runs.
         /// </summary>
         /// <param name="indexId">Index the archive belongs to.</param>
         /// <param name="archiveId">Archive id within the index.</param>
         /// <param name="data">Stream holding the encoded container.</param>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
         /// <exception cref="FileNotFoundException">Thrown if the index does not exist.</exception>
         /// <exception cref="ArgumentOutOfRangeException">
         ///     Thrown if <paramref name="archiveId"/> is not contiguous with existing
         ///     records.
         /// </exception>
         public void Write(int indexId, int archiveId, JagStream data) {
+            if(data == null || data.Length == 0)
+                throw new ArgumentException("Refusing to write an empty archive: index " + indexId +
+                    ", archive " + archiveId, nameof(data));
+
             Debug("Writing index " + indexId + ", archive " + archiveId + ", data len: " + data.Length);
 
             if(!indexChannels.ContainsKey(indexId))
@@ -106,7 +120,7 @@ namespace FlashEditor.cache {
             //The index for which to update the archive header
             RSIndex index = GetIndexEntry(indexId);
 
-            long ptr = archiveId * RSIndex.SIZE;
+            long ptr = (long) archiveId * RSIndex.SIZE;
             if(ptr > index.GetStream().Length)
                 throw new ArgumentOutOfRangeException("Archive IDs must be contiguous -- " + archiveId + " @ " + ptr);
 
@@ -117,83 +131,181 @@ namespace FlashEditor.cache {
             bool newArchive = ptr == index.GetStream().Length;
             int oldSectorCount = 0;
 
-            //Overwrite any existing archive headers first
+            //Read the existing header before anything is overwritten
             if(!newArchive) {
                 Debug("**Overwriting archive header**");
                 index.ReadContainerHeader(archiveId);
                 curSector = index.GetSectorID(); //Find the first sector
                 int oldSize = index.GetSize(); //Get the current sector size
-                index.GetStream().Seek(ptr);
                 oldSectorCount = oldSize / RSSector.DATA_LEN +
                     (oldSize % RSSector.DATA_LEN > 0 ? 1 : 0);
             }
 
-            //Update the archive header
-            Debug("Updating archive header with size: " + data.Length + ", curSector: " + curSector);
-            index.GetStream().WriteMedium(data.Length); //Write the archive size
-            index.GetStream().WriteMedium(curSector); //Write the new sector ID
-
-            //Prepare the sectors to overwrite
+            /* Walk the existing chain and allocate any extra sectors BEFORE touching the
+               record. Everything that can throw is then in front of the mutation, so a failure
+               cannot leave a header describing a chain that was never written. */
             List<int> sectors = new List<int>();
+            int chainSector = curSector;
 
-            for(int k = 0; k < oldSectorCount; k++) {
-                sectors.Add(curSector);
-                Debug("Overwriting sector: " + curSector);
-                ptr = curSector * RSSector.SIZE;
-                byte[] sectorBytes = dataChannel.ReadBytes(ptr, RSSector.SIZE);
-                curSector = RSSector.Decode(new JagStream(sectorBytes)).GetNextSector();
+            for(int k = 0 ; k < oldSectorCount ; k++) {
+                sectors.Add(chainSector);
+                Debug("Overwriting sector: " + chainSector);
+                byte[] sectorBytes = dataChannel.ReadBytes((long) chainSector * RSSector.SIZE, RSSector.SIZE);
+                chainSector = RSSector.Decode(new JagStream(sectorBytes)).GetNextSector();
             }
 
-            int newSectorCount = (int)data.Length / RSSector.DATA_LEN +
+            int newSectorCount = (int) data.Length / RSSector.DATA_LEN +
                 (data.Length % RSSector.DATA_LEN > 0 ? 1 : 0);
-            if (newSectorCount > oldSectorCount) {
+            if(newSectorCount > oldSectorCount) {
                 Debug("**Expanding the index**");
 
-                int nextFreeSector = (int)(dataChannel.Length / RSSector.SIZE);
-                for (int k = 0; k < newSectorCount - oldSectorCount; k++) {
+                int nextFreeSector = (int) (dataChannel.Length / RSSector.SIZE);
+                for(int k = 0 ; k < newSectorCount - oldSectorCount ; k++) {
                     sectors.Add(nextFreeSector);
                     Debug("New sector: " + nextFreeSector);
                     nextFreeSector++;
                 }
             }
 
-            int remaining = (int) data.Length;
-            int chunk = 0; //The relative sector index for the archive data, actually
-
-            data.Seek0();
-
-            Debug("Beginning write of " + data.Length + " bytes...", LOG_DETAIL.ADVANCED);
-
-            for(int k = 0; k < sectors.Count; k++) {
-                curSector = sectors[k];
-
-                ptr = curSector * RSSector.SIZE;
-
-                Debug("\tSector " + curSector + " @ " + ptr + ", chunk " + chunk + ": " + remaining + " bytes remaining", LOG_DETAIL.ADVANCED);
-
-                //Read up to DATA_LEN bytes, or the remainder of, the archive data
-                byte[] chunkData = new byte[RSSector.DATA_LEN];
-                int bytesToRead = Math.Min(remaining, RSSector.DATA_LEN);
-                data.Read(chunkData, 0, bytesToRead);
-                PrintByteArray(chunkData);
-                remaining -= bytesToRead;
-
-                //For the last sector, mark as EOF
-                int nextSector = (k == sectors.Count - 1) ? 0 : sectors[k + 1];
-                //If we just read the last sector, mark as EOF
-
-                Debug("Writing sector - Index: " + indexId + ", archive: " + archiveId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", remaining: " + remaining);
-                JagStream sectorData = new RSSector(indexId, archiveId, chunk++, nextSector, chunkData).Encode();
-
-                byte[] sectorBytes = sectorData.ToArray();
-                dataChannel.WriteBytes(ptr, sectorBytes, 0, sectorBytes.Length);
+            //Snapshot the record so a failed verification can put it back
+            int recordLengthBefore = index.GetStream().Length;
+            byte[]? recordBefore = null;
+            if(!newArchive) {
+                index.GetStream().Seek(ptr);
+                recordBefore = new byte[RSIndex.SIZE];
+                index.GetStream().Read(recordBefore, 0, RSIndex.SIZE);
             }
 
-            // --- round-trip verification ---
-            var expected = data.ToArray();
-            JagStream verify = ReadSectorChain(sectors[0], expected.Length);
-            if(!verify.ToArray().SequenceEqual(expected))
-                throw new IOException("Sector chain verification failed");
+            _dirty = true;
+
+            /* Seek for BOTH branches. Previously this only happened when overwriting, so a new
+               archive written after an overwrite landed at whatever position the previous
+               ReadContainerHeader left behind and silently clobbered a neighbouring record. */
+            Debug("Updating archive header with size: " + data.Length + ", curSector: " + curSector);
+            index.GetStream().Seek(ptr);
+            index.GetStream().WriteMedium(data.Length); //Write the archive size
+            index.GetStream().WriteMedium(curSector); //Write the new sector ID
+
+            try {
+                int remaining = (int) data.Length;
+                int chunk = 0; //The relative sector index for the archive data, actually
+
+                data.Seek0();
+
+                Debug("Beginning write of " + data.Length + " bytes...", LOG_DETAIL.ADVANCED);
+
+                for(int k = 0 ; k < sectors.Count ; k++) {
+                    int sectorId = sectors[k];
+                    long sectorPtr = (long) sectorId * RSSector.SIZE;
+
+                    Debug("\tSector " + sectorId + " @ " + sectorPtr + ", chunk " + chunk + ": " + remaining + " bytes remaining", LOG_DETAIL.ADVANCED);
+
+                    //Read up to DATA_LEN bytes, or the remainder of, the archive data
+                    byte[] chunkData = new byte[RSSector.DATA_LEN];
+                    int bytesToRead = Math.Min(remaining, RSSector.DATA_LEN);
+                    data.Read(chunkData, 0, bytesToRead);
+                    PrintByteArray(chunkData);
+                    remaining -= bytesToRead;
+
+                    //For the last sector, mark as EOF
+                    int nextSector = (k == sectors.Count - 1) ? 0 : sectors[k + 1];
+
+                    Debug("Writing sector - Index: " + indexId + ", archive: " + archiveId + ", chunk: " + chunk + ", nextSector: " + nextSector + ", remaining: " + remaining);
+                    JagStream sectorData = new RSSector(indexId, archiveId, chunk++, nextSector, chunkData).Encode();
+
+                    byte[] sectorBytes = sectorData.ToArray();
+                    dataChannel.WriteBytes(sectorPtr, sectorBytes, 0, sectorBytes.Length);
+                }
+
+                // --- round-trip verification ---
+                var expected = data.ToArray();
+                JagStream verify = ReadSectorChain(sectors[0], expected.Length);
+                if(!verify.ToArray().SequenceEqual(expected))
+                    throw new IOException("Sector chain verification failed");
+            }
+            catch {
+                RestoreRecord(index, ptr, recordBefore, recordLengthBefore);
+                throw;
+            }
+        }
+
+        /// <summary>
+        ///     Puts an archive header back after a failed write, so the index never describes a
+        ///     chain that was not written.
+        /// </summary>
+        private static void RestoreRecord(RSIndex index, long ptr, byte[]? previous, int previousLength) {
+            JagStream stream = index.GetStream();
+
+            if(previous == null) {
+                //The record was appended, so drop it again
+                stream.Length = previousLength;
+                stream.Seek(previousLength);
+                return;
+            }
+
+            stream.Seek(ptr);
+            stream.Write(previous, 0, previous.Length);
+        }
+
+        /// <summary>
+        ///     Writes the staged cache to <paramref name="cacheDir"/>: the dat2 and every index
+        ///     file together, so the result is always internally consistent.
+        /// </summary>
+        /// <param name="cacheDir">Destination directory. May be the directory the cache was opened from.</param>
+        internal void SaveTo(string cacheDir) {
+            Directory.CreateDirectory(cacheDir);
+
+            /* Build the whole cache in a staging folder first. Nothing in the destination is
+               touched until every file exists, so a failure part way through costs only a
+               temporary directory rather than half-updating a real cache. */
+            string staging = Path.Combine(cacheDir, ".fe-save-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(staging);
+
+            try {
+                dataChannel.SaveTo(Path.Combine(staging, "main_file_cache.dat2"));
+                foreach(KeyValuePair<int, RSIndex> entry in indexChannels)
+                    JagStream.Save(entry.Value.GetStream(), Path.Combine(staging, "main_file_cache.idx" + entry.Key));
+
+                bool inPlace = PathsEqual(cacheDir, _cacheDir);
+
+                //The mapping has to go before the source file can be replaced
+                if(inPlace)
+                    dataChannel.CloseMap();
+
+                try {
+                    /* Payload before pointer. If this is interrupted, unreferenced sectors are
+                       harmless whereas records pointing at absent data are not. indexChannels is
+                       sorted, so idx255 - the pointer to every reference table - lands last. */
+                    Promote(staging, cacheDir, "main_file_cache.dat2");
+                    foreach(KeyValuePair<int, RSIndex> entry in indexChannels)
+                        Promote(staging, cacheDir, "main_file_cache.idx" + entry.Key);
+                }
+                finally {
+                    if(inPlace)
+                        dataChannel.Reopen(DataFile(cacheDir, "dat2"));
+                }
+
+                //Only once every file landed: until then the overlay is the only copy
+                if(inPlace)
+                    dataChannel.ClearStaged();
+
+                _dirty = false;
+            }
+            finally {
+                if(Directory.Exists(staging))
+                    Directory.Delete(staging, true);
+            }
+        }
+
+        private static void Promote(string staging, string destDir, string fileName) {
+            File.Move(Path.Combine(staging, fileName), Path.Combine(destDir, fileName), overwrite: true);
+        }
+
+        private static bool PathsEqual(string a, string b) {
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -204,7 +316,7 @@ namespace FlashEditor.cache {
             int remaining = length;
             int sectorId = firstSector;
             while(remaining > 0 && sectorId > 0) {
-                long ptr = sectorId * RSSector.SIZE;
+                long ptr = (long) sectorId * RSSector.SIZE;
                 byte[] raw = dataChannel.ReadBytes(ptr, RSSector.SIZE);
                 RSSector sector = RSSector.Decode(new JagStream(raw));
                 int bytes = Math.Min(remaining, RSSector.DATA_LEN);
@@ -215,9 +327,13 @@ namespace FlashEditor.cache {
             return result.Flip();
         }
 
+        /// <summary>
+        ///     Releases the cache files. Deliberately persists nothing: this also runs when the
+        ///     user opens a different cache, so saving here would commit edits silently.
+        /// </summary>
         public void Dispose() {
             dataChannel?.Dispose();
-            dataChannel = null;
+            dataChannel = null!;
         }
     }
 }

@@ -3,6 +3,7 @@ using FlashEditor.cache;
 using FlashEditor.Utils;
 using System;
 using System.IO;
+using System.Threading;
 using Xunit;
 
 namespace FlashEditor.Tests.Cache
@@ -421,24 +422,19 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// DEFECT: a zero-length payload allocates no sectors, so the verification step
-        /// indexes sectors[0] on an empty list. It throws ArgumentOutOfRangeException from
-        /// the list indexer rather than a meaningful error, and only AFTER the index record
-        /// has already been mutated, leaving the store partially updated.
+        /// An empty payload allocates no sectors, so it is rejected up front rather than
+        /// mutating the index record and then failing when verification indexes an empty
+        /// sector list.
         /// </summary>
         [Fact]
-        public void Write_EmptyPayload_ThrowsAndLeavesRecordMutated_DocumentsKnownDefect()
+        public void Write_EmptyPayload_ThrowsBeforeMutatingAnything()
         {
             var store = CreateStore();
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => store.Write(0, 0, new JagStream(Array.Empty<byte>())));
+            Assert.Throws<ArgumentException>(() => store.Write(0, 0, new JagStream(Array.Empty<byte>())));
 
-            // The record was already written before the throw: the store is now inconsistent,
-            // reporting one archive of length zero that has no sector chain at all.
-            Assert.Equal(1, store.GetFileCount(0));
-            var index = store.GetIndexEntry(0);
-            index.ReadContainerHeader(0);
-            Assert.Equal(0, index.GetSize());
+            Assert.Equal(0, store.GetFileCount(0));
+            Assert.False(store.IsDirty);
         }
 
         /// <summary>
@@ -458,29 +454,32 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// DEFECT: the seek that positions the index stream lives only on the
-        /// existing-archive branch. After overwriting an archive the stream is left mid-file,
-        /// so the next NEW archive writes its record at the stale position, silently
-        /// overwriting a different archive's record.
+        /// The index stream is seeked on both the new-archive and overwrite branches, so a new
+        /// archive written after an overwrite lands at its own offset rather than wherever the
+        /// preceding ReadContainerHeader left the position.
         /// </summary>
         [Fact]
-        public void Write_NewArchiveAfterOverwrite_CorruptsAnotherRecord_DocumentsKnownDefect()
+        public void Write_NewArchiveAfterOverwrite_WritesRecordAtCorrectOffset()
         {
             var store = CreateStore();
 
-            store.Write(0, 0, Payload(4));      // new: record 0, stream now at offset 6
-            store.Write(0, 1, Payload(8));      // new: record 1, correct only by coincidence
-            store.Write(0, 0, Payload(12));     // existing: seeks to 0, leaves stream at offset 6
-            store.Write(0, 2, Payload(16));     // new: SHOULD write at 12, actually writes at 6
+            store.Write(0, 0, Payload(4));
+            store.Write(0, 1, Payload(8));
+            store.Write(0, 0, Payload(12));     // overwrite: leaves the stream mid-file
+            store.Write(0, 2, Payload(16));     // must still land at offset 12
 
             var index = store.GetIndexEntry(0);
 
-            // Archive 1's record now holds archive 2's size. Archive 1 is unrecoverable.
+            index.ReadContainerHeader(0);
+            Assert.Equal(12, index.GetSize());
+
             index.ReadContainerHeader(1);
+            Assert.Equal(8, index.GetSize());   // untouched by archive 2's write
+
+            index.ReadContainerHeader(2);
             Assert.Equal(16, index.GetSize());
 
-            // And the record count never grew, so archive 2 has no record of its own.
-            Assert.Equal(2, store.GetFileCount(0));
+            Assert.Equal(3, store.GetFileCount(0));
         }
 
         // ===================================================================
@@ -488,41 +487,186 @@ namespace FlashEditor.Tests.Cache
         // ===================================================================
 
         /// <summary>
-        /// DEFECT: RSFileStore persists sector data to the memory-mapped dat2 but never
-        /// writes the index files back. Reopening a cache recovers the payload bytes while
-        /// the index records revert to their on-disk state, leaving the cache internally
-        /// inconsistent the moment anything is edited.
+        /// Nothing reaches the source cache until SaveTo runs, so disposing without saving
+        /// leaves the dat2 byte for byte as it was found. This is the core guarantee of
+        /// staging: an edit can never half-update the cache on disk.
         /// </summary>
         [Fact]
-        public void Dispose_PersistsSectorsButNotIndexRecords_DocumentsKnownDefect()
+        public void Dispose_WithoutSave_LeavesSourceCacheUntouched()
         {
+            string dat2 = Path.Combine(_dir, "main_file_cache.dat2");
             var store = CreateStore();
-            store.Write(0, 0, Payload(4));
-            Assert.Equal(1, store.GetFileCount(0));
+            byte[] before = File.ReadAllBytes(dat2);
+
+            store.Write(0, 0, Payload(600));
+            Assert.True(store.IsDirty);
 
             store.Dispose();
             _store = null;
 
-            // dat2 kept the sector.
-            Assert.True(new FileInfo(Path.Combine(_dir, "main_file_cache.dat2")).Length >= SectorSize * 2);
-
-            // idx0 is still the empty file we seeded: the record was only ever in memory.
+            Assert.Equal(before, File.ReadAllBytes(dat2));
             Assert.Equal(0, new FileInfo(Path.Combine(_dir, "main_file_cache.idx0")).Length);
 
             _store = new RSFileStore(_dir);
-            Assert.Equal(0, _store.GetFileCount(0));   // the archive is gone on reopen
+            Assert.Equal(0, _store.GetFileCount(0));
+        }
+
+        // ===================================================================
+        //  SaveTo - the commit path
+        // ===================================================================
+
+        [Fact]
+        public void SaveTo_PersistsSectorsAndIndexRecordsTogether()
+        {
+            var store = CreateStore();
+            var payload = Payload(600);
+            byte[] expected = payload.ToArray();
+            store.Write(0, 0, payload);
+
+            string outDir = Path.Combine(_dir, "out");
+            store.SaveTo(outDir);
+            store.Dispose();
+            _store = null;
+
+            using var reopened = new RSFileStore(outDir);
+            Assert.Equal(1, reopened.GetFileCount(0));
+
+            var index = reopened.GetIndexEntry(0);
+            index.ReadContainerHeader(0);
+            Assert.Equal(600, index.GetSize());
+            Assert.Equal(1, index.GetSectorID());
+
+            var first = RSSector.Decode(new JagStream(reopened.dataChannel.ReadBytes(SectorSize, SectorSize)));
+            Assert.Equal(expected[..SectorData], first.GetData());
         }
 
         [Fact]
-        public void Dispose_TruncatesDataFileToWrittenLength()
+        public void SaveTo_OverTheSourceDirectory_ReplacesFilesAndStaysUsable()
+        {
+            var store = CreateStore();
+            store.Write(0, 0, Payload(600));
+            store.SaveTo(_dir);
+
+            Assert.False(store.IsDirty);
+
+            // The channel closed and reopened over the replaced file; further edits still work.
+            store.Write(0, 1, Payload(4));
+            store.SaveTo(_dir);
+            store.Dispose();
+            _store = null;
+
+            using var reopened = new RSFileStore(_dir);
+            Assert.Equal(2, reopened.GetFileCount(0));
+        }
+
+        [Fact]
+        public void SaveTo_ToAnotherDirectory_LeavesTheSourceUntouched()
+        {
+            string dat2 = Path.Combine(_dir, "main_file_cache.dat2");
+            var store = CreateStore();
+            byte[] before = File.ReadAllBytes(dat2);
+
+            store.Write(0, 0, Payload(600));
+            store.SaveTo(Path.Combine(_dir, "copy"));
+
+            Assert.Equal(before, File.ReadAllBytes(dat2));
+        }
+
+        [Fact]
+        public void SaveTo_WritesExactlyTheStagedLength()
         {
             var store = CreateStore();
             store.Write(0, 0, Payload(600));           // dummy + two sectors
 
-            store.Dispose();
-            _store = null;
+            string outDir = Path.Combine(_dir, "out");
+            store.SaveTo(outDir);
 
-            Assert.Equal(SectorSize * 3, new FileInfo(Path.Combine(_dir, "main_file_cache.dat2")).Length);
+            Assert.Equal(SectorSize * 3, new FileInfo(Path.Combine(outDir, "main_file_cache.dat2")).Length);
+        }
+
+        [Fact]
+        public void SaveTo_RemovesItsStagingDirectory()
+        {
+            var store = CreateStore();
+            store.Write(0, 0, Payload(4));
+            store.SaveTo(_dir);
+
+            Assert.Empty(Directory.GetDirectories(_dir));
+        }
+
+        [Fact]
+        public void IsDirty_FalseUntilAWrite_ThenClearedBySave()
+        {
+            var store = CreateStore();
+            Assert.False(store.IsDirty);
+
+            store.Write(0, 0, Payload(4));
+            Assert.True(store.IsDirty);
+
+            store.SaveTo(Path.Combine(_dir, "out"));
+            Assert.False(store.IsDirty);
+        }
+
+        // ===================================================================
+        //  Staging channel behaviour
+        // ===================================================================
+
+        [Fact]
+        public void ReadBytes_ReturnsStagedBytesBeforeAnySave()
+        {
+            var store = CreateStore();
+            var payload = Payload(4);
+            byte[] expected = payload.ToArray();
+            store.Write(0, 0, payload);
+
+            // Read-through matters: Write's own chain verification depends on it.
+            byte[] raw = store.dataChannel.ReadBytes(SectorSize, SectorSize);
+            Assert.Equal(expected, raw[8..12]);
+        }
+
+        [Fact]
+        public void ReadBytes_StartingPastTheDataLength_Throws()
+        {
+            var store = CreateStore();
+
+            // Only the dummy sector exists, so sector 1 was never allocated.
+            Assert.Throws<ArgumentOutOfRangeException>(() => store.dataChannel.ReadBytes(SectorSize, SectorSize));
+        }
+
+        [Fact]
+        public void ReadBytes_NegativeOffset_Throws()
+        {
+            var store = CreateStore();
+            Assert.Throws<ArgumentOutOfRangeException>(() => store.dataChannel.ReadBytes(-SectorSize, SectorSize));
+        }
+
+        /// <summary>
+        /// Definitions and textures load on background threads, so reads genuinely race writes.
+        /// A Dictionary read concurrent with an insert is undefined behaviour, hence the lock
+        /// inside the channel; without it this fails non-deterministically.
+        /// </summary>
+        [Fact]
+        public void ConcurrentReadsDuringWrites_DoNotCorruptTheOverlay()
+        {
+            var store = CreateStore();
+            store.Write(0, 0, Payload(4));
+
+            Exception? failure = null;
+            var reader = new Thread(() => {
+                try
+                {
+                    for (int i = 0; i < 3000; i++)
+                        store.dataChannel.ReadBytes(SectorSize, SectorSize);
+                }
+                catch (Exception ex) { failure = ex; }
+            });
+
+            reader.Start();
+            for (int archive = 1; archive < 200; archive++)
+                store.Write(0, archive, Payload(4, seed: archive));
+            reader.Join();
+
+            Assert.Null(failure);
         }
 
         [Fact]
