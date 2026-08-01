@@ -74,9 +74,19 @@ namespace FlashEditor.cache
             /* ── Optional Whirlpool digests (64 bytes each) ─────────── */
             if (table.usesWhirlpool)
             {
+                /* One buffer for the whole loop. A stackalloc inside the loop body is not
+                   reclaimed until Decode returns, and validArchivesCount is an unbounded
+                   16-bit field read from the file, so a corrupt table could burn up to
+                   65535 * 64 bytes (~4 MB) of stack and kill the process.
+
+                   Clear() before each Read preserves the old semantics exactly: JagStream.Read
+                   returns a short count at EOF, and each fresh stackalloc was zero-initialised,
+                   so the unread tail must stay zero rather than carry the previous archive's
+                   digest forward. SetWhirlpool copies the span into the entry's own byte[64]. */
+                Span<byte> whirl = stackalloc byte[64];
                 for (int i = 0; i < table.validArchivesCount; i++)
                 {
-                    Span<byte> whirl = stackalloc byte[64];
+                    whirl.Clear();
                     stream.Read(whirl);
                     table.GetArchiveEntries()[table.validArchiveIds[i]].SetWhirlpool(whirl);
                 }

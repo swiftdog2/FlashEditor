@@ -230,8 +230,6 @@ namespace FlashEditor.Definitions.Tracks {
             int[] var59 = new int[128];
             var28 = 0;
 
-label361:
-            { }
             for(int var60 = 0; var60 < tracks; ++var60) {
                 midiBuff.WriteInteger(1297379947); // MTrk
                 midiBuff.Skip(4); // length gets written here later
@@ -256,7 +254,7 @@ label361:
                         midiBuff.WriteByte((byte) 47); // type - end of track
                         midiBuff.WriteByte((byte) 0); // length
                         //midiBuff.PutLengthFromMark(midiBuff.Position - var61);
-                        goto label361;
+                        break; // end of track: Java source was `continue label361;` - advance to the next track
                     }
 
                     if(var64 == 23) {

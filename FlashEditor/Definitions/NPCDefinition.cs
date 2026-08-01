@@ -650,10 +650,27 @@ namespace FlashEditor {
             // 121: translations
             stream.WriteByte(121);
             int tlen = translations == null ? 0 : translations.Length;
-            stream.WriteByte((byte) tlen);
+
+            /* The array is sized to modelIds.Length but the decoder only fills the slots
+               named by the record index bytes, so unpopulated slots stay null. The count
+               written here must be the number of records actually emitted below, NOT the
+               array length: declaring the length makes the decoder read records that were
+               never written and overrun into the following opcode. */
+            //tlen is 0 when translations is null, so these loops never run in that case
+            int records = 0;
+            for (int idx = 0 ; idx < tlen ; idx++)
+                if (translations![idx] != null)
+                    records++;
+
+            if (records > 255)
+                throw new InvalidOperationException("NPC " + id + " has " + records + " model translations; opcode 121 encodes the record count as a single byte");
+
+            stream.WriteByte((byte) records);
             for (int idx = 0 ; idx < tlen ; idx++) {
-                var t = translations[idx];
+                var t = translations![idx];
                 if (t == null) continue;
+                if (idx > 255)
+                    throw new InvalidOperationException("NPC " + id + " has a model translation at index " + idx + "; opcode 121 encodes the slot index as a single byte");
                 stream.WriteByte((byte) idx);
                 stream.WriteByte((byte) t[0]);
                 stream.WriteByte((byte) t[1]);

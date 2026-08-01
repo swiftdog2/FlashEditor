@@ -275,7 +275,9 @@ namespace FlashEditor {
                 value = (value | (b & 0x7F)) << 7;
                 b = ReadSignedByte();
             }
-            return value | b;
+            // Loop exit guarantees b >= 0, so b is 0..127 and the sbyte->int sign extension
+            // cannot inject high bits. The mask is a no-op that states the invariant.
+            return value | (b & 0x7F);
         }
 
         /// <summary>

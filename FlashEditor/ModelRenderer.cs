@@ -98,8 +98,10 @@ internal sealed class ModelRenderer
 
             if (hasUV)
             {
-                float[] uArr = def.FaceTextureUCoordinates[faceIdx];
-                float[] vArr = def.FaceTextureVCoordinates[faceIdx];
+                // hasUV already null-tested both arrays; the compiler cannot
+                // carry that state through the bool local.
+                float[] uArr = def.FaceTextureUCoordinates![faceIdx];
+                float[] vArr = def.FaceTextureVCoordinates![faceIdx];
                 u0 = uArr[0]; u1 = uArr[1]; u2 = uArr[2];
                 v0 = vArr[0]; v1 = vArr[1]; v2 = vArr[2];
                 int texId = def.FaceTextures == null ? -1 : def.FaceTextures[faceIdx];

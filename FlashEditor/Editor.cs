@@ -384,7 +384,7 @@ namespace FlashEditor {
                 string key = ((TextureDefinition) rowObject).id.ToString();
 
                 // b) if it’s not already in the list, load & add it
-                if (!TextureListView.LargeImageList.Images.ContainsKey(key)) {
+                if (!TextureListView.LargeImageList!.Images.ContainsKey(key)) { //Assigned _textureImageList in the constructor and never reassigned
                     // load from DB (or cache) and force it to 100×100
                     Image raw = TextureManager.GetThumbnailForTexture(key);
                     var thumb = new Bitmap(raw, new Size(100, 100));
@@ -446,7 +446,7 @@ namespace FlashEditor {
             }
             catch (Exception ex) {
                 Debug("Cache failed to load: " + ex.Message);
-                Debug(ex.StackTrace);
+                Debug(ex.StackTrace ?? string.Empty);
             }
         }
 
@@ -482,7 +482,7 @@ namespace FlashEditor {
             //This enables us to load multiple tabs at once
             workers.Add(bgw);
 
-            RSReferenceTable referenceTable = null;
+            RSReferenceTable? referenceTable = null; //Only the META_INDEX branch leaves this null, and that branch never reads the local
 
             //Set the reference table to the one we need for the index
             if (type != RSConstants.META_INDEX)
@@ -534,12 +534,12 @@ namespace FlashEditor {
                     //When an item is loaded, update the progress bar
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         ItemProgressBar.Value = e.ProgressPercentage;
-                        ItemLoadingLabel.Text = e.UserState.ToString();
+                        ItemLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
                     });
 
                     bgw.DoWork += delegate {
                         int done = 0;
-                        int total = referenceTable.GetArchiveCount() * 256;
+                        int total = referenceTable!.GetArchiveCount() * 256;
                         int percentile = Math.Max(1, total / 100);
 
                         Debug(@"  _                     _ _               _ _                     ");
@@ -592,7 +592,7 @@ namespace FlashEditor {
                     //When a sprite is loaded, update the progress bar
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         SpriteProgressBar.Value = e.ProgressPercentage;
-                        SpriteLoadingLabel.Text = e.UserState.ToString();
+                        SpriteLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
                     });
 
                     bgw.DoWork += delegate {
@@ -609,7 +609,7 @@ namespace FlashEditor {
                         List<SpriteDefinition> sprites = new List<SpriteDefinition>();
 
                         int done = 0;
-                        int total = referenceTable.GetArchiveCount();
+                        int total = referenceTable!.GetArchiveCount();
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading " + total + " Sprites");
@@ -666,14 +666,14 @@ namespace FlashEditor {
                     //When an NPC is loaded, update the progress bar
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         NPCProgressBar.Value = e.ProgressPercentage;
-                        NPCLoadingLabel.Text = e.UserState.ToString();
+                        NPCLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
                     });
 
                     bgw.DoWork += async delegate {
                         List<NPCDefinition> npcs = new List<NPCDefinition>();
 
                         int done = 0;
-                        int total = referenceTable.GetArchiveCount() * 128;
+                        int total = referenceTable!.GetArchiveCount() * 128;
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading NPCs");
@@ -716,13 +716,13 @@ namespace FlashEditor {
                 case RSConstants.OBJECTS_DEFINITIONS_INDEX:
                     bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
                         ObjectProgressBar.Value = e.ProgressPercentage;
-                        ObjectLoadingLabel.Text = e.UserState.ToString();
+                        ObjectLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
                     });
 
                     bgw.DoWork += delegate {
                         List<ObjectDefinition> objects = new List<ObjectDefinition>();
 
-                        int filesPerArchive = referenceTable.GetArchiveEntry(referenceTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
+                        int filesPerArchive = referenceTable!.GetArchiveEntry(referenceTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
                         int total = referenceTable.GetArchiveCount() * filesPerArchive;
                         int done = 0;
                         int percentile = Math.Max(1, total / 100);
@@ -918,7 +918,8 @@ namespace FlashEditor {
             //When an item is loaded, update the progress bar
             itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) => {
                 ItemProgressBar.Value = e2.ProgressPercentage;
-                ItemLoadingLabel.Text = e2.UserState.ToString();
+                //DoWork calls the single-arg ReportProgress, so UserState is always null
+                ItemLoadingLabel.Text = e2.UserState?.ToString() ?? "Status: Dumping " + e2.ProgressPercentage + "%...";
             });
 
             ItemDefinition[] items = new ItemDefinition[ItemListView.SelectedObjects.Count];
@@ -1240,7 +1241,7 @@ namespace FlashEditor {
                     try {
                         var def = cache.GetModelDefinition(ids[i], 0).CloneForRendering();
                         // Find the original index in modelIds for translation lookup
-                        int modelIndex = Array.IndexOf(npc.modelIds, ids[i]);
+                        int modelIndex = Array.IndexOf(npc.modelIds!, ids[i]); //non-null: ids was built from npc.modelIds and the null case returned at the top
                         ApplyNpcTransforms(def, npc, modelIndex);
                         defs.Add(def);
                         Debug($"  Model {ids[i]}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);

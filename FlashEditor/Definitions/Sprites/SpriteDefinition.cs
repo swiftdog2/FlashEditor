@@ -201,14 +201,18 @@ namespace FlashEditor.cache.sprites {
         /// <summary>
         /// Gets the height of this sprite.
         /// </summary>
+        /// <remarks>Virtual so frame types that do not populate the
+        /// <see cref="height"/> field can supply the real value.</remarks>
         /// <returns>The height of this sprite.</returns>
-        public int GetHeight() {
+        public virtual int GetHeight() {
             return height;
         }
 
         /// <summary>Gets the width of this sprite in pixels.</summary>
+        /// <remarks>Virtual so frame types that do not populate the
+        /// <see cref="width"/> field can supply the real value.</remarks>
         /// <returns>The width.</returns>
-        public int GetWidth() {
+        public virtual int GetWidth() {
             return width;
         }
 
@@ -246,7 +250,24 @@ namespace FlashEditor.cache.sprites {
             throw new NotImplementedException();
         }
 
+        /// <summary>Releases the frames and thumbnail held by this sprite set.</summary>
         public void Dispose() {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Releases the resources held by this definition. Derived types (notably
+        /// <see cref="Cache.Util.RSBufferedImage"/>) override this rather than hiding
+        /// <see cref="Dispose()"/>, which is what guarantees the derived cleanup still
+        /// runs when the instance is disposed through a <see cref="SpriteDefinition"/>
+        /// or <see cref="IDisposable"/> reference.
+        /// </summary>
+        /// <param name="disposing">True when called from <see cref="Dispose()"/>.</param>
+        protected virtual void Dispose(bool disposing) {
+            if(!disposing)
+                return;
+
             if(frames != null) {
                 foreach(var frame in frames)
                     frame?.Dispose();

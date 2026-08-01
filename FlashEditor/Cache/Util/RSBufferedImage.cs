@@ -49,19 +49,37 @@ namespace FlashEditor.cache.util {
         }
 
         /// <summary>Gets the width of the underlying bitmap, or 0 if uninitialised.</summary>
-        internal int GetWidth() {
+        /// <remarks>
+        /// Overrides the base accessor, which reads the inherited <c>width</c> field.
+        /// A frame never populates that field, so the bitmap is the only source of truth.
+        /// </remarks>
+        public override int GetWidth() {
             return thumb == null ? 0 : thumb.Width;
         }
 
         /// <summary>Gets the height of the underlying bitmap, or 0 if uninitialised.</summary>
-        internal int GetHeight() {
+        /// <remarks>
+        /// Overrides the base accessor, which reads the inherited <c>height</c> field.
+        /// A frame never populates that field, so the bitmap is the only source of truth.
+        /// </remarks>
+        public override int GetHeight() {
             return thumb == null ? 0 : thumb.Height;
         }
 
-        public void Dispose() {
-            _directBitmap?.Dispose();
-            _directBitmap = null;
-            thumb = null;
+        /// <summary>
+        /// Releases the backing <see cref="DirectBitmap"/> - a pinned pixel buffer plus a
+        /// GDI bitmap. This overrides the base implementation instead of hiding it, so the
+        /// buffer is still freed when the frame is disposed through a
+        /// <see cref="Definitions.Sprites.SpriteDefinition"/> or <see cref="IDisposable"/>
+        /// reference.
+        /// </summary>
+        /// <param name="disposing">True when called from <c>Dispose()</c>.</param>
+        protected override void Dispose(bool disposing) {
+            if(disposing) {
+                _directBitmap?.Dispose();
+                _directBitmap = null;
+            }
+            base.Dispose(disposing);
         }
     }
 }

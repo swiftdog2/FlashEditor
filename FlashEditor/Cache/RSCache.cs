@@ -402,8 +402,14 @@ namespace FlashEditor.cache {
             //Check if the file is valid
             RSArchiveEntry entry = GetReferenceTable(indexId).GetArchiveEntry(archiveId);
 
+            // Validate the archive exists before touching it: GetArchiveEntry returns
+            // null for an archive id that is absent from the reference table, and the
+            // message below dereferences entry to report the file count.
+            if (entry == null)
+                throw new FileNotFoundException("\tUnable to find archive " + archiveId + " in index " + indexId + " (requested file " + fileId + ")");
+
             // Validate the requested file actually exists within this archive
-            if (entry == null || !entry.GetFileEntries().ContainsKey(fileId))
+            if (!entry.GetFileEntries().ContainsKey(fileId))
                 throw new FileNotFoundException("\tUnable to find file " + fileId + ", in index " + indexId + ", archive " + archiveId + ", len: " + entry.GetValidFileIds().Length);
 
             Debug($"Reading index {RSConstants.GetIndexName(indexId)}   archive {archiveId}   file {fileId}", LOG_DETAIL.ADVANCED);

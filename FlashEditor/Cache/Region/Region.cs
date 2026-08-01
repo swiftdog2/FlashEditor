@@ -43,38 +43,46 @@ namespace FlashEditor.Cache.Region {
                 for(int x = 0; x < 64; x++) {
                     for(int y = 0; y < 64; y++) {
                         while(true) {
-                            int attribute = buf.ReadByte();
-                            switch(attribute) {
-                                case 0:
-                                    if(z == 0) {
-                                        // TODO: Verify the height calculation matches the game client
-                                        tileHeights[0, x, y] = HeightCalc.Calculate(baseX, baseY, x, y) << 3;
-                                    } else {
-                                        tileHeights[z, x, y] = tileHeights[z - 1, x, y] - 240;
-                                    }
-                                    break;
-                                case 1:
-                                    int height = buf.ReadByte();
-                                    if(height == 1)
-                                        height = 0;
+                            //ReadUnsignedByte throws at EOF; ReadByte returns -1, which would
+                            //match the <= 49 arm below and spin this loop forever on truncated data
+                            int attribute = buf.ReadUnsignedByte();
 
-                                    if(z == 0)
-                                        tileHeights[0, x, y] = -height << 3;
-                                    else
-                                        tileHeights[z, x, y] = tileHeights[z - 1, x, y] - height << 3;
+                            //Opcodes 0 and 1 write the tile height and terminate this tile.
+                            //An if/else chain is required here: a `break` inside a `switch`
+                            //binds to the switch, not to this while loop, so the switch form
+                            //could never leave the loop and the y++ above was unreachable.
+                            if(attribute == 0) {
+                                if(z == 0) {
+                                    // TODO: Verify the height calculation matches the game client
+                                    tileHeights[0, x, y] = HeightCalc.Calculate(baseX, baseY, x, y) << 3;
+                                } else {
+                                    tileHeights[z, x, y] = tileHeights[z - 1, x, y] - 240;
+                                }
+                                break;
+                            } else if(attribute == 1) {
+                                int height = buf.ReadUnsignedByte();
+                                if(height == 1)
+                                    height = 0;
 
-                                    break;
-                                case <= 49:
-                                    overlayIds[z, x, y] = (byte) buf.ReadByte();
-                                    overlayPaths[z, x, y] = (byte) ((attribute - 2) / 4);
-                                    overlayRotations[z, x, y] = (byte) (attribute - 2 & 0x3);
-                                    continue;
-                                case <= 81:
-                                    renderRules[z, x, y] = (byte) (attribute - 49);
-                                    continue;
-                                default:
-                                    underlayIds[z, x, y] = (byte) (attribute - 81);
-                                    continue;
+                                if(z == 0)
+                                    tileHeights[0, x, y] = -height << 3;
+                                else
+                                    //Parentheses are required: additive binds tighter than <<,
+                                    //so `a - height << 3` would re-scale the level below by 8
+                                    tileHeights[z, x, y] = tileHeights[z - 1, x, y] - (height << 3);
+
+                                break;
+                            } else if(attribute <= 49) {
+                                //Opcodes 2..49 carry overlay data and do not end the tile
+                                overlayIds[z, x, y] = (byte) buf.ReadUnsignedByte();
+                                overlayPaths[z, x, y] = (byte) ((attribute - 2) / 4);
+                                overlayRotations[z, x, y] = (byte) (attribute - 2 & 0x3);
+                            } else if(attribute <= 81) {
+                                //Opcodes 50..81 carry render rules
+                                renderRules[z, x, y] = (byte) (attribute - 49);
+                            } else {
+                                //Opcodes 82..255 carry the underlay id
+                                underlayIds[z, x, y] = (byte) (attribute - 81);
                             }
                         }
                     }
