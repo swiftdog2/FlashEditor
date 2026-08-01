@@ -142,21 +142,36 @@ missing content codecs.
 | `Track` (MIDI) | partial, buggy | none | Dead code, never referenced. Control-flow bug at `Track.cs:259` restarts the loop |
 | `Region` / map | partial | none | Dead code, never referenced. `LoadTerrain` has a Java-port `break`-in-`switch` bug (`Region.cs:45-67`) making it an infinite loop |
 
-**Reference table codec** (`ReferenceTableCodec.cs`) - the most consequential asymmetry:
+**Reference table codec** (`ReferenceTableCodec.cs`) - was the most consequential
+asymmetry. **Fixed 2026-08-02**, each fix pinned by a round-trip test in `CodecTests`:
 
-- Decodes formats 5/6/7; **encodes 5/6 only**. The per-archive flags byte read at
-  `:99-107` for format 7 is never written back. Re-encoding a format-7 table - which
-  `RSCache.WriteFile:188` does on **every edit** - silently corrupts it.
-- File IDs are flattened to `0..n-1` on encode (`:256-262` iterates an index, not
-  `Keys`). Sparse file IDs are rewritten wrong.
-- Entry hashes always encode as 0 (`:198` calls `CalculateHash()` over a stream that is
-  never populated), discarding the decoded value.
-- `FLAG_SIZES` values are never recomputed after an edit - they go stale immediately.
+- ~~Decodes formats 5/6/7; **encodes 5/6 only**. The per-archive flags byte read at
+  `:99-107` for format 7 is never written back.~~ Fixed - `Encode` now emits the flags
+  byte for format 7+, between the version block and the file counts where `Decode`
+  expects it. Omitting it shifted every following field, and `RSCache.WriteFile`
+  re-encodes the table on **every edit**.
+- ~~File IDs are flattened to `0..n-1` on encode.~~ Fixed - the delta now runs over
+  `GetFileEntries().Keys`, so sparse file IDs survive.
+- ~~Entry hashes always encode as 0 (`CalculateHash()` over a stream that is never
+  populated).~~ Fixed - `Encode` writes back the decoded `GetHash()` value.
+- Also found and fixed while in the same seam: with `FLAG_IDENTIFIERS` set, `Decode` read
+  the per-file name hash into `SetHash` while `Encode` wrote it from `GetIdentifier`, so
+  every file name was lost on the first save. Both sides now use the identifier field,
+  matching how the archive-level identifier is already handled.
+- Still open: `FLAG_SIZES` values are never recomputed after an edit - they go stale
+  immediately. That belongs to `RSCache.WriteFile`, not the codec; tracked as s.9 item 7c.
+- Still open: the sparse-file-ID fix above is defeated downstream by `RSCache.WriteFile`,
+  and the format-7 flags byte round trips bit 0 only. Tracked as s.9 items 7a and 7b.
 
-**Archive codec:** `RSArchive.Decode` special-cases a 1-file archive by taking the whole
+**Archive codec:** ~~`RSArchive.Decode` special-cases a 1-file archive by taking the whole
 buffer including the trailing chunk byte (`:41-53`), while `Encode` always writes that
 byte (`:191`). Every save cycle grows a single-file archive by one byte - which affects
-models, sprites and textures, i.e. most of the cache.
+models, sprites and textures, i.e. most of the cache.~~ **Fixed 2026-08-02.** `Decode` is
+the correct side: the client's own unpacker special-cases a file count of 1 and takes the
+payload verbatim, so a single-file archive has no trailer at all. `Encode` now suppresses
+both the size table and the chunk-count byte for that case. `Decode` also no longer reads
+the last *payload* byte as a chunk count in the single-file path - that left a bogus count
+behind which corrupted the size table if a second file was later added to the archive.
 
 **Compression:** none/BZip2/GZip supported both ways. **LZMA (type 3) is unsupported** -
 `RSContainer.cs:98` throws. **XTEA** is a real, correct implementation wired into both
@@ -324,14 +339,37 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    it, XTEA support is unproven.
 
 **P1 - stop the write path destroying caches**
-3. Make `MappedDataChannel` open the source dat2 **read-only**; stage all writes and
-   flush both dat2 and idx together on an explicit Save.
-4. Replace the three hardcoded `C:/Users/CJ/...` constants with the user-selected
-   directory; create the output directory; wrap Save All in try/catch.
-5. Add the end-to-end write round-trip test that doesn't exist: write -> reopen ->
-   read -> byte-compare, including grow, shrink and new-archive cases.
-6. Fix reference-table format-7 encode, sparse file-ID encode, and entry-hash encode.
-7. Fix the `RSArchive` single-file chunk-byte asymmetry (silent 1-byte growth per save).
+3. ~~Make `MappedDataChannel` open the source dat2 **read-only**; stage all writes and
+   flush both dat2 and idx together on an explicit Save.~~ Done 2026-08-02 in `99f4f25` -
+   it became `StagedDataChannel`, and `RSFileStore.SaveTo` promotes dat2 before idx.
+4. **Partly done.** Save All now targets the directory that was actually opened and is
+   wrapped so a failure reports instead of killing the app (`99f4f25`). Still outstanding:
+   all three hardcoded `C:/Users/CJ/...` constants remain in `RSConstants.cs:117-119` and
+   still drive Export-to-.dat (`Editor.cs:941,947`), Compare-to-Output (`:1056-1057`) and
+   both Reload buttons (`:1093,1098`).
+5. ~~Add the end-to-end write round-trip test that doesn't exist: write -> reopen ->
+   read -> byte-compare, including grow, shrink and new-archive cases.~~ Done 2026-08-02
+   in `99f4f25` - grow, shrink and new-archive Write cases plus SaveTo reopen-and-compare.
+6. ~~Fix reference-table format-7 encode, sparse file-ID encode, and entry-hash encode.~~
+   Done 2026-08-02 - plus the per-file identifier asymmetry found alongside them (s.4).
+7. ~~Fix the `RSArchive` single-file chunk-byte asymmetry (silent 1-byte growth per
+   save).~~ Done 2026-08-02 (s.4).
+7a. **Fix the dummy-file-entry loop in `RSCache.WriteFile:139-145`, which defeats the
+   sparse-file-ID fix in item 6.** It walks `id` from `0` to `archive.FileCount()` and
+   calls `archive.GetFile(id)`, a bare `files[fileId]` indexer with no containment check,
+   so any sparse archive throws `KeyNotFoundException` on the first gap. Where it does not
+   throw it re-registers file entries under ordinal ids, restoring exactly the renumbering
+   the codec fix removed. **Item 6 is not observable end to end until this is fixed.**
+7b. Make the format-7 archive-flags byte lossless. Decode keeps only bit 0 (the XTEA
+   marker, `ReferenceTableCodec.cs:115`) and encode writes only bit 0, so any other bit
+   set in a real table is silently zeroed on re-encode. No longer a field shift, but not
+   yet byte-exact - it needs the raw byte retained alongside `UsesXtea`.
+7c. Recompute `FLAG_SIZES` values on edit in `RSCache.WriteFile` (moved here from s.4,
+   where it was listed as a codec defect but is really the write path's job).
+7d. Pin the codec against a real 639 cache. Every codec test round-trips this encoder
+   against this decoder, so a shared misreading of the wire format would pass. The
+   single-file no-trailer rule in particular is argued from the client's unpacker and
+   from AGENTS.md, not demonstrated against captured bytes.
 
 **P2 - make it an editor**
 8. Route all logging to a visible log panel; stop swallowing into a nonexistent console.

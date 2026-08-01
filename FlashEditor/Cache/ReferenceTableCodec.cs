@@ -137,14 +137,17 @@ namespace FlashEditor.cache
                     entry.GetFileEntries()[id] = new RSFileEntry();
             }
 
-            /* ── Optional per-file hashes when identifiers present ─── */
+            /* ── Optional per-file identifiers when identifiers present ─── */
             if (table.hasIdentifiers)
             {
+                //These are name hashes, the per-file counterpart of the archive identifiers
+                //read above, and Encode writes them back from GetIdentifier. Storing them in
+                //the separate hash field would drop every file name on the next encode.
                 for (int i = 0; i < table.validArchivesCount; i++)
                 {
                     RSArchiveEntry entry = table.GetArchiveEntries()[table.validArchiveIds[i]];
                     foreach (int fileId in entry.GetValidFileIds())
-                        entry.GetFileEntries()[fileId].SetHash(stream.ReadInt());
+                        entry.GetFileEntries()[fileId].SetIdentifier(stream.ReadInt());
                 }
             }
 
@@ -202,15 +205,20 @@ namespace FlashEditor.cache
                 stream.WriteInteger(kvp.Value.GetCrc());
             }
 
+            //Write back the hash that was read off the wire. CalculateHash() digests the
+            //entry's own stream, which the codec never populates, so calling it here
+            //would replace every shipped hash with the digest of zero bytes.
             if (table.entryHashes)
+            {
                 foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
                 {
-                    int hash = kvp.Value.CalculateHash();
+                    int hash = (int)kvp.Value.GetHash();
                     stream.WriteInteger(hash);
                     sb.Clear();
                     sb.Append('\t').Append('|').Append(hash);
                     Debug(sb.ToString());
                 }
+            }
 
             if (table.usesWhirlpool)
             {
@@ -250,6 +258,16 @@ namespace FlashEditor.cache
                 Debug(sb.ToString());
             }
 
+            //Per-archive flags byte, bit 0 being the XTEA marker. Decode reads this for
+            //format 7+, so omitting it here shifts every field after it and corrupts the
+            //table - and RSCache re-encodes the table on every edit.
+            if (table.format >= 7)
+            {
+                Debug("Writing archive flags", LOG_DETAIL.INSANE);
+                foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
+                    stream.WriteByte((byte)(kvp.Value.UsesXtea ? 0x01 : 0x00));
+            }
+
             Debug("Writing number of non-null file entries", LOG_DETAIL.INSANE);
             foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
             {
@@ -263,12 +281,13 @@ namespace FlashEditor.cache
             Debug("Writing file IDs", LOG_DETAIL.INSANE);
             foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
             {
+                //Delta over the actual file ids. Walking an ordinal counter instead would
+                //renumber every archive's files to 0..n-1 and lose sparse ids entirely.
                 last = 0;
-                for (int id = 0; id < kvp.Value.GetFileEntries().Count; id++)
+                foreach (int fileId in kvp.Value.GetFileEntries().Keys)
                 {
-                    int delta = id - last;
-                    stream.WriteShort(delta);
-                    last = id;
+                    stream.WriteShort(fileId - last);
+                    last = fileId;
                 }
             }
 

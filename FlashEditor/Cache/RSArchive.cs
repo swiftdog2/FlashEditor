@@ -31,15 +31,15 @@ namespace FlashEditor.cache
             //Allocate a new archive object
             RSArchive archive = new RSArchive();
 
-            //Read the number of chunks at the end of the archive
-            stream.Seek(stream.Length - 1);
-            archive.chunks = stream.ReadByte();
-
-            Debug($"Chunk count: {archive.chunks}, size {size}", LOG_DETAIL.INSANE);
-
-            //Single‑file archives omit the size table entirely.
+            //Single-file archives omit the trailer entirely - no size table and no
+            //chunk-count byte. The whole payload is the file, so the last byte is data
+            //and must not be read as a chunk count: doing so leaves a bogus count behind
+            //that corrupts the size table if a second file is later added.
             if (size == 1)
             {
+                archive.chunks = 1;
+                Debug($"Chunk count: {archive.chunks}, size {size}", LOG_DETAIL.INSANE);
+
                 stream.Seek0();
                 byte[] allData = stream.ReadBytes(stream.Length);
 
@@ -51,6 +51,12 @@ namespace FlashEditor.cache
 
                 return archive;
             }
+
+            //Multi-file archives end with the chunk count, followed backwards by the size table
+            stream.Seek(stream.Length - 1);
+            archive.chunks = stream.ReadByte();
+
+            Debug($"Chunk count: {archive.chunks}, size {size}", LOG_DETAIL.INSANE);
 
             //Read the sizes of the file entries and individual chunks
             int[][] chunkSizes = ArrayUtil.ReturnRectangularArray<int>(archive.chunks, size);
@@ -123,23 +129,26 @@ namespace FlashEditor.cache
         /// <remarks>
         /// <para>
         /// <b>Write–order.</b>  Like the original Jagex client, we write the
-        /// <i>chunk payloads first</i> and the <i>size-table</i> afterwards.
+        /// <i>chunk payloads first</i> and the <i>trailer</i> afterwards.
         /// <see cref="Decode"/> therefore seeks to
         /// <c>stream.Length - 1 - (chunks ✕ fileCount ✕ 4)</c>, reads the size
         /// table, then rewinds to pull out each file unchanged.
         /// </para>
         /// <para>
         /// <b>Single-vs-multi-file archives.</b><br/>
-        /// ─ If the archive holds only <c>1</c> file the spec omits the size
-        ///   table entirely; only the final chunk-count byte (<c>1</c>) is
-        ///   written.<br/>
+        /// ─ If the archive holds only <c>1</c> file there is <i>no trailer at
+        ///   all</i> - no size table and no chunk-count byte. The client's
+        ///   unpacker special-cases a file count of <c>1</c> and takes the whole
+        ///   payload verbatim, as <see cref="Decode"/> does, so writing a
+        ///   chunk-count byte here would hand it straight back as file data and
+        ///   grow the file by one byte on every save cycle.<br/>
         /// ─ For <c>&gt;1</c> files we output one <c>int32</c> per file and per
-        ///   chunk.  Because this implementation always stores exactly one
-        ///   chunk, the delta we emit for file <i>i</i> is simply
-        ///   <c>len<i>i</i> - len<i>i-1</i></c> (the convention expected by
-        ///   <see cref="Decode"/>).  See lines around
+        ///   chunk, followed by the chunk-count byte.  Because this
+        ///   implementation always stores exactly one chunk, the delta we emit
+        ///   for file <i>i</i> is simply <c>len<i>i</i> - len<i>i-1</i></c> (the
+        ///   convention expected by <see cref="Decode"/>).  See lines around
         ///   <c>cumulativeChunkSize += delta;</c> in the decoder for the
-        ///   corresponding read-side logic. :contentReference[oaicite:0]{index=0}
+        ///   corresponding read-side logic.
         /// </para>
         /// <para>
         /// <b>Future multi-chunk support.</b>
@@ -168,8 +177,12 @@ namespace FlashEditor.cache
             }
 
             //------------------------------------------------------------------
-            // 2)  Write the delta-encoded size table (multi-file only)
+            // 2)  Trailer - size table and chunk count (multi-file only)
             //------------------------------------------------------------------
+            // A single-file archive has no trailer at all. Decode mirrors the client
+            // and takes the entire payload as the file, so appending a chunk-count
+            // byte here would hand that byte back as file data and grow the file by
+            // one byte on every save cycle.
             int fileCount = files.Count;
             if (fileCount > 1)
             {
@@ -183,12 +196,9 @@ namespace FlashEditor.cache
                         prev = chunkSize;
                     }
                 }
-            }
 
-            //------------------------------------------------------------------
-            // 3)  Final byte – number of chunks
-            //------------------------------------------------------------------
-            stream.WriteByte((byte)chunks);   // spec = 1, keeps decoder happy
+                stream.WriteByte((byte)chunks);   // spec = 1, keeps decoder happy
+            }
 
             return stream.Flip();             // ready for reading
         }
