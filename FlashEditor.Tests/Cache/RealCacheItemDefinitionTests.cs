@@ -515,11 +515,19 @@ namespace FlashEditor.Tests.Cache
         /// <remarks>
         ///     Truncating the buffer cannot change the path the decoder takes through it, only
         ///     cut that path short, so decoding the first <c>p</c> bytes finishes on exactly
-        ///     <c>p</c> if and only if <c>p</c> is a boundary the full decode also passes
-        ///     through. Any shorter payload throws on the read that runs off the end, and a real
-        ///     terminator stops the decode before <c>p</c>. That makes this an exact opcode
-        ///     trace built out of nothing but the production decoder, so it cannot disagree with
-        ///     it the way a second hand-written parser would.
+        ///     <c>p</c> when <c>p</c> is a boundary the full decode also passes through: any
+        ///     shorter payload throws on the read that runs off the end, and a real terminator
+        ///     stops the decode before <c>p</c>. That builds an opcode trace out of nothing but
+        ///     the production decoder, so it cannot disagree with it the way a second
+        ///     hand-written parser would.
+        ///     <para>
+        ///     One position is reported that is not a boundary. Opcodes 40, 41, 42, 132 and 249
+        ///     read their element count with <see cref="JagStream.ReadByte"/>, which answers -1
+        ///     at the end of the stream rather than throwing, and for 249 a count of -1 simply
+        ///     yields an empty block. Cutting the buffer immediately after a 249 opcode byte
+        ///     therefore also lands on <c>p</c>. It shows up in a trace as a spurious entry right
+        ///     after opcode 249, which is the parameter count read as though it were an opcode.
+        ///     </para>
         ///     <para>
         ///     It costs a decode per byte, which is why only the first few failures get one.
         ///     </para>
