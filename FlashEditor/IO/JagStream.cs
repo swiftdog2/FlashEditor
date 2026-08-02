@@ -186,12 +186,21 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Zeros the buffer and resets position to 0, length to capacity.
+        /// Zeros the written bytes and empties the stream: position and length both become 0.
+        /// The capacity is kept so the buffer can be reused without reallocating.
         /// </summary>
+        /// <remarks>
+        ///     This zeroed the buffer and rewound, but then set <see cref="Length"/> to the full
+        ///     capacity rather than to zero, so a "cleared" stream came back longer than it went
+        ///     in and read as a run of zero bytes instead of being empty. Reusing a stream by
+        ///     clearing it handed the next caller a padded stream, and every Remaining or Length
+        ///     check on it was wrong.
+        /// </remarks>
         public void Clear() {
+            //Zero first, while Length still describes the region that was written
             Buffer.AsSpan(0, Length).Clear();
             Position = 0;
-            Length = Buffer.Length;
+            Length = 0;
         }
 
         /// <summary>
@@ -319,11 +328,31 @@ namespace FlashEditor {
         /// <summary>
         /// Reads a variable-length integer encoded in 7-bit chunks (Java’s readVarInt equivalent).
         /// </summary>
+        /// <remarks>
+        ///     There used to be no width limit here. The loop shifted left for as long as the
+        ///     continuation bit was set, so a corrupt or hostile stream could push every
+        ///     meaningful bit off the top of the accumulator and the method returned a plausible
+        ///     small number instead of rejecting the input - six groups encoding 2^35 decoded to
+        ///     0. Malformed wire data now reports itself.
+        /// </remarks>
+        /// <exception cref="InvalidDataException">
+        ///     The sequence encodes a value too wide to fit in 32 bits.
+        /// </exception>
+        /// <exception cref="EndOfStreamException">The sequence is unterminated.</exception>
         public int ReadVarInt() {
             sbyte b = ReadSignedByte();
             int value = 0;
             while (b < 0) {
-                value = (value | (b & 0x7F)) << 7;
+                int accumulated = value | (b & 0x7F);
+
+                /* The next shift moves everything left by seven. Any bit at or above bit 25 is
+                   about to leave the accumulator, which is exactly the silent truncation this
+                   guard exists to stop. Compared as uint so an accumulator that has already
+                   reached the sign bit is caught rather than read as negative. */
+                if ((uint) accumulated > (uint.MaxValue >> 7))
+                    throw new InvalidDataException("VarInt sequence is wider than 32 bits");
+
+                value = accumulated << 7;
                 b = ReadSignedByte();
             }
             // Loop exit guarantees b >= 0, so b is 0..127 and the sbyte->int sign extension
@@ -537,7 +566,21 @@ namespace FlashEditor {
         /// Writes an unsigned smart: single byte for 0–127, two-byte short
         /// (value + 32768) for 128–32767. Inverse of <see cref="ReadUnsignedSmart"/>.
         /// </summary>
+        /// <remarks>
+        ///     This validated nothing. Below 0 it took the single-byte branch and emitted a byte
+        ///     with the high bit set, which <see cref="ReadUnsignedSmart"/> then treats as the
+        ///     first half of a two-byte form; at or above 32768 the "+ 32768" wrapped the short.
+        ///     Either way the bytes written did not encode the value asked for, and everything
+        ///     read after them was off by a byte with nothing to indicate it.
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     The value is outside 0 to 32767, the range this encoding can represent.
+        /// </exception>
         public void WriteUnsignedSmart(int value) {
+            if (value < 0 || value > 32767)
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Unsigned smart values must be between 0 and 32767");
+
             if (value < 128)
                 WriteByte((byte) value);
             else
@@ -694,10 +737,24 @@ namespace FlashEditor {
         /// <summary>
         /// Advances position by <paramref name="skip"/>.
         /// </summary>
+        /// <remarks>
+        ///     This used to validate nothing: it accepted a negative argument as a rewind and
+        ///     clamped an overshoot in either direction rather than reporting it. A codec that
+        ///     skipped a payload whose declared length was corrupt landed quietly at the end of
+        ///     the stream and carried on decoding as though it had skipped the right amount.
+        ///     <see cref="Seek(long, SeekOrigin)"/>, given the same out-of-range destination,
+        ///     always threw; the two now agree.
+        /// </remarks>
+        /// <exception cref="IOException">
+        ///     The resulting position would be before the start or past <see cref="Length"/>.
+        /// </exception>
         public void Skip(int skip) {
-            Position += skip;
-            if (Position > Length) Position = Length;
-            if (Position < 0) Position = 0;
+            /* Widened so that int.MinValue, and a large positive skip from a large position,
+               are rejected rather than wrapping into an in-range destination. */
+            long target = (long) Position + skip;
+            if (target < 0 || target > Length)
+                throw new IOException($"Skip out of bounds: {target}");
+            Position = (int) target;
         }
 
         /// <summary>
@@ -734,11 +791,27 @@ namespace FlashEditor {
 
         /// <summary>
         /// Writes <paramref name="count"/> bytes from <paramref name="value"/> in big-endian order.
+        /// A count above eight sign-extends: the leading bytes are 0x00 for a non-negative value
+        /// and 0xFF for a negative one, which is what the value's two's-complement encoding is.
         /// </summary>
+        /// <remarks>
+        ///     Past eight bytes the shift distance exceeds the width of a long, and C# masks the
+        ///     shift count to six bits rather than yielding zero. The extra leading bytes that a
+        ///     wider request should have filled therefore repeated the value's low byte, and the
+        ///     result was not the big-endian encoding this method promises. Clamping the shift to
+        ///     63 lets the arithmetic right shift produce the sign fill instead, so the bytes
+        ///     written always decode back to the value that was passed in.
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException">The count is negative.</exception>
         public void WriteBytes(int count, long value) {
+            if (count < 0)
+                throw new ArgumentOutOfRangeException(nameof(count), count, "Byte count cannot be negative");
+
             Span<byte> tmp = count <= 8 ? stackalloc byte[8] : new byte[count];
-            for (int i = 0 ; i < count ; i++)
-                tmp[i] = (byte) (value >> (8 * (count - i - 1)));
+            for (int i = 0 ; i < count ; i++) {
+                int shift = 8 * (count - i - 1);
+                tmp[i] = (byte) (value >> (shift < 63 ? shift : 63));
+            }
             Write(tmp.Slice(0, count));
         }
 

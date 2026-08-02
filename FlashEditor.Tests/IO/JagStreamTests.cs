@@ -13,10 +13,12 @@ namespace FlashEditor.Tests.IO
     /// typed read/write pair, the four "smart" encodings, the modified CP-1252 string path,
     /// and the error surface method by method.
     ///
-    /// Several tests are named *_DocumentsKnownDefect. Those pin CURRENT behaviour that is
-    /// known to be wrong, so the defect is recorded and any future fix shows up as a
-    /// deliberate, visible test change rather than a silent behaviour swap. They are not
-    /// endorsements of the behaviour they assert.
+    /// Nine tests here were once named *_DocumentsKnownDefect, pinning behaviour that was known
+    /// to be wrong so that any fix would show up as a deliberate, visible test change rather
+    /// than a silent behaviour swap. All nine defects have since been fixed and every one of
+    /// those tests now asserts the corrected behaviour. Their doc comments still describe the
+    /// defect that was there, because knowing what a method used to do wrong is what stops it
+    /// being reintroduced.
     ///
     /// A note on the surface, because it is asymmetric and the asymmetry drives several tests
     /// below: there is a WriteLong with no ReadLong, a WriteJagexString with no WriteString2,
@@ -1238,19 +1240,39 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     ReadVarInt has no width limit. It keeps shifting left for as long as the
-        ///     continuation bit is set, so a corrupt or hostile stream can push every meaningful
-        ///     bit off the top of the accumulator and the method returns a plausible small number
-        ///     instead of rejecting the input. Six groups is enough: this wire encodes 2^35 and
-        ///     decodes to 0.
+        ///     ReadVarInt used to have no width limit. It kept shifting left for as long as the
+        ///     continuation bit was set, so a corrupt or hostile stream could push every
+        ///     meaningful bit off the top of the accumulator and the method returned a plausible
+        ///     small number instead of rejecting the input. Six groups is enough: this wire
+        ///     encodes 2^35, and it used to decode to 0 with no error at all. It is now reported
+        ///     as the malformed wire data it is.
         /// </summary>
         [Fact]
-        public void ReadVarInt_SequenceWiderThanThirtyTwoBits_SilentlyOverflows_DocumentsKnownDefect()
+        public void ReadVarInt_SequenceWiderThanThirtyTwoBits_ThrowsInvalidData()
         {
             var stream = Wire(0x81, 0x80, 0x80, 0x80, 0x80, 0x00);
 
-            Assert.Equal(0, stream.ReadVarInt());
-            Assert.Equal(6, stream.Position);
+            Assert.Throws<InvalidDataException>(() => stream.ReadVarInt());
+        }
+
+        /// <summary>
+        ///     The width guard has to reject only what genuinely will not fit. Five groups is the
+        ///     widest form the writer emits, and its first group carries the top four bits, so
+        ///     0x0F is the last first-group value that fits in 32 bits and 0x10 is the first that
+        ///     does not. An over-eager guard would break the -1 and int.MinValue round-trips.
+        /// </summary>
+        [Theory]
+        [InlineData(new byte[] { 0x8F, 0xFF, 0xFF, 0xFF, 0x7F }, true)]
+        [InlineData(new byte[] { 0x88, 0x80, 0x80, 0x80, 0x00 }, true)]
+        [InlineData(new byte[] { 0x90, 0x80, 0x80, 0x80, 0x00 }, false)]
+        public void ReadVarInt_AcceptsTheWidestFormThatStillFitsInThirtyTwoBits(byte[] wire, bool fits)
+        {
+            var stream = Wire(wire);
+
+            if (fits)
+                stream.ReadVarInt();
+            else
+                Assert.Throws<InvalidDataException>(() => stream.ReadVarInt());
         }
 
         #endregion
@@ -1423,41 +1445,33 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     WriteUnsignedSmart is the only writer among the five smart readers, and it
-        ///     validates nothing. Below 0 it takes the single-byte branch and emits a byte with
+        ///     WriteUnsignedSmart is the only writer among the five smart readers, and it used to
+        ///     validate nothing. Below 0 it took the single-byte branch and emitted a byte with
         ///     the high bit set, which the reader then treats as the first half of a two-byte
-        ///     form; at or above 32768 the "+ 32768" wraps the short. Both cases corrupt the
-        ///     stream silently and desynchronise everything after them, which is far worse than
-        ///     the ArgumentOutOfRangeException a range check would have thrown.
+        ///     form; at or above 32768 the "+ 32768" wrapped the short. -1 wrote "FF", 32768
+        ///     wrote "00-00" and 65535 wrote "7F-FF" - none of which encode the value asked for.
+        ///     Both cases corrupted the stream silently and desynchronised everything after them,
+        ///     which is far worse than a loud rejection. It now rejects.
         /// </summary>
         /// <param name="value">
-        ///     -1 takes the wrong branch; 32768 is the first value the bias wraps, emitting two
-        ///     zero bytes; 65535 wraps to 0x7FFF and reads back as 127 with a byte left over.
+        ///     -1 took the wrong branch; 32768 is the first value the bias wrapped; 65535 wrapped
+        ///     to 0x7FFF and read back as 127 with a byte left over.
         /// </param>
         [Theory]
-        [InlineData(-1, "FF")]
-        [InlineData(32768, "00-00")]
-        [InlineData(65535, "7F-FF")]
-        public void WriteUnsignedSmart_OutOfRangeValue_CorruptsTheStreamSilently_DocumentsKnownDefect(int value, string wire)
+        [InlineData(-1)]
+        [InlineData(32768)]
+        [InlineData(65535)]
+        [InlineData(int.MinValue)]
+        [InlineData(int.MaxValue)]
+        public void WriteUnsignedSmart_OutOfRangeValue_ThrowsArgumentOutOfRange(int value)
         {
             var stream = new JagStream();
 
-            stream.WriteUnsignedSmart(value);
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.WriteUnsignedSmart(value));
 
-            //No exception, and the bytes emitted do not encode the value that was asked for
-            Assert.Equal(wire, BitConverter.ToString(stream.ToArray()));
-
-            stream.Seek0();
-            if (value < 0)
-            {
-                //A lone 0xFF is read as the first byte of a two-byte form that is not there
-                Assert.Throws<EndOfStreamException>(() => stream.ReadUnsignedSmart());
-            }
-            else
-            {
-                Assert.NotEqual(value, stream.ReadUnsignedSmart());
-                Assert.Equal(1, stream.Remaining());
-            }
+            //Nothing was written, so the stream is still where the caller left it
+            Assert.Equal(0, stream.Length);
+            Assert.Equal(0, stream.Position);
         }
 
         /// <summary>
@@ -1947,41 +1961,58 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     Skip validates nothing. It accepts a negative argument as a rewind, and it clamps
-        ///     an overshoot in either direction rather than reporting it, so a codec that skips a
-        ///     payload whose declared length is corrupt lands quietly at the end of the stream
-        ///     and carries on decoding as though it had skipped the right amount. Seek, given the
-        ///     same out-of-range destination, throws.
+        ///     Skip used to validate nothing. It accepted a negative argument as a rewind, and it
+        ///     clamped an overshoot in either direction rather than reporting it, so a codec that
+        ///     skipped a payload whose declared length was corrupt landed quietly at the end of
+        ///     the stream and carried on decoding as though it had skipped the right amount. Seek,
+        ///     given the same out-of-range destination, always threw; the two now agree, and this
+        ///     asserts that agreement rather than the old divergence.
         /// </summary>
         /// <param name="skip">
-        ///     A forward overshoot, a negative rewind, and a negative undershoot past the start.
+        ///     A forward overshoot, a negative rewind, a negative undershoot past the start, and
+        ///     int.MinValue, which would wrap the position arithmetic back into range if the
+        ///     bound were computed in int.
         /// </param>
         [Theory]
-        [InlineData(99, 3)]
-        [InlineData(-1, 0)]
-        [InlineData(-99, 0)]
-        [InlineData(int.MinValue, 0)]
-        public void Skip_OutOfBounds_ClampsSilentlyInsteadOfThrowing_DocumentsKnownDefect(int skip, int expectedPosition)
+        [InlineData(99)]
+        [InlineData(-1)]
+        [InlineData(-99)]
+        [InlineData(int.MinValue)]
+        [InlineData(int.MaxValue)]
+        public void Skip_OutOfBounds_ThrowsIOExceptionLikeSeek(int skip)
         {
             var stream = Wire(1, 2, 3);
 
-            stream.Skip(skip);
+            Assert.Throws<IOException>(() => stream.Skip(skip));
 
-            Assert.Equal(expectedPosition, stream.Position);
+            //The rejected skip left the position alone
+            Assert.Equal(0, stream.Position);
 
-            //Seek rejects exactly what Skip absorbs
+            //Seek rejects exactly what Skip used to absorb
             Assert.Throws<IOException>(() => stream.Seek(skip > 0 ? skip : -1));
         }
 
+        [Fact]
+        public void Skip_ToExactlyTheEnd_IsAllowed()
+        {
+            var stream = Wire(1, 2, 3);
+
+            stream.Skip(3);
+
+            Assert.Equal(3, stream.Position);
+            Assert.Equal(0, stream.Remaining());
+        }
+
         /// <summary>
-        ///     Clear zeroes the buffer and rewinds, but it then sets Length to the full capacity
-        ///     rather than to zero, so a "cleared" stream is longer than it was and reads back as
-        ///     a run of zero bytes instead of being empty. Reusing a stream by clearing it hands
-        ///     the next caller a padded stream, and every Remaining or Length check on it is
-        ///     wrong.
+        ///     Clear zeroes the buffer and rewinds, but it used to then set Length to the full
+        ///     capacity rather than to zero, so a "cleared" stream came back longer than it went
+        ///     in and read as a run of zero bytes instead of being empty. Reusing a stream by
+        ///     clearing it handed the next caller a padded stream, and every Remaining or Length
+        ///     check on it was wrong. It now empties the stream, keeping the capacity so the
+        ///     buffer can still be reused without reallocating.
         /// </summary>
         [Fact]
-        public void Clear_GrowsTheStreamToCapacityInsteadOfEmptyingIt_DocumentsKnownDefect()
+        public void Clear_EmptiesTheStreamButKeepsTheCapacity()
         {
             var stream = new JagStream(16);
             stream.WriteByte(1);
@@ -1991,12 +2022,31 @@ namespace FlashEditor.Tests.IO
             stream.Clear();
 
             Assert.Equal(0, stream.Position);
-            Assert.Equal(new byte[16], stream.ToArray());
+            Assert.Equal(0, stream.Length);
+            Assert.Equal(0, stream.Remaining());
+            Assert.Empty(stream.ToArray());
 
-            //The name says empty; the stream is now capacity-long
-            Assert.Equal(16, stream.Length);
-            Assert.Equal(16, stream.Remaining());
-            Assert.Equal(0, stream.ReadByte());
+            //Reading an empty stream reports the end rather than handing back a padding byte
+            Assert.Equal(-1, stream.ReadByte());
+
+            //The buffer survives, so a cleared stream can be refilled without reallocating
+            Assert.Equal(16, stream.Capacity);
+        }
+
+        /// <summary>
+        ///     The bytes that were written are zeroed, not merely made unreachable, so a stream
+        ///     reused after Clear cannot leak the previous payload through the spare capacity.
+        /// </summary>
+        [Fact]
+        public void Clear_ZeroesTheBytesItMakesUnreachable()
+        {
+            var stream = new JagStream(16);
+            stream.WriteByte(1);
+            stream.WriteByte(2);
+
+            stream.Clear();
+
+            Assert.Equal(new byte[16], stream.GetBuffer());
         }
 
         [Fact]
@@ -2116,20 +2166,38 @@ namespace FlashEditor.Tests.IO
         /// <summary>
         ///     Past eight bytes the shift distance exceeds the width of a long, and C# masks the
         ///     shift count to six bits rather than yielding zero. The extra leading bytes that a
-        ///     wider request should have zero-filled therefore repeat the value's low byte, and
-        ///     the result is not the big-endian encoding the method promises. Nothing in the repo
-        ///     calls it with a count above eight today, which is the only reason this has not
-        ///     bitten.
+        ///     wider request should have filled therefore repeated the value's low byte -
+        ///     WriteBytes(9, 0x0123456789ABCDEF) emitted EF-01-23-45-67-89-AB-CD-EF - and the
+        ///     result was not the big-endian encoding the method promises. Nothing in the repo
+        ///     calls it with a count above eight today, which is the only reason it never bit.
+        ///     The shift is now clamped to 63, so the leading bytes carry the value's sign fill
+        ///     and the encoding decodes back to what was passed in.
         /// </summary>
-        [Fact]
-        public void WriteBytes_CountAboveEight_WrapsTheShiftInsteadOfZeroPadding_DocumentsKnownDefect()
+        /// <param name="count">Nine and sixteen bytes, either side of the old wrap point.</param>
+        /// <param name="expected">
+        ///     Zero fill for a non-negative value, 0xFF fill for a negative one: that is the
+        ///     value's two's-complement big-endian encoding at the requested width.
+        /// </param>
+        [Theory]
+        [InlineData(9, 0x0123456789ABCDEFL, "00-01-23-45-67-89-AB-CD-EF")]
+        [InlineData(12, 0x0123456789ABCDEFL, "00-00-00-00-01-23-45-67-89-AB-CD-EF")]
+        [InlineData(9, -1L, "FF-FF-FF-FF-FF-FF-FF-FF-FF")]
+        [InlineData(9, long.MinValue, "FF-80-00-00-00-00-00-00-00")]
+        public void WriteBytes_CountAboveEight_SignExtendsInsteadOfWrappingTheShift(int count, long value, string expected)
         {
             var stream = new JagStream();
 
-            stream.WriteBytes(9, 0x0123456789ABCDEFL);
+            stream.WriteBytes(count, value);
 
-            //A correct nine-byte big-endian encoding would be 00-01-23-45-67-89-AB-CD-EF
-            Assert.Equal("EF-01-23-45-67-89-AB-CD-EF", BitConverter.ToString(stream.ToArray()));
+            Assert.Equal(expected, BitConverter.ToString(stream.ToArray()));
+        }
+
+        [Fact]
+        public void WriteBytes_NegativeCount_ThrowsArgumentOutOfRange()
+        {
+            var stream = new JagStream();
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.WriteBytes(-1, 0x1234L));
         }
 
         #endregion
