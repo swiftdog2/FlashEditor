@@ -1,5 +1,6 @@
 using FlashEditor.cache;
 using FlashEditor.Cache.Util;
+using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Utils;
 using System;
 using System.IO;
@@ -187,6 +188,91 @@ namespace FlashEditor.Tests.Cache
             Assert.Equal(1, archive.FileCount());
             Assert.Equal(payload, archive.GetFile(0).ToArray());
             Assert.Equal(payload, archive.Encode().ToArray());
+        }
+
+        // ===================================================================
+        //  XTEA
+        // ===================================================================
+
+        /// <summary>
+        ///     A real encrypted map archive - index 5, archive 1962, map square 9616 - decrypted
+        ///     with the key revision 639 actually shipped with, taken from the OpenRS2 archive.
+        ///     Neither the ciphertext nor the key originates here, so this is the first thing in
+        ///     the suite that shows the XTEA path is right rather than merely self-consistent.
+        /// </summary>
+        /// <remarks>
+        ///     The encrypted region begins after the compression type and compressed length and
+        ///     runs to the end of the payload, which puts the uncompressed-length field inside
+        ///     it. Reading that field before deciphering yields four bytes of ciphertext, and
+        ///     deciphering only the bytes after it shifts every 8-byte block by four so nothing
+        ///     decrypts at all. Against this cache that was the difference between 598 archives
+        ///     decrypting and none of them.
+        /// </remarks>
+        [Fact]
+        public void EncryptedArchive_FromCapturedBytes_DecryptsWithTheShippedKey()
+        {
+            byte[] stored = Fixture("archive-xtea.container.bin");
+            byte[] expected = Fixture("archive-xtea.payload.bin");
+
+            XTEAKeyTable table = XTEAKeyTable.LoadFromFile(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", "RealCache", "xtea-keys-openrs2.json"));
+            int[] key = table.GetKey(RSConstants.MAPS_INDEX, 1962);
+            Assert.NotNull(key);
+
+            RSContainer container = RSContainer.Decode(new JagStream(stored), key);
+
+            Assert.Equal(expected, container.GetStream().ToArray());
+        }
+
+        /// <summary>
+        ///     Without the key the same bytes must not decode. This is what stops the test above
+        ///     passing for the wrong reason - if the archive were not really encrypted, it would
+        ///     decode either way and would prove nothing about XTEA.
+        /// </summary>
+        [Fact]
+        public void EncryptedArchive_FromCapturedBytes_DoesNotDecodeWithoutTheKey()
+        {
+            byte[] stored = Fixture("archive-xtea.container.bin");
+
+            Assert.ThrowsAny<Exception>(() => RSContainer.Decode(new JagStream(stored)));
+        }
+
+        /// <summary>
+        ///     An encrypted container has to survive a save. Encode must encipher the same span
+        ///     Decode deciphers, or an edited map archive is written back in a shape the client
+        ///     cannot read - and, because the uncompressed-length field sits inside that span,
+        ///     the mistake is invisible until something tries to decrypt it.
+        /// </summary>
+        [Fact]
+        public void EncryptedContainer_ReEncodesToSomethingThatDecryptsBack()
+        {
+            byte[] expected = Fixture("archive-xtea.payload.bin");
+            int[] key = { 829329687, 2060676264, 581836269, -714741378 };
+
+            var container = new RSContainer(RSConstants.MAPS_INDEX, 1962,
+                                            RSConstants.GZIP_COMPRESSION, new JagStream(expected), 1);
+
+            byte[] encoded = container.Encode(key).ToArray();
+
+            //The ciphertext must not be readable without the key, and must be with it
+            Assert.ThrowsAny<Exception>(() => RSContainer.Decode(new JagStream(encoded)));
+            Assert.Equal(expected, RSContainer.Decode(new JagStream(encoded), key).GetStream().ToArray());
+        }
+
+        /// <summary>
+        ///     OpenRS2 key exports name the index "archive" and the archive id "group". Reading
+        ///     "archive" as the archive id collapses an entire dump onto archive 5 of index 5,
+        ///     which silently yields a table that holds one key and looks like it loaded fine.
+        /// </summary>
+        [Fact]
+        public void XteaKeyTable_ReadsTheOpenRs2Shape()
+        {
+            XTEAKeyTable table = XTEAKeyTable.LoadFromFile(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", "RealCache", "xtea-keys-openrs2.json"));
+
+            Assert.Equal(1, table.Count);
+            Assert.NotNull(table.GetKey(RSConstants.MAPS_INDEX, 1962));   // "group"
+            Assert.Null(table.GetKey(RSConstants.MAPS_INDEX, 5));         // "archive", the index
         }
 
         // ===================================================================

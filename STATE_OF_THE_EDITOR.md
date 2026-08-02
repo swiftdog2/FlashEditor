@@ -339,9 +339,43 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
 **P0 - unblock (DONE 2026-07-31)**
 1. ~~Write or restore `XTEAKeyTable`.~~ Done - reconstructed from the call sites.
 2. ~~Get `dotnet build` and `dotnet test` green.~~ Done - 0 errors, 45/45 passing.
-3. **Validate the reconstructed `XTEAKeyTable` against a real key dump.** Its accepted
-   JSON format is an assumption; until a genuine encrypted map archive decrypts through
-   it, XTEA support is unproven.
+3. ~~**Validate the reconstructed `XTEAKeyTable` against a real key dump.**~~ **Done
+   2026-08-02.** Keys for build 639 come from the OpenRS2 archive (cache id 1194, 1,587
+   keys for the map index). Against the reference cache, **598 of 659 encrypted map archives
+   now decrypt** and their payloads decompress to their declared lengths; the remaining 61
+   have no key in that dump, and brute-forcing all 25,959 keys OpenRS2 holds across every
+   cache it archives solves none of them, so those map squares' keys appear simply never to
+   have been recovered. Cross-checking confirmed the dump belongs to this cache: all 1,587
+   of its `group` ids match our archive ids by name hash, with zero disagreements.
+   Three defects had to be fixed before a single archive would decrypt, and each of them
+   alone was enough to make XTEA support fail completely:
+   - **`RSContainer` deciphered the wrong span.** The encrypted region starts after the
+     compression type and compressed size and runs to the end of the payload, so for a
+     compressed container it *contains* the 4-byte uncompressed-size field. `Decode` read
+     that field first - four bytes of ciphertext - and then deciphered only the bytes after
+     it, offsetting every 8-byte block by four. The score was 0 of 598 before and 598 of 598
+     after. `Encode` had the mirror defect and would have written back an archive the client
+     could not read. With no key the bytes are unchanged either way, which is why every
+     existing test passed throughout.
+   - **`RSCache.ResolveXTEAKey` withheld every key.** It returned null unless the archive's
+     entry had `UsesXtea` set, but that bit lives in the format 7 per-archive flags byte, and
+     every table in a 639 cache is format 6 - so the flag is always false and no key was ever
+     resolved. It is now consulted only where it exists.
+   - **`XTEAKeyTable` misread the OpenRS2 export.** There, `archive` names the *index* and
+     `group` names the archive id; the loader took `archive` as the archive id, which
+     collapses an entire dump onto archive 5 of index 5 and yields a one-key table that looks
+     like it loaded correctly.
+   One behaviour is deliberately lenient. A key that does not fit is treated as evidence the
+   archive was not encrypted rather than as an error, because a format 6 table gives no other
+   signal and a build-wide dump lists archives a repacked cache may have decrypted in place -
+   as this one has, holding 1,587 keys for only 659 still-encrypted archives. Applying a key
+   to a plaintext archive would destroy it, so the fallback is what keeps the other 928 keyed
+   archives readable. The reverse is not papered over: an encrypted archive with no key still
+   throws, since nobody can read it.
+   Pinned by `CapturedCacheBytesTests`, which decrypts a committed real encrypted map archive
+   with its real shipped key and asserts the same bytes do *not* decode without it, and by
+   `RealCacheConformanceTests.EncryptedMapArchives_DecryptWithTheKeysForThisBuild` over the
+   whole cache. Drop a key file beside the cache as `xteas.json` and the suite picks it up.
 
 **P1 - stop the write path destroying caches**
 3. ~~Make `MappedDataChannel` open the source dat2 **read-only**; stage all writes and
@@ -430,13 +464,13 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    - **Archive CRCs.** All 102,467 match a CRC-32 taken over the stored container minus its
      version trailer. Nothing here produced those checksums, so they independently confirm
      both the container header layout and the exact span 7c reasoned about.
-   - **Archives re-encode to their captured payload.** 96,653 single-file and 5,155
+   - **Archives re-encode to their captured payload.** 97,251 single-file and 5,155
      multi-file archives, byte for byte.
-   - **The single-file no-trailer rule is now demonstrated, not argued.** Of 95,996
+   - **The single-file no-trailer rule is now demonstrated, not argued.** Of 96,477
      single-file archives, zero have a payload that would parse as a valid one-file trailer
      (final byte 1, preceded by an int equal to the remaining length). That is positive
      evidence for the special case rather than an absence of evidence against it. The count
-     is lower than the 96,653 single-file archives re-encoded above because payloads shorter
+     is lower than the 97,251 single-file archives re-encoded above because payloads shorter
      than five bytes cannot express a trailer either way and are not counted as evidence.
    - **Reference tables re-encode to their captured bytes.** 31 of 35 exactly. The other
      four (indexes 9, 26, 27, 29) carry a zero-filled block of four bytes per file after the
@@ -474,17 +508,17 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    both ends, so round-tripping a single-file fixture holds for any bytes at all and proves
    nothing by itself. The fixture test therefore asserts the captured payload is *not*
    consistent with a trailer, which is the part that can actually fail. The exhaustive
-   version makes the same argument across 95,996 archives rather than one. `AGENTS.md` now documents the group payload layout and the fact that the
+   version makes the same argument across 96,477 archives rather than one. `AGENTS.md` now documents the group payload layout and the fact that the
    container version trailer is present on archive containers and absent on reference-table
    containers, which is what makes 7c's "read the trailer length off the container" rule
    load-bearing rather than defensive.
 
    Not exercised by the reference cache, and so still unproven: every table in it is format
-   6, so the format-7 archive-flags byte (7b) is untested against real bytes; no table sets
-   `FLAG_SIZES`, so 7c's recomputed pair is untested against real bytes; and 659 of the
-   5,203 map archives are XTEA encrypted with no key table shipped, so they are skipped -
-   which leaves item 3 (validating `XTEAKeyTable` against a real key dump) exactly where it
-   was.
+   6, so the format-7 archive-flags byte (7b) is untested against real bytes, and no table
+   sets `FLAG_SIZES`, so 7c's recomputed pair is untested against real bytes too.
+   The 659 encrypted map archives were initially skipped, which is what prompted item 3.
+   With keys loaded, 598 of them decrypt and are now covered by the sweep alongside
+   everything else; the 61 with no known key remain skipped and are reported as such.
 7e. ~~Stop `RSReferenceTable` storing its flag state twice.~~ **Done 2026-08-02**, found
    reviewing 7c. The table held the raw `flags` byte *and* four independent public bools
    (`hasIdentifiers`, `usesWhirlpool`, `entryHashes`, `sizes`) with nothing keeping them in

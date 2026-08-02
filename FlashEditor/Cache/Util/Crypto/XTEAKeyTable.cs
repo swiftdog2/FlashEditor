@@ -169,12 +169,27 @@ namespace FlashEditor.Cache.Util.Crypto {
                 if (key == null)
                     continue;
 
-                // "region" and "mapsquare" are map-index archive ids under other names.
-                JToken archiveToken = entry["archive"] ?? entry["region"] ?? entry["mapsquare"] ?? entry["id"];
+                JToken archiveToken;
+                JToken indexToken;
+
+                /* OpenRS2 exports use "archive" for the *index* and "group" for the archive
+                   id within it. Reading "archive" as the archive id there collapses an entire
+                   dump onto archive 5 of index 5. A "group" member is the marker for that
+                   dialect, because no other dumped shape carries one. */
+                JToken groupToken = entry["group"];
+                if (groupToken != null && groupToken.Type == JTokenType.Integer) {
+                    archiveToken = groupToken;
+                    indexToken = entry["archive"] ?? entry["index"];
+                }
+                else {
+                    // "region" and "mapsquare" are map-index archive ids under other names.
+                    archiveToken = entry["archive"] ?? entry["region"] ?? entry["mapsquare"] ?? entry["id"];
+                    indexToken = entry["index"];
+                }
+
                 if (archiveToken == null || archiveToken.Type != JTokenType.Integer)
                     continue;
 
-                JToken indexToken = entry["index"];
                 int indexId = indexToken != null && indexToken.Type == JTokenType.Integer
                     ? (int) indexToken
                     : RSConstants.MAPS_INDEX;

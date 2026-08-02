@@ -28,5 +28,6 @@
 		     left in the output directory fails the tests in a way that looks like a codec
 		     regression rather than a build artefact. -->
 		<None Include="Fixtures\RealCache\*.bin" CopyToOutputDirectory="Always" />
+		<None Include="Fixtures\RealCache\*.json" CopyToOutputDirectory="Always" />
 	</ItemGroup>
 </Project>

@@ -92,8 +92,21 @@ use this ordering to remain compatible with the in-game client.
 
 ### XTEA Layer
 - Applied after compression and before sectorisation
-- 32-round standard XTEA over 8-byte blocks
+- 32-round standard XTEA over 8-byte blocks; a trailing partial block is left in the clear
 - Key of four 32-bit integers (`0,0,0,0` indicates no encryption)
+- **The encrypted region is `[5, 5 + compressedSize + (compressed ? 4 : 0))`.** It starts
+  after the compression type and the compressed size, and for a compressed container it
+  therefore *includes the 4-byte uncompressed-size field*. That field cannot be read until
+  the region has been deciphered, and deciphering only the bytes after it offsets every
+  8-byte block by four so nothing decrypts at all.
+- A format 6 table has no per-archive encryption flag, so the only available signal that an
+  archive is encrypted is that a key exists for it. That signal is not reliable - a repacked
+  cache may have had archives decrypted in place while a build-wide key dump still lists
+  them - so a key that fails to fit is treated as "not encrypted", not as an error.
+- Keys for a given build can be had from the OpenRS2 archive
+  (`https://archive.openrs2.org/caches.json`, then `/caches/runescape/<id>/keys.json`).
+  In that export `archive` is the **index** and `group` is the **archive id**; entries also
+  carry `name_hash`, `name` (`l<x>_<y>`) and `mapsquare`. Build 639 is cache id 1194.
 
 ### Minimal Cache-Editor API
 ```csharp

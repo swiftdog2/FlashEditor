@@ -331,6 +331,62 @@ namespace FlashEditor.Tests.Cache
         }
 
         // ===================================================================
+        //  XTEA
+        // ===================================================================
+
+        /// <summary>
+        ///     Every encrypted map archive for which a key is held must decrypt to a payload that
+        ///     decompresses to its declared length. The keys are not ours - they come from a key
+        ///     dump for this build - so this is an end-to-end check of the container's encrypted
+        ///     span, the cipher, and the key table's lookup, against data none of them produced.
+        /// </summary>
+        /// <remarks>
+        ///     Skips when no key file sits beside the cache, since there is then nothing to
+        ///     check. Archives with no key are counted and reported rather than ignored: a key
+        ///     dump is never complete, and a silent zero would look identical to success.
+        /// </remarks>
+        [RealCacheFact]
+        public void EncryptedMapArchives_DecryptWithTheKeysForThisBuild()
+        {
+            RSReferenceTable table = _cache.Table(RSConstants.MAPS_INDEX);
+            var failures = new List<string>();
+            int plaintext = 0;
+            int decrypted = 0;
+            int noKey = 0;
+
+            foreach (int archiveId in _cache.ArchivesToExamine(table))
+            {
+                byte[] stored = _cache.RawContainer(RSConstants.MAPS_INDEX, archiveId);
+                if (stored == null)
+                    continue;
+
+                if (!_cache.IsEncrypted(RSConstants.MAPS_INDEX, archiveId, stored))
+                {
+                    plaintext++;
+                    continue;
+                }
+
+                if (_cache.KeyFor(RSConstants.MAPS_INDEX, archiveId) == null)
+                {
+                    noKey++;
+                    continue;
+                }
+
+                if (_cache.TryDecodeContainer(RSConstants.MAPS_INDEX, archiveId, stored) != null)
+                    decrypted++;
+                else
+                    failures.Add($"archive {archiveId}: held a key but the payload would not decrypt");
+            }
+
+            _output.WriteLine($"map index: {plaintext} plaintext, {decrypted} decrypted, {noKey} with no key held");
+            ReportSampling();
+
+            Assert.True(decrypted > 0,
+                "no map archive was decrypted, so the XTEA path was never exercised - is a key file present?");
+            AssertNoFailures(failures, "map archives failed to decrypt with the key held for them");
+        }
+
+        // ===================================================================
         //  Index records
         // ===================================================================
 
@@ -376,17 +432,19 @@ namespace FlashEditor.Tests.Cache
         ///     Skipping them silently everywhere would let a genuine decode regression hide as a
         ///     skip, so anything that fails to decode outside the map index is a failure.
         /// </remarks>
-        /// <param name="encrypted">Running count of archives skipped as encrypted.</param>
+        /// <param name="unreadable">Running count of map archives held back for want of a key.</param>
         /// <returns>The decoded container, or <c>null</c> when it was skipped or failed.</returns>
-        private static RSContainer Decode(int indexId, int archiveId, byte[] stored,
-                                          List<string> failures, ref int encrypted)
+        private RSContainer Decode(int indexId, int archiveId, byte[] stored,
+                                   List<string> failures, ref int unreadable)
         {
-            RSContainer container = RealCacheFixture.TryDecodeContainer(stored);
+            RSContainer container = _cache.TryDecodeContainer(indexId, archiveId, stored);
             if (container != null)
                 return container;
 
-            if (indexId == RSConstants.MAPS_INDEX)
-                encrypted++;
+            /* A map archive with no key cannot be read by anyone and is not a defect. One that
+               fails *with* a key in hand is, and so is any failure outside the map index. */
+            if (indexId == RSConstants.MAPS_INDEX && _cache.KeyFor(indexId, archiveId) == null)
+                unreadable++;
             else
                 failures.Add($"index {indexId} archive {archiveId}: container payload would not decode");
 

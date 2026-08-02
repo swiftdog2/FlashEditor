@@ -243,7 +243,7 @@ namespace FlashEditor.cache {
 
                     //Re-load evicted container from disk
                     JagStream evictedData = LoadContainer(indexId, archiveId);
-                    RSContainer reloaded = RSContainer.Decode(evictedData, ResolveXTEAKey(indexId, archiveId));
+                    RSContainer reloaded = DecodeContainer(evictedData, indexId, archiveId);
                     if (reloaded != null) {
                         reloaded.SetIndexId(indexId);
                         reloaded.SetId(archiveId);
@@ -259,7 +259,7 @@ namespace FlashEditor.cache {
                 JagStream data = LoadContainer(indexId, archiveId);
 
                 //Decode the container
-                RSContainer container = RSContainer.Decode(data, ResolveXTEAKey(indexId, archiveId));
+                RSContainer container = DecodeContainer(data, indexId, archiveId);
 
                 if (container == null)
                     throw new FileNotFoundException("NULL CONTAINER? (index: " + indexId + ", archive: " + archiveId + ")");
@@ -612,6 +612,41 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        ///     Decodes a container, applying an XTEA key when one is held and falling back to
+        ///     reading it unencrypted when that key does not fit.
+        /// </summary>
+        /// <remarks>
+        ///     A format 6 table carries no per-archive encryption flag, so the only signal that
+        ///     an archive is encrypted is that a key exists for it. That signal is not reliable:
+        ///     key dumps cover a whole build, while a cache may have had some archives decrypted
+        ///     in place, which is common in cache repacks. Applying a key to an archive that is
+        ///     already plaintext destroys it, so a key that fails is treated as evidence the
+        ///     archive was not encrypted rather than as a fatal error. The reverse case cannot
+        ///     be papered over the same way and still throws: an encrypted archive with no key
+        ///     is unreadable by anyone.
+        /// </remarks>
+        /// <param name="data">Raw stored container bytes.</param>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
+        /// <returns>The decoded container.</returns>
+        private RSContainer DecodeContainer(JagStream data, int indexId, int archiveId) {
+            int[] key = ResolveXTEAKey(indexId, archiveId);
+            if (key == null)
+                return RSContainer.Decode(data, null);
+
+            byte[] raw = data.ToArray();
+
+            try {
+                return RSContainer.Decode(new JagStream(raw), key);
+            }
+            catch (Exception ex) {
+                Debug("XTEA key did not fit index " + indexId + ", archive " + archiveId +
+                      " (" + ex.Message + "); reading it unencrypted", LOG_DETAIL.ADVANCED);
+                return RSContainer.Decode(new JagStream(raw), null);
+            }
+        }
+
+        /// <summary>
         /// Resolves the XTEA key for the given index/archive pair, if the
         /// archive is flagged as encrypted and a key is available.
         /// </summary>
@@ -623,10 +658,15 @@ namespace FlashEditor.cache {
             if (indexId == RSConstants.META_INDEX)
                 return null;
 
-            // Check whether the reference table flags this archive as XTEA-encrypted
+            /* Only a format 7 table carries a per-archive flags byte. On format 6 - which is
+               every table in a revision 639 cache - UsesXtea is read off a byte that does not
+               exist on the wire and so is always false, and gating on it here withheld the key
+               from every archive in the cache. Where there is no flag to consult, the presence
+               of a key in the table is the only signal available. */
             if (referenceTables != null && indexId < referenceTables.Length && referenceTables[indexId] != null) {
-                RSArchiveEntry entry = referenceTables[indexId].GetArchiveEntry(archiveId);
-                if (entry != null && !entry.UsesXtea)
+                RSReferenceTable table = referenceTables[indexId];
+                RSArchiveEntry entry = table.GetArchiveEntry(archiveId);
+                if (table.format >= 7 && entry != null && !entry.UsesXtea)
                     return null;
             }
 

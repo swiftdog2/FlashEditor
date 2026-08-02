@@ -74,22 +74,37 @@ namespace FlashEditor.cache {
 
             container.SetDataLength(stream.ReadInt());
 
-            if (container.GetCompressionType() == RSConstants.NO_COMPRESSION)
+            bool compressed = container.GetCompressionType() != RSConstants.NO_COMPRESSION;
+
+            /* The encrypted region starts immediately after the compression type and the
+               compressed length, and runs to the end of the payload. For a compressed
+               container that means the uncompressed-length field is *inside* it, so the
+               field cannot be read until the region has been deciphered - reading it first
+               yields four bytes of ciphertext, and deciphering only the payload after it
+               shifts every block by four bytes so nothing decrypts at all. */
+            int encryptedLength = container.GetDataLength() + (compressed ? 4 : 0);
+            byte[] block = stream.ReadBytes(encryptedLength);
+
+            if (xteaKey != null) {
+                JagStream t = new JagStream(block);
+                XTEA.Decipher(t, 0, block.Length, xteaKey);
+                block = t.ToArray();
+            }
+
+            byte[] payload;
+            if (compressed) {
+                container.SetDecompressedLength(ReadInt(block, 0));
+                payload = new byte[container.GetDataLength()];
+                Array.Copy(block, 4, payload, 0, payload.Length);
+            }
+            else {
                 container.SetDecompressedLength(container.GetDataLength()); // not compressed so it will match exactly
-            else
-                container.SetDecompressedLength(stream.ReadInt()); //read the expected compression length
+                payload = block;
+            }
 
             Debug("Data Length: " + container.GetDataLength(), LOG_DETAIL.ADVANCED);
             Debug("Compression type: " + compressionName, LOG_DETAIL.ADVANCED);
             Debug("Decompressed length: " + container.GetDecompressedLength(), LOG_DETAIL.ADVANCED);
-
-            byte[] payload = stream.ReadBytes(container.GetDataLength());
-
-            if (xteaKey != null) {
-                JagStream t = new JagStream(payload);
-                XTEA.Decipher(t, 0, (int) t.Length, xteaKey);
-                payload = t.ToArray();
-            }
 
             payload = container.GetCompressionType() switch {
                 RSConstants.BZIP2_COMPRESSION => CompressionUtils.Bunzip2(payload, container.GetDecompressedLength()),
@@ -145,18 +160,24 @@ namespace FlashEditor.cache {
 
             stream.WriteByte(compressionType);
             stream.WriteInteger(compressedLen);
-            if (compressionType != RSConstants.NO_COMPRESSION)
-                stream.WriteInteger(uncompressedLen);
 
-            //Optionally encrypt the payload before writing it out
+            /* Mirror of Decode: the uncompressed-length field sits inside the encrypted
+               region, so it has to be enciphered along with the payload rather than written
+               out in the clear beside it. With no key the bytes are identical either way. */
+            JagStream block = new JagStream();
+            if (compressionType != RSConstants.NO_COMPRESSION)
+                block.WriteInteger(uncompressedLen);
+            block.Write(data, 0, data.Length);
+            byte[] region = block.Flip().ToArray();
+
             if (xteaKey != null) {
-                JagStream temp = new JagStream(data);
-                Cache.Util.Crypto.XTEA.Encipher(temp, 0, (int) temp.Length, xteaKey);
-                data = temp.ToArray();
+                JagStream temp = new JagStream(region);
+                Cache.Util.Crypto.XTEA.Encipher(temp, 0, region.Length, xteaKey);
+                region = temp.ToArray();
             }
 
             //Write the compressed (and possibly encrypted) data
-            stream.Write(data, 0, data.Length);
+            stream.Write(region, 0, region.Length);
 
             PrintByteArray(data);
 
@@ -169,6 +190,11 @@ namespace FlashEditor.cache {
 
             //Finally, flip the buffer and return it
             return stream.Flip();
+        }
+
+        /// <summary>Reads a big-endian 32-bit integer out of a decrypted header block.</summary>
+        private static int ReadInt(byte[] data, int offset) {
+            return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
         }
 
         public string GetCompressionString() {

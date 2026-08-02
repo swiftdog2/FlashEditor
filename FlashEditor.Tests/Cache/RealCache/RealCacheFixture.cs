@@ -46,6 +46,10 @@ namespace FlashEditor.Tests.Cache.RealCache
 
             _store = new RSFileStore(RealCacheLocator.Directory);
             _cache = new RSCache(_store);
+
+            //Map archives are XTEA encrypted. Without a key file they simply cannot be read,
+            //so the conformance tests distinguish "no key available" from "key did not work".
+            _cache.TryAutoLoadXTEAKeys(RealCacheLocator.Directory);
             Available = true;
 
             var indexes = new List<int>();
@@ -123,28 +127,75 @@ namespace FlashEditor.Tests.Cache.RealCache
         }
 
         /// <summary>
-        ///     Decodes a stored container, returning <c>null</c> when the payload cannot be read
-        ///     because it is encrypted.
+        ///     The XTEA key for an archive, or <c>null</c> when the loaded key file has none.
+        /// </summary>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
+        /// <returns>Four key words, or <c>null</c>.</returns>
+        public int[] KeyFor(int indexId, int archiveId)
+        {
+            return _cache.GetXTEAKeyTable()?.GetKey(indexId, archiveId);
+        }
+
+        /// <summary>
+        ///     Decodes a stored container, applying an XTEA key when one is held for it.
         /// </summary>
         /// <remarks>
-        ///     Part of the map index is XTEA encrypted and no key table ships with the cache, so
-        ///     those payloads decompress to nothing. Callers treat a null as "not examinable"
-        ///     rather than as a failure, but only for <see cref="RSConstants.MAPS_INDEX"/> - a
-        ///     container that will not decode anywhere else is a real defect.
+        ///     Returns <c>null</c> rather than throwing, so callers can tell apart the archives
+        ///     that cannot be read for want of a key from the ones that fail with a key in hand -
+        ///     only the latter is a defect.
         /// </remarks>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
         /// <param name="stored">The captured container bytes.</param>
-        /// <returns>The decoded container, or <c>null</c> when it is encrypted.</returns>
-        public static RSContainer TryDecodeContainer(byte[] stored)
+        /// <returns>The decoded container, or <c>null</c> when it could not be read.</returns>
+        public RSContainer TryDecodeContainer(int indexId, int archiveId, byte[] stored)
         {
+            int[] key = KeyFor(indexId, archiveId);
+
+            if (key != null)
+            {
+                try
+                {
+                    return RSContainer.Decode(new JagStream(stored), key);
+                }
+                catch (Exception)
+                {
+                    //A key that does not fit means the archive was not encrypted after all -
+                    //the same fallback RSCache.DecodeContainer makes.
+                }
+            }
+
             try
             {
-                return RSContainer.Decode(new JagStream(stored));
+                return RSContainer.Decode(new JagStream(stored), null);
             }
             catch (Exception)
             {
-                //Decompression of an encrypted payload fails in whatever way the codec happens
-                //to notice first, so the exception type carries no information worth matching on.
+                //An undecryptable payload fails in whatever way the codec happens to notice
+                //first, so the exception type carries no information worth matching on.
                 return null;
+            }
+        }
+
+        /// <summary>
+        ///     Whether an archive can only be read by applying its XTEA key, which is what makes
+        ///     it genuinely encrypted rather than merely covered by a key dump.
+        /// </summary>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
+        /// <param name="stored">The captured container bytes.</param>
+        /// <returns><c>true</c> when the archive fails to decode without its key.</returns>
+        public bool IsEncrypted(int indexId, int archiveId, byte[] stored)
+        {
+            try
+            {
+                RSContainer.Decode(new JagStream(stored), null);
+                return false;
+            }
+            catch (Exception)
+            {
+                return true;
             }
         }
 
