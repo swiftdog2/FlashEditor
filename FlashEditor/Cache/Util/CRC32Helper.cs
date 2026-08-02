@@ -36,18 +36,36 @@ namespace FlashEditor.Cache.Util
         /// <paramref name="table"/> based on the encoded bytes of
         /// <paramref name="container"/>.
         /// </summary>
+        /// <remarks>
+        /// The CRC a reference table carries covers the STORED bytes, so for an encrypted
+        /// archive it has to be taken over the ciphertext. Encoding without the key both
+        /// checksums the wrong bytes and, since the container is encoded here anyway,
+        /// invites the caller to write that plaintext out - which destroys the archive.
+        /// The key therefore travels with the container rather than being described by a
+        /// bool that can disagree with it.
+        /// </remarks>
         /// <param name="container">Container holding the archive data.</param>
         /// <param name="table">Reference table to update.</param>
         /// <param name="groupId">Group/archive id within the table.</param>
-        /// <param name="usesXtea">Indicates the archive uses XTEA encryption.</param>
+        /// <param name="xteaKey">
+        /// The key the archive is stored under, or null when it is stored in the clear.
+        /// </param>
+        /// <exception cref="InvalidOperationException">
+        /// The container was decoded from encrypted bytes but no key was supplied.
+        /// </exception>
         public static void ApplyCrcAndVersion(
             RSContainer container,
             RSReferenceTable table,
             int groupId,
-            bool usesXtea)
+            int[] xteaKey)
         {
+            if (container.StoredEncrypted && xteaKey == null)
+                throw new InvalidOperationException(
+                    "Group " + groupId + " was decoded from encrypted bytes, so its CRC cannot be" +
+                    " computed without the XTEA key it is stored under.");
+
             // Obtain the encoded container bytes and exclude the version field
-            var encoded = container.Encode();
+            var encoded = container.Encode(xteaKey);
             int lenWithoutVersion = (int)encoded.Length;
             if (container.GetVersion() != -1)
                 lenWithoutVersion -= 2;
@@ -59,7 +77,7 @@ namespace FlashEditor.Cache.Util
             {
                 entry.SetCrc((int)crc);
                 entry.SetVersion(entry.GetVersion() + 1);
-                entry.UsesXtea = usesXtea;
+                entry.UsesXtea = xteaKey != null;
             }
 
             // bump reference table version to mark it dirty
@@ -71,5 +89,5 @@ namespace FlashEditor.Cache.Util
 /* Example usage:
 var table = new RSReferenceTable { format = 6, version = 1 };
 var container = new RSContainer();
-CRC32Helper.ApplyCrcAndVersion(container, table, 0, false);
+CRC32Helper.ApplyCrcAndVersion(container, table, 0, null);
 */

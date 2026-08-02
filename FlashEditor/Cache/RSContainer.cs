@@ -20,6 +20,20 @@ namespace FlashEditor.cache {
         /// <summary>Whether this container has been modified and must not be evicted.</summary>
         public bool Dirty { get; set; }
 
+        /// <summary>
+        ///     Whether the stored bytes this container was decoded from were XTEA encrypted.
+        /// </summary>
+        /// <remarks>
+        ///     A revision 639 reference table is format 6 and carries no per-archive encryption
+        ///     flag, so nothing on disk records which archives are encrypted. The only moment the
+        ///     question is answered at all is at decode time, when a key either fits or does not,
+        ///     which is why the answer is recorded here rather than re-derived on the way out.
+        ///     Re-deriving it from "a key is held for this archive" is the ambiguity that loses
+        ///     map squares: a key dump covers a whole build, so it names far more archives than
+        ///     are actually encrypted in any given cache.
+        /// </remarks>
+        public bool StoredEncrypted { get; private set; }
+
         /// <summary>Whether this container still holds decoded data.</summary>
         public bool HasData => stream != null;
 
@@ -42,6 +56,7 @@ namespace FlashEditor.cache {
             compressionType = container.GetCompressionType();
             version = container.GetVersion();
             decompressedLength = container.GetDecompressedLength();
+            StoredEncrypted = container.StoredEncrypted;
         }
 
         public RSContainer(int indexId, int id, byte compressionType, JagStream stream, int version) {
@@ -115,6 +130,12 @@ namespace FlashEditor.cache {
 
             if (payload.Length != container.GetDecompressedLength())
                 throw new IOException("Length mismatch. [ " + payload.Length + " != " + container.GetDecompressedLength() + " ]");
+
+            /* Reaching here with a key means the key fit: the payload inflated and matched the
+               length recorded inside the encrypted region. That is the only evidence anywhere
+               that this archive is stored encrypted, so it is recorded now - the write path has
+               no way to establish it later. */
+            container.StoredEncrypted = xteaKey != null;
 
             container.SetStream(new JagStream(payload));
             container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1);

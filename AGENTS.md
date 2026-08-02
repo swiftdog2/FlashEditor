@@ -125,6 +125,14 @@ use this ordering to remain compatible with the in-game client.
   archive is encrypted is that a key exists for it. That signal is not reliable - a repacked
   cache may have had archives decrypted in place while a build-wide key dump still lists
   them - so a key that fails to fit is treated as "not encrypted", not as an error.
+- **An archive is written back in the state it was read in, or not at all.** The same
+  missing flag that makes the read path guess makes the write path unable to guess safely:
+  writing a decrypted archive back as plaintext destroys it silently, because the client
+  deciphers it regardless and nothing on disk records the change. The state is therefore
+  recorded on the container at decode time (`RSContainer.StoredEncrypted`) and re-used on
+  encode; where no key is available to honour it, the save fails rather than proceeding.
+- **An archive CRC covers the stored bytes, so for an encrypted archive it covers the
+  ciphertext.** Anything computing one has to encode the container with its key.
 - Keys for a given build can be had from the OpenRS2 archive
   (`https://archive.openrs2.org/caches.json`, then `/caches/runescape/<id>/keys.json`).
   In that export `archive` is the **index** and `group` is the **archive id**; entries also

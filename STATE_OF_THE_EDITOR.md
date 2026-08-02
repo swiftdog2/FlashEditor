@@ -537,6 +537,36 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    The WinForms reference-table grid binds three of them by `AspectName`; ObjectListView
    resolves get-only properties, as it already does for `ModelReference.ModelID` and
    `NPCDefinition.ModelIdList`. Pinned by `CodecTests.ReferenceTable_FlagBools_TrackTheFlagsByte`.
+7f. ~~Stop `RSCache.WriteFile` writing decrypted archives back as plaintext.~~ **Done
+   2026-08-02.** Item 3 made 598 map archives decrypt on read; the write path was never
+   updated, so `WriteFile` called `container.Encode()` with no key and wrote the plaintext
+   over the map square. Nothing anywhere reported it: the CRC and the reference-table entry
+   are both recomputed here, so they agreed with the corrupted bytes, and a format 6 table
+   has no per-archive encryption flag to contradict them. The client applies its key
+   regardless and gets noise. Latent only for want of a map-editing UI - `WriteFile` is
+   public and index-agnostic.
+   The fix is that an archive is written back in the state it was read in, or the save
+   fails. The state cannot be re-derived at write time, which is the whole trap: the read
+   path's "try the key, fall back to plaintext" leniency means a key existing for an archive
+   does not make it encrypted, and this cache holds 1,587 keys for 659 encrypted archives.
+   Decode is the only moment the question is ever answered, so the answer is recorded there,
+   on `RSContainer.StoredEncrypted`, and `WriteFile` acts on that alone. Where it says
+   encrypted and no key can be resolved, the save throws rather than writing plaintext - a
+   silent guess in the safe-looking direction is the same class of defect as the one being
+   fixed. Where a format 7 table exists to record the state, `WriteFile` now keeps its
+   `UsesXtea` flag matching what it just wrote.
+   `CRC32Helper.ApplyCrcAndVersion` had the same defect and is fixed alongside it: an
+   archive CRC covers the *stored* bytes, so computing it over an encrypted archive's
+   plaintext writes a checksum no client will agree with - and, since the helper hands the
+   encoded container back to its caller, it also offers up the plaintext to be stored. Its
+   `bool usesXtea` parameter became the key itself, so the flag it sets cannot disagree with
+   the bytes it encoded. It has no production caller today; this is repair before use.
+   Pinned by `RSCacheXteaWriteFileTests`, which seeds a synthetic cache with the committed
+   real ciphertext, edits it through `WriteFile`, saves, reopens and asserts the archive is
+   readable *with* its key and not readable without it - the second half being the one that
+   fails, since a plaintext archive reads back perfectly well. It also covers the CRC span,
+   the no-key-available failure, and the case that punishes over-correcting: an archive
+   stored plaintext while a key for it sits in the table must stay plaintext.
 
 **P2 - make it an editor**
 8. Route all logging to a visible log panel; stop swallowing into a nonexistent console.
