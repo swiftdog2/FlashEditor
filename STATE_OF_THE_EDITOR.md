@@ -343,10 +343,30 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    2026-08-02.** Keys for build 639 come from the OpenRS2 archive (cache id 1194, 1,587
    keys for the map index). Against the reference cache, **598 of 659 encrypted map archives
    now decrypt** and their payloads decompress to their declared lengths; the remaining 61
-   have no key in that dump, and brute-forcing all 25,959 keys OpenRS2 holds across every
-   cache it archives solves none of them, so those map squares' keys appear simply never to
-   have been recovered. Cross-checking confirmed the dump belongs to this cache: all 1,587
-   of its `group` ids match our archive ids by name hash, with zero disagreements.
+   have no key in that dump. Cross-checking confirmed the dump belongs to this cache: all
+   1,587 of its `group` ids match our archive ids by name hash, with zero disagreements.
+
+   **The 61 are not recoverable, and the search for them is closed.** Two independent public
+   corpora were swept against them - OpenRS2's 25,959 distinct keys across every cache it
+   archives, and Displee's 9,604 across 37 revisions from build 508 to 742 - plus the Hydra
+   server's own key stores and 465,548 synthetic candidates (all-equal keys, small integers,
+   and region-derived patterns). None produced a single decrypt. The negative is trustworthy
+   because the same sweep carries a positive control: Displee's corpus contains **528 of the
+   598 keys already known correct** for this cache, so a pipeline that could find those and
+   still returns 0 of 61 is reporting an absence rather than a fault. Two further facts point
+   the same way - the Hydra server's own pre-decrypted landscape store holds the 4,544
+   plaintext squares and 5 of the 598, but none of the 61; and `data/xteas/XTEAS.txt` turns
+   out to be the operator's own console log of a 36-revision key hunt covering 190 regions,
+   40 of them among these 61, which also came up empty. XTEA offers no cryptanalytic shortcut
+   at a 128-bit key, so absent a new dump these squares stay unreadable.
+
+   All 61 hold real terrain rather than dead space, and most are interspersed among solved
+   neighbours, which reads as ordinary Jagex squares whose 639-era keys were simply never
+   dumped. The exception is an isolated 2x2 block - `l97_97`, `l97_98`, `l98_97`, `l98_98` -
+   which is the only content above map-square x=74 anywhere in the index, has no solved or
+   plaintext neighbour, carries the densest terrain in the set, and appears in no revision of
+   either corpus. That one looks like custom Hydra content, in which case its keys never
+   existed outside that server.
    Three defects had to be fixed before a single archive would decrypt, and each of them
    alone was enough to make XTEA support fail completely:
    - **`RSContainer` deciphered the wrong span.** The encrypted region starts after the

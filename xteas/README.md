@@ -34,14 +34,18 @@ actually matters - see `CapturedCacheBytesTests` and
 
 ## Coverage, and what is missing
 
-Against the reference cache: **598 of its 659 encrypted map archives decrypt.** The other
-61 have no key here, and none is recoverable from any published dump - brute-forcing all
-25,959 keys OpenRS2 holds across its entire archive solves none of them. Their name hashes
-do not appear in the build 639 dump at all, so those map squares' keys look never to have
-been recovered.
+Against the reference cache: **598 of its 659 encrypted map archives decrypt.** The other 61
+have no key here, and the search for them is closed. Swept against them without a single
+decrypt: OpenRS2's 25,959 distinct keys across every cache it archives, Displee's 9,604
+across 37 revisions (builds 508-742), the Hydra server's own key stores, and 465,548
+synthetic candidates. The sweep carries its own control - Displee's corpus holds 528 of the
+598 keys already known correct for this cache - so 0 of 61 is an absence, not a broken
+search. `data/xteas/XTEAS.txt` in the sibling HydraScape repository turns out to be the
+server operator's own 36-revision hunt for 190 regions, 40 of them among these 61; it came
+up empty too.
 
-This file is therefore known-incomplete by design. Treat a missing key as "cannot be read",
-not as a defect.
+This file is therefore known-incomplete, and permanently so. Treat a missing key as "cannot
+be read", not as a defect, and do not spend time re-running the hunt.
 
 ## How it is found
 
