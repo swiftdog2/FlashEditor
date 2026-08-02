@@ -302,6 +302,75 @@ namespace FlashEditor.Cache.Region {
             }
         }
 
+        /// <summary>
+        ///     Whether anything has been changed since the square was decoded.
+        /// </summary>
+        /// <remarks>
+        ///     A square that is not dirty must be written back as the exact bytes it was read as,
+        ///     not re-encoded. Re-encoding an untouched square risks changing bytes the archive CRC
+        ///     covers for no reason.
+        /// </remarks>
+        public bool Dirty { get; private set; }
+
+        /// <summary>Marks the square as modified.</summary>
+        public void MarkDirty() => Dirty = true;
+
+        /// <summary>Clears the modified flag, after a successful save.</summary>
+        public void ClearDirty() => Dirty = false;
+
+        /// <summary>Sets a vertex height in world units.</summary>
+        public void SetTileHeight(int z, int x, int y, int height) {
+            tileHeights[z, x, y] = height;
+            Dirty = true;
+        }
+
+        /// <summary>Sets the tile flag byte.</summary>
+        public void SetRenderRule(int z, int x, int y, byte flags) {
+            renderRules[z, x, y] = flags;
+            Dirty = true;
+        }
+
+        /// <summary>Sets the floor overlay id, 0 meaning none.</summary>
+        public void SetOverlayId(int z, int x, int y, int id) {
+            overlayIds[z, x, y] = id;
+            Dirty = true;
+        }
+
+        /// <summary>Sets the overlay tile shape, 0..11.</summary>
+        public void SetOverlayShape(int z, int x, int y, byte shape) {
+            overlayShapes[z, x, y] = shape;
+            Dirty = true;
+        }
+
+        /// <summary>Sets the overlay rotation, 0..3.</summary>
+        public void SetOverlayRotation(int z, int x, int y, byte rotation) {
+            overlayRotations[z, x, y] = rotation;
+            Dirty = true;
+        }
+
+        /// <summary>Sets the floor underlay id, 0 meaning none.</summary>
+        public void SetUnderlayId(int z, int x, int y, int id) {
+            underlayIds[z, x, y] = id;
+            Dirty = true;
+        }
+
+        /// <summary>Adds a location.</summary>
+        /// <param name="location">The location to add.</param>
+        public void AddLocation(Location location) {
+            locations.Add(location);
+            Dirty = true;
+        }
+
+        /// <summary>Removes a location.</summary>
+        /// <param name="location">The location to remove.</param>
+        /// <returns><c>true</c> when it was present.</returns>
+        public bool RemoveLocation(Location location) {
+            bool removed = locations.Remove(location);
+            if (removed)
+                Dirty = true;
+            return removed;
+        }
+
         /// <summary>Gets the packed region id.</summary>
         public int GetRegionID() => regionID;
 

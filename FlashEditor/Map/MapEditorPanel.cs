@@ -29,6 +29,40 @@ namespace FlashEditor.Map {
         private readonly Label status = new Label { Dock = DockStyle.Bottom, Height = 22, TextAlign = ContentAlignment.MiddleLeft };
         private readonly Button goButton = new Button { Text = "Go", Width = 48 };
 
+        private readonly ComboBox toolBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+        private readonly NumericUpDown toolValue = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 1, Width = 60 };
+        private readonly Button undoButton = new Button { Text = "Undo", Width = 60, Enabled = false };
+        private readonly Button redoButton = new Button { Text = "Redo", Width = 60, Enabled = false };
+
+        private readonly MapEditHistory history = new MapEditHistory();
+
+        private TileHit lastHit;
+
+        /// <summary>What a click on the canvas does.</summary>
+        private enum MapTool {
+            Inspect,
+            PaintUnderlay,
+            PaintOverlay,
+            CycleOverlayShape,
+            CycleOverlayRotation,
+            RaiseHeight,
+            LowerHeight,
+            ToggleBlockedFlag,
+            DeleteTopLocation
+        }
+
+        private static readonly (string Label, MapTool Tool)[] ToolRows = {
+            ("Inspect", MapTool.Inspect),
+            ("Paint underlay", MapTool.PaintUnderlay),
+            ("Paint overlay", MapTool.PaintOverlay),
+            ("Cycle overlay shape", MapTool.CycleOverlayShape),
+            ("Cycle overlay rotation", MapTool.CycleOverlayRotation),
+            ("Raise height", MapTool.RaiseHeight),
+            ("Lower height", MapTool.LowerHeight),
+            ("Toggle blocked flag", MapTool.ToggleBlockedFlag),
+            ("Delete top location", MapTool.DeleteTopLocation)
+        };
+
         private static readonly (string Name, MapLayers Layer)[] LayerRows = {
             ("Underlay", MapLayers.Underlay),
             ("Overlay", MapLayers.Overlay),
@@ -47,8 +81,99 @@ namespace FlashEditor.Map {
             goButton.Click += (_, _) => LoadRegion((int) regionX.Value, (int) regionY.Value);
             planeBox.SelectedIndexChanged += (_, _) => viewer.Plane = planeBox.SelectedIndex;
             layerList.ItemCheck += OnLayerToggled;
-            viewer.TileHovered += (_, hit) => UpdateInspector(hit);
-            viewer.TileClicked += (_, hit) => UpdateInspector(hit);
+            viewer.TileHovered += (_, hit) => { lastHit = hit; UpdateInspector(hit); };
+            viewer.TileClicked += OnTileClicked;
+
+            undoButton.Click += (_, _) => { history.Undo(); AfterEdit(); };
+            redoButton.Click += (_, _) => { history.Redo(); AfterEdit(); };
+            history.Changed += (_, _) => {
+                undoButton.Enabled = history.CanUndo;
+                redoButton.Enabled = history.CanRedo;
+            };
+        }
+
+        private MapTool SelectedTool =>
+            toolBox.SelectedIndex >= 0 ? ToolRows[toolBox.SelectedIndex].Tool : MapTool.Inspect;
+
+        private void OnTileClicked(object sender, TileHit hit) {
+            lastHit = hit;
+            UpdateInspector(hit);
+
+            MapScene scene = viewer.Scene;
+            if (scene == null || SelectedTool == MapTool.Inspect)
+                return;
+
+            MapRegion square = scene.SquareAt(hit.SceneX, hit.SceneY);
+            if (square == null)
+                return;
+
+            IMapEdit edit = BuildEdit(SelectedTool, square, hit);
+            if (edit == null)
+                return;
+
+            history.Apply(edit);
+            AfterEdit();
+            status.Text = edit.Description;
+        }
+
+        private IMapEdit BuildEdit(MapTool tool, MapRegion square, TileHit hit) {
+            int p = hit.Plane, x = hit.LocalX, y = hit.LocalY;
+            int value = (int) toolValue.Value;
+
+            switch (tool) {
+                case MapTool.PaintUnderlay:
+                    return new SetUnderlayEdit(square, p, x, y, value);
+
+                case MapTool.PaintOverlay:
+                    //A freshly painted overlay takes shape 0, the full tile, which is what 85% of
+                    //the overlays in the shipped cache use.
+                    return new SetOverlayEdit(square, p, x, y, value, 0, 0);
+
+                case MapTool.CycleOverlayShape: {
+                    if (square.GetOverlayId(p, x, y) == 0)
+                        return null;
+                    byte shape = (byte) ((square.GetOverlayShape(p, x, y) + 1) % TileShapes.FileShapeCount);
+                    return new SetOverlayEdit(square, p, x, y, square.GetOverlayId(p, x, y), shape,
+                        square.GetOverlayRotation(p, x, y));
+                }
+
+                case MapTool.CycleOverlayRotation: {
+                    if (square.GetOverlayId(p, x, y) == 0)
+                        return null;
+                    byte rotation = (byte) ((square.GetOverlayRotation(p, x, y) + 1) & 3);
+                    return new SetOverlayEdit(square, p, x, y, square.GetOverlayId(p, x, y),
+                        square.GetOverlayShape(p, x, y), rotation);
+                }
+
+                case MapTool.RaiseHeight:
+                    //One height step is 32 world units in this client, not 8.
+                    return new SetHeightEdit(square, p, x, y,
+                        square.GetTileHeight(p, x, y) - MapRegion.HEIGHT_UNITS_PER_STEP);
+
+                case MapTool.LowerHeight:
+                    return new SetHeightEdit(square, p, x, y,
+                        square.GetTileHeight(p, x, y) + MapRegion.HEIGHT_UNITS_PER_STEP);
+
+                case MapTool.ToggleBlockedFlag:
+                    return new SetTileFlagsEdit(square, p, x, y,
+                        (byte) (square.GetRenderRule(p, x, y) ^ 0x1));
+
+                case MapTool.DeleteTopLocation: {
+                    Location target = null;
+                    foreach (Location loc in square.GetLocations())
+                        if (loc.Plane == p && loc.LocalX == x && loc.LocalY == y)
+                            target = loc;
+                    return target == null ? null : new RemoveLocationEdit(square, target);
+                }
+
+                default:
+                    return null;
+            }
+        }
+
+        private void AfterEdit() {
+            viewer.Rerender();
+            UpdateInspector(lastHit);
         }
 
         private void BuildLayout() {
@@ -63,7 +188,7 @@ namespace FlashEditor.Map {
             var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
             left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 110));
 
             var nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
             nav.Controls.Add(new Label { Text = "Region", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
@@ -76,8 +201,19 @@ namespace FlashEditor.Map {
             var layersGroup = new GroupBox { Text = "Layers", Dock = DockStyle.Fill };
             layersGroup.Controls.Add(layerList);
 
+            var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+            tools.Controls.Add(toolBox);
+            tools.Controls.Add(new Label { Text = "Value", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
+            tools.Controls.Add(toolValue);
+            tools.Controls.Add(undoButton);
+            tools.Controls.Add(redoButton);
+
+            var toolsGroup = new GroupBox { Text = "Tool", Dock = DockStyle.Fill };
+            toolsGroup.Controls.Add(tools);
+
             left.Controls.Add(nav, 0, 0);
             left.Controls.Add(layersGroup, 0, 1);
+            left.Controls.Add(toolsGroup, 0, 2);
 
             //Right: canvas above, inspector below.
             var right = new SplitContainer {
@@ -100,6 +236,10 @@ namespace FlashEditor.Map {
 
             foreach ((string name, MapLayers layer) in LayerRows)
                 layerList.Items.Add(name, (MapLayers.Default & layer) != 0);
+
+            foreach ((string label, MapTool _) in ToolRows)
+                toolBox.Items.Add(label);
+            toolBox.SelectedIndex = 0;
 
             //SplitterDistance has to be set after the control has a size, or it is silently clamped.
             split.HandleCreated += (_, _) => split.SplitterDistance = 220;
