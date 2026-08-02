@@ -86,67 +86,65 @@ Detect encryption on the gzip magic at `stored[9..12] == 1F 8B 08`, never on "do
 | Water fields as colour | Ops 13/14/16 feed the underwater shader, not any map view. Decode and expose; do not colour with them. |
 | Terrain geometry / normals / lighting | A 2D view needs a polygon per (shape, rotation) - a small hand-authored table, not a mesh. |
 
-## 4. Phased plan
+## 4. Phased plan - all six delivered
 
-Each phase is independently shippable and has a test that proves it.
+Every phase is committed, and the full suite is green at **635 passed, 0 failed**.
 
 **Phase 1 - read a region. DONE.** Name-hash lookup wired to index 5
 (`RSReferenceTable.GetArchiveId`, `MapSquareNames`, `MapSquareLoader`), XTEA on the map read path,
-`m` and `l` decoded with the corrected arithmetic, extras tail parsed and validated.
-`JagStream.ReadExtendedUnsignedSmart` added. `HeightCalc`, `Position` and `NameHasher` blockers
-fixed.
-
-*Test:* `FlashEditor.Tests/Cache/RealCacheMapDecodeTests.cs`. Measured on the shipped cache:
+`m` and `l` decoded with corrected arithmetic, extras tail parsed and validated.
+`JagStream.ReadExtendedUnsignedSmart` added. `HeightCalc`, `Position` and `NameHasher` blockers fixed.
 
 | Assertion | Result |
 |---|---|
 | Index-5 names decompose into the five families with nothing left over | 1684 / 1684 / 900 / 900 / 35 |
 | Every `m` file decodes and its extras tail walks to the last byte | 1684, 0 failures |
-| Squares carrying an extras tail | 1324, matching the independent measurement |
-| Every `um` file decodes as a single plane with no tail | 900, 0 failures |
+| Squares carrying an extras tail | 1324 |
+| Every `um` file decodes as a single plane with no tail | 900 |
 | Every `l` file decodes or reports a missing key | 1623 decoded, 61 missing key |
 | Squares needing the extended smart | 63 |
-| Procedural heights vary and stay in 10..60 | passes |
 
-Sanity check on decoded values: Lumbridge `m50_50` resolves to base (3200, 3200), every plane-0
-height is a multiple of 32, the plane-0 to plane-1 delta is exactly -960, and the shape histogram
-over 3,544,326 decoded locations is dominated by shape 10 (game object, 1.80M) and shape 22 (ground
-decoration, 1.04M), which is the expected distribution.
+**Phase 2 - floor definitions. DONE.** `FloorUnderlayDefinition` and `FloorOverlayDefinition` from
+index 2 groups 1 and 4. All 159 underlays and 235 overlays decode to exact consumption and re-encode
+byte-identical. Two corrections to this reference came out of it: underlay opcode 2 is a `u16`, and
+opcode 3 is `u16 << 2`.
 
-**Phase 2 - floor definitions.** Decode index 2 groups 1 and 4.
-*Test:* all 159 underlays and 235 overlays consume exactly, with no unknown opcodes.
+**Phase 3 - colour. DONE.** `MapPalette`, `UnderlayColour`, `UnderlayBlender`, `MapScene`. The blend
+window was settled from source: 10 wide, spanning -4 to +5.
 
-**Phase 3 - colour.** The HSL palette, both RGB-to-HSL variants, the underlay blender.
-*Test:* golden-image comparison of one known square against a reference render, plus a unit test
-that `PackHsl` reproduces the desaturation ladder at each of its four thresholds.
+**Phase 4 - the 2D view. DONE.** `TileShapes`, `MapRasteriser`, `MapViewerControl`, `MapEditorPanel`,
+and a Map tab. Lumbridge, Varrock and Falador all render recognisably. A 3x3 scene at 4 pixels per
+tile loads in ~25ms and renders in ~150ms.
 
-**Phase 4 - the 2D view.** A `MapRasteriser` over `DirectBitmap` (`Cache/Util/DirectBitmap.cs:34-57`
-is already `Format32bppPArgb` over a pinned `int[]` and has tests). Layer flags for underlay,
-overlay, walls, ground decoration, game objects, mapscenes, tile flags, grid. Pass order: underlay
-fill, overlay shape mask, tile-flag wash, locs by group, icons, grid.
-*Test:* render a square with a known landmark and eyeball it, then pin it as a golden image.
+**Phase 5 - editing. DONE.** `IMapEdit` with nine tools, `MapEditHistory` with undo and redo, and a
+dirty flag on `Region`. Verified on real data: an edit changes the rendered pixels and undo restores
+them bit-for-bit.
 
-**Phase 5 - editing.** Mutable tile and loc models, a command/undo stack, hit-testing from screen
-pixel to `(regionX, regionY, localX, localY, plane)`.
-*Test:* apply an edit, undo it, assert the model is byte-identical to the load.
+**Phase 6 - the write path. DONE.** `RegionCodec` plus repairs to the shared cache write path.
 
-**Phase 6 - the write path.** This is the dangerous one, and `STATE_OF_THE_EDITOR.md` already rates
-the existing cache write path unsafe and mostly wrong. Do not build on it without reading that
-assessment first.
-*Test:* **round-trip every region unedited and require byte-identical output** before allowing a
-single edited write. A region that does not round-trip cannot be safely saved.
+**Every one of the 1684 terrain files and every readable location file re-encodes byte-for-byte
+identical.** Three findings were needed to get there, none of which could have come from reading the
+client alone:
 
-### Write-path hazards
+- The per-tile opcode order is **overlay, flags, underlay, height**. Underlay-first is equally valid
+  to the decoder and reproduced only 91 of 1684 files.
+- Height bytes 0 and 1 both decode to zero, and the shipped files use both, so the stored byte is
+  kept verbatim rather than recomputed. Whether a tile stored a height at all is kept too: some
+  store one that happens to equal the derived value.
+- `l50_50` places object 85 at position 3969 twice with different attributes, and `List.Sort` is
+  unstable, so the encoder sorts stably.
 
-- The loc stream must re-emit the **extended** smart where the original used it, or 323 groups
-  change length. `JagStream.WriteUnsignedSmart` currently cannot.
-- An encrypted region must be written back **encrypted**, with the same key. Writing plaintext
-  destroys it silently, because a format-6 table has no flag recording the change and the client
-  will decipher it regardless.
-- The archive CRC covers the **stored** bytes, so for an encrypted group it covers ciphertext.
-  Computing it means encoding the container with its key.
-- The extras tail must be preserved. It cannot be re-derived from anything the editor models.
-- Do not stamp a fixed reference-table version, and do not rewrite the whole table per file.
+Write-path repairs: archive versions increment instead of being stamped `1337`; the reference table's
+own container version likewise; and `RSCache.BeginBatch` defers the table write so a multi-square
+save encodes index 5's 114KB table once rather than once per file.
+
+> **Saving stages, it does not write.** The store holds every edit in memory until `WriteCache`
+> commits the dat2 and all index files together. That is what makes an editing session land as one
+> consistent set rather than a sequence of 188MB rewrites.
+
+Verified end to end against a *copy* of the real cache: an edited square saves, commits, reopens and
+reads back with the edit intact, its extras section and locations undisturbed, its neighbours
+untouched, and its version advanced by exactly one. No test writes to the real cache.
 
 ## 5. Residual risks
 

@@ -476,7 +476,7 @@ namespace FlashEditor {
             //view up front, so it wants binding, not the background-worker path below.
             if (type == RSConstants.MAPS_INDEX) {
                 loaded[editorIndex] = true;
-                MapEditorPanel.Bind(cache);
+                MapEditorPanel.Bind(cache, GetCacheDir());
                 return;
             }
 

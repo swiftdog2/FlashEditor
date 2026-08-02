@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
@@ -17,6 +18,7 @@ namespace FlashEditor.Map {
     /// </remarks>
     public sealed class MapEditorPanel : UserControl {
         private RSCache cache;
+        private string cacheDirectory;
         private MapSquareLoader loader;
         private MapRasteriser rasteriser;
 
@@ -33,6 +35,7 @@ namespace FlashEditor.Map {
         private readonly NumericUpDown toolValue = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 1, Width = 60 };
         private readonly Button undoButton = new Button { Text = "Undo", Width = 60, Enabled = false };
         private readonly Button redoButton = new Button { Text = "Redo", Width = 60, Enabled = false };
+        private readonly Button saveButton = new Button { Text = "Save cache", Width = 90, Enabled = false };
 
         private readonly MapEditHistory history = new MapEditHistory();
 
@@ -89,7 +92,10 @@ namespace FlashEditor.Map {
             history.Changed += (_, _) => {
                 undoButton.Enabled = history.CanUndo;
                 redoButton.Enabled = history.CanRedo;
+                saveButton.Enabled = cache != null && history.Count > 0;
             };
+
+            saveButton.Click += (_, _) => SaveEdits();
         }
 
         private MapTool SelectedTool =>
@@ -194,6 +200,58 @@ namespace FlashEditor.Map {
             return reference - steps * MapRegion.HEIGHT_UNITS_PER_STEP;
         }
 
+        /// <summary>
+        ///     Stages every edited square and commits the cache to disk.
+        /// </summary>
+        /// <remarks>
+        ///     Confirms first, because this rewrites the cache the user opened. Editing stages
+        ///     nothing to disk until this runs, so up to here everything is still reversible by
+        ///     simply not saving.
+        /// </remarks>
+        private void SaveEdits() {
+            MapScene scene = viewer.Scene;
+            if (cache == null || scene == null || cacheDirectory == null)
+                return;
+
+            var dirty = new List<(MapRegion Square, int X, int Y)>();
+            for (int dx = 0; dx < scene.SquaresX; dx++) {
+                for (int dy = 0; dy < scene.SquaresY; dy++) {
+                    MapRegion square = scene.Square(dx, dy);
+                    if (square != null && square.Dirty)
+                        dirty.Add((square, scene.OriginRegionX + dx, scene.OriginRegionY + dy));
+                }
+            }
+
+            if (dirty.Count == 0) {
+                status.Text = "Nothing to save";
+                return;
+            }
+
+            string names = string.Join(", ", dirty.ConvertAll(d => $"m{d.X}_{d.Y}"));
+            string prompt = $"Write {dirty.Count} edited square(s) back to the cache?"
+                + Environment.NewLine + Environment.NewLine + names
+                + Environment.NewLine + Environment.NewLine + cacheDirectory;
+
+            if (MessageBox.Show(prompt, "Save map edits",
+                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
+                return;
+
+            try {
+                foreach ((MapRegion square, int x, int y) in dirty)
+                    loader.Save(square, x, y);
+
+                cache.WriteCache(cacheDirectory);
+
+                history.Clear();
+                status.Text = $"Saved {dirty.Count} square(s) to {cacheDirectory}";
+            }
+            catch (Exception ex) {
+                //A failed save leaves the staged edits in memory, so the user can retry.
+                status.Text = "Save failed: " + ex.Message;
+                MessageBox.Show(ex.Message, "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private void AfterEdit() {
             viewer.Rerender();
             UpdateInspector(lastHit);
@@ -230,6 +288,7 @@ namespace FlashEditor.Map {
             tools.Controls.Add(toolValue);
             tools.Controls.Add(undoButton);
             tools.Controls.Add(redoButton);
+            tools.Controls.Add(saveButton);
 
             var toolsGroup = new GroupBox { Text = "Tool", Dock = DockStyle.Fill };
             toolsGroup.Controls.Add(tools);
@@ -275,14 +334,17 @@ namespace FlashEditor.Map {
         ///     Binds the panel to a cache and shows the default region.
         /// </summary>
         /// <param name="newCache">The open cache, or <c>null</c> to unbind.</param>
-        public void Bind(RSCache newCache) {
+        /// <param name="directory">Where a save should commit to. Null disables saving.</param>
+        public void Bind(RSCache newCache, string directory = null) {
             cache = newCache;
+            cacheDirectory = directory;
 
             if (cache == null) {
                 loader = null;
                 rasteriser = null;
                 viewer.Show(null, null);
                 status.Text = "No cache loaded";
+                saveButton.Enabled = false;
                 return;
             }
 
