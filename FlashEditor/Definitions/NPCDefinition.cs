@@ -27,21 +27,131 @@ namespace FlashEditor {
         internal int[] retextureSrc;
 
         /// <summary>Whether the NPC plays idle animations.</summary>
-        public bool animateIdle = true;
+        /// <remarks>
+        ///     A view over opcode 111 rather than a field of its own, and the shape every bare
+        ///     flag on this class takes.
+        ///     <para>
+        ///     The stream states a flag only by carrying the opcode - there is no payload to hold
+        ///     a true or a false - and <see cref="Encode"/> writes an opcode back because the
+        ///     definition carried it, whatever the fields now say. A plain field would therefore
+        ///     be shown in the grid, edited by the user, and then silently overruled by the
+        ///     replayed opcode on save: the row would change, the save would report success and
+        ///     the cache would be untouched. Turning a flag off has to drop the opcode outright,
+        ///     which is what <see cref="DropOpcode"/> does, and turning it on has to set the hit
+        ///     map so <see cref="Encode"/> emits it.
+        ///     </para>
+        ///     <para>
+        ///     Reading the value straight back off the hit map also settles what a definition that
+        ///     never carried the opcode should report: exactly the value the client assumes in its
+        ///     absence, which for 111 is idle animations enabled.
+        ///     </para>
+        /// </remarks>
+        public bool animateIdle {
+            get => !decoded[111];
+            set {
+                if (value) DropOpcode(111);
+                else decoded[111] = true;
+            }
+        }
         /// <summary>Whether the NPC can be clicked on.</summary>
-        public bool clickable = true;
+        /// <remarks>
+        ///     A view over opcode 107, whose presence makes the NPC unclickable. See
+        ///     <see cref="animateIdle"/> for why this is not a field. This one is bound to a grid
+        ///     column, so before the fix every "Clickable" tick the user cleared was thrown away.
+        /// </remarks>
+        public bool clickable {
+            get => !decoded[107];
+            set {
+                if (value) DropOpcode(107);
+                else decoded[107] = true;
+            }
+        }
         /// <summary>Whether a yellow dot appears on the minimap.</summary>
-        public bool drawMinimapDot = true;
+        /// <remarks>
+        ///     A view over opcode 93, whose presence removes the dot. See
+        ///     <see cref="animateIdle"/>. Bound to a grid column, so its edits were lost too.
+        /// </remarks>
+        public bool drawMinimapDot {
+            get => !decoded[93];
+            set {
+                if (value) DropOpcode(93);
+                else decoded[93] = true;
+            }
+        }
         /// <summary>Whether this NPC renders above others at the same tile.</summary>
-        public bool hasRenderPriority;
+        /// <remarks>A view over opcode 99. See <see cref="animateIdle"/>.</remarks>
+        public bool hasRenderPriority {
+            get => decoded[99];
+            set {
+                if (value) decoded[99] = true;
+                else DropOpcode(99);
+            }
+        }
         /// <summary>Whether the NPC has invisible render priority.</summary>
-        public bool invisiblePriority;
+        /// <remarks>A view over opcode 143. See <see cref="animateIdle"/>.</remarks>
+        public bool invisiblePriority {
+            get => decoded[143];
+            set {
+                if (value) decoded[143] = true;
+                else DropOpcode(143);
+            }
+        }
         /// <summary>Whether the NPC uses slow walk animations.</summary>
-        public bool slowWalk = true;
+        /// <remarks>
+        ///     A view over opcode 109, whose presence disables the slow walk. See
+        ///     <see cref="animateIdle"/>.
+        /// </remarks>
+        public bool slowWalk {
+            get => !decoded[109];
+            set {
+                if (value) DropOpcode(109);
+                else decoded[109] = true;
+            }
+        }
         /// <summary>Whether the NPC has visible render priority.</summary>
-        public bool visiblePriority;
+        /// <remarks>
+        ///     A view over opcode 141. See <see cref="animateIdle"/>. Bound to a grid column.
+        /// </remarks>
+        public bool visiblePriority {
+            get => decoded[141];
+            set {
+                if (value) decoded[141] = true;
+                else DropOpcode(141);
+            }
+        }
         /// <summary>Index of the primary right-click option.</summary>
-        public byte mainOptionIndex;
+        /// <remarks>
+        ///     A view over opcodes 158 and 159, the bare flags that set the index to 1 and to 0.
+        ///     Neither carries a payload, so the value exists in the file only as which of the two
+        ///     opcodes is present, and it is read back off the hit map for the same reason
+        ///     <see cref="animateIdle"/> is.
+        ///     <para>
+        ///     Zero is also the index the client assumes with neither opcode present, so setting
+        ///     the index to zero drops 158 rather than inventing 159 - inventing it would lengthen
+        ///     every definition that has no main option at all. A definition that already stored
+        ///     159 keeps it, which is what lets those still re-encode to their stored bytes.
+        ///     </para>
+        ///     <para>
+        ///     A definition carrying both flags takes its value from whichever came last, as the
+        ///     client does, which is why the getter consults the recorded stream rather than the
+        ///     hit map alone. Only 0 and 1 are representable, because those are the only values
+        ///     the two opcodes produce; any other value set here is stored as 1.
+        ///     </para>
+        /// </remarks>
+        public byte mainOptionIndex {
+            get => decoded[158] && LastStreamIndexOf(158) >= LastStreamIndexOf(159) ? (byte) 1 : (byte) 0;
+            set {
+                if (value != 0) {
+                    //159 has to go: left in place it would be replayed after 158 and reset the
+                    //index the user just set back to zero.
+                    DropOpcode(159);
+                    decoded[158] = true;
+                }
+                else {
+                    DropOpcode(158);
+                }
+            }
+        }
         /// <summary>Destination palette for colour remapping.</summary>
         public byte[] recolorDstPalette;
         /// <summary>Ambient lighting modifier.</summary>
@@ -327,8 +437,14 @@ namespace FlashEditor {
                         break;
                     }
 
-                case 93:
-                    drawMinimapDot = false;
+                /* The bare flags - 93, 99, 107, 109, 111, 141, 143, 158 and 159 - have no payload
+                   and no case body. Their properties are views over the opcode hit map, which the
+                   decode loop has already written, so there is nothing left for a case to assign.
+                   Assigning through the property would be worse than redundant: its setter drops
+                   opcodes, and opcode 159's setter would erase a 158 the definition legitimately
+                   carried earlier in the same stream. */
+
+                case 93:    // drawMinimapDot off
                     break;
 
                 case 95:
@@ -343,8 +459,7 @@ namespace FlashEditor {
                     scaleZ = stream.ReadShort();
                     break;
 
-                case 99:
-                    hasRenderPriority = true;
+                case 99:    // hasRenderPriority on
                     break;
 
                 case 100:
@@ -387,16 +502,13 @@ namespace FlashEditor {
                         break;
                     }
 
-                case 107:
-                    clickable = false;
+                case 107:   // clickable off
                     break;
 
-                case 109:
-                    slowWalk = false;
+                case 109:   // slowWalk off
                     break;
 
-                case 111:
-                    animateIdle = false;
+                case 111:   // animateIdle off
                     break;
 
                 case 112:
@@ -486,16 +598,14 @@ namespace FlashEditor {
                     ambientSoundVolume = stream.ReadByte();
                     break;
 
-                case 141:
-                    visiblePriority = true;
+                case 141:   // visiblePriority on
                     break;
 
                 case 142:
                     mapIcon = stream.ReadShort();
                     break;
 
-                case 143:
-                    invisiblePriority = true;
+                case 143:   // invisiblePriority on
                     break;
 
                 case 150:
@@ -517,12 +627,10 @@ namespace FlashEditor {
                     opacity = stream.ReadByte();
                     break;
 
-                case 158:
-                    mainOptionIndex = 1;
+                case 158:   // mainOptionIndex = 1
                     break;
 
-                case 159:
-                    mainOptionIndex = 0;
+                case 159:   // mainOptionIndex = 0
                     break;
 
                 case 160: {
@@ -726,16 +834,22 @@ namespace FlashEditor {
                         o.WriteShort(m);
                 });
 
-            // 93: drawMinimapDot=false
-            if (decoded[93] || !drawMinimapDot) Emit(93);
+            /* Every bare flag below is emitted from the hit map alone. The properties behind them
+               are views over that map, so a field test would be the same question asked twice;
+               more to the point, clearing one of them drops the opcode from the map AND from the
+               recorded stream, which is the only thing that stops WriteRecordsInStreamOrder
+               replaying a flag the user has just turned off. */
+
+            // 93: drawMinimapDot off
+            if (decoded[93]) Emit(93);
 
             // 95,97,98
             if (decoded[95] || level != -1) Emit(95, () => o.WriteShort(level));
             if (decoded[97] || scaleXY != 128) Emit(97, () => o.WriteShort(scaleXY));
             if (decoded[98] || scaleZ != 128) Emit(98, () => o.WriteShort(scaleZ));
 
-            // 99
-            if (decoded[99] || hasRenderPriority) Emit(99);
+            // 99: hasRenderPriority
+            if (decoded[99]) Emit(99);
 
             // 100,101
             if (decoded[100] || ambient != 0) Emit(100, () => o.WriteByte((byte) ambient));
@@ -770,10 +884,10 @@ namespace FlashEditor {
                 });
             }
 
-            // 107,109,111
-            if (decoded[107] || !clickable) Emit(107);
-            if (decoded[109] || !slowWalk) Emit(109);
-            if (decoded[111] || !animateIdle) Emit(111);
+            // 107,109,111: clickable off, slowWalk off, animateIdle off
+            if (decoded[107]) Emit(107);
+            if (decoded[109]) Emit(109);
+            if (decoded[111]) Emit(111);
 
             // 112
             if (decoded[112] || anInt1104 != 0) Emit(112, () => o.WriteSignedByte(anInt1104));
@@ -851,9 +965,9 @@ namespace FlashEditor {
             if (decoded[139] || spriteId != -1) Emit(139, () => o.WriteShort(spriteId));
             if (decoded[140] || ambientSoundVolume != 255)
                 Emit(140, () => o.WriteByte((byte) ambientSoundVolume));
-            if (decoded[141] || visiblePriority) Emit(141);
+            if (decoded[141]) Emit(141);
             if (decoded[142] || mapIcon != -1) Emit(142, () => o.WriteShort(mapIcon));
-            if (decoded[143] || invisiblePriority) Emit(143);
+            if (decoded[143]) Emit(143);
 
             // 155
             if (decoded[155] || hue != 0 || saturation != 0 || lightness != 0 || opacity != 0)
@@ -864,11 +978,11 @@ namespace FlashEditor {
                     o.WriteByte((byte) opacity);
                 });
 
-            /* 158/159 are bare flags that set mainOptionIndex to 1 and 0. Zero is also the value
-               the client assumes with neither present, so 159 is emitted only when the stream
-               actually carried it - inventing it would lengthen every definition that has no
-               main option at all. */
-            if (decoded[158] || mainOptionIndex == 1) Emit(158);
+            /* 158/159 are the bare flags behind mainOptionIndex. Both come off the hit map: zero
+               is the index the client assumes with neither present, so 159 is emitted only when
+               the stream actually carried it - inventing it would lengthen every definition that
+               has no main option at all - and setting the index to zero drops 158 instead. */
+            if (decoded[158]) Emit(158);
             if (decoded[159]) Emit(159);
 
             // 160: campaigns
@@ -922,6 +1036,24 @@ namespace FlashEditor {
                 });
 
             return WriteRecordsInStreamOrder(records);
+        }
+
+        /// <summary>
+        ///     Forgets an opcode entirely, so neither the hit map nor the recorded stream order
+        ///     will put it back on the next encode.
+        /// </summary>
+        /// <remarks>
+        ///     Clearing <see cref="decoded"/> alone is not enough. An opcode still listed in
+        ///     <c>_streamRecords</c> is written back from the bytes it was read from by
+        ///     <see cref="WriteRecordsInStreamOrder"/>, which is what keeps a repeated opcode
+        ///     byte-exact but would also resurrect a flag the user had just turned off - the row
+        ///     in the grid changes, the save reports success and the definition in the cache is
+        ///     unaltered.
+        /// </remarks>
+        /// <param name="op">The opcode to remove.</param>
+        private void DropOpcode(int op) {
+            decoded[op] = false;
+            _streamRecords.RemoveAll(record => record.Key == op);
         }
 
         /// <summary>

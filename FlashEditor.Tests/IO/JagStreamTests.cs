@@ -1461,21 +1461,20 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     Every smart reader peeks through Get, which bounds-checks against Length, except
-        ///     ReadSpecialSmart, which indexes the backing array directly. Past capacity that
-        ///     turns the reader's clean ArgumentOutOfRangeException into an
-        ///     IndexOutOfRangeException raised from inside JagStream, and a caller catching the
-        ///     documented exception will not catch this one.
+        ///     ReadSpecialSmart used to index the backing array directly while every other smart
+        ///     reader peeked through Get. Past the end of the buffer that raised
+        ///     IndexOutOfRangeException, which is not the exception any sibling raises and not one
+        ///     a caller would think to catch. It now reports the condition the same way they do.
         /// </summary>
         [Fact]
-        public void ReadSpecialSmart_PastCapacity_ThrowsIndexOutOfRange_DocumentsKnownDefect()
+        public void ReadSpecialSmart_PastCapacity_ThrowsArgumentOutOfRangeLikeItsSiblings()
         {
             var stream = Wire(0x05);
             stream.ReadSpecialSmart();
 
-            Assert.Throws<IndexOutOfRangeException>(() => stream.ReadSpecialSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.ReadSpecialSmart());
 
-            //Contrast: every other smart reader reports the same condition properly
+            //The same condition, reported identically by every other smart reader
             var other = Wire(0x05);
             other.Seek(1);
             Assert.Throws<ArgumentOutOfRangeException>(() => other.ReadSmart());
@@ -1485,13 +1484,14 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     The worse half of the same defect. When the stream has spare capacity, the raw
-        ///     index reads a byte that is not part of the stream, the branch is chosen from
-        ///     padding, and the method returns -2 without throwing at all. Nothing downstream
-        ///     can tell that value apart from a genuine one.
+        ///     The worse half of the same defect, and the reason it was worth fixing rather than
+        ///     tolerating. With spare capacity behind the write cursor, the raw index used to read
+        ///     a byte that was not part of the stream at all, choose its branch from that padding,
+        ///     and return -2 with no error - a value nothing downstream could tell apart from a
+        ///     genuine one. Bounds-checking against Length rather than the array makes it throw.
         /// </summary>
         [Fact]
-        public void ReadSpecialSmart_PastLengthWithinCapacity_ReadsPaddingSilently_DocumentsKnownDefect()
+        public void ReadSpecialSmart_PastLengthWithinCapacity_ThrowsRatherThanReadingPadding()
         {
             var stream = new JagStream(16);
             stream.WriteByte(0x0A);
@@ -1499,9 +1499,11 @@ namespace FlashEditor.Tests.IO
             stream.ReadSpecialSmart();
             Assert.Equal(1, stream.Position);
 
-            //At EOF, but the raw index finds a zero in the spare capacity and takes the
-            //one-byte branch; ReadByte then returns -1, giving -1 - 1
-            Assert.Equal(-2, stream.ReadSpecialSmart());
+            //Position is at Length with 15 bytes of spare capacity behind it
+            Assert.Equal(1, stream.Length);
+            Assert.True(stream.Capacity > stream.Length);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.ReadSpecialSmart());
             Assert.Equal(1, stream.Position);
         }
 
@@ -1842,17 +1844,18 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     Both array readers rent from ArrayPool for large sizes and return the rental on
-        ///     the way out, but the EndOfStreamException path returns before that line, so the
-        ///     buffer is lost to the pool for good. A decoder that hits a run of truncated
-        ///     archives therefore bleeds pooled memory in proportion to the number of failures.
+        ///     Both array readers rent from ArrayPool above their stackalloc threshold. The
+        ///     EndOfStreamException path used to return before the line that gave the rental back,
+        ///     so a decoder meeting a run of truncated archives bled pooled memory in proportion
+        ///     to the number of failures - the one situation where the rental is least likely to
+        ///     be missed and most likely to recur.
         ///
-        ///     The success path is asserted first so the test proves the pool really does hand
-        ///     the same array back when the reader behaves, which is what makes the NotSame on
-        ///     the failure path evidence of a leak rather than of pool internals.
+        ///     The success path is asserted first, so the test proves the pool really does hand
+        ///     the same array back when the reader behaves. That is what makes the identity check
+        ///     on the failure path evidence about this code rather than about pool internals.
         /// </summary>
         [Fact]
-        public void ReadUnsignedByteArray_EndOfStreamOnAPooledRead_LeaksTheRental_DocumentsKnownDefect()
+        public void ReadUnsignedByteArray_EndOfStreamOnAPooledRead_StillReturnsTheRental()
         {
             const int size = 2048;   // above the 1024 stackalloc threshold, so it rents
 
@@ -1866,16 +1869,17 @@ namespace FlashEditor.Tests.IO
             Assert.Throws<EndOfStreamException>(() => Wire(1, 2, 3).ReadUnsignedByteArray(size));
 
             byte[] afterFailure = ArrayPool<byte>.Shared.Rent(size);
-            Assert.NotSame(control, afterFailure);
+            Assert.Same(control, afterFailure);
             ArrayPool<byte>.Shared.Return(afterFailure);
         }
 
         /// <summary>
-        ///     The same leak in the short reader. Its throw sits inside the read loop rather than
-        ///     after it, so it can leak on any truncated element, not only the last.
+        ///     The same path in the short reader, which is the more exposed of the two: its throw
+        ///     sits inside the read loop rather than after it, so it could leak on any truncated
+        ///     element rather than only the last.
         /// </summary>
         [Fact]
-        public void ReadUnsignedShortArray_EndOfStreamOnAPooledRead_LeaksTheRental_DocumentsKnownDefect()
+        public void ReadUnsignedShortArray_EndOfStreamOnAPooledRead_StillReturnsTheRental()
         {
             const int size = 2048;         // 4096 bytes, above the 2048 byte threshold
             const int byteCount = size * 2;
@@ -1890,7 +1894,7 @@ namespace FlashEditor.Tests.IO
             Assert.Throws<EndOfStreamException>(() => Wire(1, 2, 3).ReadUnsignedShortArray(size));
 
             byte[] afterFailure = ArrayPool<byte>.Shared.Rent(byteCount);
-            Assert.NotSame(control, afterFailure);
+            Assert.Same(control, afterFailure);
             ArrayPool<byte>.Shared.Return(afterFailure);
         }
 

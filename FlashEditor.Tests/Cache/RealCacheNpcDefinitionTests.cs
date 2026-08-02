@@ -305,6 +305,232 @@ namespace FlashEditor.Tests.Cache
         }
 
         // ===================================================================
+        //  Bare flags, pinned without needing the cache
+        // ===================================================================
+
+        /// <summary>
+        ///     Every presence-only opcode on an NPC definition, with the accessor that reads and
+        ///     writes it phrased as "the stream carries this opcode".
+        /// </summary>
+        /// <remarks>
+        ///     Phrasing them all the same way is what lets one test cover the whole set. Four of
+        ///     the seven booleans read inverted - opcode 93 is what removes the minimap dot, not
+        ///     what adds it - so a table of raw property values would need a polarity column and a
+        ///     reader would have to carry it in their head through every assertion below.
+        /// </remarks>
+        private static readonly (int Opcode, string Name,
+            Func<NPCDefinition, bool> Carried, Action<NPCDefinition, bool> SetCarried)[] BareFlags =
+        {
+            (93,  "drawMinimapDot",    d => !d.drawMinimapDot,      (d, on) => d.drawMinimapDot = !on),
+            (99,  "hasRenderPriority", d => d.hasRenderPriority,    (d, on) => d.hasRenderPriority = on),
+            (107, "clickable",         d => !d.clickable,           (d, on) => d.clickable = !on),
+            (109, "slowWalk",          d => !d.slowWalk,            (d, on) => d.slowWalk = !on),
+            (111, "animateIdle",       d => !d.animateIdle,         (d, on) => d.animateIdle = !on),
+            (141, "visiblePriority",   d => d.visiblePriority,      (d, on) => d.visiblePriority = on),
+            (143, "invisiblePriority", d => d.invisiblePriority,    (d, on) => d.invisiblePriority = on),
+            (158, "mainOptionIndex",   d => d.mainOptionIndex == 1, (d, on) => d.mainOptionIndex = (byte)(on ? 1 : 0)),
+        };
+
+        /// <summary>
+        ///     Turning a bare flag off removes its opcode, so the next encode does not carry it.
+        /// </summary>
+        /// <remarks>
+        ///     This is the defect the flag properties exist to fix. The encoder replays the opcodes
+        ///     the decoder recorded, so a flag held in an ordinary field could be cleared in the
+        ///     grid and then written straight back out from the recording: the row would change,
+        ///     the save would report success and the definition in the cache would be untouched.
+        ///     Two of these - clickable and drawMinimapDot - are bound to editable grid columns,
+        ///     so a regression here is directly visible to the user.
+        /// </remarks>
+        [Fact]
+        public void ABareFlagTurnedOff_IsRemovedFromTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                //Opcode 12 gives the definition something to keep, so a dropped flag is
+                //distinguishable from an encoder that lost the whole record.
+                var definition = new NPCDefinition(new JagStream(new byte[] { 12, 3, (byte)opcode, 0 }));
+                Assert.True(carried(definition), $"{name}: opcode {opcode} did not decode as carried");
+
+                setCarried(definition, false);
+
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 12, 3, 0 }, encoded);
+
+                var reread = new NPCDefinition(new JagStream(encoded));
+                Assert.False(carried(reread), $"{name}: opcode {opcode} came back after being cleared");
+                Assert.Equal(3, reread.size);
+            }
+        }
+
+        /// <summary>
+        ///     Turning a bare flag on emits its opcode, even on a definition that never carried it.
+        /// </summary>
+        /// <remarks>
+        ///     The other half of the same defect. A flag read off the opcode hit map is written
+        ///     from the hit map, so setting one has to reach the map rather than only a field, or
+        ///     ticking the box in the grid saves nothing at all.
+        /// </remarks>
+        [Fact]
+        public void ABareFlagTurnedOn_IsAppendedToTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                var definition = new NPCDefinition(new JagStream(new byte[] { 12, 3, 0 }));
+                Assert.False(carried(definition), $"{name}: opcode {opcode} was carried by a stream without it");
+
+                setCarried(definition, true);
+
+                //12 was recorded so it keeps its place; the new opcode is appended after it.
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 12, 3, (byte)opcode, 0 }, encoded);
+
+                var reread = new NPCDefinition(new JagStream(encoded));
+                Assert.True(carried(reread), $"{name}: opcode {opcode} did not survive being set");
+            }
+        }
+
+        /// <summary>
+        ///     A definition that never carried a bare flag reports the client-side default for it
+        ///     and encodes without it.
+        /// </summary>
+        /// <remarks>
+        ///     The flags are views over the opcode hit map rather than fields with initialisers,
+        ///     so the default now has to come out of an absent opcode. Get the polarity wrong and
+        ///     the encoder invents an opcode for every definition in the cache - 13,359 records
+        ///     grow by a byte the first time anyone saves one.
+        /// </remarks>
+        [Fact]
+        public void ADefinitionThatNeverCarriedABareFlag_KeepsTheDefaultAndEncodesWithoutIt()
+        {
+            var definition = new NPCDefinition(new JagStream(new byte[] { 12, 3, 0 }));
+
+            //The client-side defaults, stated as the property values rather than as opcodes.
+            Assert.True(definition.animateIdle);
+            Assert.True(definition.clickable);
+            Assert.True(definition.drawMinimapDot);
+            Assert.True(definition.slowWalk);
+            Assert.False(definition.hasRenderPriority);
+            Assert.False(definition.visiblePriority);
+            Assert.False(definition.invisiblePriority);
+            Assert.Equal(0, definition.mainOptionIndex);
+
+            Assert.Equal(new byte[] { 12, 3, 0 }, definition.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     A definition carrying every bare flag re-encodes to the bytes it came from when
+        ///     nothing is edited.
+        /// </summary>
+        /// <remarks>
+        ///     The regression guard for the two tests above. Making a flag droppable is only safe
+        ///     if nothing drops on its own: no setter runs for a definition the user merely
+        ///     opened, so the recorded stream has to replay untouched, opcode order included. The
+        ///     stream below is deliberately out of ascending order and carries 159 before 158, the
+        ///     two flags that write the same field.
+        /// </remarks>
+        [Fact]
+        public void BareFlagsLeftUntouched_ReEncodeToTheirStoredBytes()
+        {
+            byte[] stream = { 143, 12, 3, 111, 99, 159, 93, 107, 158, 141, 109, 95, 0, 42, 0 };
+
+            AssertReEncodesToTheSameBytes(stream, def =>
+            {
+                Assert.False(def.animateIdle);
+                Assert.False(def.clickable);
+                Assert.False(def.drawMinimapDot);
+                Assert.False(def.slowWalk);
+                Assert.True(def.hasRenderPriority);
+                Assert.True(def.visiblePriority);
+                Assert.True(def.invisiblePriority);
+                Assert.Equal(42, def.level);
+            });
+        }
+
+        /// <summary>
+        ///     Clearing a bare flag removes every occurrence of its opcode, not merely the last.
+        /// </summary>
+        /// <remarks>
+        ///     Repeated opcodes are replayed from the bytes they were read from, which is what
+        ///     keeps 538 definitions in the cache byte-exact. Dropping only the last occurrence
+        ///     would leave an earlier copy in the stream and the client would still read the flag
+        ///     as set, so the edit would look applied and do nothing.
+        /// </remarks>
+        [Fact]
+        public void ClearingARepeatedBareFlag_RemovesEveryOccurrence()
+        {
+            var definition = new NPCDefinition(new JagStream(new byte[] { 93, 12, 3, 93, 0 }));
+            Assert.False(definition.drawMinimapDot);
+
+            definition.drawMinimapDot = true;
+
+            Assert.Equal(new byte[] { 12, 3, 0 }, definition.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     Where both opcode 158 and opcode 159 are present, the later one decides the index,
+        ///     and both are still written back.
+        /// </summary>
+        /// <remarks>
+        ///     158 and 159 are two bare flags writing one field, so the hit map alone cannot say
+        ///     which value the client would end up with - only their positions can. Reading the
+        ///     hit map alone reports 1 for a definition whose 159 came last, which is the value
+        ///     the client would never see.
+        /// </remarks>
+        [Fact]
+        public void MainOptionIndex_TakesTheLaterOfTheTwoFlagsThatWriteIt()
+        {
+            AssertReEncodesToTheSameBytes(new byte[] { 158, 159, 0 },
+                def => Assert.Equal(0, def.mainOptionIndex));
+
+            AssertReEncodesToTheSameBytes(new byte[] { 159, 158, 0 },
+                def => Assert.Equal(1, def.mainOptionIndex));
+        }
+
+        /// <summary>
+        ///     Setting the main option index to 1 drops a stored opcode 159 rather than leaving it
+        ///     to overrule the edit.
+        /// </summary>
+        /// <remarks>
+        ///     Opcode 159 resets the index to zero. Left in the recorded stream it would be
+        ///     replayed after the 158 the setter added, and the client would read the index the
+        ///     user had just changed away from.
+        /// </remarks>
+        [Fact]
+        public void SettingTheMainOptionIndex_DropsTheFlagThatWouldOverruleIt()
+        {
+            var definition = new NPCDefinition(new JagStream(new byte[] { 12, 3, 159, 0 }));
+            Assert.Equal(0, definition.mainOptionIndex);
+
+            definition.mainOptionIndex = 1;
+
+            byte[] encoded = definition.Encode().ToArray();
+            Assert.Equal(new byte[] { 12, 3, 158, 0 }, encoded);
+            Assert.Equal(1, new NPCDefinition(new JagStream(encoded)).mainOptionIndex);
+        }
+
+        /// <summary>
+        ///     Setting the main option index to zero on a definition that stored opcode 159 leaves
+        ///     that opcode alone.
+        /// </summary>
+        /// <remarks>
+        ///     Zero is also what the client assumes with neither flag present, so the setter has
+        ///     nothing to add - and inventing 159 would lengthen every definition that has no main
+        ///     option at all, which is most of the index.
+        /// </remarks>
+        [Fact]
+        public void SettingTheMainOptionIndexToZero_NeitherInventsNorRemovesOpcode159()
+        {
+            var stored = new NPCDefinition(new JagStream(new byte[] { 12, 3, 159, 0 }));
+            stored.mainOptionIndex = 0;
+            Assert.Equal(new byte[] { 12, 3, 159, 0 }, stored.Encode().ToArray());
+
+            var never = new NPCDefinition(new JagStream(new byte[] { 12, 3, 0 }));
+            never.mainOptionIndex = 0;
+            Assert.Equal(new byte[] { 12, 3, 0 }, never.Encode().ToArray());
+        }
+
+        // ===================================================================
         //  Format facts, pinned without needing the cache
         // ===================================================================
 
