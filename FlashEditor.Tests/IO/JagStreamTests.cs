@@ -693,6 +693,28 @@ namespace FlashEditor.Tests.IO
             Assert.Equal(2, stream.Position);
         }
 
+        /// <summary>
+        ///     The span overloads are the real implementations; the array overloads forward to
+        ///     them. Exercised directly so a change to either forwarding wrapper cannot hide a
+        ///     change to the primitive underneath.
+        /// </summary>
+        [Fact]
+        public void ReadAndWrite_SpanOverloads_AreTheSameAsTheArrayOverloads()
+        {
+            var stream = new JagStream();
+
+            stream.Write(new ReadOnlySpan<byte>(new byte[] { 1, 2, 3, 4 }));
+            Assert.Equal(4, stream.Length);
+
+            stream.Seek0();
+            Span<byte> destination = new byte[3];
+            int got = stream.Read(destination);
+
+            Assert.Equal(3, got);
+            Assert.Equal(new byte[] { 1, 2, 3 }, destination.ToArray());
+            Assert.Equal(3, stream.Position);
+        }
+
         [Fact]
         public void Read_WithAWindowPastTheDestination_ThrowsArgumentOutOfRange()
         {
