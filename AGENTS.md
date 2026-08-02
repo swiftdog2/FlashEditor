@@ -321,5 +321,37 @@ The rows worth attention are `SIGNEDNESS-DIFFERS` and `SEMANTICS-DIFFER`: no tes
 suite can detect either, and both surface as wrong values in the editor and wrong data on
 save.
 
+## Models: the face render type decides what is drawn
+
+Every model face carries a render type. Only three values occur anywhere in this cache:
+
+| Value | Meaning | Faces |
+|---|---|---|
+| 0 | Gouraud shaded | 10,190,480 |
+| 1 | Flat shaded | 1,337,038 |
+| **2** | **Not drawn** | **34,528** |
+
+A further 10,613,853 faces belong to models that carry no render-type array at all, which
+is equivalent to type 0.
+
+**Type 2 is a visibility flag, not a shading mode.** Both of the client's renderers gate
+their draw list on it before anything else touches the face - `Renderable_Sub2.java:397`
+and `Renderable_Sub3.java:172`, the latter spelling `!= 2` as `(x ^ 0xffffffff) != -3`.
+Those faces are stray geometry: they carry face colour HSL 0, which the palette maps to
+near-black, and they are frequently unattached to the mesh. Model 15748's face 433 spans
+34% of the model's bounding box on three vertices no other face references.
+
+They are spread across **12,621 of the 63,604 models**, so anything that walks faces and
+ignores the type is wrong on one model in five. `ModelRenderer` did exactly that until
+2026-08-02 and put black slivers on the viewer.
+
+Only the newer and newest formats can express type 2. The legacy decoder derives the type
+from bit 0 of a packed flags byte, so it only ever produces 0 or 1 - which matches the
+data, where every model carrying a type-2 face is in the newer format.
+
+Field names for the rest of the face arrays are in `reference/hydra-model-decoding/`. Five
+of them were shuffled in that table until 2026-08-02, so read the correction note there
+before trusting a name in it.
+
 ## Coding Guidelines
 - Include C# XML documentation comments on public classes and members whenever the intent isn't obvious.

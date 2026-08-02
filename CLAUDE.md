@@ -67,6 +67,16 @@ Two things you cannot infer:
 - **A test named `*_DocumentsKnownDefect` pins behaviour that is known to be wrong**, so a fix
   shows up as a deliberate, visible test change. Convention declared at
   `FlashEditor.Tests/Cache/RSFileStoreTests.cs:11-19`.
+- **A semantic name in `reference/` is a claim, not evidence.** The model dump's field-name
+  table had five face arrays shuffled - the render type labelled as alpha, alpha as the render
+  type, priority as skin - and this project's decoder was right while the doc was wrong for all
+  five. What settles an obfuscated array's meaning is what the client *does* with it
+  (`aByteArray1414` gates the draw list on `!= 2`, so it is the render type), never its position
+  and never the name someone attached to it. Corrected 2026-08-02; the rows now cite that usage.
+- **Nothing in the suite covers the renderer.** `ModelRenderer` and the shaders are OpenGL, so a
+  render-path defect passes every test in the suite. Faces the client refuses to draw were being
+  drawn for as long as the viewer has existed and the sweeps never saw it. Check render changes
+  by eye; model 15748 carries a render-type-2 face and is a fast case to load.
 
 ## Where to look
 
@@ -74,6 +84,7 @@ Two things you cannot infer:
 |---|---|
 | `AGENTS.md` | The wire format: containers, groups, sectors, reference tables, XTEA, index map |
 | `reference/hydra-637-definitions/` | De-obfuscated 637 opcode tables, every claim citing a `file:line` |
+| `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
 | `STATE_OF_THE_EDITOR.md` | What has been found and fixed, plus the roadmap |
 | `HydraScape/client/src` | The 637 client itself, for implementation questions |
 
