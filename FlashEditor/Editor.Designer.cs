@@ -141,6 +141,7 @@ namespace FlashEditor {
             ModelLoadingLabel = new Label();
             ModelProgressBar = new ProgressBar();
             TextureViewerTab = new TabPage();
+            MapEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -247,6 +248,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(InterfaceEditorTab);
             EditorTabControl.Controls.Add(ModelViewerTab);
             EditorTabControl.Controls.Add(TextureViewerTab);
+            EditorTabControl.Controls.Add(MapEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -1298,6 +1300,16 @@ namespace FlashEditor {
             TextureViewerTab.Text = "Textures";
             TextureViewerTab.UseVisualStyleBackColor = true;
             // 
+            // MapEditorTab
+            // 
+            MapEditorTab.Controls.Add(MapEditorPanel);
+            MapEditorTab.Location = new Point(4, 37);
+            MapEditorTab.Name = "MapEditorTab";
+            MapEditorTab.Size = new Size(1113, 554);
+            MapEditorTab.TabIndex = 8;
+            MapEditorTab.Text = "Map";
+            MapEditorTab.UseVisualStyleBackColor = true;
+            // 
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1499,6 +1511,8 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn morphVarbitColumn;
         private TabPage ModelViewerTab;
         private TabPage TextureViewerTab;
+        private TabPage MapEditorTab;
+        private FlashEditor.Map.MapEditorPanel MapEditorPanel = new FlashEditor.Map.MapEditorPanel();
         private BrightIdeasSoftware.ObjectListView TextureListView;
         private BrightIdeasSoftware.OLVColumn TextureID;
         private BrightIdeasSoftware.OLVColumn TextureImage;

@@ -69,7 +69,8 @@ namespace FlashEditor {
             RSConstants.OBJECTS_DEFINITIONS_INDEX,
             RSConstants.INTERFACE_DEFINITIONS_INDEX,
             RSConstants.MODELS_INDEX,
-            RSConstants.TEXTURES
+            RSConstants.TEXTURES,
+            RSConstants.MAPS_INDEX
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -468,6 +469,14 @@ namespace FlashEditor {
 
             if (cache == null) {
                 Debug("Cache failed to load");
+                return;
+            }
+
+            //The map tab loads squares on demand from its own UI rather than populating a list
+            //view up front, so it wants binding, not the background-worker path below.
+            if (type == RSConstants.MAPS_INDEX) {
+                loaded[editorIndex] = true;
+                MapEditorPanel.Bind(cache);
                 return;
             }
 
