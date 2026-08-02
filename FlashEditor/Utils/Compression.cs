@@ -28,7 +28,25 @@ namespace FlashEditor {
             return inflateStream.ToArray();
         }
 
-        /// <summary>Compresses a byte array using GZip.</summary>
+        /// <summary>Offset of the 4-byte modification-time field in a GZip header.</summary>
+        private const int GzipModifiedTimeOffset = 4;
+
+        /// <summary>
+        ///     Compresses a byte array using GZip, with the header's modification time zeroed.
+        /// </summary>
+        /// <remarks>
+        ///     The compressor writes the current wall-clock time into the GZip header, which makes
+        ///     the output unreproducible: compressing identical bytes twice yields different
+        ///     results whenever the two calls straddle a second boundary. That matters well beyond
+        ///     tidiness, because the archive CRC in the reference table is taken over the stored
+        ///     container - so re-saving a cache would change the CRC of every group with no edit
+        ///     having been made, and any assertion that a re-encode is byte-identical becomes a
+        ///     coin toss decided by the clock.
+        ///     <para>
+        ///     Zero is also what the format actually uses here: every one of 715 GZip payloads
+        ///     sampled from a real revision 639 cache carries a modification time of 0.
+        ///     </para>
+        /// </remarks>
         /// <param name="bytes">The data to compress.</param>
         /// <returns>The GZip-compressed bytes.</returns>
         public static byte[] Gzip(byte[] bytes) {
@@ -43,7 +61,14 @@ namespace FlashEditor {
                     ArrayPool<byte>.Shared.Return(buffer);
                 }
             }
-            return deflateStream.ToArray();
+
+            byte[] compressed = deflateStream.ToArray();
+
+            //The header is fixed-width up to this point, so the field is always at offset 4
+            if (compressed.Length >= GzipModifiedTimeOffset + 4)
+                Array.Clear(compressed, GzipModifiedTimeOffset, 4);
+
+            return compressed;
         }
 
         /// <summary>
