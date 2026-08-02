@@ -478,18 +478,96 @@ namespace FlashEditor.Tests.Cache
         ///     longer exist.
         /// </summary>
         [Fact]
-        public void Archive_MultiChunk_EditedArchiveFallsBackToASingleChunk()
+        public void Archive_MultiChunk_EditedArchiveStillRoundTripsEveryFile()
         {
             RSArchive decoded = RSArchive.Decode(new JagStream(ThreeChunkArchiveBytes()), new[] { 0, 1 });
 
             decoded.PutFile(1, new JagStream(new byte[] { 0xAA, 0xBB }));
 
-            Assert.Equal(1, decoded.chunks);
+            /* This asserted chunks == 1 when an edit collapsed the whole group. It no longer
+               does: the edited file is re-sliced within the chunks it already occupied, so the
+               other files keep their layout. What the test is actually for - that an edited
+               group still round-trips every file - is unchanged and is what it now checks. */
+            Assert.Equal(3, decoded.chunks);
 
             RSArchive reloaded = RSArchive.Decode(new JagStream(decoded.Encode().ToArray()), new[] { 0, 1 });
 
             Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, reloaded.GetFile(0).ToArray());
             Assert.Equal(new byte[] { 0xAA, 0xBB }, reloaded.GetFile(1).ToArray());
+        }
+
+        /// <summary>
+        ///     Replacing a file with a longer one must keep the group multi-chunk and confine the
+        ///     change to that file's own slices.
+        /// </summary>
+        /// <remarks>
+        ///     Collapsing to a single chunk rewrites the layout of every file in the group. In a
+        ///     real 639 cache the multi-chunk groups hold up to 2,792 files each, so an edit to
+        ///     one of them would move all of them and change the group CRC far beyond the edit.
+        ///     Any split is legal - the client reads every table entry and slices exactly per
+        ///     entry - so the edited file can simply be re-sliced in place.
+        /// </remarks>
+        [Fact]
+        public void Archive_FileGrown_KeepsTheChunkSplitAndReslicesOnlyThatFile()
+        {
+            RSArchive archive = RSArchive.Decode(new JagStream(ThreeChunkArchiveBytes()), new[] { 0, 1 });
+
+            //File 1 was 8 bytes across 3/4/1; give it two more
+            archive.PutFile(1, new JagStream(new byte[] { 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A }));
+
+            Assert.Equal(3, archive.chunks);
+
+            RSArchive reloaded = RSArchive.Decode(new JagStream(archive.Encode().ToArray()), new[] { 0, 1 });
+
+            Assert.Equal(3, reloaded.chunks);
+            //File 0 is untouched, which is the point of keeping the split
+            Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, reloaded.GetFile(0).ToArray());
+            Assert.Equal(new byte[] { 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A },
+                         reloaded.GetFile(1).ToArray());
+        }
+
+        /// <summary>
+        ///     The shrinking case. Slices are truncated from the tail rather than redistributed,
+        ///     and a slice that runs out becomes zero-length - which is legal and occurs in
+        ///     thousands of files in the shipped cache.
+        /// </summary>
+        [Fact]
+        public void Archive_FileShrunk_KeepsTheChunkSplitAndAllowsEmptySlices()
+        {
+            RSArchive archive = RSArchive.Decode(new JagStream(ThreeChunkArchiveBytes()), new[] { 0, 1 });
+
+            //File 1 was 8 bytes across 3/4/1; two bytes cannot fill the first slice alone
+            archive.PutFile(1, new JagStream(new byte[] { 0x31, 0x32 }));
+
+            Assert.Equal(3, archive.chunks);
+
+            RSArchive reloaded = RSArchive.Decode(new JagStream(archive.Encode().ToArray()), new[] { 0, 1 });
+
+            Assert.Equal(3, reloaded.chunks);
+            Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, reloaded.GetFile(0).ToArray());
+            Assert.Equal(new byte[] { 0x31, 0x32 }, reloaded.GetFile(1).ToArray());
+        }
+
+        /// <summary>
+        ///     Adding a file still drops to a single chunk. The size table is chunks x fileCount,
+        ///     so its whole shape moves when the file set changes, and the file count itself comes
+        ///     from the reference table rather than the payload - re-slicing across a changed file
+        ///     count would put the client's seek in the wrong place with nothing to detect it.
+        /// </summary>
+        [Fact]
+        public void Archive_FileAdded_StillFallsBackToASingleChunk()
+        {
+            RSArchive archive = RSArchive.Decode(new JagStream(ThreeChunkArchiveBytes()), new[] { 0, 1 });
+
+            archive.PutFile(2, new JagStream(new byte[] { 0x41, 0x42 }));
+
+            Assert.Equal(1, archive.chunks);
+
+            RSArchive reloaded = RSArchive.Decode(new JagStream(archive.Encode().ToArray()), new[] { 0, 1, 2 });
+
+            Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, reloaded.GetFile(0).ToArray());
+            Assert.Equal(new byte[] { 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18 }, reloaded.GetFile(1).ToArray());
+            Assert.Equal(new byte[] { 0x41, 0x42 }, reloaded.GetFile(2).ToArray());
         }
 
         /// <summary>

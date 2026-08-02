@@ -272,6 +272,64 @@ namespace FlashEditor.cache
         ///     longer adds up. <see cref="PutFile"/> drops the split for that reason; this is the
         ///     belt-and-braces check that the shape matches before it is trusted.
         /// </remarks>
+        /// <summary>
+        ///     Redistributes one file's bytes across the chunks it already occupies, so a length
+        ///     change does not force the whole group back to a single chunk.
+        /// </summary>
+        /// <remarks>
+        ///     Collapsing to one chunk rewrites the layout of every file in the group, which for a
+        ///     3-chunk group of hundreds of files means an edit to one of them moves all of them.
+        ///     Keeping the chunk count confines the change to the edited file's own budget.
+        ///     <para>
+        ///     Any split the sizes describe is legal. The client reads every one of the
+        ///     chunks x fileCount table entries and slices exactly per entry - nothing is derived
+        ///     or assumed even - and the shipped cache relies on that heavily: 64% of files in
+        ///     multi-chunk groups have no monotonic order across their chunks at all, and
+        ///     zero-length slices occur in thousands of them. So the only real constraints are
+        ///     that every slice stays non-negative and that the slices still sum to the file.
+        ///     </para>
+        ///     <para>
+        ///     The original shape is kept as far as it fits and the remainder lands in the last
+        ///     chunk, which both preserves the leading slice sizes the packer chose and matches
+        ///     how the real cache distributes its variance.
+        ///     </para>
+        /// </remarks>
+        /// <param name="fileId">The file being replaced.</param>
+        /// <param name="newLength">The replacement's length.</param>
+        /// <returns><c>true</c> when the split was kept and re-sliced.</returns>
+        private bool TryResliceFile(int fileId, int newLength)
+        {
+            if (chunkSizes == null || chunks <= 1 || newLength < 0 || !ChunkSizesMatchFiles())
+                return false;
+
+            int index = 0;
+            foreach (int id in files.Keys)
+            {
+                if (id == fileId)
+                    break;
+                index++;
+            }
+
+            if (index >= files.Count)
+                return false;
+
+            //Keep each original slice as far as the new length allows, so a shrink truncates from
+            //the tail rather than redistributing bytes the caller never asked to move.
+            int remaining = newLength;
+            for (int chunk = 0; chunk < chunks; chunk++)
+            {
+                int keep = Math.Min(chunkSizes[chunk][index], remaining);
+                chunkSizes[chunk][index] = keep;
+                remaining -= keep;
+            }
+
+            //Anything a grow added goes to the last chunk
+            if (remaining > 0)
+                chunkSizes[chunks - 1][index] += remaining;
+
+            return true;
+        }
+
         private bool ChunkSizesMatchFiles()
         {
             if (chunkSizes == null || chunkSizes.Length != chunks)
@@ -362,15 +420,24 @@ namespace FlashEditor.cache
         /// <param name="data">The file payload.</param>
         public void PutFile(int fileId, JagStream data)
         {
-            bool sameShape = data != null
-                && files.TryGetValue(fileId, out JagStream previous)
-                && previous != null
-                && previous.Length == data.Length;
+            JagStream previous = null;
+            bool replacing = data != null
+                && files.TryGetValue(fileId, out previous)
+                && previous != null;
 
-            if (!sameShape)
+            if (!replacing || previous.Length != data.Length)
             {
-                chunkSizes = null;
-                chunks = 1;
+                /* A same-length replacement needs nothing: the split is a per-file byte budget,
+                   so the new bytes are sliced by the same lengths. A different length can still
+                   keep the split by re-slicing that one file, which leaves every other file's
+                   budget untouched. Only a change to the file set forces the whole group back to
+                   a single chunk, because the size table is chunks x fileCount and its shape
+                   moves when a file is added. */
+                if (!replacing || !TryResliceFile(fileId, (int) data.Length))
+                {
+                    chunkSizes = null;
+                    chunks = 1;
+                }
             }
 
             if (files.ContainsKey(fileId))
