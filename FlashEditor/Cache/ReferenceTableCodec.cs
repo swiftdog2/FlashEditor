@@ -27,11 +27,8 @@ namespace FlashEditor.cache
             if (table.format >= 6)
                 table.version = stream.ReadInt();
 
+            //hasIdentifiers, usesWhirlpool, entryHashes and sizes all read off this byte
             table.flags = stream.ReadByte();
-            table.hasIdentifiers = (table.flags & RSReferenceTable.FLAG_IDENTIFIERS) != 0;
-            table.usesWhirlpool = (table.flags & RSReferenceTable.FLAG_WHIRLPOOL) != 0;
-            table.entryHashes  = (table.flags & RSReferenceTable.FLAG_HASH) != 0;
-            table.sizes        = (table.flags & RSReferenceTable.FLAG_SIZES) != 0;
 
             table.validArchivesCount = stream.ReadUnsignedShort();
 

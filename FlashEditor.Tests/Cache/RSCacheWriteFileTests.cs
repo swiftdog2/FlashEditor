@@ -109,7 +109,6 @@ namespace FlashEditor.Tests.Cache
         private static JagStream EncodeReferenceTable(int tableFlags, int[] fileIds)
         {
             var table = new RSReferenceTable { format = 6, version = 1, flags = tableFlags };
-            table.sizes = (tableFlags & RSReferenceTable.FLAG_SIZES) != 0;
 
             var entry = new RSArchiveEntry(0);
             entry.SetVersion(1);

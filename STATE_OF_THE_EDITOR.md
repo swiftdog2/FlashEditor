@@ -421,6 +421,21 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    against this decoder, so a shared misreading of the wire format would pass. The
    single-file no-trailer rule in particular is argued from the client's unpacker and
    from AGENTS.md, not demonstrated against captured bytes.
+7e. ~~Stop `RSReferenceTable` storing its flag state twice.~~ **Done 2026-08-02**, found
+   reviewing 7c. The table held the raw `flags` byte *and* four independent public bools
+   (`hasIdentifiers`, `usesWhirlpool`, `entryHashes`, `sizes`) with nothing keeping them in
+   step - only `Decode` derived one from the other, and every other construction site had
+   to remember to set both by hand. `Encode` writes the flags byte from the number but
+   decides which optional blocks follow it from the bools, so any drift between the two
+   would ship a table declaring one shape and carrying another, shifting every field after
+   the disagreement. That is the same failure mode as the format-7 archive-flags byte in
+   7b, reachable here without a codec bug at all - just a caller setting one and not the
+   other. The four are now get-only views over `flags`, mirroring how
+   `RSArchiveEntry.UsesXtea` is a view over `ArchiveFlags`, so they cannot disagree and the
+   compiler rejects any attempt to set them independently. `Decode` no longer assigns them.
+   The WinForms reference-table grid binds three of them by `AspectName`; ObjectListView
+   resolves get-only properties, as it already does for `ModelReference.ModelID` and
+   `NPCDefinition.ModelIdList`. Pinned by `CodecTests.ReferenceTable_FlagBools_TrackTheFlagsByte`.
 
 **P2 - make it an editor**
 8. Route all logging to a visible log panel; stop swallowing into a nonexistent console.

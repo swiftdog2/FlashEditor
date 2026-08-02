@@ -160,6 +160,35 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     The four flag bools are views over <see cref="RSReferenceTable.flags"/>, not
+        ///     stored copies of it. Encode writes the flags byte from the number but decides
+        ///     what follows it from the bools, so a table whose two representations had drifted
+        ///     apart would ship a flags byte that did not describe its own payload - and every
+        ///     field after the disagreement shifts, the same failure the format-7 flags byte
+        ///     had.
+        /// </summary>
+        [Fact]
+        public void ReferenceTable_FlagBools_TrackTheFlagsByte()
+        {
+            var table = new RSReferenceTable
+            {
+                flags = RSReferenceTable.FLAG_IDENTIFIERS | RSReferenceTable.FLAG_SIZES
+            };
+
+            Assert.True(table.hasIdentifiers);
+            Assert.True(table.sizes);
+            Assert.False(table.usesWhirlpool);
+            Assert.False(table.entryHashes);
+
+            table.flags = RSReferenceTable.FLAG_WHIRLPOOL | RSReferenceTable.FLAG_HASH;
+
+            Assert.False(table.hasIdentifiers);
+            Assert.False(table.sizes);
+            Assert.True(table.usesWhirlpool);
+            Assert.True(table.entryHashes);
+        }
+
+        /// <summary>
         ///     With FLAG_HASH set the table carries a 32-bit hash per archive. It is read
         ///     off the wire and has to be written back verbatim; recomputing it from the
         ///     entry's own stream - which the codec never populates - discards the value
@@ -172,8 +201,7 @@ namespace FlashEditor.Tests.Cache
             {
                 format = 6,
                 version = 1,
-                flags = RSReferenceTable.FLAG_HASH,
-                entryHashes = true
+                flags = RSReferenceTable.FLAG_HASH
             };
 
             var entry = new RSArchiveEntry(0);
@@ -202,8 +230,7 @@ namespace FlashEditor.Tests.Cache
             {
                 format = 6,
                 version = 1,
-                flags = RSReferenceTable.FLAG_IDENTIFIERS,
-                hasIdentifiers = true
+                flags = RSReferenceTable.FLAG_IDENTIFIERS
             };
 
             var entry = new RSArchiveEntry(0);
@@ -238,8 +265,7 @@ namespace FlashEditor.Tests.Cache
             {
                 format = 6,
                 version = 1,
-                flags = RSReferenceTable.FLAG_SIZES,
-                sizes = true
+                flags = RSReferenceTable.FLAG_SIZES
             };
 
             var entry = new RSArchiveEntry(0);
