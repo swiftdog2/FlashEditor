@@ -183,10 +183,9 @@ namespace FlashEditor.cache
         /// so <see cref="Decode"/> retains it and this method reproduces it. Most
         /// multi-file archives in a real 639 cache use three chunks; writing the
         /// files end to end instead yields a payload of exactly the same length
-        /// with the bytes in the wrong order. An archive whose files have been
-        /// edited no longer fits the split it was decoded with, so
-        /// <see cref="PutFile"/> drops it and the archive is written as a single
-        /// chunk - a shape the client reads for any archive.
+        /// with the bytes in the wrong order. An edit keeps the split: see
+        /// <see cref="PutFile"/>, which re-slices only the file that changed and
+        /// falls back to a single chunk only when the file set itself changes.
         /// </para>
         /// </remarks>
         /// <returns>

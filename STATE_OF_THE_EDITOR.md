@@ -596,6 +596,29 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
     survive `EncodeColumnar`.
 11. Implement or remove the six dead Import buttons and the empty Interfaces tab.
 
+**P2a - divergences from the 637 client, now actionable**
+
+Adopting "the client leads, the data vetoes" (see `AGENTS.md`) turns these from recorded
+observations into work. Each is already evidenced in `reference/hydra-637-definitions/` with a
+`file:line` citation, and none is detectable by any test in the suite: the bytes are right and
+only the meaning differs, so they surface as wrong values in the grid and wrong data on save.
+
+11a. **NPC opcode 155.** The client reads the first three bytes **signed**, where -1 means
+   "skip this channel". We read them unsigned, so every negative channel is wrong. The largest
+   of these by behavioural impact.
+11b. **NPC opcode 125.** Client read is signed and the sign is used arithmetically.
+11c. **Object opcodes 78 and 79.** Two distinct fields in the client, conflated into a single
+   `ambientSoundId` here. 81 definitions in the cache carry both, and for those an edit reaches
+   only the later opcode. A model change rather than a rename.
+11d. **Object opcode 24.** The client maps a read value of 65535 to -1; we keep 65535.
+11e. **Object opcodes 14 and 15.** The client maps 14 to `sizeY` and 15 to `sizeX`, the opposite
+   way round from this codec. Both are one byte so there is no parse impact, and the client's
+   field names come from a deobfuscator, so this one is genuinely uncertain - resolve it with
+   in-game evidence or leave it recorded.
+11f. **A systematic signed-versus-unsigned short divergence** across roughly 15 NPC opcodes.
+   Currently unobservable: no 16-bit field anywhere in this cache reaches `0x8000`. Worth
+   fixing before a cache that does.
+
 **P3 - toward comprehensive**
 12. Add codecs for the ~30 untouched indexes, starting with the ones that have partial
     work already (maps/idx5, music/idx6) or high value (interfaces/idx3, CS2/idx12,

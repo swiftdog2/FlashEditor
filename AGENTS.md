@@ -25,13 +25,22 @@ which matters if you use that client as a reference for decoder behaviour - nota
 `reference/hydra-model-decoding/`, which was taken from it.
 
 ## Build Requirements
-- Visual Studio or `dotnet` with .NET 9 SDK.
-- All packages are restored via NuGet. The `packages.config` file lists dependencies such as IKVM, Newtonsoft.Json, and OpenTK.
+- Visual Studio or `dotnet` with the .NET 9 SDK.
+- Both projects target `net9.0-windows` and set `EnableWindowsTargeting`, so the solution and
+  its tests are Windows-only.
+- Packages come from `PackageReference` in each `.csproj`; there is no `packages.config`. The
+  app depends on SharpZipLib, BouncyCastle.Cryptography, Newtonsoft.Json, OpenTK and
+  ObjectListView.
+- `FlashEditor.csproj` declares `InternalsVisibleTo` for `FlashEditor.Tests`, which is why the
+  tests can reach `RSFileStore`, `RSIndex` and other internal types.
 
 ## Test Suite
-- Tests reside under the `FlashEditor.Tests` project and target .NET 9.
-- xUnit (`2.5.0`) and Moq are the primary test dependencies.
-- Run `dotnet test` or use Visual Studio Test Explorer to execute the suite.
+- Tests reside under `FlashEditor.Tests` and target `net9.0-windows`.
+- xUnit 2.9.3 with `xunit.runner.visualstudio`. There is no mocking framework: the suite works
+  against real bytes and synthetic caches in temp directories instead.
+- `dotnet test` builds first, so no separate build step is needed.
+- Most of the suite needs a real 639 cache. See `CLAUDE.md` for how to point it at one and for
+  the current expected counts.
 
 ## Cache Editing Overview
 The editor loads, displays, and modifies the RuneScape JS5 cache for revision 639. Important details for understanding the cache structure:
@@ -73,7 +82,11 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 - Bytes `3–5` → first sector offset
 
 ### Sector Header (dat2)
-`|2 bytes idxId|2 bytes groupId|3 bytes nextSector|1 byte chunk#|512 data|`
+`|2 bytes archiveId|2 bytes chunk#|3 bytes nextSector|1 byte indexId|512 data|`
+
+Read the field order off `RSSector.Decode`/`Encode` rather than from memory. This document had
+the first and last pairs the wrong way round until 2026-08-02, which is the kind of error that
+produces a cache that looks structurally fine and is unreadable.
 
 ### Container Wrapper
 - Byte `compressionType` (`0`=none, `1`=BZip2, `2`=GZip)
@@ -86,6 +99,29 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
   from the stored length; never assume 2. The archive CRC and the reference table's
   `compressed` size are both taken over the stored container *minus* this trailer, so a
   wrong trailer length puts both out of step with the client.
+
+#### A re-encode is never byte-identical for GZip
+
+Compression in the reference cache: **96,244 GZip, 4,480 uncompressed, 1,743 BZip2.** Decoding
+and re-encoding every one of them gives:
+
+| Compression | Byte-identical after a round trip |
+|---|---|
+| none | 4,480 / 4,480 |
+| BZip2 | 1,724 / 1,743 |
+| **GZip** | **0 / 96,183** |
+
+Deflate is not canonical: Jagex used Java's `Deflater`, this project uses SharpZipLib, and both
+emit valid GZip of the same payload with different encodings. Our output is within 0.06% on
+size, so this is not a defect to fix - cloning their compressor is the wrong instinct.
+
+Two consequences that matter. **Never compare compressed containers** to decide whether
+something changed; compare the decompressed payload. And because the archive CRC covers the
+*stored* bytes, re-encoding changes the CRC even when the content is identical - which is why
+a save that changes nothing now writes nothing at all rather than re-encoding.
+
+Jagex writes `MTIME = 0` in every GZip header (715 of 715 sampled), so a compressor that stamps
+the current time both diverges from the format and makes its own output unreproducible.
 
 ### Group (archive) payload
 What sits inside the container once decompressed. The file count comes from the reference
@@ -102,11 +138,38 @@ table, not from the payload.
 - The size table is delta-encoded **across the files within a chunk**, and the running total
   restarts on each chunk. So for chunk `c`, `size[c][0]` is the first delta and
   `size[c][i] = size[c][i-1] + delta`.
-- `chunks` is commonly **3**, not 1 - roughly two thirds of the multi-file archives in a real
-  639 cache use three. Laying the files out end to end instead of chunk-major produces a
-  payload of exactly the same length with the bytes in the wrong order, which a round trip
-  through this codec cannot detect. Encoding must either reproduce the split it decoded or
-  drop to a single chunk, which is a shape the client also reads.
+- `chunks` is commonly **3**, not 1. Laying the files out end to end instead of chunk-major
+  produces a payload of exactly the same length with the bytes in the wrong order, which a
+  round trip through this codec cannot detect.
+
+#### The split is arbitrary, and nothing may assume otherwise
+
+Measured across the whole reference cache:
+
+| | |
+|---|---|
+| Chunk counts occurring anywhere | only **1** or **3** (1,638 and 3,517 groups) |
+| Where the multi-chunk groups live | **all 3,517 are in index 0** (animation frames) |
+| Chunk 0's length, all 359,922 files | exactly **4 bytes** |
+| Files with no monotonic order across their chunks | **64.3%** |
+| Non-proportional groups | 3,461 of 3,517 |
+| Files with a zero-length middle or last chunk | about 3,200 |
+| Negative deltas used in size tables | **222,317** |
+
+So: **any split the size table describes is legal.** Nothing may assume proportional, equal,
+or monotonically ordered chunks, and the `int32` deltas are genuinely signed. Zero-length
+slices are normal and load-bearing.
+
+The client's own reader settles it - `JS5Archive.method2729`, multi-file branch at lines
+383-440. It reads every one of the `chunks x fileCount` entries twice, once to size each
+file's array and once to copy, and slices exactly per entry. Nothing is derived, halved or
+assumed even. A copy of that file is already in this repository at
+`reference/hydra-model-decoding/JS5Archive.java`, so the unpacker does not need hunting again.
+
+The constraints its reader actually imposes, and therefore the only ones encoding must respect:
+every per-file total must be non-negative, the table entries must sum to the body length
+exactly, and `chunks` must fit in an unsigned byte. Within that, a file may be re-sliced freely
+- which is why an edit re-slices only the file it touched instead of collapsing the group.
 
 Revision 639 (and later) expects the header layout above. Some earlier
 revisions swapped the two length fields, so both encode and decode must
@@ -138,27 +201,24 @@ use this ordering to remain compatible with the in-game client.
   In that export `archive` is the **index** and `group` is the **archive id**; entries also
   carry `name_hash`, `name` (`l<x>_<y>`) and `mapsquare`. Build 639 is cache id 1194.
 
-### Minimal Cache-Editor API
-```csharp
-class CacheEditor {
-    CacheEditor(Path folder);
-    Container read(int indexId, int groupId);
-    void write(int indexId, int groupId, Container c, int[] xteaKeyOrNull);
+### The actual types
 
-    ReferenceTable getTable(int indexId);
-    void saveTable(int indexId, ReferenceTable t);
+This section used to sketch a `CacheEditor` class that does not exist and never has. The real
+layering, innermost first:
 
-    byte[] readChild(int index, int group, int child, int[] key);
-    void writeChild(int index, int group, int child, byte[] data,
-                    Compression cmp, int[] key);
-}
+| Type | File | Responsibility |
+|---|---|---|
+| `JagStream` | `IO/JagStream.cs` | The buffer everything reads and writes through |
+| `RSSector` | `Cache/RSSector.cs` | One 520-byte sector: header plus 512 data bytes |
+| `RSFileStore` | `Cache/RSFileStore.cs` | dat2 and the idx files; sector-chain allocation; staged saves |
+| `RSContainer` | `Cache/RSContainer.cs` | The stored wrapper: compression, XTEA, version trailer |
+| `RSArchive` | `Cache/RSArchive.cs` | A group's payload: the file split and its chunk layout |
+| `RSReferenceTable` / `ReferenceTableCodec` | `Cache/` | idx255 metadata: CRCs, versions, file ids |
+| `RSCache` | `Cache/RSCache.cs` | Ties them together. `GetContainer`, `ReadFile`, `WriteFile` |
 
-class Container {
-    byte   compressionType;
-    byte[] dataUncompressed;
-    byte[][] childSlices;   // null if single-file
-}
-```
+`RSCache.WriteFile(indexId, archiveId, fileId, data)` is the single entry point for an edit,
+and the place the interesting rules live: it re-encodes the archive, decides whether anything
+actually changed, resolves the XTEA key, and updates the CRC and reference-table entry.
 
 ### Write Algorithm (high-level)
 1. Build container (compress → XTEA → add length table)
@@ -229,13 +289,33 @@ has to survive.
 object decoders in the bundled 637 client, cross-referenced against this project's codecs.
 Every client claim cites a `file:line`, so any row can be checked in seconds.
 
-Consult it before altering how any definition opcode is read, and note the division of
-authority it sets out: **the 639 cache is authoritative for payload sizes** (proven by
-sweeping every definition and requiring an exact buffer consumption) and **the 637 client is
-authoritative for signedness and meaning** (which the cache cannot reveal). Neither is
-authoritative alone, and a disagreement is usually to be recorded rather than resolved - all
-three codec sweeps found opcodes this project handles that the 637 client does not, none of
-which occur in the 639 cache.
+Consult it before altering how any definition opcode is read.
+
+### The client leads, the data vetoes
+
+**The 637 client is the reference for how anything is implemented** - algorithms, field
+meanings, signedness, read order. Where it and this project disagree, the client is right
+unless the 639 data says otherwise.
+
+**The 639 cache overrides it only where the data proves something the client cannot know.**
+The cache is two builds later, so it can legitimately contain what the client never saw. That
+veto is not hypothetical: item opcode **131 occurs in this cache and the 637 client has no
+handler for it at all** - the chain tests 129, 130, 132, 134 and 249 and 131 falls straight
+through. Removing our handler to match the client would break decoding of real data.
+
+The two rules in practice:
+
+| Situation | What to do |
+|---|---|
+| Client reads it differently to us | Follow the client. |
+| Client has no handler, but the opcode occurs in 639 data | Keep ours. The data vetoes. |
+| Client has no handler and the opcode never occurs | Leave it. Record it. Change nothing. |
+| Only the cache can answer (a payload size) | The data decides, proven by an exact-consumption sweep. |
+| Only the client can answer (signedness, meaning) | The client decides. The cache cannot reveal either. |
+
+A disagreement that the data cannot arbitrate is usually to be recorded rather than resolved -
+all three codec sweeps found opcodes this project handles that the 637 client does not, and
+none of those occur in the 639 cache.
 
 The rows worth attention are `SIGNEDNESS-DIFFERS` and `SEMANTICS-DIFFER`: no test in the
 suite can detect either, and both surface as wrong values in the editor and wrong data on
