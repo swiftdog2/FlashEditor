@@ -1,6 +1,7 @@
 using FlashEditor;
 using FlashEditor.Utils;
 using System;
+using System.Buffers;
 using System.IO;
 using Xunit;
 
@@ -991,7 +992,7 @@ namespace FlashEditor.Tests.IO
             stream.Seek0();
 
             Assert.Equal(readBack, stream.ReadMedium());
-            Assert.True(stream.Position == 3);
+            Assert.Equal(3, stream.Position);
         }
 
         [Fact]
@@ -1228,6 +1229,881 @@ namespace FlashEditor.Tests.IO
 
             Assert.Equal(0, stream.ReadVarInt());
             Assert.Equal(6, stream.Position);
+        }
+
+        #endregion
+
+        #region Smart encodings
+
+        /// <summary>
+        ///     The 127/128 boundary is the whole encoding: the branch is taken on the first
+        ///     byte's high bit, peeked via Get before anything is consumed. 0x7F is the last
+        ///     one-byte form and 0x80 is the first two-byte form, so an off-by-one here shifts
+        ///     the reader by a byte and desynchronises the rest of the record.
+        /// </summary>
+        /// <param name="wire">Hand-built bytes: one byte for the short form, two for the long.</param>
+        /// <param name="expected">
+        ///     One-byte values carry a -64 bias, two-byte values a -0xC000 bias, so 0x7F reads
+        ///     as 63 while the very next encodable value, 0x8000, reads as -16384.
+        /// </param>
+        [Theory]
+        [InlineData(new byte[] { 0x00 }, -64)]
+        [InlineData(new byte[] { 0x40 }, 0)]
+        [InlineData(new byte[] { 0x7F }, 63)]
+        [InlineData(new byte[] { 0x80, 0x00 }, -16384)]
+        [InlineData(new byte[] { 0xC0, 0x00 }, 0)]
+        [InlineData(new byte[] { 0xFF, 0xFF }, 16383)]
+        public void ReadSmart_AppliesTheSixtyFourAndC000Biases(byte[] wire, int expected)
+        {
+            var stream = new JagStream(wire);
+
+            Assert.Equal(expected, stream.ReadSmart());
+            Assert.Equal(wire.Length, stream.Position);
+        }
+
+        /// <param name="expected">
+        ///     Unbiased in the one-byte form, and biased by -32768 rather than -0xC000 in the
+        ///     two-byte form. That 16384 difference from ReadSmart is the entire distinction
+        ///     between the two readers.
+        /// </param>
+        [Theory]
+        [InlineData(new byte[] { 0x00 }, 0)]
+        [InlineData(new byte[] { 0x01 }, 1)]
+        [InlineData(new byte[] { 0x7F }, 127)]
+        [InlineData(new byte[] { 0x80, 0x00 }, 0)]
+        [InlineData(new byte[] { 0x80, 0x80 }, 128)]
+        [InlineData(new byte[] { 0xFF, 0xFF }, 32767)]
+        public void ReadUnsignedSmart_AppliesNoBiasAndThe32768Bias(byte[] wire, int expected)
+        {
+            var stream = new JagStream(wire);
+
+            Assert.Equal(expected, stream.ReadUnsignedSmart());
+            Assert.Equal(wire.Length, stream.Position);
+        }
+
+        /// <summary>
+        ///     The two biases in one assertion. ReadSmart subtracts 0xC000 and ReadUnsignedSmart
+        ///     subtracts 0x8000, so on identical two-byte input they differ by exactly 16384
+        ///     while agreeing to within a fixed 64 on one-byte input. Swapping one for the other
+        ///     at a call site is a silent, uniform offset rather than a crash.
+        /// </summary>
+        [Fact]
+        public void ReadSmart_And_ReadUnsignedSmart_DifferBy16384OnTheTwoByteForm()
+        {
+            byte[] wire = { 0xC3, 0x21 };
+
+            Assert.Equal(16384, Wire(wire[0], wire[1]).ReadUnsignedSmart() - Wire(wire[0], wire[1]).ReadSmart());
+
+            //One-byte form: the difference is the fixed -64 bias instead
+            Assert.Equal(64, Wire(0x33).ReadUnsignedSmart() - Wire(0x33).ReadSmart());
+        }
+
+        /// <summary>
+        ///     ReadShortSmart is a pure alias of ReadSmart, and ModelDefinition calls it about
+        ///     thirty times. If it ever acquired a bias of its own, every vertex and texture
+        ///     coordinate in the model codec would shift by that amount at once, so the identity
+        ///     is asserted across the whole encodable range rather than at one point.
+        /// </summary>
+        [Theory]
+        [InlineData(new byte[] { 0x00 })]
+        [InlineData(new byte[] { 0x7F })]
+        [InlineData(new byte[] { 0x80, 0x00 })]
+        [InlineData(new byte[] { 0xC0, 0x00 })]
+        [InlineData(new byte[] { 0xFF, 0xFF })]
+        public void ReadShortSmart_IsIdenticalToReadSmart(byte[] wire)
+        {
+            var viaAlias = new JagStream(wire);
+            var viaSmart = new JagStream(wire);
+
+            Assert.Equal(viaSmart.ReadSmart(), viaAlias.ReadShortSmart());
+            Assert.Equal(viaSmart.Position, viaAlias.Position);
+        }
+
+        /// <summary>
+        ///     ReadSignedSmart is a zig-zag decode layered on ReadUnsignedSmart, so it alternates
+        ///     sign as the encoded value counts up. It is the delta encoding, and a reader that
+        ///     dropped the zig-zag would still decode 0 correctly, which is why the odd values
+        ///     are pinned too.
+        /// </summary>
+        /// <param name="encoded">The unsigned smart value that the zig-zag is applied to.</param>
+        [Theory]
+        [InlineData(0, 0)]
+        [InlineData(1, -1)]
+        [InlineData(2, 1)]
+        [InlineData(3, -2)]
+        [InlineData(4, 2)]
+        [InlineData(127, -64)]
+        public void ReadSignedSmart_ZigZagDecodesTheUnsignedSmart(byte encoded, int expected)
+        {
+            Assert.Equal(expected, Wire(encoded).ReadSignedSmart());
+        }
+
+        [Fact]
+        public void ReadSignedSmart_TwoByteForm_ZigZagDecodesTheBiasedValue()
+        {
+            // 0x8005 reads as unsigned smart 5, which zig-zag decodes to -3
+            Assert.Equal(-3, Wire(0x80, 0x05).ReadSignedSmart());
+        }
+
+        /// <param name="expected">
+        ///     Special smart is biased by -1 in the one-byte form and -32769 in the two-byte
+        ///     form, so 0x00 and 0x8000 both decode to -1. That collision is deliberate in the
+        ///     format: it is the "absent" sentinel.
+        /// </param>
+        [Theory]
+        [InlineData(new byte[] { 0x00 }, -1)]
+        [InlineData(new byte[] { 0x01 }, 0)]
+        [InlineData(new byte[] { 0x7F }, 126)]
+        [InlineData(new byte[] { 0x80, 0x00 }, -1)]
+        [InlineData(new byte[] { 0xFF, 0xFF }, 32766)]
+        public void ReadSpecialSmart_AppliesTheOneAnd32769Biases(byte[] wire, int expected)
+        {
+            var stream = new JagStream(wire);
+
+            Assert.Equal(expected, stream.ReadSpecialSmart());
+            Assert.Equal(wire.Length, stream.Position);
+        }
+
+        /// <param name="value">
+        ///     127 is the last single-byte form and 128 the first two-byte form, the only
+        ///     boundary the writer has. 32767 is the largest value it can encode.
+        /// </param>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(127)]
+        [InlineData(128)]
+        [InlineData(255)]
+        [InlineData(32767)]
+        public void WriteUnsignedSmart_And_ReadUnsignedSmart_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteUnsignedSmart(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadUnsignedSmart());
+            Assert.Equal(0, stream.Remaining());
+        }
+
+        [Theory]
+        [InlineData(0, 1)]
+        [InlineData(127, 1)]
+        [InlineData(128, 2)]
+        [InlineData(32767, 2)]
+        public void WriteUnsignedSmart_ChoosesTheWidthFromThe127Boundary(int value, int expectedLength)
+        {
+            var stream = new JagStream();
+
+            stream.WriteUnsignedSmart(value);
+
+            Assert.Equal(expectedLength, stream.Length);
+        }
+
+        /// <summary>
+        ///     WriteUnsignedSmart is the only writer among the five smart readers, and it
+        ///     validates nothing. Below 0 it takes the single-byte branch and emits a byte with
+        ///     the high bit set, which the reader then treats as the first half of a two-byte
+        ///     form; at or above 32768 the "+ 32768" wraps the short. Both cases corrupt the
+        ///     stream silently and desynchronise everything after them, which is far worse than
+        ///     the ArgumentOutOfRangeException a range check would have thrown.
+        /// </summary>
+        /// <param name="value">
+        ///     -1 takes the wrong branch; 32768 is the first value the bias wraps, emitting two
+        ///     zero bytes; 65535 wraps to 0x7FFF and reads back as 127 with a byte left over.
+        /// </param>
+        [Theory]
+        [InlineData(-1, "FF")]
+        [InlineData(32768, "00-00")]
+        [InlineData(65535, "7F-FF")]
+        public void WriteUnsignedSmart_OutOfRangeValue_CorruptsTheStreamSilently_DocumentsKnownDefect(int value, string wire)
+        {
+            var stream = new JagStream();
+
+            stream.WriteUnsignedSmart(value);
+
+            //No exception, and the bytes emitted do not encode the value that was asked for
+            Assert.Equal(wire, BitConverter.ToString(stream.ToArray()));
+
+            stream.Seek0();
+            if (value < 0)
+            {
+                //A lone 0xFF is read as the first byte of a two-byte form that is not there
+                Assert.Throws<EndOfStreamException>(() => stream.ReadUnsignedSmart());
+            }
+            else
+            {
+                Assert.NotEqual(value, stream.ReadUnsignedSmart());
+                Assert.Equal(1, stream.Remaining());
+            }
+        }
+
+        /// <summary>
+        ///     Every smart reader peeks through Get, which bounds-checks against Length, except
+        ///     ReadSpecialSmart, which indexes the backing array directly. Past capacity that
+        ///     turns the reader's clean ArgumentOutOfRangeException into an
+        ///     IndexOutOfRangeException raised from inside JagStream, and a caller catching the
+        ///     documented exception will not catch this one.
+        /// </summary>
+        [Fact]
+        public void ReadSpecialSmart_PastCapacity_ThrowsIndexOutOfRange_DocumentsKnownDefect()
+        {
+            var stream = Wire(0x05);
+            stream.ReadSpecialSmart();
+
+            Assert.Throws<IndexOutOfRangeException>(() => stream.ReadSpecialSmart());
+
+            //Contrast: every other smart reader reports the same condition properly
+            var other = Wire(0x05);
+            other.Seek(1);
+            Assert.Throws<ArgumentOutOfRangeException>(() => other.ReadSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => other.ReadUnsignedSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => other.ReadShortSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => other.ReadSignedSmart());
+        }
+
+        /// <summary>
+        ///     The worse half of the same defect. When the stream has spare capacity, the raw
+        ///     index reads a byte that is not part of the stream, the branch is chosen from
+        ///     padding, and the method returns -2 without throwing at all. Nothing downstream
+        ///     can tell that value apart from a genuine one.
+        /// </summary>
+        [Fact]
+        public void ReadSpecialSmart_PastLengthWithinCapacity_ReadsPaddingSilently_DocumentsKnownDefect()
+        {
+            var stream = new JagStream(16);
+            stream.WriteByte(0x0A);
+            stream.Seek0();
+            stream.ReadSpecialSmart();
+            Assert.Equal(1, stream.Position);
+
+            //At EOF, but the raw index finds a zero in the spare capacity and takes the
+            //one-byte branch; ReadByte then returns -1, giving -1 - 1
+            Assert.Equal(-2, stream.ReadSpecialSmart());
+            Assert.Equal(1, stream.Position);
+        }
+
+        [Fact]
+        public void SmartReaders_AtEndOfStream_ThrowArgumentOutOfRange()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JagStream().ReadSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JagStream().ReadUnsignedSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JagStream().ReadShortSmart());
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JagStream().ReadSignedSmart());
+        }
+
+        [Fact]
+        public void ReadSmart_TwoByteFormWithOnlyOneByteLeft_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(0x80).ReadSmart());
+            Assert.Throws<EndOfStreamException>(() => Wire(0x80).ReadUnsignedSmart());
+        }
+
+        #endregion
+
+        #region Strings
+
+        [Fact]
+        public void WriteJagexString_And_ReadJagexString_RoundTripAscii()
+        {
+            var stream = new JagStream();
+
+            stream.WriteJagexString("Dragon longsword");
+            stream.Seek0();
+
+            Assert.Equal("Dragon longsword", stream.ReadJagexString());
+        }
+
+        /// <param name="raw">
+        ///     Sampled across the 128-159 remap table: the first slot, an early one, the middle,
+        ///     and the last. These are the bytes CP-1252 defines and plain Latin-1 does not.
+        /// </param>
+        [Theory]
+        [InlineData(128, (char) 0x20AC)]
+        [InlineData(130, (char) 0x201A)]
+        [InlineData(140, (char) 0x0152)]
+        [InlineData(145, (char) 0x2018)]
+        [InlineData(153, (char) 0x2122)]
+        [InlineData(159, (char) 0x0178)]
+        public void ReadJagexString_ExtendedBand_DecodesThroughTheRemapTable(byte raw, char expected)
+        {
+            Assert.Equal(expected.ToString(), Wire(raw, 0).ReadJagexString());
+        }
+
+        /// <summary>
+        ///     The remap table covers bytes 128-159, but five of those thirty-two slots have no
+        ///     character assigned and collapse to '?'. That is a lossy decode, and because '?'
+        ///     is also a legitimate character there is no way downstream to tell a real question
+        ///     mark from a byte the table could not name.
+        /// </summary>
+        /// <param name="undefined">
+        ///     The five holes in the table. They are the reason the reverse map holds 27 entries
+        ///     rather than 32.
+        /// </param>
+        [Theory]
+        [InlineData(129)]
+        [InlineData(141)]
+        [InlineData(143)]
+        [InlineData(144)]
+        [InlineData(157)]
+        public void ReadJagexString_UndefinedExtendedSlot_DecodesToQuestionMark(byte undefined)
+        {
+            Assert.Equal("?", Wire(undefined, 0).ReadJagexString());
+        }
+
+        /// <summary>
+        ///     Exactly five slots are undefined, no more and no fewer. Adding a character to the
+        ///     table or removing one silently changes how already-shipped cache bytes decode, so
+        ///     the count is asserted rather than assumed.
+        /// </summary>
+        [Fact]
+        public void ReadJagexString_ExtendedBand_HasExactlyFiveUndefinedSlots()
+        {
+            int undefined = 0;
+            for (int b = 128; b < 160; b++)
+                if (Wire((byte) b, 0).ReadJagexString() == "?")
+                    undefined++;
+
+            Assert.Equal(5, undefined);
+        }
+
+        /// <summary>
+        ///     Bytes 160-255 are not remapped at all: they pass through as the Latin-1 code point
+        ///     of the same value. Only the 128-159 window is special, and widening the branch
+        ///     would corrupt every accented character in the cache.
+        /// </summary>
+        [Theory]
+        [InlineData(160)]
+        [InlineData(161)]
+        [InlineData(200)]
+        [InlineData(254)]
+        [InlineData(255)]
+        public void ReadJagexString_AboveTheRemapBand_PassesTheByteThroughUnchanged(byte raw)
+        {
+            string decoded = Wire(raw, 0).ReadJagexString();
+
+            Assert.Equal(1, decoded.Length);
+            Assert.Equal(raw, (int) decoded[0]);
+        }
+
+        /// <summary>
+        ///     Every byte the table names must survive a decode-then-encode cycle, which is what
+        ///     makes the item and object codecs byte-faithful when they re-save a record they
+        ///     only read.
+        /// </summary>
+        [Fact]
+        public void WriteJagexString_ExtendedBand_RoundTripsEveryDefinedSlot()
+        {
+            for (int b = 128; b < 160; b++)
+            {
+                string decoded = Wire((byte) b, 0).ReadJagexString();
+                if (decoded == "?") continue;               // the five undefined slots
+
+                var stream = new JagStream();
+                stream.WriteJagexString(decoded);
+
+                Assert.Equal(new byte[] { (byte) b, 0 }, stream.ToArray());
+            }
+        }
+
+        /// <summary>
+        ///     Decoding is lossy for the five undefined slots, so the byte round trip is broken
+        ///     there: the byte becomes '?' and '?' encodes back as 0x3F. A codec that re-saves a
+        ///     record containing one of these bytes rewrites it, and the change is permanent
+        ///     after one save.
+        /// </summary>
+        [Theory]
+        [InlineData(129)]
+        [InlineData(141)]
+        [InlineData(143)]
+        [InlineData(144)]
+        [InlineData(157)]
+        public void WriteJagexString_UndefinedExtendedSlot_IsNotAByteRoundTrip(byte undefined)
+        {
+            string decoded = Wire(undefined, 0).ReadJagexString();
+            var stream = new JagStream();
+
+            stream.WriteJagexString(decoded);
+
+            Assert.Equal(new byte[] { 0x3F, 0 }, stream.ToArray());
+            Assert.NotEqual(undefined, stream.Get(0));
+        }
+
+        /// <summary>
+        ///     Nothing above U+00FF fits the one-byte encoding, so it degrades to '?' rather than
+        ///     truncating to a low byte. Truncation would produce a plausible wrong character
+        ///     instead of an obviously wrong one.
+        /// </summary>
+        [Theory]
+        [InlineData((char) 0x0100)]
+        [InlineData((char) 0x4E2D)]
+        [InlineData((char) 0xFFFD)]
+        public void WriteJagexString_CharacterAboveTheByteRange_EncodesAsQuestionMark(char c)
+        {
+            var stream = new JagStream();
+
+            stream.WriteJagexString(c.ToString());
+
+            Assert.Equal(new byte[] { 0x3F, 0 }, stream.ToArray());
+        }
+
+        /// <summary>
+        ///     An embedded NUL is dropped rather than written, because writing it would terminate
+        ///     the string early and everything after it would be read as the next field. The
+        ///     result is that the string that comes back is shorter than the one that went in,
+        ///     with no error raised.
+        /// </summary>
+        [Fact]
+        public void WriteJagexString_EmbeddedNul_IsSilentlyDroppedSoTheStringShortens()
+        {
+            var stream = new JagStream();
+
+            stream.WriteJagexString("a\0b");
+
+            Assert.Equal(new byte[] { (byte) 'a', (byte) 'b', 0 }, stream.ToArray());
+
+            stream.Seek0();
+            Assert.Equal("ab", stream.ReadJagexString());
+        }
+
+        /// <summary>
+        ///     An empty string is still one byte on the wire. Emitting nothing would make the
+        ///     next field's first byte the terminator of this one, shifting the whole record.
+        /// </summary>
+        [Fact]
+        public void WriteJagexString_EmptyString_StillEmitsTheTerminator()
+        {
+            var stream = new JagStream();
+
+            stream.WriteJagexString("");
+
+            Assert.Equal(new byte[] { 0 }, stream.ToArray());
+            stream.Seek0();
+            Assert.Equal("", stream.ReadJagexString());
+        }
+
+        [Fact]
+        public void ReadString2_NullTerminatedAscii_DecodesAndConsumesTheTerminator()
+        {
+            var stream = Wire((byte) 'H', (byte) 'i', 0, 42);
+
+            Assert.Equal("Hi", stream.ReadString2());
+            Assert.Equal(3, stream.Position);
+        }
+
+        /// <summary>
+        ///     ReadString2 is the raw reader and ReadJagexString the remapping one. They agree
+        ///     everywhere except the 128-159 window, and there is no WriteString2, so a string
+        ///     read with ReadString2 and written back with WriteJagexString does not round trip.
+        /// </summary>
+        [Theory]
+        [InlineData(128, (char) 0x0080, (char) 0x20AC)]
+        [InlineData(145, (char) 0x0091, (char) 0x2018)]
+        [InlineData(159, (char) 0x009F, (char) 0x0178)]
+        public void ReadString2_And_ReadJagexString_DivergeAcrossTheRemapBand(byte raw, char plain, char remapped)
+        {
+            Assert.Equal(plain.ToString(), Wire(raw, 0).ReadString2());
+            Assert.Equal(remapped.ToString(), Wire(raw, 0).ReadJagexString());
+        }
+
+        [Fact]
+        public void ReadString2_And_ReadJagexString_AgreeOutsideTheRemapBand()
+        {
+            byte[] wire = { (byte) 'a', 0x7F, 200, 255, 0 };
+
+            Assert.Equal(Wire(wire).ReadString2(), Wire(wire).ReadJagexString());
+        }
+
+        [Fact]
+        public void ReadString2_Unterminated_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire((byte) 'A').ReadString2());
+        }
+
+        [Fact]
+        public void ReadJagexString_Unterminated_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire((byte) 'A').ReadJagexString());
+        }
+
+        [Fact]
+        public void ReadString2_ImmediateTerminator_ReturnsEmpty()
+        {
+            var stream = Wire(0);
+
+            Assert.Equal("", stream.ReadString2());
+            Assert.Equal(1, stream.Position);
+        }
+
+        #endregion
+
+        #region Array readers
+
+        [Fact]
+        public void ReadUnsignedByteArray_ReadsEachByteUnsigned()
+        {
+            var stream = Wire(0x00, 0x7F, 0x80, 0xFF);
+
+            Assert.Equal(new[] { 0, 127, 128, 255 }, stream.ReadUnsignedByteArray(4));
+            Assert.Equal(4, stream.Position);
+        }
+
+        [Fact]
+        public void ReadUnsignedByteArray_ZeroSize_ReturnsEmptyAndConsumesNothing()
+        {
+            var stream = Wire(1, 2);
+
+            Assert.Empty(stream.ReadUnsignedByteArray(0));
+            Assert.Equal(0, stream.Position);
+        }
+
+        /// <param name="size">
+        ///     1024 is the last size that goes on the stack and 1025 the first that rents from
+        ///     the pool, so the pair covers both allocation strategies.
+        /// </param>
+        [Theory]
+        [InlineData(1024)]
+        [InlineData(1025)]
+        public void ReadUnsignedByteArray_EitherSideOfThePoolingThreshold_ReadsTheSameValues(int size)
+        {
+            byte[] payload = new byte[size];
+            for (int i = 0; i < size; i++)
+                payload[i] = (byte) (i & 0xFF);
+
+            int[] result = new JagStream(payload).ReadUnsignedByteArray(size);
+
+            Assert.Equal(size, result.Length);
+            Assert.Equal(payload[0], result[0]);
+            Assert.Equal(payload[size - 1], result[size - 1]);
+        }
+
+        [Fact]
+        public void ReadUnsignedByteArray_ShorterThanRequested_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1).ReadUnsignedByteArray(4));
+        }
+
+        [Fact]
+        public void ReadUnsignedShortArray_ReadsBigEndianPairsUnsigned()
+        {
+            var stream = Wire(0x00, 0x01, 0x7F, 0xFF, 0x80, 0x00, 0xFF, 0xFF);
+
+            Assert.Equal(new[] { 1, 32767, 32768, 65535 }, stream.ReadUnsignedShortArray(4));
+            Assert.Equal(8, stream.Position);
+        }
+
+        /// <param name="size">
+        ///     The threshold is on the byte count, not the element count: 1024 shorts is 2048
+        ///     bytes and stays on the stack, 1025 rents.
+        /// </param>
+        [Theory]
+        [InlineData(1024)]
+        [InlineData(1025)]
+        public void ReadUnsignedShortArray_EitherSideOfThePoolingThreshold_ReadsTheSameValues(int size)
+        {
+            var source = new JagStream();
+            for (int i = 0; i < size; i++)
+                source.WriteShort((short) (i & 0xFFFF));
+            source.Seek0();
+
+            int[] result = source.ReadUnsignedShortArray(size);
+
+            Assert.Equal(size, result.Length);
+            Assert.Equal(0, result[0]);
+            Assert.Equal((size - 1) & 0xFFFF, result[size - 1]);
+        }
+
+        [Fact]
+        public void ReadUnsignedShortArray_ShorterThanRequested_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1).ReadUnsignedShortArray(4));
+        }
+
+        /// <summary>
+        ///     Both array readers rent from ArrayPool for large sizes and return the rental on
+        ///     the way out, but the EndOfStreamException path returns before that line, so the
+        ///     buffer is lost to the pool for good. A decoder that hits a run of truncated
+        ///     archives therefore bleeds pooled memory in proportion to the number of failures.
+        ///
+        ///     The success path is asserted first so the test proves the pool really does hand
+        ///     the same array back when the reader behaves, which is what makes the NotSame on
+        ///     the failure path evidence of a leak rather than of pool internals.
+        /// </summary>
+        [Fact]
+        public void ReadUnsignedByteArray_EndOfStreamOnAPooledRead_LeaksTheRental_DocumentsKnownDefect()
+        {
+            const int size = 2048;   // above the 1024 stackalloc threshold, so it rents
+
+            byte[] control = ArrayPool<byte>.Shared.Rent(size);
+            ArrayPool<byte>.Shared.Return(control);
+            new JagStream(new byte[size]).ReadUnsignedByteArray(size);
+            byte[] afterSuccess = ArrayPool<byte>.Shared.Rent(size);
+            Assert.Same(control, afterSuccess);
+            ArrayPool<byte>.Shared.Return(afterSuccess);
+
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2, 3).ReadUnsignedByteArray(size));
+
+            byte[] afterFailure = ArrayPool<byte>.Shared.Rent(size);
+            Assert.NotSame(control, afterFailure);
+            ArrayPool<byte>.Shared.Return(afterFailure);
+        }
+
+        /// <summary>
+        ///     The same leak in the short reader. Its throw sits inside the read loop rather than
+        ///     after it, so it can leak on any truncated element, not only the last.
+        /// </summary>
+        [Fact]
+        public void ReadUnsignedShortArray_EndOfStreamOnAPooledRead_LeaksTheRental_DocumentsKnownDefect()
+        {
+            const int size = 2048;         // 4096 bytes, above the 2048 byte threshold
+            const int byteCount = size * 2;
+
+            byte[] control = ArrayPool<byte>.Shared.Rent(byteCount);
+            ArrayPool<byte>.Shared.Return(control);
+            new JagStream(new byte[byteCount]).ReadUnsignedShortArray(size);
+            byte[] afterSuccess = ArrayPool<byte>.Shared.Rent(byteCount);
+            Assert.Same(control, afterSuccess);
+            ArrayPool<byte>.Shared.Return(afterSuccess);
+
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2, 3).ReadUnsignedShortArray(size));
+
+            byte[] afterFailure = ArrayPool<byte>.Shared.Rent(byteCount);
+            Assert.NotSame(control, afterFailure);
+            ArrayPool<byte>.Shared.Return(afterFailure);
+        }
+
+        #endregion
+
+        #region Get, Skip, sub-streams and bulk bytes
+
+        [Fact]
+        public void Get_ReturnsTheByteWithoutMovingPosition()
+        {
+            var stream = Wire(10, 20, 30);
+            stream.Seek(2);
+
+            Assert.Equal(10, stream.Get(0));
+            Assert.Equal(30, stream.Get(2));
+            Assert.Equal(2, stream.Position);
+        }
+
+        /// <param name="pos">
+        ///     -1 and Length are the two off-by-one misses. Get bounds-checks against Length, not
+        ///     capacity, so index Length is out of range even though the array holds a byte there.
+        /// </param>
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(3)]
+        [InlineData(int.MaxValue)]
+        public void Get_OutOfRange_ThrowsArgumentOutOfRange(int pos)
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => Wire(1, 2, 3).Get(pos));
+        }
+
+        [Fact]
+        public void Get_WithinCapacityButPastLength_IsStillOutOfRange()
+        {
+            var stream = new JagStream(64);
+            stream.WriteByte(1);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.Get(1));
+        }
+
+        [Fact]
+        public void Skip_WithinBounds_AdvancesPosition()
+        {
+            var stream = Wire(1, 2, 3, 4);
+
+            stream.Skip(2);
+
+            Assert.Equal(2, stream.Position);
+            Assert.Equal(3, stream.ReadByte());
+        }
+
+        /// <summary>
+        ///     Skip validates nothing. It accepts a negative argument as a rewind, and it clamps
+        ///     an overshoot in either direction rather than reporting it, so a codec that skips a
+        ///     payload whose declared length is corrupt lands quietly at the end of the stream
+        ///     and carries on decoding as though it had skipped the right amount. Seek, given the
+        ///     same out-of-range destination, throws.
+        /// </summary>
+        /// <param name="skip">
+        ///     A forward overshoot, a negative rewind, and a negative undershoot past the start.
+        /// </param>
+        [Theory]
+        [InlineData(99, 3)]
+        [InlineData(-1, 0)]
+        [InlineData(-99, 0)]
+        [InlineData(int.MinValue, 0)]
+        public void Skip_OutOfBounds_ClampsSilentlyInsteadOfThrowing_DocumentsKnownDefect(int skip, int expectedPosition)
+        {
+            var stream = Wire(1, 2, 3);
+
+            stream.Skip(skip);
+
+            Assert.Equal(expectedPosition, stream.Position);
+
+            //Seek rejects exactly what Skip absorbs
+            Assert.Throws<IOException>(() => stream.Seek(skip > 0 ? skip : -1));
+        }
+
+        /// <summary>
+        ///     Clear zeroes the buffer and rewinds, but it then sets Length to the full capacity
+        ///     rather than to zero, so a "cleared" stream is longer than it was and reads back as
+        ///     a run of zero bytes instead of being empty. Reusing a stream by clearing it hands
+        ///     the next caller a padded stream, and every Remaining or Length check on it is
+        ///     wrong.
+        /// </summary>
+        [Fact]
+        public void Clear_GrowsTheStreamToCapacityInsteadOfEmptyingIt_DocumentsKnownDefect()
+        {
+            var stream = new JagStream(16);
+            stream.WriteByte(1);
+            stream.WriteByte(2);
+            Assert.Equal(2, stream.Length);
+
+            stream.Clear();
+
+            Assert.Equal(0, stream.Position);
+            Assert.Equal(new byte[16], stream.ToArray());
+
+            //The name says empty; the stream is now capacity-long
+            Assert.Equal(16, stream.Length);
+            Assert.Equal(16, stream.Remaining());
+            Assert.Equal(0, stream.ReadByte());
+        }
+
+        [Fact]
+        public void GetSubStream_TakesTheNextBytesAndAdvancesTheParent()
+        {
+            var parent = Wire(1, 2, 3, 4, 5);
+            parent.Seek(1);
+
+            JagStream sub = parent.GetSubStream(3);
+
+            Assert.Equal(new byte[] { 2, 3, 4 }, sub.ToArray());
+            Assert.Equal(0, sub.Position);
+            Assert.Equal(4, parent.Position);
+        }
+
+        /// <summary>
+        ///     A sub-stream is a copy, not a view. Codecs decode an archive from a sub-stream and
+        ///     then edit it; if the slice aliased its parent, that edit would reach back into the
+        ///     container the slice came from.
+        /// </summary>
+        [Fact]
+        public void GetSubStream_IsIsolatedFromTheParentBuffer()
+        {
+            var parent = Wire(1, 2, 3, 4);
+            JagStream sub = parent.GetSubStream(2);
+
+            parent.GetBuffer()[0] = 99;
+
+            Assert.Equal(1, sub.Get(0));
+        }
+
+        [Fact]
+        public void GetSubStream_WithAPointer_SeeksFirst()
+        {
+            var parent = Wire(1, 2, 3, 4, 5);
+
+            JagStream sub = parent.GetSubStream(2, 3);
+
+            Assert.Equal(new byte[] { 4, 5 }, sub.ToArray());
+            Assert.Equal(5, parent.Position);
+        }
+
+        [Fact]
+        public void GetSubStream_PastTheEnd_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2).GetSubStream(3));
+        }
+
+        /// <summary>
+        ///     The pointer overload seeks before it slices, so an out-of-range pointer surfaces
+        ///     as the Seek failure (IOException) rather than the slice failure
+        ///     (EndOfStreamException). Two different exceptions for what a caller experiences as
+        ///     one bad request.
+        /// </summary>
+        [Fact]
+        public void GetSubStream_WithAPointerPastTheEnd_ThrowsIOExceptionNotEndOfStream()
+        {
+            Assert.Throws<IOException>(() => Wire(1, 2).GetSubStream(1, 99));
+        }
+
+        [Fact]
+        public void ReadBytes_ReturnsACopyAndAdvances()
+        {
+            var stream = Wire(1, 2, 3, 4);
+            stream.Seek(1);
+
+            byte[] taken = stream.ReadBytes(2);
+
+            Assert.Equal(new byte[] { 2, 3 }, taken);
+            Assert.Equal(3, stream.Position);
+
+            taken[0] = 99;
+            Assert.Equal(2, stream.Get(1));
+        }
+
+        [Fact]
+        public void ReadBytes_ZeroLength_ReturnsEmptyAndConsumesNothing()
+        {
+            var stream = Wire(1, 2);
+
+            Assert.Empty(stream.ReadBytes(0));
+            Assert.Equal(0, stream.Position);
+        }
+
+        [Fact]
+        public void ReadBytes_MoreThanRemaining_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2).ReadBytes(3));
+        }
+
+        /// <param name="count">Every width from a single byte up to the full eight-byte long.</param>
+        [Theory]
+        [InlineData(1, 0x78L, "78")]
+        [InlineData(2, 0x5678L, "56-78")]
+        [InlineData(3, 0x345678L, "34-56-78")]
+        [InlineData(4, 0x12345678L, "12-34-56-78")]
+        [InlineData(8, 0x0123456789ABCDEFL, "01-23-45-67-89-AB-CD-EF")]
+        public void WriteBytes_WritesTheLowCountBytesBigEndian(int count, long value, string expected)
+        {
+            var stream = new JagStream();
+
+            stream.WriteBytes(count, value);
+
+            Assert.Equal(expected, BitConverter.ToString(stream.ToArray()));
+        }
+
+        [Fact]
+        public void WriteBytes_ZeroCount_WritesNothing()
+        {
+            var stream = new JagStream();
+
+            stream.WriteBytes(0, 0x1234L);
+
+            Assert.Equal(0, stream.Length);
+        }
+
+        /// <summary>
+        ///     Past eight bytes the shift distance exceeds the width of a long, and C# masks the
+        ///     shift count to six bits rather than yielding zero. The extra leading bytes that a
+        ///     wider request should have zero-filled therefore repeat the value's low byte, and
+        ///     the result is not the big-endian encoding the method promises. Nothing in the repo
+        ///     calls it with a count above eight today, which is the only reason this has not
+        ///     bitten.
+        /// </summary>
+        [Fact]
+        public void WriteBytes_CountAboveEight_WrapsTheShiftInsteadOfZeroPadding_DocumentsKnownDefect()
+        {
+            var stream = new JagStream();
+
+            stream.WriteBytes(9, 0x0123456789ABCDEFL);
+
+            //A correct nine-byte big-endian encoding would be 00-01-23-45-67-89-AB-CD-EF
+            Assert.Equal("EF-01-23-45-67-89-AB-CD-EF", BitConverter.ToString(stream.ToArray()));
         }
 
         #endregion
