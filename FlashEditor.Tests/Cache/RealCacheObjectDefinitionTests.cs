@@ -321,6 +321,175 @@ namespace FlashEditor.Tests.Cache
         }
 
         // ===================================================================
+        //  Bare flags
+        // ===================================================================
+
+        /// <summary>
+        ///     Every presence-only opcode on an object definition other than the walk-blocking
+        ///     pair, with the accessor that reads and writes it phrased as "the stream carries
+        ///     this opcode".
+        /// </summary>
+        /// <remarks>
+        ///     Opcodes 17 and 18 are left out because they are two opcodes behind one property and
+        ///     are covered by <see cref="Walkable_SurvivesAnEditThroughEncodeAndDecode"/>. Opcode
+        ///     64 reads inverted - its presence suppresses the shadow - which is why the table
+        ///     states carriage rather than the raw property value.
+        /// </remarks>
+        private static readonly (int Opcode, string Name,
+            Func<ObjectDefinition, bool> Carried, Action<ObjectDefinition, bool> SetCarried)[] BareFlags =
+        {
+            (22,  "isClipped",           d => d.isClipped,            (d, on) => d.isClipped = on),
+            (62,  "flipped",             d => d.flipped,              (d, on) => d.flipped = on),
+            (64,  "castsShadow",         d => !d.castsShadow,         (d, on) => d.castsShadow = !on),
+            (73,  "obstructsWheelchair", d => d.obstructsWheelchair,  (d, on) => d.obstructsWheelchair = on),
+            (74,  "isSolid",             d => d.isSolid,              (d, on) => d.isSolid = on),
+            (82,  "mergeNormals",        d => d.mergeNormals,         (d, on) => d.mergeNormals = on),
+            (88,  "noShadow",            d => d.noShadow,             (d, on) => d.noShadow = on),
+            (89,  "noDecor",             d => d.noDecor,              (d, on) => d.noDecor = on),
+            (90,  "unknownFlag90",       d => d.unknownFlag90,        (d, on) => d.unknownFlag90 = on),
+            (91,  "unknownFlag91",       d => d.unknownFlag91,        (d, on) => d.unknownFlag91 = on),
+            (96,  "unknownFlag96",       d => d.unknownFlag96,        (d, on) => d.unknownFlag96 = on),
+            (97,  "unknownFlag97",       d => d.unknownFlag97,        (d, on) => d.unknownFlag97 = on),
+            (98,  "unknownFlag98",       d => d.unknownFlag98,        (d, on) => d.unknownFlag98 = on),
+            (105, "unknownFlag105",      d => d.unknownFlag105,       (d, on) => d.unknownFlag105 = on),
+            (168, "unknownFlag168",      d => d.unknownFlag168,       (d, on) => d.unknownFlag168 = on),
+            (169, "unknownFlag169",      d => d.unknownFlag169,       (d, on) => d.unknownFlag169 = on),
+            (177, "unknownFlag177",      d => d.unknownFlag177,       (d, on) => d.unknownFlag177 = on),
+            (189, "unknownFlag189",      d => d.unknownFlag189,       (d, on) => d.unknownFlag189 = on),
+        };
+
+        /// <summary>
+        ///     Turning a bare flag off removes its opcode, so the next encode does not carry it.
+        /// </summary>
+        /// <remarks>
+        ///     This is the defect the flag properties exist to fix, and the same one
+        ///     <see cref="ObjectDefinition.walkable"/> was fixed for first. The encoder replays the
+        ///     opcodes the decoder recorded, so a flag held in an ordinary field could be cleared
+        ///     and then written straight back out from the recording: the grid row would change,
+        ///     the save would report success and the definition in the cache would be untouched.
+        /// </remarks>
+        [Fact]
+        public void ABareFlagTurnedOff_IsRemovedFromTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                //Opcode 14 gives the definition something to keep, so a dropped flag is
+                //distinguishable from an encoder that lost the whole record.
+                ObjectDefinition definition = ObjectDefinition.DecodeFromStream(
+                    new JagStream(new byte[] { 14, 2, (byte)opcode, 0 }));
+                Assert.True(carried(definition), $"{name}: opcode {opcode} did not decode as carried");
+
+                setCarried(definition, false);
+
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 14, 2, 0 }, encoded);
+
+                ObjectDefinition reread = ObjectDefinition.DecodeFromStream(new JagStream(encoded));
+                Assert.False(carried(reread), $"{name}: opcode {opcode} came back after being cleared");
+                Assert.Equal(2, reread.sizeX);
+            }
+        }
+
+        /// <summary>
+        ///     Turning a bare flag on emits its opcode, even on a definition that never carried it.
+        /// </summary>
+        /// <remarks>
+        ///     The other half of the same defect. A flag read off the opcode hit map has to be
+        ///     written to that map when it is set, or nothing the user ticks reaches the file.
+        /// </remarks>
+        [Fact]
+        public void ABareFlagTurnedOn_IsAppendedToTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                ObjectDefinition definition = ObjectDefinition.DecodeFromStream(
+                    new JagStream(new byte[] { 14, 2, 0 }));
+                Assert.False(carried(definition), $"{name}: opcode {opcode} was carried by a stream without it");
+
+                setCarried(definition, true);
+
+                //14 was recorded so it keeps its place; the new opcode is appended after it.
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 14, 2, (byte)opcode, 0 }, encoded);
+
+                ObjectDefinition reread = ObjectDefinition.DecodeFromStream(new JagStream(encoded));
+                Assert.True(carried(reread), $"{name}: opcode {opcode} did not survive being set");
+            }
+        }
+
+        /// <summary>
+        ///     A definition that never carried a bare flag reports the client-side default for it
+        ///     and encodes without it.
+        /// </summary>
+        /// <remarks>
+        ///     The flags are views over the opcode hit map rather than fields with initialisers, so
+        ///     the default now has to come out of an absent opcode. Get the polarity wrong for one
+        ///     of them and the encoder invents that opcode for every definition in the cache -
+        ///     56,199 records grow by a byte the first time anyone saves one.
+        /// </remarks>
+        [Fact]
+        public void ADefinitionThatNeverCarriedABareFlag_KeepsTheDefaultAndEncodesWithoutIt()
+        {
+            ObjectDefinition definition = ObjectDefinition.DecodeFromStream(new JagStream(new byte[] { 14, 2, 0 }));
+
+            //castsShadow is the only one the client assumes true, so it is the only inverted view.
+            Assert.True(definition.castsShadow);
+            foreach ((int opcode, string name, var carried, _) in BareFlags)
+                Assert.False(carried(definition), $"{name}: opcode {opcode} reported as carried by a stream without it");
+
+            Assert.Equal(new byte[] { 14, 2, 0 }, definition.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     A definition carrying every bare flag re-encodes to the bytes it came from when
+        ///     nothing is edited.
+        /// </summary>
+        /// <remarks>
+        ///     The regression guard for the two tests above. Making a flag droppable is only safe
+        ///     if nothing drops on its own: no setter runs for a definition the user merely opened,
+        ///     so the recorded stream has to replay untouched, opcode order included. The stream
+        ///     below is deliberately not in ascending order.
+        /// </remarks>
+        [Fact]
+        public void BareFlagsLeftUntouched_ReEncodeToTheirStoredBytes()
+        {
+            byte[] stream =
+            {
+                189, 22, 14, 2, 62, 64, 73, 74, 82, 88, 89, 90, 91,
+                96, 97, 98, 105, 168, 169, 177, 0
+            };
+
+            AssertConsumedExactlyAndReEncoded(stream, def =>
+            {
+                Assert.True(def.isClipped);
+                Assert.False(def.castsShadow);
+                Assert.True(def.unknownFlag189);
+                Assert.Equal(2, def.sizeX);
+            });
+        }
+
+        /// <summary>
+        ///     Clearing a bare flag removes every occurrence of its opcode, not merely the last.
+        /// </summary>
+        /// <remarks>
+        ///     Repeated opcodes are replayed from the bytes they were read from, which is what
+        ///     keeps the definitions that store one twice byte-exact. Dropping only the last
+        ///     occurrence would leave an earlier copy in the stream and the client would still read
+        ///     the flag as set, so the edit would look applied and do nothing.
+        /// </remarks>
+        [Fact]
+        public void ClearingARepeatedBareFlag_RemovesEveryOccurrence()
+        {
+            ObjectDefinition definition = ObjectDefinition.DecodeFromStream(
+                new JagStream(new byte[] { 22, 14, 2, 22, 0 }));
+            Assert.True(definition.isClipped);
+
+            definition.isClipped = false;
+
+            Assert.Equal(new byte[] { 14, 2, 0 }, definition.Encode().ToArray());
+        }
+
+        // ===================================================================
         //  Format facts, pinned without needing the cache
         // ===================================================================
 

@@ -62,8 +62,146 @@ namespace FlashEditor.Definitions
                 }
             }
         }
-        /// <summary>Whether the object contributes to the collision map.</summary>
-        public bool isClipped = false;
+        /*───────────────────────────────────────────*
+         *  ▌  Bare flags (presence-only opcodes)   ▐
+         *───────────────────────────────────────────*/
+        /* Every flag below is a view over the opcode hit map, for the reason set out on
+           <see cref="walkable"/>: the file states a flag only by carrying its opcode, no payload
+           is involved, and Encode writes an opcode back because the definition carried it. A
+           plain field would be read by the grid, edited, and then overruled by the replayed
+           opcode on save - the row changes, the save reports success, the cache does not move.
+           Turning a flag off has to call DropOpcode so the recorded stream forgets it too;
+           turning it on sets the hit map, which is what Encode reads.
+
+           Reading the value off the hit map also fixes what a definition that never carried the
+           opcode reports: exactly the value the client assumes in its absence. That is why 64 is
+           inverted - the shadow is cast unless the opcode says otherwise - and the rest are not. */
+
+        /// <summary>Whether the object contributes to the collision map (opcode 22).</summary>
+        public bool isClipped
+        {
+            get => decoded[22];
+            set { if (value) decoded[22] = true; else DropOpcode(22); }
+        }
+
+        /// <summary>Whether the model is mirrored on the X axis (opcode 62).</summary>
+        public bool flipped
+        {
+            get => decoded[62];
+            set { if (value) decoded[62] = true; else DropOpcode(62); }
+        }
+
+        /// <summary>Whether the object casts a shadow (opcode 64 suppresses it).</summary>
+        public bool castsShadow
+        {
+            get => !decoded[64];
+            set { if (value) DropOpcode(64); else decoded[64] = true; }
+        }
+
+        /// <summary>Whether the object blocks a wheelchair route (opcode 73).</summary>
+        public bool obstructsWheelchair
+        {
+            get => decoded[73];
+            set { if (value) decoded[73] = true; else DropOpcode(73); }
+        }
+
+        /// <summary>Whether clipping is ignored on an alternative route (opcode 74).</summary>
+        public bool isSolid
+        {
+            get => decoded[74];
+            set { if (value) decoded[74] = true; else DropOpcode(74); }
+        }
+
+        /// <summary>Whether adjoining model normals are merged (opcode 82).</summary>
+        public bool mergeNormals
+        {
+            get => decoded[82];
+            set { if (value) decoded[82] = true; else DropOpcode(82); }
+        }
+
+        /// <summary>Whether the object is excluded from the shadow pass (opcode 88).</summary>
+        public bool noShadow
+        {
+            get => decoded[88];
+            set { if (value) decoded[88] = true; else DropOpcode(88); }
+        }
+
+        /// <summary>Whether the object suppresses decorative overlays (opcode 89).</summary>
+        public bool noDecor
+        {
+            get => decoded[89];
+            set { if (value) decoded[89] = true; else DropOpcode(89); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3870</c> (opcode 90).</summary>
+        public bool unknownFlag90
+        {
+            get => decoded[90];
+            set { if (value) decoded[90] = true; else DropOpcode(90); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3873</c> (opcode 91).</summary>
+        public bool unknownFlag91
+        {
+            get => decoded[91];
+            set { if (value) decoded[91] = true; else DropOpcode(91); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3924</c> (opcode 96).</summary>
+        public bool unknownFlag96
+        {
+            get => decoded[96];
+            set { if (value) decoded[96] = true; else DropOpcode(96); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3866</c> (opcode 97).</summary>
+        public bool unknownFlag97
+        {
+            get => decoded[97];
+            set { if (value) decoded[97] = true; else DropOpcode(97); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3923</c> (opcode 98).</summary>
+        public bool unknownFlag98
+        {
+            get => decoded[98];
+            set { if (value) decoded[98] = true; else DropOpcode(98); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3906</c> (opcode 105).</summary>
+        public bool unknownFlag105
+        {
+            get => decoded[105];
+            set { if (value) decoded[105] = true; else DropOpcode(105); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3894</c> (opcode 168).</summary>
+        public bool unknownFlag168
+        {
+            get => decoded[168];
+            set { if (value) decoded[168] = true; else DropOpcode(168); }
+        }
+
+        /// <summary>Unnamed render flag, build-637 <c>aBoolean3845</c> (opcode 169).</summary>
+        public bool unknownFlag169
+        {
+            get => decoded[169];
+            set { if (value) decoded[169] = true; else DropOpcode(169); }
+        }
+
+        /// <summary>Unnamed render flag (opcode 177).</summary>
+        public bool unknownFlag177
+        {
+            get => decoded[177];
+            set { if (value) decoded[177] = true; else DropOpcode(177); }
+        }
+
+        /// <summary>Unnamed render flag (opcode 189).</summary>
+        public bool unknownFlag189
+        {
+            get => decoded[189];
+            set { if (value) decoded[189] = true; else DropOpcode(189); }
+        }
         /// <summary>
         /// Ambient lighting term for the 3D model - a read-only view over opcode 29.
         /// </summary>
@@ -147,29 +285,17 @@ namespace FlashEditor.Definitions
         private int obstructsGround = -1;   // 23 / 103
         private bool randomAnimStart;       // 27
         private sbyte[] texturePriorities;  // 42
-        private bool flipped;               // 62
-        private bool castsShadow = true;    // 64  (aBoolean3872, default true)
         private int mapSceneId;             // 68  (may not exist in 633, kept for safety)
         private byte minimapForceClip;      // 69  (cflag)
         private int offsetX;                // 70
         private int offsetY;                // 71
         private int offsetZ;                // 72  (anInt2946, signed short << 2)
-        private bool obstructsWheelchair;   // 73  (secondBool)
-        private bool isSolid;               // 74  (ignoreClipOnAlternativeRoute)
         private int unknownByte75;          // 75  (anInt2975, 1 UByte - not a flag)
         private int decorDisplacement;      // 28  (anInt3892)
         private int ambientLighting;        // 29  (anInt3878)
         private int contrastLighting;       // 39  (anInt3840)
         private byte[] unknownArray3;       // 44
         private byte[] unknownArray4;       // 45
-        private bool mergeNormals;          // 82  (aBoolean3891)
-        private bool noShadow;              // 88  (aBoolean3853 = false)
-        private bool noDecor;               // 89  (aBoolean3895 = false)
-        private bool unknownFlag90;         // 90  (aBoolean3870)
-        private bool unknownFlag91;         // 91  (aBoolean3873)
-        private bool unknownFlag96;         // 96  (aBoolean3924)
-        private bool unknownFlag97;         // 97  (aBoolean3866)
-        private bool unknownFlag98;         // 98  (aBoolean3923)
         private int cursorType1;            // 99  (anInt3857 = UByte)
         private int cursorSprite1;          // 99  (anInt3835 = UShort)
         private int cursorType2;            // 100 (anInt3844 = UByte)
@@ -177,7 +303,6 @@ namespace FlashEditor.Definitions
         private int ambientVolume;          // 101 (anInt3865)
         private int mapAreaId;              // 102 (anInt3838)
         private int soundVolume;            // 104 (anInt3850)
-        private bool unknownFlag105;        // 105 (aBoolean3906)
         private int[] animationIds;         // 106 (animations[])
         private int[] animationWeights;     // 106 (anIntArray3869[])
         private int mapIconId;              // 107 (anInt3851)
@@ -190,15 +315,11 @@ namespace FlashEditor.Definitions
         private int unknownShort165;        // 165 (anInt3875)
         private int unknownShort166;        // 166 (anInt3877)
         private int unknownShort167;        // 167 (anInt3921)
-        private bool unknownFlag168;        // 168 (aBoolean3894)
-        private bool unknownFlag169;        // 169 (aBoolean3845)
         private int unknownSmart170;        // 170
         private int unknownSmart171;        // 171
         private int unknownShort173a;       // 173
         private int unknownShort173b;       // 173
-        private bool unknownFlag177;        // 177
         private int unknownByte178;         // 178
-        private bool unknownFlag189;        // 189
         private int[] extraOpcodeArray;     // 190-195
 
         /// <summary>Raw bytes of the extra model group block from opcode 5 (for round-trip encoding).</summary>
@@ -346,7 +467,13 @@ namespace FlashEditor.Definitions
 
                 /* ─────────────── clip & contour flags ─────────────── */
                 case 21: contourGroundType = 1; return;             // flag only (0 bytes)
-                case 22: isClipped = true; return;                  // flag only (aBoolean3867)
+
+                /* The bare flags - 22, 62, 64, 73, 74, 82, 88-91, 96-98, 105, 168, 169, 177 and
+                   189 - have no payload and no case body. Their properties read straight off the
+                   opcode hit map, which the decode loop has already written, so there is nothing
+                   left to assign. Going through the property here would be worse than redundant:
+                   its setter drops opcodes from the recorded stream. */
+                case 22: return;                                    // isClipped (aBoolean3867)
                 case 23: obstructsGround = 1; return;              // flag only (thirdInt = 1)
                 case 24: animationId = buf.ReadUnsignedShort(); return; // readBigSmart = UShort for <670
                 case 27: clipType = 1; return;                     // flag only
@@ -432,8 +559,8 @@ namespace FlashEditor.Definitions
                     }
 
                 /* ─────────────── render-side flags ─────────────── */
-                case 62: flipped = true; return;                    // mirror on X
-                case 64: castsShadow = false; return;               // disable shadow
+                case 62: return;                                    // flipped - mirror on X
+                case 64: return;                                    // castsShadow off
                 case 65: scaleX = buf.ReadUnsignedShort(); return;  // 2 bytes
                 case 66: scaleY = buf.ReadUnsignedShort(); return;  // 2 bytes
                 case 67: scaleZ = buf.ReadUnsignedShort(); return;  // 2 bytes
@@ -445,8 +572,8 @@ namespace FlashEditor.Definitions
                 case 71: offsetY = buf.ReadShort() << 2; return;    // 2 bytes
                 case 72: offsetZ = buf.ReadShort() << 2; return;    // 2 bytes (anInt2946)
 
-                case 73: obstructsWheelchair = true; return;        // flag only
-                case 74: isSolid = true; return;                    // flag only
+                case 73: return;                                    // obstructsWheelchair
+                case 74: return;                                    // isSolid
                 case 75: unknownByte75 = buf.ReadUnsignedByte(); return; // 1 byte (anInt2975)
 
                 /*──────── morph (77 / 92) ────────*/
@@ -488,11 +615,11 @@ namespace FlashEditor.Definitions
                     contourGroundType = 2;
                     contourGroundParam = 256 * buf.ReadByte();      // 1 byte
                     break;
-                case 82: mergeNormals = true; break;                // flag only
-                case 88: noShadow = true; break;                    // flag only (aBoolean3853 = false)
-                case 89: noDecor = true; break;                     // flag only (aBoolean3895 = false)
-                case 90: unknownFlag90 = true; break;               // flag only
-                case 91: unknownFlag91 = true; break;               // flag only
+                case 82: break;                                     // mergeNormals
+                case 88: break;                                     // noShadow (aBoolean3853)
+                case 89: break;                                     // noDecor (aBoolean3895)
+                case 90: break;                                     // unknownFlag90
+                case 91: break;                                     // unknownFlag91
                 case 93:
                     contourGroundType = 3;
                     contourGroundParam = buf.ReadUnsignedShort();    // 2 bytes
@@ -502,9 +629,9 @@ namespace FlashEditor.Definitions
                     contourGroundType = 5;
                     contourGroundParam = buf.ReadShort();            // 2 bytes (signed)
                     break;
-                case 96: unknownFlag96 = true; break;               // flag only
-                case 97: unknownFlag97 = true; break;               // flag only
-                case 98: unknownFlag98 = true; break;               // flag only
+                case 96: break;                                     // unknownFlag96
+                case 97: break;                                     // unknownFlag97
+                case 98: break;                                     // unknownFlag98
 
                 /*──────── cursor overrides (99 / 100) ────────*/
                 case 99:
@@ -521,7 +648,7 @@ namespace FlashEditor.Definitions
                 case 102: mapAreaId = buf.ReadUnsignedShort(); break;  // 2 bytes
                 case 103: obstructsGround = 0; break;                 // flag only (thirdInt = 0)
                 case 104: soundVolume = buf.ReadByte(); break;         // 1 byte
-                case 105: unknownFlag105 = true; break;                // flag only
+                case 105: break;                                       // unknownFlag105
 
                 /*──────── animation table (106) ────────*/
                 case 106:
@@ -569,17 +696,17 @@ namespace FlashEditor.Definitions
                 case 165: unknownShort165 = buf.ReadShort(); break; // 2 bytes (signed)
                 case 166: unknownShort166 = buf.ReadShort(); break; // 2 bytes (signed)
                 case 167: unknownShort167 = buf.ReadUnsignedShort(); break; // 2 bytes
-                case 168: unknownFlag168 = true; break;             // flag only
-                case 169: unknownFlag169 = true; break;             // flag only
+                case 168: break;                                    // unknownFlag168
+                case 169: break;                                    // unknownFlag169
                 case 170: unknownSmart170 = buf.ReadUnsignedSmart(); break; // 1-2 bytes
                 case 171: unknownSmart171 = buf.ReadUnsignedSmart(); break; // 1-2 bytes
                 case 173:
                     unknownShort173a = buf.ReadUnsignedShort();     // 2 bytes
                     unknownShort173b = buf.ReadUnsignedShort();     // 2 bytes
                     break;
-                case 177: unknownFlag177 = true; break;             // flag only
+                case 177: break;                                    // unknownFlag177
                 case 178: unknownByte178 = buf.ReadByte(); break;   // 1 byte
-                case 189: unknownFlag189 = true; break;             // flag only
+                case 189: break;                                    // unknownFlag189
 
                 case int e when (e >= 190 && e < 196):
                     {
@@ -706,8 +833,13 @@ namespace FlashEditor.Definitions
                 Emit(19, () => o.WriteByte(category));
 
             /*─── 21 – contour ground type 1 (flag only) ──────────────*/
+            /* Every bare flag is emitted from the hit map alone. The properties behind them are
+               views over that map, so a field test would be the same question asked twice; more
+               to the point, clearing one drops the opcode from the map AND from the recorded
+               stream, which is the only thing that stops WriteRecordsInStreamOrder replaying a
+               flag the user has just turned off. */
             if (decoded[21]) Emit(21);
-            if (decoded[22] || isClipped) Emit(22);
+            if (decoded[22]) Emit(22);                  // isClipped
             if (decoded[23]) Emit(23);
             if (decoded[24] || animationId != -1) Emit(24, () => o.WriteShort(animationId));
 
@@ -768,8 +900,8 @@ namespace FlashEditor.Definitions
                 Emit(45, () => o.WriteShort(EncodeBitmapArray(unknownArray4)));
 
             /*─── render-side flags 62-75 ─────────────────────────────*/
-            if (decoded[62] || flipped) Emit(62);
-            if (decoded[64] || !castsShadow) Emit(64);
+            if (decoded[62]) Emit(62);                  // flipped
+            if (decoded[64]) Emit(64);                  // castsShadow off
             if (decoded[65] || scaleX != 0) Emit(65, () => o.WriteShort(scaleX));
             if (decoded[66] || scaleY != 0) Emit(66, () => o.WriteShort(scaleY));
             if (decoded[67] || scaleZ != 0) Emit(67, () => o.WriteShort(scaleZ));
@@ -781,8 +913,8 @@ namespace FlashEditor.Definitions
             if (decoded[71] || offsetY != 0) Emit(71, () => o.WriteShort((short)(offsetY >> 2)));
             if (decoded[72]) Emit(72, () => o.WriteShort((short)(offsetZ >> 2)));
 
-            if (decoded[73] || obstructsWheelchair) Emit(73);
-            if (decoded[74] || isSolid) Emit(74);
+            if (decoded[73]) Emit(73);                  // obstructsWheelchair
+            if (decoded[74]) Emit(74);                  // isSolid
             if (decoded[75]) Emit(75, () => o.WriteByte((byte)unknownByte75));
 
             /*─── morph table (77 / 92) ───────────────────────────────*/
