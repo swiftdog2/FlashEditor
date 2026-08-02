@@ -83,6 +83,11 @@ namespace FlashEditor.cache {
         /// <summary>
         /// Writes a file contained in an archive to the cache.
         /// </summary>
+        /// <remarks>
+        ///     A write whose payload turns out to be identical to the one already stored is
+        ///     dropped entirely - see the unchanged path below - so opening an archive and saving
+        ///     it without editing anything leaves the dat2 and the reference table untouched.
+        /// </remarks>
         /// <param name="indexId">The index id</param>
         /// <param name="archiveId">The archive within the index</param>
         /// <param name="fileId">The file id within the archive</param>
@@ -97,8 +102,13 @@ namespace FlashEditor.cache {
             RSReferenceTable table = GetReferenceTable(indexId);
             RSArchiveEntry archiveEntry;
 
+            /* Whether the table already describes this archive at all. An archive it has never
+               heard of has to be written even when its payload matches the bytes on disk,
+               because the entry announcing it is the thing that is missing. */
+            bool entryExisted = table.archiveEntries.ContainsKey(archiveId);
+
             //Retrieve the appropriate archive entry in the reference table
-            if (table.archiveEntries.ContainsKey(archiveId)) {
+            if (entryExisted) {
                 archiveEntry = table.GetArchiveEntry(archiveId);
                 Debug("Found archive entry for RefTable(index " + indexId + ", archive " + archiveId + ", file " + fileId + ")", LOG_DETAIL.INSANE);
             }
@@ -113,12 +123,6 @@ namespace FlashEditor.cache {
             //has to describe what was encoded, not what is about to be.
             int[] existingFileIds = archiveEntry.GetFileEntries().Keys.ToArray();
 
-            //Add a file entry if one does not exist
-            if (archiveEntry.GetFileEntry(fileId) == null) {
-                archiveEntry.PutFileEntry(fileId, new RSFileEntry(fileId));
-                Debug("Added new file entry " + fileId, LOG_DETAIL.INSANE);
-            }
-
             RSContainer container = GetContainer(indexId, archiveId);
 
             //Generate a new container, if necessary
@@ -127,7 +131,14 @@ namespace FlashEditor.cache {
                 container = new RSContainer(indexId, archiveId, RSConstants.GZIP_COMPRESSION, null, 1337);
             }
 
-            container.Dirty = true;
+            /* The payload the stored bytes currently encode, borrowed rather than copied: the
+               archive encodes into a fresh stream, so this one is not disturbed and nothing has
+               to be retained beyond the call. Null when the container was built here or has
+               since been re-encoded, in which case there is no baseline to compare against and
+               the write proceeds unconditionally. */
+            JagStream storedPayload = container.PayloadIsAsStored && container.HasData
+                ? container.GetStream()
+                : null;
 
             RSArchive archive = container.GetArchive();
             if (archive == null) {
@@ -149,17 +160,47 @@ namespace FlashEditor.cache {
             //Create or update the file in the archive
             archive.PutFile(fileId, data);
 
-            /* Reconcile the archive against its reference table entry over ACTUAL file ids,
-               in both directions. Decode reads the archive through the entry's id list, so
-               the two sets have to match exactly or the size table is read against the wrong
-               number of files. The loop this replaces walked an ordinal counter from 0 to
-               FileCount() and indexed the archive directly, so a sparse archive threw
-               KeyNotFoundException on the first gap, and where it did not throw it
-               re-registered every file under an ordinal id - reinstating exactly the
-               renumbering the reference table encoder was fixed to stop. */
-            foreach (int id in archiveEntry.GetFileEntries().Keys.ToArray())
+            /* Reconcile the archive against its reference table entry over ACTUAL file ids.
+               Decode reads the archive through the entry's id list, so the two sets have to
+               match exactly or the size table is read against the wrong number of files. The
+               loop this replaces walked an ordinal counter from 0 to FileCount() and indexed
+               the archive directly, so a sparse archive threw KeyNotFoundException on the first
+               gap, and where it did not throw it re-registered every file under an ordinal id -
+               reinstating exactly the renumbering the reference table encoder was fixed to stop.
+               Only the archive is padded here; the entry is reconciled the other way once the
+               write is known to be going ahead, so that the unchanged path leaves it untouched. */
+            foreach (int id in existingFileIds)
                 if (!archive.HasFile(id))
                     archive.PutFile(id, new JagStream(0));
+
+            JagStream payload = archive.Encode();
+
+            /* --- the unchanged path ---
+               A save that changes nothing must change nothing on disk. The comparison is over
+               the PAYLOAD, never the stored container: gzip is not canonical - Jagex deflated
+               with Java's Deflater and this project uses SharpZipLib - so re-encoding an
+               untouched payload yields different bytes of equal validity, and comparing those
+               would never match. An identical payload means the bytes already in the store are
+               still a correct encoding of it, so they are kept exactly as they are.
+
+               Nothing is written, which is stronger than rewriting the original bytes: the
+               reference table entry keeps the CRC, version and FLAG_SIZES pair it already
+               carries, all of which describe those bytes and would otherwise be recomputed over
+               a freshly compressed container; the entries of every other archive in the same
+               table are spared the rewrite the table container's own re-encode would inflict;
+               the sector chain is not reallocated; and an encrypted archive sidesteps
+               re-encryption altogether, so it stays encrypted byte for byte whether or not its
+               key is even loaded. */
+            if (entryExisted && storedPayload != null && SameBytes(payload, storedPayload)) {
+                Debug("Unchanged archive " + indexId + "," + archiveId + " - leaving the stored bytes alone");
+                return;
+            }
+
+            //Add a file entry if one does not exist
+            if (archiveEntry.GetFileEntry(fileId) == null) {
+                archiveEntry.PutFileEntry(fileId, new RSFileEntry(fileId));
+                Debug("Added new file entry " + fileId, LOG_DETAIL.INSANE);
+            }
 
             foreach (int id in archive.GetFileIds())
                 if (archiveEntry.GetFileEntry(id) == null)
@@ -169,8 +210,10 @@ namespace FlashEditor.cache {
             //file entries. Left stale, a reloaded container decodes with the wrong ids.
             archiveEntry.SetValidFileIds(archiveEntry.GetFileEntries().Keys.ToArray());
 
+            container.Dirty = true;
+
             //Wrap the archive back into a container
-            container.SetStream(archive.Encode());
+            container.SetStream(payload);
 
             /* Written back under the key it was read under, or not at all. An archive that was
                decrypted on read and written back as plaintext looks perfectly healthy from here
@@ -232,6 +275,24 @@ namespace FlashEditor.cache {
             RSContainer tableContainer = new RSContainer(RSConstants.META_INDEX, indexId, RSConstants.GZIP_COMPRESSION, ReferenceTableCodec.Encode(table), 1337);
             store.Write(RSConstants.META_INDEX, indexId, tableContainer.Encode());
             store.Write(indexId, archiveId, stream);
+
+            /* The store now holds an encoding of this exact payload, so it becomes the baseline
+               the next save is measured against. Asserted only once both writes have landed: a
+               write that threw part way leaves the store describing something else, and claiming
+               otherwise would let the following save skip a change that was never stored. */
+            container.PayloadIsAsStored = true;
+        }
+
+        /// <summary>
+        ///     Whether two streams hold the same bytes.
+        /// </summary>
+        /// <remarks>
+        ///     Compares the live buffers rather than copying either side out, because one of them
+        ///     is a whole archive payload and this runs on every save.
+        /// </remarks>
+        private static bool SameBytes(JagStream a, JagStream b) {
+            return a.Length == b.Length
+                && a.GetBuffer().AsSpan(0, a.Length).SequenceEqual(b.GetBuffer().AsSpan(0, b.Length));
         }
 
         /// <summary>
