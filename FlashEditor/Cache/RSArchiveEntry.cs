@@ -14,7 +14,26 @@ namespace FlashEditor.cache {
         public int crc;
         public int version;
         public int id;
-        public bool UsesXtea { get; set; }  // true ⇢ groupFlags bit-0 is set
+
+        /// <summary>Bit 0 of the format-7 archive-flags byte: the XTEA marker.</summary>
+        public const byte FLAG_XTEA = 0x01;
+
+        /// <summary>
+        /// The raw per-archive flags byte read from a format-7 reference table. Only bit 0
+        /// (<see cref="FLAG_XTEA"/>) has a known meaning here, so the whole byte is kept
+        /// rather than rebuilt from what is understood - the table is re-encoded on every
+        /// edit, and any bit dropped on the way out is gone from the cache for good.
+        /// </summary>
+        public byte ArchiveFlags { get; set; }
+
+        /// <summary>
+        /// Whether the archive is XTEA-encrypted. A view over bit 0 of
+        /// <see cref="ArchiveFlags"/>, so setting it leaves every other bit untouched.
+        /// </summary>
+        public bool UsesXtea {
+            get => (ArchiveFlags & FLAG_XTEA) != 0;
+            set => ArchiveFlags = (byte) (value ? ArchiveFlags | FLAG_XTEA : ArchiveFlags & ~FLAG_XTEA);
+        }
 
 
         private SortedDictionary<int, RSFileEntry> fileEntries = new SortedDictionary<int, RSFileEntry>();

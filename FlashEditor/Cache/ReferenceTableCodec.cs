@@ -109,11 +109,9 @@ namespace FlashEditor.cache
             /* ── Archive-flags (format 7+)  bit-0 ⇢ XTEA ───────────── */
             if (table.format >= 7)
             {
+                //Keep the whole byte, not just the XTEA bit - see RSArchiveEntry.ArchiveFlags.
                 for (int i = 0; i < table.validArchivesCount; i++)
-                {
-                    byte flagByte = (byte) stream.ReadByte();
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].UsesXtea = (flagByte & 0x01) != 0;
-                }
+                    table.GetArchiveEntries()[table.validArchiveIds[i]].ArchiveFlags = (byte) stream.ReadByte();
             }
 
             /* ── File counts (one 16-bit per archive) ──────────────── */
@@ -260,12 +258,13 @@ namespace FlashEditor.cache
 
             //Per-archive flags byte, bit 0 being the XTEA marker. Decode reads this for
             //format 7+, so omitting it here shifts every field after it and corrupts the
-            //table - and RSCache re-encodes the table on every edit.
+            //table - and RSCache re-encodes the table on every edit. The raw byte goes back
+            //out whole - see RSArchiveEntry.ArchiveFlags.
             if (table.format >= 7)
             {
                 Debug("Writing archive flags", LOG_DETAIL.INSANE);
                 foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())
-                    stream.WriteByte((byte)(kvp.Value.UsesXtea ? 0x01 : 0x00));
+                    stream.WriteByte(kvp.Value.ArchiveFlags);
             }
 
             Debug("Writing number of non-null file entries", LOG_DETAIL.INSANE);

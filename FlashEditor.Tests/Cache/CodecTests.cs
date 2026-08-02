@@ -105,6 +105,60 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     Only bit 0 of the format-7 archive-flags byte has a known meaning (XTEA), but
+        ///     the byte has to round trip whole. Rebuilding it from a single bool zeroes every
+        ///     other bit a real table carries, and the cache re-encodes the table on every
+        ///     edit, so the loss is permanent after one save.
+        /// </summary>
+        /// <param name="archiveFlags">
+        ///     0x05 sets XTEA plus an unknown bit; 0x80 sets the high bit with XTEA clear,
+        ///     the case that would expose sign trouble in the byte round trip; 0xFF sets all.
+        /// </param>
+        [Theory]
+        [InlineData(0x05)]
+        [InlineData(0x80)]
+        [InlineData(0xFF)]
+        public void ReferenceTable_Format7_PreservesUnknownArchiveFlagBits(int archiveFlags)
+        {
+            // Hand-built wire bytes rather than an Encode round trip: the claim is that bits
+            // this codec has no name for survive, and only external bytes can express that.
+            var wire = new JagStream();
+            wire.WriteByte(7);                  // format
+            wire.WriteInteger(1);               // table version
+            wire.WriteByte(0);                  // table flags
+            wire.WriteShort(1);                 // archive count
+            wire.WriteShort(3);                 // archive id delta - archive 3
+            wire.WriteInteger(0x12345678);      // archive crc
+            wire.WriteInteger(4);               // archive version
+            wire.WriteByte(archiveFlags);       // archive flags
+            wire.WriteShort(1);                 // file count
+            wire.WriteShort(0);                 // file id delta - file 0
+
+            byte[] original = wire.ToArray();
+            RSReferenceTable decoded = ReferenceTableCodec.Decode(new JagStream(original));
+
+            Assert.Equal((byte)archiveFlags, decoded.GetArchiveEntry(3).ArchiveFlags);
+            Assert.Equal((archiveFlags & RSArchiveEntry.FLAG_XTEA) != 0, decoded.GetArchiveEntry(3).UsesXtea);
+            Assert.Equal(original, ReferenceTableCodec.Encode(decoded).ToArray());
+        }
+
+        /// <summary>
+        ///     Clearing the XTEA marker must clear bit 0 alone. The two representations are
+        ///     one field, so setting either one has to leave the rest of the byte intact.
+        /// </summary>
+        [Fact]
+        public void ArchiveEntry_SettingUsesXtea_LeavesOtherFlagBitsIntact()
+        {
+            var entry = new RSArchiveEntry(0) { ArchiveFlags = 0x85 };
+
+            entry.UsesXtea = false;
+            Assert.Equal((byte)0x84, entry.ArchiveFlags);
+
+            entry.UsesXtea = true;
+            Assert.Equal((byte)0x85, entry.ArchiveFlags);
+        }
+
+        /// <summary>
         ///     With FLAG_HASH set the table carries a 32-bit hash per archive. It is read
         ///     off the wire and has to be written back verbatim; recomputing it from the
         ///     entry's own stream - which the codec never populates - discards the value

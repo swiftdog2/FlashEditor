@@ -164,7 +164,8 @@ asymmetry. **Fixed 2026-08-02**, each fix pinned by a round-trip test in `CodecT
   Fixed 2026-08-02 - `WriteFile` now reconciles the archive and its entry over actual file
   ids and rehydrates the archive before editing it, so sparse ids survive a save and reopen.
   See s.9 item 7a.
-- Still open: the format-7 flags byte round trips bit 0 only. Tracked as s.9 item 7b.
+- ~~Still open: the format-7 flags byte round trips bit 0 only.~~ Fixed 2026-08-02 - the
+  raw byte is retained on the entry and written back verbatim. See s.9 item 7b.
 
 **Archive codec:** ~~`RSArchive.Decode` special-cases a 1-file archive by taking the whole
 buffer including the trailing chunk byte (`:41-53`), while `Encode` always writes that
@@ -374,10 +375,17 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
      decoded against a stale id list. It is now refreshed from the file entries.
    Pinned by `RSCacheWriteFileTests`, which drives `WriteFile` against a synthetic on-disk
    cache and asserts after a save-and-reopen cycle.
-7b. Make the format-7 archive-flags byte lossless. Decode keeps only bit 0 (the XTEA
-   marker, `ReferenceTableCodec.cs:115`) and encode writes only bit 0, so any other bit
-   set in a real table is silently zeroed on re-encode. No longer a field shift, but not
-   yet byte-exact - it needs the raw byte retained alongside `UsesXtea`.
+7b. ~~Make the format-7 archive-flags byte lossless.~~ **Done 2026-08-02.** Decode kept
+   only bit 0 (the XTEA marker) and encode wrote only bit 0, so any other bit set in a
+   real table was silently zeroed on re-encode - permanently, since the table is
+   re-encoded on every edit. `RSArchiveEntry` now stores the raw byte as `ArchiveFlags`
+   and `UsesXtea` became a view over bit 0 of it, so the two cannot disagree. The only
+   live reader, `RSCache.ResolveXTEAKey`, is unaffected; the two writers
+   (`RSReferenceTable.UpdateGroup`, `CRC32Helper.ApplyCrcAndVersion`) now preserve the
+   other bits instead of replacing the byte, though neither currently has a production
+   caller. Pinned by a `CodecTests` theory that decodes hand-built format-7 wire bytes
+   carrying flags `0x05`, `0x80` and `0xFF`, then asserts the re-encode is byte-identical.
+   `AGENTS.md`'s reference-table blueprint now states the whole-byte rule.
 7c. Recompute `FLAG_SIZES` values on edit in `RSCache.WriteFile` (moved here from s.4,
    where it was listed as a codec defect but is really the write path's job).
 7d. Pin the codec against a real 639 cache. Every codec test round-trips this encoder

@@ -30,7 +30,9 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 - `hasNames` flag
 - `groupCount` (u16)
 - Delta-encoded `groupIds` array
-- `groupCrc`, `groupVersion`, and `groupFlags` arrays (bit0 = XTEA)
+- `groupCrc`, `groupVersion`, and `groupFlags` arrays (format 7+ only for `groupFlags`;
+  bit0 = XTEA, the rest unidentified - encode the byte back whole rather than rebuilding
+  it from bit0, or the unknown bits are lost on the first save)
 - For each group:
   - `fileCount` (u16)
   - Delta-encoded `fileIds` array
