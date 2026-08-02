@@ -269,6 +269,86 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     The same claim, but made through the edit path rather than around it: hand every
+        ///     file in an archive back the bytes it already holds, re-encode, and the payload has
+        ///     to come out identical. That equality is the whole basis on which
+        ///     <see cref="RSCache.WriteFile"/> leaves an unchanged archive's stored container -
+        ///     and the CRC taken over it - alone, so every archive where it fails is one whose
+        ///     no-op save still re-compresses and still moves its reference-table entry.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Archives_ReEncodeToTheCapturedPayloadBytes"/> exercises the decoder
+        ///     against the encoder with nothing in between, so it says nothing about
+        ///     <see cref="RSArchive.PutFile"/> - which used to discard the chunk split on every
+        ///     call. Re-laying a chunk-major payload out as a single chunk produces exactly the
+        ///     same length with the bytes in a different order, so that round trip stayed green
+        ///     while most multi-file archives in this cache were still rewritten on save.
+        ///     <para>
+        ///     Single-file archives are skipped rather than swept. They have no size table, no
+        ///     chunk count and so no split to lose - the payload simply is the file, and
+        ///     <see cref="SingleFileArchives_CarryNoTrailerInTheCapturedBytes"/> establishes that
+        ///     separately. Decoding the ninety-odd thousand of them a third time to re-derive that
+        ///     costs more memory than the whole suite has to spare.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void UnchangedArchives_SurviveTheEditPathWithTheirPayloadIntact()
+        {
+            var failures = new List<string>();
+            int multiFile = 0;
+            int multiChunk = 0;
+            int encrypted = 0;
+
+            foreach (int indexId in _cache.TableIndexes)
+            {
+                RSReferenceTable table = _cache.Table(indexId);
+                foreach (int archiveId in _cache.ArchivesToExamine(table))
+                {
+                    int[] fileIds = table.GetArchiveEntry(archiveId).GetValidFileIds();
+                    if (fileIds.Length < 2)
+                        continue;
+
+                    byte[] stored = _cache.RawContainer(indexId, archiveId);
+                    if (stored == null)
+                        continue;
+
+                    RSContainer container = Decode(indexId, archiveId, stored, failures, ref encrypted);
+                    if (container == null)
+                        continue;
+
+                    byte[] payload = container.GetStream().ToArray();
+                    RSArchive archive = RSArchive.Decode(new JagStream(payload), fileIds);
+
+                    //What an editor does on a save with no edit: every file written back as it
+                    //was, as a fresh stream rather than the instance the archive already holds
+                    foreach (int fileId in fileIds)
+                        archive.PutFile(fileId, new JagStream(archive.GetFile(fileId).ToArray()));
+
+                    byte[] reencoded = archive.Encode().ToArray();
+
+                    multiFile++;
+                    if (archive.chunks > 1)
+                        multiChunk++;
+
+                    if (!reencoded.SequenceEqual(payload))
+                    {
+                        failures.Add($"index {indexId} archive {archiveId}: {fileIds.Length} files, " +
+                                     $"{archive.chunks} chunk(s), a no-op edit re-encoded {reencoded.Length} bytes from a " +
+                                     $"captured {payload.Length}, first difference at {FirstDifference(payload, reencoded)}");
+                    }
+                }
+            }
+
+            _output.WriteLine($"{multiFile} multi-file archives survived a no-op edit, {multiChunk} of them " +
+                              $"multi-chunk; {encrypted} skipped as encrypted");
+            ReportSampling();
+
+            Assert.True(multiChunk > 0,
+                "no multi-chunk archive was examined, so the case this guards was never exercised");
+            AssertNoFailures(failures, "archives did not survive a no-op edit with their payload intact");
+        }
+
+        /// <summary>
         ///     The single-file rule holds that such an archive carries no trailer at all: no size
         ///     table and no chunk-count byte, the whole payload being the file. That rule was
         ///     argued from the client's unpacker rather than demonstrated, and it matters -

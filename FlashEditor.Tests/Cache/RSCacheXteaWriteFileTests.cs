@@ -267,6 +267,59 @@ namespace FlashEditor.Tests.Cache
                          cache.LoadContainer(RSConstants.MAPS_INDEX, ArchiveId).ToArray());
         }
 
+        /// <summary>
+        /// Saving an encrypted archive without editing it must leave the ciphertext exactly where
+        /// it was. Re-encryption is deterministic, so this would survive a re-encode of the
+        /// payload - but the container around it is gzip, and deflate is not canonical, so a
+        /// re-encode produces different stored bytes and therefore a different CRC for a map
+        /// square nobody touched.
+        /// </summary>
+        [Fact]
+        public void WriteFile_UnmodifiedEncryptedArchive_StaysEncryptedAndByteIdentical()
+        {
+            byte[] stored = Fixture("archive-xtea.container.bin");
+            RSCache cache = CreateCache(stored);
+            cache.LoadXTEAKeys(WriteKeyFile());
+
+            byte[] tableBefore = cache.LoadContainer(RSConstants.META_INDEX, RSConstants.MAPS_INDEX).ToArray();
+
+            byte[] unchanged = cache.ReadFile(RSConstants.MAPS_INDEX, ArchiveId, 0).ToArray();
+            cache.WriteFile(RSConstants.MAPS_INDEX, ArchiveId, 0, new JagStream(unchanged));
+
+            Assert.Equal(stored, cache.LoadContainer(RSConstants.MAPS_INDEX, ArchiveId).ToArray());
+            Assert.Equal(tableBefore, cache.LoadContainer(RSConstants.META_INDEX, RSConstants.MAPS_INDEX).ToArray());
+
+            //And it is still ciphertext, not plaintext that happens to be the same length
+            RSCache reopened = SaveAndReopen(cache, withKeys: false);
+            Assert.ThrowsAny<Exception>(() => reopened.ReadFile(RSConstants.MAPS_INDEX, ArchiveId, 0));
+        }
+
+        /// <summary>
+        /// Reusing the stored bytes sidesteps encryption altogether, so an archive that was
+        /// decrypted elsewhere and saved unedited no longer needs a key at all - where an edit to
+        /// the same archive still refuses to write, because that genuinely cannot be done without
+        /// one. The two mechanisms compose rather than compete: <c>ResolveWriteKey</c> guards the
+        /// encode, and an unchanged save never reaches an encode.
+        /// </summary>
+        [Fact]
+        public void WriteFile_UnmodifiedDecryptedArchiveWithNoKeyAvailable_WritesNothingRatherThanThrowing()
+        {
+            byte[] stored = Fixture("archive-xtea.container.bin");
+
+            //A cache with no key table at all, holding a container that was decrypted elsewhere
+            RSCache cache = CreateCache(stored);
+            RSContainer decrypted = RSContainer.Decode(new JagStream(stored), FixtureKey);
+            cache.UpdateRSContainer(RSConstants.MAPS_INDEX, ArchiveId, decrypted);
+
+            byte[] tableBefore = cache.LoadContainer(RSConstants.META_INDEX, RSConstants.MAPS_INDEX).ToArray();
+
+            cache.WriteFile(RSConstants.MAPS_INDEX, ArchiveId, 0,
+                            new JagStream(Fixture("archive-xtea.payload.bin")));
+
+            Assert.Equal(stored, cache.LoadContainer(RSConstants.MAPS_INDEX, ArchiveId).ToArray());
+            Assert.Equal(tableBefore, cache.LoadContainer(RSConstants.META_INDEX, RSConstants.MAPS_INDEX).ToArray());
+        }
+
         // ===================================================================
         //  Plaintext archives
         // ===================================================================

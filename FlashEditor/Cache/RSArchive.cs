@@ -339,20 +339,39 @@ namespace FlashEditor.cache
         }
 
         /// <summary>
-        ///     Adds or replaces a file, and abandons any retained multi-chunk split.
+        ///     Adds or replaces a file, abandoning any retained multi-chunk split that the new
+        ///     contents no longer fit.
         /// </summary>
         /// <remarks>
-        ///     The split describes how the decoded files were spread across chunks, so it stops
-        ///     describing anything the moment a file's length changes or a file is added. The
-        ///     archive is written back as a single chunk instead, which holds the same files and
-        ///     is what the client reads for any archive whose trailer says one chunk.
+        ///     The split is a per-file byte budget: it says how many of file <i>n</i>'s bytes live
+        ///     in each chunk. Replacing a file with one of the same length therefore leaves it
+        ///     describing the archive exactly as well as it did before - the new bytes are simply
+        ///     sliced by the same lengths - so it is kept. It stops describing anything the moment
+        ///     a length changes or a file is added, and is dropped then; the archive is written
+        ///     back as a single chunk instead, which holds the same files and is what the client
+        ///     reads for any archive whose trailer says one chunk.
+        ///     <para>
+        ///     Keeping it for a same-length replacement is what makes a no-op save byte-neutral.
+        ///     Most multi-file archives in a real 639 cache are stored across three chunks, and
+        ///     dropping the split unconditionally re-laid every one of them out as a single chunk
+        ///     - a payload of exactly the same length with the bytes in a different order, which
+        ///     is a rewritten archive and a changed CRC for a save that changed nothing.
+        ///     </para>
         /// </remarks>
         /// <param name="fileId">The file id to write.</param>
         /// <param name="data">The file payload.</param>
         public void PutFile(int fileId, JagStream data)
         {
-            chunkSizes = null;
-            chunks = 1;
+            bool sameShape = data != null
+                && files.TryGetValue(fileId, out JagStream previous)
+                && previous != null
+                && previous.Length == data.Length;
+
+            if (!sameShape)
+            {
+                chunkSizes = null;
+                chunks = 1;
+            }
 
             if (files.ContainsKey(fileId))
             {

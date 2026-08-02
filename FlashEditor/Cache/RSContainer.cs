@@ -34,6 +34,27 @@ namespace FlashEditor.cache {
         /// </remarks>
         public bool StoredEncrypted { get; private set; }
 
+        /// <summary>
+        ///     Whether the bytes the file store holds for this container still encode the payload
+        ///     it is currently carrying.
+        /// </summary>
+        /// <remarks>
+        ///     Set when <see cref="Decode"/> reads a container out of the store, and set again by
+        ///     the write path once it has stored the payload it holds. It is what lets a save that
+        ///     changes nothing write nothing: deflate is not canonical, so re-encoding an
+        ///     unmodified payload produces different - equally valid - stored bytes, and the
+        ///     archive CRC is taken over the STORED bytes. Rewriting them therefore changes the
+        ///     CRC, the reference table entry, and the entry of every archive packed alongside it
+        ///     in the same table, for an edit that never happened.
+        ///     <para>
+        ///     <see cref="SetStream"/> clears it, because a replaced payload is by definition not
+        ///     the one behind the stored bytes. The flag can therefore only ever be too
+        ///     pessimistic, and being wrong in that direction costs one needless re-encode -
+        ///     whereas being wrong in the other direction would leave a real edit unwritten.
+        ///     </para>
+        /// </remarks>
+        public bool PayloadIsAsStored { get; internal set; }
+
         /// <summary>Whether this container still holds decoded data.</summary>
         public bool HasData => stream != null;
 
@@ -138,6 +159,12 @@ namespace FlashEditor.cache {
             container.StoredEncrypted = xteaKey != null;
 
             container.SetStream(new JagStream(payload));
+
+            /* The payload just handed over is, by construction, the one the stored bytes encode.
+               Recording that here is what lets the write path recognise a save that changes
+               nothing and leave those stored bytes - and the CRC taken over them - alone. */
+            container.PayloadIsAsStored = true;
+
             container.SetVersion(stream.Remaining() >= 2 ? stream.ReadUnsignedShort() : -1);
             container.PrintInfo();
             return container;
@@ -254,8 +281,20 @@ namespace FlashEditor.cache {
             LOG_DETAIL.ADVANCED);
         }
 
+        /// <summary>
+        ///     Replaces the decoded payload, and with it any claim that the stored bytes still
+        ///     describe this container.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="PayloadIsAsStored"/> is cleared here rather than at each call site so
+        ///     that a payload can never be swapped out behind the flag's back. The write path
+        ///     re-asserts it once, immediately after the new payload has actually reached the
+        ///     store.
+        /// </remarks>
+        /// <param name="stream">The new payload.</param>
         public void SetStream(JagStream stream) {
             this.stream = stream;
+            PayloadIsAsStored = false;
         }
 
         private void SetCompressionType(byte compressionType) {
