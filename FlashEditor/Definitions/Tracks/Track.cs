@@ -232,7 +232,11 @@ namespace FlashEditor.Definitions.Tracks {
 
             for(int var60 = 0; var60 < tracks; ++var60) {
                 midiBuff.WriteInteger(1297379947); // MTrk
-                midiBuff.Skip(4); // length gets written here later
+                /* Reserve the MTrk length field. This was a Skip(4), which on a stream being
+                   written is always at Position == Length, so the old clamping Skip advanced
+                   nothing at all and the four bytes were never reserved. Writing the placeholder
+                   is what the comment always meant, and it is what a strict Skip now demands. */
+                midiBuff.WriteInteger(0); // length gets written here later
                 int var61 = (int) midiBuff.Position;
                 int var62 = -1;
 
