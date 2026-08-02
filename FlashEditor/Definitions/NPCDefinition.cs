@@ -143,7 +143,18 @@ namespace FlashEditor {
         public int[] unknownOptions = { -1, -1, -1, -1, -1, -1 };
 
 
-        private SortedDictionary<int, object> config;
+        /// <summary>
+        ///     The opcode-249 parameters, in the order the file listed them.
+        /// </summary>
+        /// <remarks>
+        ///     A dictionary is the natural shape for these and was what this held, but it loses
+        ///     two things the file actually contains. The cache does not list parameter keys in
+        ///     ascending order, so a sorted map re-emits 16 definitions with their parameters
+        ///     shuffled, and one definition (NPC 13592) lists the same key twice, which a map
+        ///     collapses into a single entry and shortens the record by eight bytes. Keeping the
+        ///     list is what makes those seventeen re-encode to their stored bytes.
+        /// </remarks>
+        private List<KeyValuePair<int, object>> config;
         private sbyte someField112;
         private int someField1101;
         private int someField1090;
@@ -151,12 +162,54 @@ namespace FlashEditor {
         private int anInt1090;
         private sbyte anInt1104;
 
+        /// <summary>Which opcodes the decoded stream carried, indexed by opcode number.</summary>
+        /// <remarks>
+        ///     The rev-639 packer stores plenty of fields at the value the client would assume
+        ///     anyway - opcode 12 with a size of 1, opcode 100 with an ambient of 0 - so an
+        ///     encoder that emitted an opcode only when its field had moved off the default would
+        ///     silently shorten definitions nobody edited. This map is what lets
+        ///     <see cref="Encode"/> say "the file carried this opcode" independently of what the
+        ///     field now holds.
+        /// </remarks>
+        public bool[] decoded = new bool[256];
+
+        /// <summary>
+        ///     Every opcode the stream carried, in order, paired with the exact payload bytes it
+        ///     was read from.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing in the format fixes an opcode order and the cache does not use one: only
+        ///     127 of the 13,359 NPC definitions in the rev-639 cache are in ascending numeric
+        ///     order, so an encoder with its own fixed order rewrites all but a handful of
+        ///     definitions the user merely opened, changing the archive and its CRC.
+        ///     <para>
+        ///     The payload bytes are kept as well because 538 definitions repeat an opcode with a
+        ///     different value each time. The decoder keeps only the last value, as the client
+        ///     does, so the earlier occurrences exist nowhere except in the bytes they were read
+        ///     from and can only be reproduced by replaying them.
+        ///     </para>
+        /// </remarks>
+        private List<KeyValuePair<int, byte[]>> _streamRecords =
+            new List<KeyValuePair<int, byte[]>>();
+
         /// <summary>
         /// Constructs a new item definition from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
         public NPCDefinition(JagStream stream) {
             Decode(stream);
+        }
+
+        /// <summary>
+        ///     Constructs an NPC definition holding nothing but the client-side defaults.
+        /// </summary>
+        /// <remarks>
+        ///     A definition built this way carries no opcode record at all, so
+        ///     <see cref="Encode"/> has only the field values to go on and emits exactly the
+        ///     opcodes whose fields have been moved off their defaults. That is what lets the
+        ///     editor create an NPC from scratch rather than only edit one the cache already had.
+        /// </remarks>
+        public NPCDefinition() {
         }
 
         /// <summary>
@@ -171,7 +224,18 @@ namespace FlashEditor {
                     if (opcode <= 0 || opcode == 255)
                         break;
 
+                    decoded[opcode] = true;
+
+                    /* The payload has no length prefix, so its extent is whatever the per-opcode
+                       reader consumed. Rewinding and re-reading that span is the only way to keep
+                       the bytes verbatim, which is what an occurrence superseded by a later one
+                       has left of it. */
+                    int payloadStart = stream.Position;
                     Decode(stream, opcode);
+                    int payloadEnd = stream.Position;
+                    stream.Position = payloadStart;
+                    _streamRecords.Add(
+                        new KeyValuePair<int, byte[]>(opcode, stream.ReadBytes(payloadEnd - payloadStart)));
                 }
             }
         }
@@ -509,15 +573,18 @@ namespace FlashEditor {
 
                 case 249: {
                         int cfgLen = stream.ReadByte();
-                        if (config == null)
-                            config = new SortedDictionary<int, object>();
+
+                        //Replaced rather than appended to, so that a definition carrying 249
+                        //twice behaves like every other repeated opcode: the last occurrence is
+                        //what the fields hold and the earlier one is replayed from its bytes.
+                        config = new List<KeyValuePair<int, object>>(cfgLen);
                         for (int k = 0 ; k < cfgLen ; k++) {
                             bool isString = stream.ReadByte() == 1;
                             int key = stream.ReadMedium();
                             object val = isString
                                 ? (object) stream.ReadJagexString()
                                 : stream.ReadInt();
-                            config[key] = val;
+                            config.Add(new KeyValuePair<int, object>(key, val));
                         }
                         break;
                     }
@@ -538,13 +605,36 @@ namespace FlashEditor {
 
 
         /// <summary>
-        /// Overrides a specific property corresponding to opcode
+        ///     Writes this definition back out as the opcode stream the client reads.
         /// </summary>
-        /// <param name="stream">The stream to read from</param>
-        /// <param name="opcode">The opcode value signalling which type to read</param>
-        // --- Encode method matching above Decode ---
+        /// <remarks>
+        ///     Each opcode's payload is built into its own buffer first and the buffers are laid
+        ///     down afterwards in the order the definition arrived in, because the cache stores
+        ///     opcodes in no fixed order and an encoder that imposed one would rewrite almost
+        ///     every definition the user merely opened.
+        ///     <para>
+        ///     An opcode is emitted when the stream carried it - regardless of the value its
+        ///     field now holds, since the packer does store fields at their default - or when the
+        ///     field has moved off the value the client assumes in the opcode's absence, which is
+        ///     what lets an edit on a definition that never carried that opcode still reach the
+        ///     file.
+        ///     </para>
+        /// </remarks>
+        /// <returns>A flipped stream holding the encoded definition.</returns>
         public JagStream Encode() {
-            var stream = new JagStream();
+            /* `o` is reassigned around each payload rather than passed in, because every payload
+               lambda below closes over it. */
+            var records = new List<KeyValuePair<int, byte[]>>();
+            var o = new JagStream();
+
+            void Emit(int op, Action payload = null) {
+                JagStream outer = o;
+                var buffer = new JagStream();
+                o = buffer;
+                payload?.Invoke();
+                o = outer;
+                records.Add(new KeyValuePair<int, byte[]>(op, buffer.Flip().ToArray()));
+            }
 
             /* Every array-valued opcode below is optional in the file format, so the backing
                array stays null when the definition did not carry that opcode. Emitting the
@@ -553,251 +643,354 @@ namespace FlashEditor {
                encode throws for every real definition. Absent data means the opcode is omitted. */
 
             // 1: modelIds
-            if (modelIds != null) {
-                stream.WriteByte(1);
-                stream.WriteByte((byte) modelIds.Length);
-                foreach (var id in modelIds)
-                    stream.WriteShort(id == -1 ? 0xFFFF : id);
-            }
+            if (modelIds != null)
+                Emit(1, () => {
+                    o.WriteByte((byte) modelIds.Length);
+                    foreach (var modelId in modelIds)
+                        o.WriteShort(modelId == -1 ? 0xFFFF : modelId);
+                });
 
             // 2: name
-            stream.WriteByte(2);
-            stream.WriteJagexString(name);
+            if (decoded[2] || (name != null && name != "null"))
+                Emit(2, () => o.WriteJagexString(name ?? "null"));
 
             // 12: size
-            stream.WriteByte(12);
-            stream.WriteByte((byte) size);
+            if (decoded[12] || size != 1)
+                Emit(12, () => o.WriteByte((byte) size));
 
-            // 30–34: options
-            for (int opc = 30 ; opc <= 34 ; opc++) {
-                stream.WriteByte((byte) opc);
-                stream.WriteJagexString(options[opc - 30] ?? "Hidden");
+            /* 30-34 / 150-154: options. The two ranges are two spellings of the same five slots
+               and this codec reads both into `options`. The encoder used to emit both ranges,
+               which wrote every option twice and on its own guaranteed a byte mismatch for every
+               definition in the cache. Which range a definition used is not recoverable from the
+               fields, so it is taken from the recorded stream; an option set on a definition that
+               carried neither goes out at 30+slot, the range the client reads first. Slot 5 is
+               deliberately untouched: the array is six long only so the seeded "Examine" has
+               somewhere to live, and no opcode reads or writes it. */
+            for (int slot = 0 ; slot < 5 ; slot++) {
+                int viaAction = LastStreamIndexOf(30 + slot);
+                int viaMenu = LastStreamIndexOf(150 + slot);
+                string option = options[slot];
+
+                if (viaAction < 0 && viaMenu < 0) {
+                    if (option != null)
+                        Emit(30 + slot, () => o.WriteJagexString(option));
+                    continue;
+                }
+
+                //"Hidden" is how the file spells an option that exists but is not shown, and the
+                //decoder folds it to null, so it has to be spelled back out on the way in.
+                Emit(viaMenu > viaAction ? 150 + slot : 30 + slot,
+                    () => o.WriteJagexString(option ?? "Hidden"));
             }
 
             // 40: recolor
-            if (recolorSrc != null && recolorDst != null) {
-                stream.WriteByte(40);
-                stream.WriteByte((byte) recolorSrc.Length);
-                for (int i = 0 ; i < recolorSrc.Length ; i++) {
-                    stream.WriteShort(recolorSrc[i]);
-                    stream.WriteShort(recolorDst[i]);
-                }
-            }
+            if (recolorSrc != null && recolorDst != null)
+                Emit(40, () => {
+                    o.WriteByte((byte) recolorSrc.Length);
+                    for (int i = 0 ; i < recolorSrc.Length ; i++) {
+                        o.WriteShort(recolorSrc[i]);
+                        o.WriteShort(recolorDst[i]);
+                    }
+                });
 
             // 41: retexture
-            if (retextureSrc != null && retextureDst != null) {
-                stream.WriteByte(41);
-                stream.WriteByte((byte) retextureSrc.Length);
-                for (int i = 0 ; i < retextureSrc.Length ; i++) {
-                    stream.WriteShort(retextureSrc[i]);
-                    stream.WriteShort(retextureDst[i]);
-                }
-            }
+            if (retextureSrc != null && retextureDst != null)
+                Emit(41, () => {
+                    o.WriteByte((byte) retextureSrc.Length);
+                    for (int i = 0 ; i < retextureSrc.Length ; i++) {
+                        o.WriteShort(retextureSrc[i]);
+                        o.WriteShort(retextureDst[i]);
+                    }
+                });
 
             // 42: palette
-            if (recolorDstPalette != null) {
-                stream.WriteByte(42);
-                stream.WriteByte((byte) recolorDstPalette.Length);
-                foreach (var b in recolorDstPalette)
-                    stream.WriteByte(b);
-            }
+            if (recolorDstPalette != null)
+                Emit(42, () => {
+                    o.WriteByte((byte) recolorDstPalette.Length);
+                    foreach (var b in recolorDstPalette)
+                        o.WriteByte(b);
+                });
 
             // 44,45: op44/op45
-            stream.WriteByte(44); stream.WriteShort(op44);
-            stream.WriteByte(45); stream.WriteShort(op45);
+            if (decoded[44] || op44 != 0) Emit(44, () => o.WriteShort(op44));
+            if (decoded[45] || op45 != 0) Emit(45, () => o.WriteShort(op45));
 
             // 60: dialogueModels
-            if (dialogueModels != null) {
-                stream.WriteByte(60);
-                stream.WriteByte((byte) dialogueModels.Length);
-                foreach (var m in dialogueModels)
-                    stream.WriteShort(m);
-            }
+            if (dialogueModels != null)
+                Emit(60, () => {
+                    o.WriteByte((byte) dialogueModels.Length);
+                    foreach (var m in dialogueModels)
+                        o.WriteShort(m);
+                });
 
             // 93: drawMinimapDot=false
-            if (!drawMinimapDot) stream.WriteByte(93);
+            if (decoded[93] || !drawMinimapDot) Emit(93);
 
             // 95,97,98
-            stream.WriteByte(95); stream.WriteShort(level);
-            stream.WriteByte(97); stream.WriteShort(scaleXY);
-            stream.WriteByte(98); stream.WriteShort(scaleZ);
+            if (decoded[95] || level != -1) Emit(95, () => o.WriteShort(level));
+            if (decoded[97] || scaleXY != 128) Emit(97, () => o.WriteShort(scaleXY));
+            if (decoded[98] || scaleZ != 128) Emit(98, () => o.WriteShort(scaleZ));
 
             // 99
-            if (hasRenderPriority) stream.WriteByte(99);
+            if (decoded[99] || hasRenderPriority) Emit(99);
 
             // 100,101
-            stream.WriteByte(100); stream.WriteByte((byte) ambient);
-            stream.WriteByte(101); stream.WriteByte((byte) contrast);
+            if (decoded[100] || ambient != 0) Emit(100, () => o.WriteByte((byte) ambient));
+            if (decoded[101] || contrast != 0) Emit(101, () => o.WriteByte((byte) contrast));
 
             // 102,103
-            stream.WriteByte(102); stream.WriteShort(headIcon);
-            stream.WriteByte(103); stream.WriteShort(rotation);
+            if (decoded[102] || headIcon != -1) Emit(102, () => o.WriteShort(headIcon));
+            if (decoded[103] || rotation != 32) Emit(103, () => o.WriteShort(rotation));
 
             // 106/118: morphs
             if (morphs != null) {
                 int count = morphs.Length - 2;
-                bool hasLast = morphs[count + 1] != -1;
-                if (!hasLast) {
-                    stream.WriteByte(106);
-                    stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
-                    stream.WriteShort(varp == -1 ? 0xFFFF : varp);
-                }
-                else {
-                    stream.WriteByte(118);
-                    stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
-                    stream.WriteShort(varp == -1 ? 0xFFFF : varp);
-                    stream.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
-                }
-                stream.WriteByte((byte) count);
-                for (int i = 0 ; i <= count ; i++)
-                    stream.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
+
+                /* Both opcodes write the same fields, so on a definition carrying both only the
+                   one read last still has its values; the other is replayed from its own bytes.
+                   With neither present the trailing default id decides, since that is the only
+                   thing opcode 118 adds over 106. */
+                int via106 = LastStreamIndexOf(106);
+                int via118 = LastStreamIndexOf(118);
+                bool use118 = via106 < 0 && via118 < 0
+                    ? morphs[count + 1] != -1
+                    : via118 > via106;
+
+                Emit(use118 ? 118 : 106, () => {
+                    o.WriteShort(varbit == -1 ? 0xFFFF : varbit);
+                    o.WriteShort(varp == -1 ? 0xFFFF : varp);
+                    if (use118)
+                        o.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
+                    o.WriteByte((byte) count);
+                    for (int i = 0 ; i <= count ; i++)
+                        o.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
+                });
             }
 
             // 107,109,111
-            if (!clickable) stream.WriteByte(107);
-            if (!slowWalk) stream.WriteByte(109);
-            if (!animateIdle) stream.WriteByte(111);
+            if (decoded[107] || !clickable) Emit(107);
+            if (decoded[109] || !slowWalk) Emit(109);
+            if (decoded[111] || !animateIdle) Emit(111);
 
             // 112
-            stream.WriteByte(112);
-            stream.WriteSignedByte(anInt1104);
+            if (decoded[112] || anInt1104 != 0) Emit(112, () => o.WriteSignedByte(anInt1104));
 
             // 113,114,119
-            stream.WriteByte(113);
-            stream.WriteShort(primaryShadowColour);
-            stream.WriteShort(secondaryShadowColour);
-            stream.WriteByte(114);
-            stream.WriteSignedByte(primaryShadowModifier);
-            stream.WriteSignedByte(secondaryShadowModifier);
-            stream.WriteByte(119);
-            stream.WriteSignedByte(walkMask);
+            if (decoded[113] || primaryShadowColour != 0 || secondaryShadowColour != 0)
+                Emit(113, () => {
+                    o.WriteShort(primaryShadowColour);
+                    o.WriteShort(secondaryShadowColour);
+                });
+            if (decoded[114] || primaryShadowModifier != -33 || secondaryShadowModifier != -113)
+                Emit(114, () => {
+                    o.WriteSignedByte(primaryShadowModifier);
+                    o.WriteSignedByte(secondaryShadowModifier);
+                });
+            if (decoded[119] || walkMask != 0)
+                Emit(119, () => o.WriteSignedByte(walkMask));
 
             // 121: translations
-            if (translations != null) {
-                stream.WriteByte(121);
-                int tlen = translations.Length;
+            if (translations != null)
+                Emit(121, () => {
+                    int tlen = translations.Length;
 
-                /* The array is sized to modelIds.Length but the decoder only fills the slots
-                   named by the record index bytes, so unpopulated slots stay null. The count
-                   written here must be the number of records actually emitted below, NOT the
-                   array length: declaring the length makes the decoder read records that were
-                   never written and overrun into the following opcode. */
-                int records = 0;
-                for (int idx = 0 ; idx < tlen ; idx++)
-                    if (translations[idx] != null)
-                        records++;
+                    /* The array is sized to modelIds.Length but the decoder only fills the slots
+                       named by the record index bytes, so unpopulated slots stay null. The count
+                       written here must be the number of records actually emitted below, NOT the
+                       array length: declaring the length makes the decoder read records that were
+                       never written and overrun into the following opcode. */
+                    int written = 0;
+                    for (int idx = 0 ; idx < tlen ; idx++)
+                        if (translations[idx] != null)
+                            written++;
 
-                if (records > 255)
-                    throw new InvalidOperationException("NPC " + id + " has " + records + " model translations; opcode 121 encodes the record count as a single byte");
+                    if (written > 255)
+                        throw new InvalidOperationException("NPC " + id + " has " + written + " model translations; opcode 121 encodes the record count as a single byte");
 
-                stream.WriteByte((byte) records);
-                for (int idx = 0 ; idx < tlen ; idx++) {
-                    var t = translations[idx];
-                    if (t == null) continue;
-                    if (idx > 255)
-                        throw new InvalidOperationException("NPC " + id + " has a model translation at index " + idx + "; opcode 121 encodes the slot index as a single byte");
-                    stream.WriteByte((byte) idx);
-                    stream.WriteByte((byte) t[0]);
-                    stream.WriteByte((byte) t[1]);
-                    stream.WriteByte((byte) t[2]);
-                }
-            }
+                    o.WriteByte((byte) written);
+                    for (int idx = 0 ; idx < tlen ; idx++) {
+                        var t = translations[idx];
+                        if (t == null) continue;
+                        if (idx > 255)
+                            throw new InvalidOperationException("NPC " + id + " has a model translation at index " + idx + "; opcode 121 encodes the slot index as a single byte");
+                        o.WriteByte((byte) idx);
+                        o.WriteByte((byte) t[0]);
+                        o.WriteByte((byte) t[1]);
+                        o.WriteByte((byte) t[2]);
+                    }
+                });
 
-            // 122–128
-            stream.WriteByte(122); stream.WriteShort(hitbarSprite);
-            stream.WriteByte(123); stream.WriteShort(height);
-            stream.WriteByte(125); stream.WriteByte(respawnDirection);
-            stream.WriteByte(127); stream.WriteShort(renderTypeID);
-            stream.WriteByte(128); stream.WriteByte((byte) movementType);
+            // 122-128
+            if (decoded[122] || hitbarSprite != -1) Emit(122, () => o.WriteShort(hitbarSprite));
+            if (decoded[123] || height != -1) Emit(123, () => o.WriteShort(height));
+            if (decoded[125] || respawnDirection != 7) Emit(125, () => o.WriteByte(respawnDirection));
+            if (decoded[127] || renderTypeID != -1) Emit(127, () => o.WriteShort(renderTypeID));
+            if (decoded[128] || movementType != 0) Emit(128, () => o.WriteByte((byte) movementType));
 
             // 134: sounds
-            stream.WriteByte(134);
-            stream.WriteShort(idleSound == -1 ? 0xFFFF : idleSound);
-            stream.WriteShort(crawlSound == -1 ? 0xFFFF : crawlSound);
-            stream.WriteShort(walkSound == -1 ? 0xFFFF : walkSound);
-            stream.WriteShort(runSound == -1 ? 0xFFFF : runSound);
-            stream.WriteByte((byte) soundDistance);
+            if (decoded[134] || idleSound != -1 || crawlSound != -1 || walkSound != -1
+                || runSound != -1 || soundDistance != 0)
+                Emit(134, () => {
+                    o.WriteShort(idleSound == -1 ? 0xFFFF : idleSound);
+                    o.WriteShort(crawlSound == -1 ? 0xFFFF : crawlSound);
+                    o.WriteShort(walkSound == -1 ? 0xFFFF : walkSound);
+                    o.WriteShort(runSound == -1 ? 0xFFFF : runSound);
+                    o.WriteByte((byte) soundDistance);
+                });
 
-            // 135–143
-            stream.WriteByte(135); stream.WriteByte((byte) primaryCursorOp); stream.WriteShort(primaryCursor);
-            stream.WriteByte(136); stream.WriteByte((byte) secondaryCursorOp); stream.WriteShort(secondaryCursor);
-            stream.WriteByte(137); stream.WriteShort(attackOpCursor);
-            stream.WriteByte(138); stream.WriteShort(armyIcon);
-            stream.WriteByte(139); stream.WriteShort(spriteId);
-            stream.WriteByte(140); stream.WriteByte((byte) ambientSoundVolume);
-            if (visiblePriority) stream.WriteByte(141);
-            stream.WriteByte(142); stream.WriteShort(mapIcon);
-            if (invisiblePriority) stream.WriteByte(143);
-
-            // 150–154: options
-            for (int opc = 150 ; opc <= 154 ; opc++) {
-                stream.WriteByte((byte) opc);
-                stream.WriteJagexString(options[opc - 150] ?? "Hidden");
-            }
+            // 135-143
+            if (decoded[135] || primaryCursorOp != -1 || primaryCursor != -1)
+                Emit(135, () => { o.WriteByte((byte) primaryCursorOp); o.WriteShort(primaryCursor); });
+            if (decoded[136] || secondaryCursorOp != -1 || secondaryCursor != -1)
+                Emit(136, () => { o.WriteByte((byte) secondaryCursorOp); o.WriteShort(secondaryCursor); });
+            if (decoded[137] || attackOpCursor != -1) Emit(137, () => o.WriteShort(attackOpCursor));
+            if (decoded[138] || armyIcon != -1) Emit(138, () => o.WriteShort(armyIcon));
+            if (decoded[139] || spriteId != -1) Emit(139, () => o.WriteShort(spriteId));
+            if (decoded[140] || ambientSoundVolume != 255)
+                Emit(140, () => o.WriteByte((byte) ambientSoundVolume));
+            if (decoded[141] || visiblePriority) Emit(141);
+            if (decoded[142] || mapIcon != -1) Emit(142, () => o.WriteShort(mapIcon));
+            if (decoded[143] || invisiblePriority) Emit(143);
 
             // 155
-            stream.WriteByte(155);
-            stream.WriteByte((byte) hue);
-            stream.WriteByte((byte) saturation);
-            stream.WriteByte((byte) lightness);
-            stream.WriteByte((byte) opacity);
+            if (decoded[155] || hue != 0 || saturation != 0 || lightness != 0 || opacity != 0)
+                Emit(155, () => {
+                    o.WriteByte((byte) hue);
+                    o.WriteByte((byte) saturation);
+                    o.WriteByte((byte) lightness);
+                    o.WriteByte((byte) opacity);
+                });
 
-            // 158/159
-            if (mainOptionIndex == 1) stream.WriteByte(158);
-            if (mainOptionIndex == 0) stream.WriteByte(159);
+            /* 158/159 are bare flags that set mainOptionIndex to 1 and 0. Zero is also the value
+               the client assumes with neither present, so 159 is emitted only when the stream
+               actually carried it - inventing it would lengthen every definition that has no
+               main option at all. */
+            if (decoded[158] || mainOptionIndex == 1) Emit(158);
+            if (decoded[159]) Emit(159);
 
             // 160: campaigns
-            if (campaigns != null) {
-                stream.WriteByte(160);
-                stream.WriteByte((byte) campaigns.Length);
-                foreach (var c in campaigns) stream.WriteShort(c);
-            }
+            if (campaigns != null)
+                Emit(160, () => {
+                    o.WriteByte((byte) campaigns.Length);
+                    foreach (var c in campaigns) o.WriteShort(c);
+                });
 
             // 162: anInt1101/anInt1090
-            stream.WriteByte(162);
-            stream.WriteShort(anInt1101);
-            stream.WriteShort(anInt1090);
+            if (decoded[162] || anInt1101 != 0 || anInt1090 != 0)
+                Emit(162, () => { o.WriteShort(anInt1101); o.WriteShort(anInt1090); });
 
-            // 163–168
-            stream.WriteByte(163); stream.WriteByte((byte) anInt864);
-            stream.WriteByte(164); stream.WriteShort(anInt848); stream.WriteShort(anInt837);
-            stream.WriteByte(165); stream.WriteByte((byte) anInt847);
-            stream.WriteByte(168); stream.WriteByte((byte) anInt828);
+            // 163-168
+            if (decoded[163] || anInt864 != 0) Emit(163, () => o.WriteByte((byte) anInt864));
+            if (decoded[164] || anInt848 != 0 || anInt837 != 0)
+                Emit(164, () => { o.WriteShort(anInt848); o.WriteShort(anInt837); });
+            if (decoded[165] || anInt847 != 0) Emit(165, () => o.WriteByte((byte) anInt847));
+            if (decoded[168] || anInt828 != 0) Emit(168, () => o.WriteByte((byte) anInt828));
 
-            // 170–175: unknownOptions
+            // 170-175: unknownOptions
             for (int opc = 170 ; opc <= 175 ; opc++) {
                 int val = unknownOptions[opc - 170];
-                if (val != -1) {
-                    stream.WriteByte((byte) opc);
-                    stream.WriteShort(val);
-                }
+                if (decoded[opc] || val != -1)
+                    Emit(opc, () => o.WriteShort(val));
             }
 
             // 179
-            stream.WriteByte(179);
-            stream.WriteByte((byte) unknownByte1);
-            stream.WriteByte((byte) unknownByte2);
-            stream.WriteByte((byte) unknownByte3);
-            stream.WriteByte((byte) unknownByte4);
-            stream.WriteByte((byte) unknownByte5);
-            stream.WriteByte((byte) unknownByte6);
+            if (decoded[179] || unknownByte1 != 0 || unknownByte2 != 0 || unknownByte3 != 0
+                || unknownByte4 != 0 || unknownByte5 != 0 || unknownByte6 != 0)
+                Emit(179, () => {
+                    o.WriteByte((byte) unknownByte1);
+                    o.WriteByte((byte) unknownByte2);
+                    o.WriteByte((byte) unknownByte3);
+                    o.WriteByte((byte) unknownByte4);
+                    o.WriteByte((byte) unknownByte5);
+                    o.WriteByte((byte) unknownByte6);
+                });
 
             // 249: config
-            if (config != null && config.Count > 0) {
-                stream.WriteByte(249);
-                stream.WriteByte((byte) config.Count);
-                foreach (var kv in config) {
-                    bool isStr = kv.Value is string;
-                    stream.WriteByte((byte) (isStr ? 1 : 0));
-                    stream.WriteMedium(kv.Key);
-                    if (isStr) stream.WriteJagexString((string) kv.Value);
-                    else stream.WriteInteger((int) kv.Value);
+            if (decoded[249] || (config != null && config.Count > 0))
+                Emit(249, () => {
+                    o.WriteByte((byte) (config?.Count ?? 0));
+                    foreach (var kv in config ?? new List<KeyValuePair<int, object>>()) {
+                        bool isStr = kv.Value is string;
+                        o.WriteByte((byte) (isStr ? 1 : 0));
+                        o.WriteMedium(kv.Key);
+                        if (isStr) o.WriteJagexString((string) kv.Value);
+                        else o.WriteInteger((int) kv.Value);
+                    }
+                });
+
+            return WriteRecordsInStreamOrder(records);
+        }
+
+        /// <summary>
+        ///     Where an opcode last appeared in the decoded stream, or -1 when it never did.
+        /// </summary>
+        /// <param name="op">The opcode to look for.</param>
+        /// <returns>The index into the recorded stream, or -1.</returns>
+        private int LastStreamIndexOf(int op) {
+            for (int i = _streamRecords.Count - 1 ; i >= 0 ; i--)
+                if (_streamRecords[i].Key == op)
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        ///     Lays the encoded opcode records down in the order the definition was decoded in,
+        ///     then appends anything the decoder never saw.
+        /// </summary>
+        /// <remarks>
+        ///     A freshly encoded record with no place in the recorded stream is one the field
+        ///     values asked for but the original did not carry - a value the user set on a
+        ///     definition that arrived without that opcode, or the whole of a definition the
+        ///     editor created from nothing. Appending it in ascending order keeps such an edit
+        ///     rather than dropping it.
+        ///     <para>
+        ///     Only the last occurrence of an opcode takes the freshly encoded payload, because
+        ///     that is the occurrence whose value the decoder kept and therefore the only one an
+        ///     edit can have changed. Every earlier occurrence, and any opcode the field-driven
+        ///     pass declined to re-emit at all - opcode 31 on a definition that also carries 151,
+        ///     for instance - is written back from the bytes it was read from.
+        ///     </para>
+        /// </remarks>
+        /// <param name="records">Each opcode and the payload bytes freshly encoded for it.</param>
+        /// <returns>The complete definition stream, terminator included, ready to read.</returns>
+        private JagStream WriteRecordsInStreamOrder(List<KeyValuePair<int, byte[]>> records) {
+            var o = new JagStream();
+            var encoded = new Dictionary<int, byte[]>(records.Count);
+            foreach (KeyValuePair<int, byte[]> record in records)
+                encoded[record.Key] = record.Value;
+
+            var lastOccurrence = new Dictionary<int, int>();
+            for (int i = 0 ; i < _streamRecords.Count ; i++)
+                lastOccurrence[_streamRecords[i].Key] = i;
+
+            var replaced = new HashSet<int>();
+
+            void Put(int op, byte[] payload) {
+                o.WriteByte((byte) op);
+                if (payload.Length > 0)
+                    o.Write(payload, 0, payload.Length);
+            }
+
+            for (int i = 0 ; i < _streamRecords.Count ; i++) {
+                int op = _streamRecords[i].Key;
+
+                if (lastOccurrence[op] == i && encoded.TryGetValue(op, out byte[] fresh)) {
+                    Put(op, fresh);
+                    replaced.Add(op);
+                }
+                else {
+                    Put(op, _streamRecords[i].Value);
                 }
             }
 
-            // terminator
-            stream.WriteByte(0);
-            return stream.Flip();
+            //Ascending, so a definition built from nothing still encodes in a predictable order.
+            records.Sort((left, right) => left.Key.CompareTo(right.Key));
+            foreach (KeyValuePair<int, byte[]> record in records)
+                if (!replaced.Contains(record.Key))
+                    Put(record.Key, record.Value);
+
+            o.WriteByte(0);
+            return o.Flip();
         }
 
         internal void SetId(int id) {
@@ -805,9 +998,25 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Creates a shallow copy of this <see cref="NPCDefinition"/>.
+        ///     Takes an independent copy of this <see cref="NPCDefinition"/>.
         /// </summary>
-        public NPCDefinition Clone() => (NPCDefinition) MemberwiseClone();
+        /// <remarks>
+        ///     The editor clones a definition to hold what it looked like before an edit, so the
+        ///     two cannot share the opcode hit map, the recorded stream or the options array:
+        ///     every one of those is written through when a definition is edited, and the
+        ///     snapshot would then agree with the edit it exists to remember.
+        /// </remarks>
+        /// <returns>A copy whose bookkeeping the original does not share.</returns>
+        public NPCDefinition Clone() {
+            var clone = (NPCDefinition) MemberwiseClone();
+            clone.decoded = (bool[]) decoded.Clone();
+            clone._streamRecords = new List<KeyValuePair<int, byte[]>>(_streamRecords);
+            clone.options = (string[]) options.Clone();
+            if (config != null)
+                clone.config = new List<KeyValuePair<int, object>>(config);
+            return clone;
+        }
+
         object ICloneable.Clone() => Clone();
     }
 }

@@ -122,20 +122,19 @@ namespace FlashEditor.Tests.Cache
         ///     data and to settle after one round trip.
         /// </summary>
         /// <remarks>
-        ///     Byte-identical re-encode is deliberately reported rather than asserted, because
-        ///     <see cref="NPCDefinition.Encode"/> cannot produce it for any definition in this
-        ///     cache and the reason is structural, not a bug that can be patched here. The cache
-        ///     stores opcodes in no particular order - only 127 of 13,359 definitions have them
-        ///     in ascending numeric order - and 538 definitions repeat an opcode. Reproducing
-        ///     the original bytes therefore needs the decoder to retain the opcode sequence it
-        ///     saw, which the definition model does not do; the encoder instead emits a fixed
-        ///     opcode order derived from the fields it holds.
-        ///     <para>
-        ///     What is assertable, and is asserted, is that the encoder round-trips through its
-        ///     own decoder without loss: encode, decode, encode again, and the two encodings
-        ///     must be byte-identical. That is the property a save path actually depends on, and
-        ///     it is what caught the opcode-121 record-count defect already covered by
+        ///     Byte-identity against the cache is asserted separately by
+        ///     <see cref="AllNpcDefinitions_ReEncodeToTheCapturedBytes"/>. What this test pins is
+        ///     the weaker but independent property that the encoder's own output is a well-formed
+        ///     opcode stream: encode, decode, encode again, and the two encodings must be
+        ///     byte-identical while the decode consumes exactly what the encode produced. That is
+        ///     the property a save path depends on once a definition has actually been edited,
+        ///     and it is what caught the opcode-121 record-count defect already covered by
         ///     NPCDefinitionCodecTests.
+        ///     <para>
+        ///     The two are not the same check. Byte-identity compares against the cache and so
+        ///     depends on the recorded opcode order surviving; this one compares the encoder
+        ///     against itself and would still catch a payload the encoder writes in a shape its
+        ///     own decoder reads back differently, which no comparison with the cache reaches.
         ///     </para>
         /// </remarks>
         [RealCacheFact]
@@ -206,8 +205,8 @@ namespace FlashEditor.Tests.Cache
             }
 
             _output.WriteLine($"{encoded} NPC definitions re-encoded, {byteIdentical} byte-identical to the cache");
-            _output.WriteLine("byte-identical re-encode is not expected: the encoder emits a fixed opcode " +
-                              "order while the cache stores opcodes unordered and sometimes repeated");
+            _output.WriteLine("byte-identity itself is asserted by " +
+                              nameof(AllNpcDefinitions_ReEncodeToTheCapturedBytes));
             if (!_cache.FullSweep)
             {
                 _output.WriteLine($"sampled up to {RealCacheFixture.SampleArchivesPerIndex} archives; " +
@@ -216,6 +215,304 @@ namespace FlashEditor.Tests.Cache
 
             Assert.True(encoded > 0, "no NPC definition was encoded, so nothing was checked");
             AssertNoFailures(failures, "NPC definitions did not survive a re-encode");
+        }
+
+        /// <summary>
+        ///     Every NPC definition must re-encode to the exact bytes the cache stores for it.
+        /// </summary>
+        /// <remarks>
+        ///     The editor rewrites a definition through this encoder whenever the user saves one,
+        ///     so anything the encoder reorders, duplicates or drops changes the archive and its
+        ///     CRC for a definition nobody edited. The comparison is against the captured cache
+        ///     bytes rather than against a second encode of the codec's own output, because the
+        ///     latter would pass just as happily on an encoder that agreed with itself about the
+        ///     wrong answer.
+        ///     <para>
+        ///     Three properties have to hold at once for this to pass, and each was separately
+        ///     broken: the recorded opcode order has to be replayed, since only 127 of the 13,359
+        ///     definitions store their opcodes in ascending order; a repeated opcode has to keep
+        ///     every occurrence, since 538 definitions repeat one and the decoder keeps only the
+        ///     last value; and an opcode stored at its field default has to be written back
+        ///     rather than skipped as redundant.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void AllNpcDefinitions_ReEncodeToTheCapturedBytes()
+        {
+            var failures = new List<string>();
+            var opcodesInFailures = new SortedDictionary<int, int>();
+            int identical = 0;
+            int reordered = 0;
+
+            foreach ((int npcId, byte[] data) in Definitions())
+            {
+                NPCDefinition definition;
+                byte[] reencoded;
+
+                try
+                {
+                    definition = new NPCDefinition(new JagStream(data));
+                    definition.SetId(npcId);
+                    reencoded = definition.Encode().ToArray();
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"npc {npcId}: re-encode threw {ex.GetType().Name}: {ex.Message}");
+                    continue;
+                }
+
+                if (reencoded.AsSpan().SequenceEqual(data))
+                {
+                    identical++;
+                    continue;
+                }
+
+                //Same multiset of bytes means the content survived and only the layout moved,
+                //which points at the opcode order rather than at a mis-encoded payload.
+                byte[] storedSorted = (byte[])data.Clone();
+                byte[] reencodedSorted = (byte[])reencoded.Clone();
+                Array.Sort(storedSorted);
+                Array.Sort(reencodedSorted);
+                bool sameBytes = storedSorted.AsSpan().SequenceEqual(reencodedSorted);
+                if (sameBytes)
+                    reordered++;
+
+                int at = FirstDifference(data, reencoded);
+                failures.Add($"npc {npcId}: re-encoded {reencoded.Length} bytes from a stored " +
+                             $"{data.Length}, first difference at {at} " +
+                             $"({ByteAt(data, at)} became {ByteAt(reencoded, at)}), " +
+                             $"{(sameBytes ? "same bytes in a different order" : "different content")}; " +
+                             $"opcodes {Opcodes(definition)}");
+                Tally(opcodesInFailures, definition);
+            }
+
+            _output.WriteLine($"{identical} NPC definitions re-encoded to byte-identical output");
+            if (reordered > 0)
+            {
+                _output.WriteLine($"{reordered} more carried the same bytes in a different order, " +
+                                  "so the encoder is no longer replaying the stored opcode order");
+            }
+            if (opcodesInFailures.Count > 0)
+                _output.WriteLine("opcodes seen in failing definitions: " + Histogram(opcodesInFailures));
+            if (!_cache.FullSweep)
+            {
+                _output.WriteLine($"sampled up to {RealCacheFixture.SampleArchivesPerIndex} archives; " +
+                                  $"set {RealCacheLocator.FullSweepVariable}=1 to encode every definition");
+            }
+
+            Assert.True(identical > 0, "no NPC definition was re-encoded, so nothing was checked");
+            AssertNoFailures(failures, "NPC definitions did not re-encode to their stored bytes");
+        }
+
+        // ===================================================================
+        //  Format facts, pinned without needing the cache
+        // ===================================================================
+
+        /// <summary>
+        ///     Opcodes are written back in the order the stream presented them, not in ascending
+        ///     order.
+        /// </summary>
+        /// <remarks>
+        ///     Only 127 of the 13,359 definitions in the rev-639 cache store their opcodes in
+        ///     ascending numeric order, so an encoder with its own fixed order rewrites 13,232 of
+        ///     them the moment the user saves one they never touched.
+        /// </remarks>
+        [Fact]
+        public void OpcodeOrder_IsTakenFromTheStreamRatherThanFromTheEncoder()
+        {
+            //95 before 12, which is the reverse of the order the encoder would pick on its own.
+            AssertReEncodesToTheSameBytes(new byte[] { 95, 0, 42, 12, 3, 0 }, def =>
+            {
+                Assert.Equal(3, def.size);
+                Assert.Equal(42, def.level);
+            });
+        }
+
+        /// <summary>
+        ///     A repeated opcode is written back at every position it occupied, keeping the value
+        ///     each occurrence carried.
+        /// </summary>
+        /// <remarks>
+        ///     538 definitions in the cache repeat an opcode - 224 of them repeat opcode 95 alone.
+        ///     The decoder keeps only the last value, as the client does, so the earlier
+        ///     occurrences exist nowhere but in the bytes they were read from and can only be
+        ///     reproduced by replaying those bytes verbatim.
+        /// </remarks>
+        [Fact]
+        public void RepeatedOpcodes_KeepBothTheirPositionsAndTheirValues()
+        {
+            AssertReEncodesToTheSameBytes(new byte[] { 95, 0, 42, 95, 0, 99, 0 },
+                def => Assert.Equal(99, def.level));
+        }
+
+        /// <summary>
+        ///     An opcode the stream carried is written back even when its payload happens to equal
+        ///     the field's default.
+        /// </summary>
+        /// <remarks>
+        ///     The packer does store defaults - opcode 12 with a size of 1, opcode 97 with the
+        ///     unscaled 128 - so an encoder that emitted only fields which had moved off their
+        ///     default would shorten a definition the user merely opened, changing its bytes and
+        ///     its CRC.
+        /// </remarks>
+        [Fact]
+        public void OpcodesWhosePayloadEqualsTheDefault_AreStillWrittenBack()
+        {
+            //12 with size 1 and 97 with scaleXY 128: both are exactly the client-side defaults.
+            AssertReEncodesToTheSameBytes(new byte[] { 12, 1, 97, 0, 128, 0 }, def =>
+            {
+                Assert.Equal(1, def.size);
+                Assert.Equal(128, def.scaleXY);
+            });
+        }
+
+        /// <summary>
+        ///     An option stored at opcode 150-154 is written back there and not also at 30-34.
+        /// </summary>
+        /// <remarks>
+        ///     The two ranges are two spellings of the same five option slots and this codec reads
+        ///     both into one array, so an encoder driven by that array alone emitted every option
+        ///     twice - once at 30+slot and again at 150+slot - which on its own put every
+        ///     definition in the cache out of byte-identity.
+        /// </remarks>
+        [Fact]
+        public void OptionsStoredAtTheHighOpcodeRange_AreNotAlsoWrittenAtTheLowRange()
+        {
+            //151: option slot 1, holding the null-terminated string "Talk".
+            byte[] stream = { 151, (byte)'T', (byte)'a', (byte)'l', (byte)'k', 0, 0 };
+
+            AssertReEncodesToTheSameBytes(stream, def => Assert.Equal("Talk", def.options[1]));
+        }
+
+        /// <summary>
+        ///     A definition carrying the same option slot at both of its opcodes keeps both.
+        /// </summary>
+        /// <remarks>
+        ///     Only the occurrence the decoder read last still has its value in the field, so the
+        ///     other can be reproduced only from the bytes it was read from. Dropping it would
+        ///     shorten the definition.
+        /// </remarks>
+        [Fact]
+        public void AnOptionSlotStoredAtBothOpcodes_SurvivesAReEncode()
+        {
+            byte[] stream =
+            {
+                30, (byte)'A', (byte)'t', (byte)'t', 0,
+                150, (byte)'U', (byte)'s', (byte)'e', 0,
+                0
+            };
+
+            AssertReEncodesToTheSameBytes(stream, def => Assert.Equal("Use", def.options[0]));
+        }
+
+        /// <summary>
+        ///     Opcode 249 parameters keep the order the file listed them in, duplicate keys
+        ///     included.
+        /// </summary>
+        /// <remarks>
+        ///     Held in a sorted map - the natural shape, and what this codec used - the
+        ///     parameters come back out in ascending key order, which reorders 16 definitions in
+        ///     the cache, and a repeated key collapses into one entry, which shortens NPC 13592
+        ///     by the eight bytes of the parameter it swallowed. These seventeen were the last
+        ///     definitions in the index not to re-encode to their stored bytes.
+        /// </remarks>
+        [Fact]
+        public void Opcode249Parameters_KeepTheirFileOrderAndTheirDuplicates()
+        {
+            byte[] stream =
+            {
+                249, 3,
+                0, 0, 0, 5, 0, 0, 0, 7,     // int parameter, key 5, value 7
+                0, 0, 0, 1, 0, 0, 0, 9,     // int parameter, key 1 - out of ascending order
+                0, 0, 0, 5, 0, 0, 0, 11,    // int parameter, key 5 again - a duplicate key
+                0
+            };
+
+            AssertReEncodesToTheSameBytes(stream, def => Assert.True(def.decoded[249]));
+        }
+
+        /// <summary>
+        ///     A definition built from nothing rather than decoded still encodes, and encodes only
+        ///     what has actually been set on it.
+        /// </summary>
+        /// <remarks>
+        ///     Replaying a recorded opcode order is no use to a definition that has no recorded
+        ///     order, so the encoder has to fall back to the field values for one. Without that
+        ///     fallback an NPC created in the editor would save as an empty record.
+        /// </remarks>
+        [Fact]
+        public void ANewlyCreatedNpc_EncodesTheFieldsThatWereSet()
+        {
+            var created = new NPCDefinition { name = "Test dummy", size = 3, level = 42 };
+
+            byte[] encoded = created.Encode().ToArray();
+            var reread = new NPCDefinition(new JagStream(encoded));
+
+            Assert.Equal("Test dummy", reread.name);
+            Assert.Equal(3, reread.size);
+            Assert.Equal(42, reread.level);
+
+            //Untouched fields must not have been invented into the stream on the way out.
+            Assert.False(reread.decoded[103]);
+            Assert.False(reread.decoded[134]);
+            Assert.Equal(encoded, reread.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     An edit to a definition that never carried the matching opcode still reaches the
+        ///     encoded stream, appended after the opcodes the definition did carry.
+        /// </summary>
+        [Fact]
+        public void AFieldSetOnADefinitionThatLackedItsOpcode_IsAppended()
+        {
+            var definition = new NPCDefinition(new JagStream(new byte[] { 12, 3, 0 }));
+            Assert.False(definition.decoded[95]);
+
+            definition.level = 7;
+            var reread = new NPCDefinition(new JagStream(definition.Encode().ToArray()));
+
+            Assert.Equal(3, reread.size);
+            Assert.Equal(7, reread.level);
+        }
+
+        /// <summary>
+        ///     A clone must not share the opcode bookkeeping with the definition it was taken from.
+        /// </summary>
+        /// <remarks>
+        ///     The editor clones a definition to remember its pre-edit state. With the hit map,
+        ///     the recorded stream and the options array shared by reference, editing the original
+        ///     writes straight through into the snapshot and the two agree about everything the
+        ///     snapshot exists to disagree about.
+        /// </remarks>
+        [Fact]
+        public void Clone_DoesNotShareTheOpcodeBookkeeping()
+        {
+            var original = new NPCDefinition(new JagStream(new byte[] { 12, 3, 0 }));
+            NPCDefinition snapshot = original.Clone();
+
+            original.options[0] = "Attack";
+            original.level = 42;
+            byte[] edited = original.Encode().ToArray();
+
+            Assert.Null(snapshot.options[0]);
+            Assert.Equal(new byte[] { 12, 3, 0 }, snapshot.Encode().ToArray());
+            Assert.NotEqual(edited, snapshot.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     Decodes a hand-built definition, checks it landed on the terminator rather than the
+        ///     end of the buffer, and checks it re-encodes to the bytes it came from.
+        /// </summary>
+        /// <param name="stream">The definition bytes, terminator included.</param>
+        /// <param name="check">Field assertions for the decoded definition.</param>
+        private static void AssertReEncodesToTheSameBytes(byte[] stream, Action<NPCDefinition> check)
+        {
+            var reader = new JagStream(Pad(stream));
+            var definition = new NPCDefinition(reader);
+
+            Assert.Equal(stream.Length, reader.Position);
+            check(definition);
+            Assert.Equal(stream, definition.Encode().ToArray());
         }
 
         /// <summary>
@@ -338,6 +635,46 @@ namespace FlashEditor.Tests.Cache
                 foreach (int fileId in fileIds)
                     yield return (archiveId * 256 + fileId, archive.GetFile(fileId).ToArray());
             }
+        }
+
+        /// <summary>Counts how many failing definitions carried each opcode.</summary>
+        private static void Tally(SortedDictionary<int, int> counts, NPCDefinition def)
+        {
+            for (int op = 0; op < def.decoded.Length; op++)
+            {
+                if (!def.decoded[op])
+                    continue;
+                counts.TryGetValue(op, out int seen);
+                counts[op] = seen + 1;
+            }
+        }
+
+        private static string Histogram(SortedDictionary<int, int> counts)
+        {
+            return string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}"));
+        }
+
+        private static string Opcodes(NPCDefinition def)
+        {
+            var seen = new List<int>();
+            for (int op = 0; op < def.decoded.Length; op++)
+                if (def.decoded[op])
+                    seen.Add(op);
+            return "[" + string.Join(" ", seen) + "]";
+        }
+
+        private static string ByteAt(byte[] bytes, int offset)
+        {
+            return offset < bytes.Length ? $"0x{bytes[offset]:X2}" : "end of buffer";
+        }
+
+        private static int FirstDifference(byte[] expected, byte[] actual)
+        {
+            int shared = Math.Min(expected.Length, actual.Length);
+            for (int i = 0; i < shared; i++)
+                if (expected[i] != actual[i])
+                    return i;
+            return shared;
         }
 
         private static byte[] Pad(byte[] data)
