@@ -175,8 +175,14 @@ namespace FlashEditor.cache {
             //Grab the bytes we need for the checksum
             JagStream stream = container.Encode(); //already checked definitely correct upto this point
 
-            //Last two bytes are the version and shouldn't be included in the checksum
-            JagStream hashableStream = new JagStream(stream.ReadBytes(stream.Length - 2));
+            /* The trailing version short is not part of the checksummed span - but it is only
+               present when the container carries a version at all. RSContainer.Decode leaves the
+               version at -1 for a container stored without a trailer, and Encode then writes
+               none, so subtracting a fixed 2 chops two bytes of real payload off the CRC and off
+               the compressed size recorded below. CRC32Helper.ApplyCrcAndVersion already guards
+               it this way. */
+            int versionBytes = container.GetVersion() != -1 ? 2 : 0;
+            JagStream hashableStream = new JagStream(stream.ReadBytes(stream.Length - versionBytes));
 
             //Update the version and checksum for this file
             hashableStream.Seek0(); //allows the crc32 to slurp the blocks
@@ -184,6 +190,19 @@ namespace FlashEditor.cache {
             crc.Update(hashableStream.ToArray());      // feeds the bytes
             archiveEntry.SetCrc((int) crc.Value);              // .Value is UInt32
             archiveEntry.SetVersion(1337);
+
+            /* Recompute the FLAG_SIZES pair. These describe the archive as it is now stored, so
+               left alone they go stale on the first edit and stay wrong for every later one.
+               They are set unconditionally: a table without the flag never encodes them, and an
+               entry that reports its real size costs nothing to keep honest.
+
+               - compressed   the stored container without its version trailer, i.e. exactly the
+                              span the CRC above is taken over - which is why both read the same
+                              stream rather than recomputing the trailer length separately.
+               - uncompressed the archive payload before compression - what the container's own
+                              header calls the uncompressed length. */
+            archiveEntry.compressed = hashableStream.Length;
+            archiveEntry.uncompressed = container.GetStream().Length;
 
             //Calculate and update the whirlpool digest if we need to
             if (table.usesWhirlpool) {

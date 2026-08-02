@@ -2,6 +2,7 @@ using FlashEditor;
 using FlashEditor.cache;
 using FlashEditor.Utils;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 
 namespace FlashEditor.Tests.Cache
@@ -220,6 +221,48 @@ namespace FlashEditor.Tests.Cache
 
             Assert.Equal(0x11223344, decoded.GetArchiveEntry(0).GetIdentifier());
             Assert.Equal(0x55667788, decoded.GetArchiveEntry(0).GetFileEntries()[0].GetIdentifier());
+            Assert.Equal(encoded.ToArray(), ReferenceTableCodec.Encode(decoded).ToArray());
+        }
+
+        /// <summary>
+        ///     With FLAG_SIZES set the table carries a compressed and an uncompressed size per
+        ///     archive, written between the whirlpool digests and the archive versions. The
+        ///     write path recomputes both on every edit, so the pair has to survive the round
+        ///     trip - and has to sit where the decoder looks for it, or every field after it
+        ///     shifts.
+        /// </summary>
+        [Fact]
+        public void ReferenceTable_Sizes_SurviveRoundTrip()
+        {
+            var table = new RSReferenceTable
+            {
+                format = 6,
+                version = 1,
+                flags = RSReferenceTable.FLAG_SIZES,
+                sizes = true
+            };
+
+            var entry = new RSArchiveEntry(0);
+            entry.SetVersion(7);
+            entry.compressed = 1234;
+            entry.uncompressed = 56789;
+            entry.SetValidFileIds(new[] { 0, 4 });
+            entry.SetFileEntries(new SortedDictionary<int, RSFileEntry>
+            {
+                { 0, new RSFileEntry(0) },
+                { 4, new RSFileEntry(4) }
+            });
+            table.PutArchiveEntry(0, entry);
+
+            JagStream encoded = ReferenceTableCodec.Encode(table);
+            RSReferenceTable decoded = ReferenceTableCodec.Decode(new JagStream(encoded.ToArray()));
+
+            Assert.Equal(1234, decoded.GetArchiveEntry(0).compressed);
+            Assert.Equal(56789, decoded.GetArchiveEntry(0).uncompressed);
+
+            //Everything written after the sizes must still land where it was
+            Assert.Equal(7, decoded.GetArchiveEntry(0).GetVersion());
+            Assert.Equal(new[] { 0, 4 }, decoded.GetArchiveEntry(0).GetFileEntries().Keys.ToArray());
             Assert.Equal(encoded.ToArray(), ReferenceTableCodec.Encode(decoded).ToArray());
         }
 

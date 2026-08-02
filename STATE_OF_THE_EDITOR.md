@@ -158,8 +158,9 @@ asymmetry. **Fixed 2026-08-02**, each fix pinned by a round-trip test in `CodecT
   the per-file name hash into `SetHash` while `Encode` wrote it from `GetIdentifier`, so
   every file name was lost on the first save. Both sides now use the identifier field,
   matching how the archive-level identifier is already handled.
-- Still open: `FLAG_SIZES` values are never recomputed after an edit - they go stale
-  immediately. That belongs to `RSCache.WriteFile`, not the codec; tracked as s.9 item 7c.
+- ~~Still open: `FLAG_SIZES` values are never recomputed after an edit - they go stale
+  immediately. That belongs to `RSCache.WriteFile`, not the codec.~~ Fixed 2026-08-02 -
+  `WriteFile` now recomputes both sizes from the container it just encoded. See s.9 item 7c.
 - ~~Still open: the sparse-file-ID fix above is defeated downstream by `RSCache.WriteFile`.~~
   Fixed 2026-08-02 - `WriteFile` now reconciles the archive and its entry over actual file
   ids and rehydrates the archive before editing it, so sparse ids survive a save and reopen.
@@ -386,8 +387,36 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    caller. Pinned by a `CodecTests` theory that decodes hand-built format-7 wire bytes
    carrying flags `0x05`, `0x80` and `0xFF`, then asserts the re-encode is byte-identical.
    `AGENTS.md`'s reference-table blueprint now states the whole-byte rule.
-7c. Recompute `FLAG_SIZES` values on edit in `RSCache.WriteFile` (moved here from s.4,
-   where it was listed as a codec defect but is really the write path's job).
+7c. ~~Recompute `FLAG_SIZES` values on edit in `RSCache.WriteFile` (moved here from s.4,
+   where it was listed as a codec defect but is really the write path's job).~~
+   **Done 2026-08-02.** With `FLAG_SIZES` set the table carries a compressed and an
+   uncompressed size per archive. Nothing ever wrote them back, so they described the
+   archive as it shipped and were wrong from the first edit onward - and the table is
+   re-encoded on every edit, so the stale pair was rewritten to disk each time.
+   `WriteFile` now derives both from the container it has just encoded, alongside the CRC
+   and version it already updated there:
+   - `compressed` - the stored container minus its version trailer, which is the same span
+     the archive CRC is taken over. Displee's `rs-cache-library` defines it the same way,
+     as `compressedLength = compressed.size - revisionBytes` over the full container bytes.
+   - `uncompressed` - the archive payload before compression, i.e. the container's own
+     uncompressed-length header field.
+   Both are set unconditionally: a table without the flag never encodes them, and the
+   guard would only let the in-memory entry lie.
+   A defect had to be fixed alongside it. `WriteFile` hardcoded the version trailer at two
+   bytes when excluding it from the archive CRC, but `RSContainer.Encode` writes no trailer
+   for a container whose version is `-1`, which is what `Decode` leaves behind for a
+   container stored without one. That span is now derived from the container - as
+   `CRC32Helper.ApplyCrcAndVersion` already did - and the CRC and `compressed` read the
+   same stream, so the two cannot describe different spans. Left alone it would have put
+   the new `compressed` two bytes short and kept two bytes of real payload out of the CRC.
+   Pinned by six `RSCacheWriteFileTests` cases that seed a `FLAG_SIZES` table with
+   deliberately wrong sizes and, after a save-and-reopen, check `compressed` against the
+   container the file store actually holds and `uncompressed` against an independently
+   encoded archive - covering the single-file no-trailer case, a shrinking second edit,
+   and a container seeded without a version trailer. `CodecTests` gained the `FLAG_SIZES`
+   round trip the suite was missing, which also pins the pair's position on the wire
+   between the whirlpool digests and the archive versions. `AGENTS.md`'s reference-table
+   blueprint now documents both sizes.
 7d. Pin the codec against a real 639 cache. Every codec test round-trips this encoder
    against this decoder, so a shared misreading of the wire format would pass. The
    single-file no-trailer rule in particular is argued from the client's unpacker and

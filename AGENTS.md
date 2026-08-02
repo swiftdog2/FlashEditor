@@ -33,6 +33,14 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 - `groupCrc`, `groupVersion`, and `groupFlags` arrays (format 7+ only for `groupFlags`;
   bit0 = XTEA, the rest unidentified - encode the byte back whole rather than rebuilding
   it from bit0, or the unknown bits are lost on the first save)
+- Optional `groupSizes` pair per group when the `sizes` flag (`0x04`) is set, written
+  between the whirlpool digests and `groupVersion`. Both describe the group as stored and
+  must be recomputed whenever it is rewritten:
+  - compressed = the whole stored container **minus its version trailer**, the same span
+    the group CRC covers. The trailer is only present when the container carries a
+    version, so read its length off the container rather than assuming 2.
+  - uncompressed = the group payload before compression, i.e. the container's own
+    uncompressed-length header field.
 - For each group:
   - `fileCount` (u16)
   - Delta-encoded `fileIds` array
