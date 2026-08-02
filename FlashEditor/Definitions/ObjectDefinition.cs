@@ -64,8 +64,24 @@ namespace FlashEditor.Definitions
         }
         /// <summary>Whether the object contributes to the collision map.</summary>
         public bool isClipped = false;
-        /// <summary>Lighting parameters (brightness and contrast) for the 3D model.</summary>
-        public int modelBrightness, modelContrast;
+        /// <summary>
+        /// Ambient lighting term for the 3D model - a read-only view over opcode 29.
+        /// </summary>
+        /// <remarks>
+        /// A view rather than a field so the grid cannot show a number the encoder would never
+        /// write: <see cref="Encode"/> emits opcode 29 from <c>ambientLighting</c> alone. It
+        /// previously mirrored opcode 28 (<c>decorDisplacement</c>), which is neither a
+        /// brightness nor a lighting value at all.
+        /// </remarks>
+        public int modelBrightness => ambientLighting;   // opcode 29
+        /// <summary>
+        /// Contrast lighting term for the 3D model - a read-only view over opcode 39.
+        /// </summary>
+        /// <remarks>
+        /// See <see cref="modelBrightness"/>. This previously mirrored opcode 29, leaving the
+        /// real contrast opcode unreadable from the grid.
+        /// </remarks>
+        public int modelContrast => contrastLighting;    // opcode 39
 
         // ───── misc metadata ──────────────────────────
         /// <summary>Object category grouping id.</summary>
@@ -334,8 +350,8 @@ namespace FlashEditor.Definitions
                 case 23: obstructsGround = 1; return;              // flag only (thirdInt = 1)
                 case 24: animationId = buf.ReadUnsignedShort(); return; // readBigSmart = UShort for <670
                 case 27: clipType = 1; return;                     // flag only
-                case 28: decorDisplacement = buf.ReadByte() << 2; modelBrightness = decorDisplacement; break; // 1 byte
-                case 29: ambientLighting = buf.ReadSignedByte(); modelContrast = ambientLighting; break; // 1 byte
+                case 28: decorDisplacement = buf.ReadByte() << 2; break; // 1 byte
+                case 29: ambientLighting = buf.ReadSignedByte(); break; // 1 byte
 
                 /*──────── action strings 30-34 ────────*/
                 case int a when (a >= 30 && a < 35):
@@ -698,7 +714,7 @@ namespace FlashEditor.Definitions
             /*─── 27 – clip type 1 ─────────────────────────────────────*/
             if (decoded[27]) Emit(27);
 
-            /*─── brightness / contrast (28 / 29) ─────────────────────*/
+            /*─── decor displacement / ambient lighting (28 / 29) ─────*/
             if (decoded[28])
                 Emit(28, () => o.WriteByte((byte)(decorDisplacement >> 2)));
             if (decoded[29])

@@ -45,6 +45,9 @@ namespace FlashEditor.Tests.Cache
                 s.WriteJagexString($"Act{i}");
             }
 
+            /*  39 - contrastLighting (1 signed byte, stored pre-multiplied by 5)  */
+            s.WriteByte(39); s.WriteSignedByte(3);
+
             /*  recolour (40)  */
             s.WriteByte(40);
             s.WriteByte(1);
@@ -165,9 +168,10 @@ namespace FlashEditor.Tests.Cache
             // animation
             Assert.Equal(10, def.animationId);
 
-            // lighting (opcode 28: byte 1 << 2 = 4, opcode 29: sbyte -5)
-            Assert.Equal(4, def.modelBrightness);
-            Assert.Equal(-5, def.modelContrast);
+            // lighting: brightness is opcode 29 (sbyte -5), contrast is opcode 39 (sbyte 3 * 5 = 15).
+            // These used to alias opcodes 28 and 29, so contrast was never exercised at all.
+            Assert.Equal(-5, def.modelBrightness);
+            Assert.Equal(15, def.modelContrast);
 
             // scale
             Assert.Equal(128, def.scaleX);

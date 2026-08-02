@@ -72,8 +72,11 @@ namespace FlashEditor {
         public int level = -1;
         /// <summary>Icon shown on the world map.</summary>
         public int mapIcon = -1;
-        /// <summary>Movement animation type index.</summary>
-        public int movementType;
+        /// <summary>
+        /// Raw byte carried by opcode 128. The 637 client reads it and discards it, so its
+        /// meaning is unverified - it is kept only so the definition re-encodes byte-identically.
+        /// </summary>
+        public int unknownByte128;
         /// <summary>Custom cursor sprite for the primary option.</summary>
         public int primaryCursor = -1;
         /// <summary>Opcode for the primary option cursor.</summary>
@@ -445,7 +448,7 @@ namespace FlashEditor {
                     break;
 
                 case 128:
-                    movementType = stream.ReadByte();
+                    unknownByte128 = stream.ReadByte();
                     break;
 
                 case 134: {
@@ -825,7 +828,7 @@ namespace FlashEditor {
             if (decoded[123] || height != -1) Emit(123, () => o.WriteShort(height));
             if (decoded[125] || respawnDirection != 7) Emit(125, () => o.WriteByte(respawnDirection));
             if (decoded[127] || renderTypeID != -1) Emit(127, () => o.WriteShort(renderTypeID));
-            if (decoded[128] || movementType != 0) Emit(128, () => o.WriteByte((byte) movementType));
+            if (decoded[128] || unknownByte128 != 0) Emit(128, () => o.WriteByte((byte) unknownByte128));
 
             // 134: sounds
             if (decoded[134] || idleSound != -1 || crawlSound != -1 || walkSound != -1

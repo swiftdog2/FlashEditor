@@ -89,9 +89,9 @@ namespace FlashEditor {
         /// <summary>Tertiary female equipment model id.</summary>
         public int femaleWearModel3;
 
-        /// <summary>Male chathead model ids.</summary>
+        /// <summary>Male chathead model ids - opcodes 90 and 92.</summary>
         public int maleHeadModel1, maleHeadModel2;
-        /// <summary>Female chathead model ids.</summary>
+        /// <summary>Female chathead model ids - opcodes 91 and 93.</summary>
         public int femaleHeadModel1, femaleHeadModel2;
 
         /// <summary>Equipment slot this item occupies (UI binding, not in rev 639 cache).</summary>
@@ -307,10 +307,10 @@ namespace FlashEditor {
                 case 78: maleWearModel3 = buf.ReadUnsignedShort(); return;
                 case 79: femaleWearModel3 = buf.ReadUnsignedShort(); return;
 
-                /* chathead models */
+                /* chathead models - the client pairs 90 with 92 (male) and 91 with 93 (female) */
                 case 90: maleHeadModel1 = buf.ReadUnsignedShort(); return;
-                case 91: maleHeadModel2 = buf.ReadUnsignedShort(); return;
-                case 92: femaleHeadModel1 = buf.ReadUnsignedShort(); return;
+                case 91: femaleHeadModel1 = buf.ReadUnsignedShort(); return;
+                case 92: maleHeadModel2 = buf.ReadUnsignedShort(); return;
                 case 93: femaleHeadModel2 = buf.ReadUnsignedShort(); return;
 
                 /* z-axis rotation */
@@ -584,10 +584,10 @@ namespace FlashEditor {
                 case 78: if (stored || maleWearModel3 != 0) Emit(() => o.WriteShort(maleWearModel3)); return;
                 case 79: if (stored || femaleWearModel3 != 0) Emit(() => o.WriteShort(femaleWearModel3)); return;
 
-                /* chathead models */
+                /* chathead models - the client pairs 90 with 92 (male) and 91 with 93 (female) */
                 case 90: if (stored || maleHeadModel1 != 0) Emit(() => o.WriteShort(maleHeadModel1)); return;
-                case 91: if (stored || maleHeadModel2 != 0) Emit(() => o.WriteShort(maleHeadModel2)); return;
-                case 92: if (stored || femaleHeadModel1 != 0) Emit(() => o.WriteShort(femaleHeadModel1)); return;
+                case 91: if (stored || femaleHeadModel1 != 0) Emit(() => o.WriteShort(femaleHeadModel1)); return;
+                case 92: if (stored || maleHeadModel2 != 0) Emit(() => o.WriteShort(maleHeadModel2)); return;
                 case 93: if (stored || femaleHeadModel2 != 0) Emit(() => o.WriteShort(femaleHeadModel2)); return;
 
                 /* z-axis rotation */
