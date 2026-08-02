@@ -86,10 +86,25 @@ The hue weighting is the subtle part. Dividing hue by the **summed chroma weight
 the tile count stops grey and near-grey tiles from dragging the averaged hue toward zero. Getting
 this wrong produces terrain that is recognisably the right shape but the wrong colour.
 
-> **Verify the window extent before implementing.** The radius is **5**, giving an 11-wide window,
-> but one pass described it as 10x10 and this specific point was never formally adjudicated. Pin it
-> by reading `Class305.java:222-350` directly. An off-by-one here is not a crash, it is a subtle
-> colour smear at map-square seams, which is exactly the kind of defect that survives review.
+### The window is 10 wide and asymmetric - SETTLED
+
+Both earlier passes were wrong, in different directions. Read directly from
+`Class305.java:243-318` and confirmed independently:
+
+Both loops run `for (i = -5; i < size; i++)`, and each step **adds** column `i + 5` (when in range)
+and **subtracts** column `i - 5` (when in range) before writing output column `i`. By the time
+output `x` is written, the resident set is:
+
+```
+x - 4  ..  x + 5        10 columns, not 11, and not centred
+```
+
+So the window reaches **4 tiles back and 5 forward**. The two are not interchangeable: a tile is
+self-contained only from index 4 to index 59 of a 64-tile square, and swapping the reaches
+misclassifies a one-tile band on the north and east edges. Clipped at the scene edge, never wrapped.
+
+Consequence for the apron: a square needs at least 5 tiles of neighbour on the north and east and 4
+on the south and west, so a one-square apron is ample.
 
 ### Consequence for the editor
 
