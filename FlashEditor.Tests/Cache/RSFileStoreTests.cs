@@ -454,6 +454,76 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     An index record can exist and still describe nothing: padding an index out so a
+        ///     later archive can be written leaves earlier records as six zero bytes, which read
+        ///     back as size 0 at sector 0.
+        /// </summary>
+        /// <remarks>
+        ///     Sector 0 is the end-of-chain marker rather than a real location, so it cannot be
+        ///     reused as a chain head. Doing so appended the payload to the end of the dat2 and
+        ///     then recorded 0 as its pointer, which produced an archive that was written
+        ///     perfectly and could never be found again - and the write path's own verification
+        ///     could not see it, because it read the chain back from the sector list in hand
+        ///     rather than through the record it had just written.
+        /// </remarks>
+        /// <summary>
+        ///     Seeds a store whose index 0 already holds <paramref name="blankRecords"/> records
+        ///     of six zero bytes, which is what padding an index out to reach a later archive
+        ///     leaves behind on disk.
+        /// </summary>
+        private RSFileStore CreateStoreWithBlankRecords(int blankRecords)
+        {
+            //One dummy sector so sector 0 is burned, as CreateStore does
+            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), new byte[SectorSize]);
+            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx0"), new byte[RSIndex.SIZE * blankRecords]);
+
+            _store = new RSFileStore(_dir);
+            return _store;
+        }
+
+        [Fact]
+        public void Write_OverBlankRecord_RecordsTheSectorTheDataWasWrittenTo()
+        {
+            var store = CreateStoreWithBlankRecords(3);
+
+            store.Write(0, 1, Payload(600, seed: 7));   // spans two sectors
+
+            var index = store.GetIndexEntry(0);
+            index.ReadContainerHeader(1);
+
+            Assert.Equal(600, index.GetSize());
+            Assert.True(index.GetSectorID() > 0,
+                "the record still points at sector 0, so the archive cannot be found again");
+
+            //And the data is genuinely reachable through the recorded pointer
+            RSSector first = ReadSector(store, index.GetSectorID());
+            Assert.Equal(0, first.GetIndexId());
+            Assert.Equal(1, first.GetId());
+            Assert.Equal(0, first.GetChunk());
+        }
+
+        /// <summary>
+        ///     The blank records either side of the one written must be left alone, so padding an
+        ///     index does not turn into collateral damage the first time it is used.
+        /// </summary>
+        [Fact]
+        public void Write_OverBlankRecord_LeavesTheNeighbouringRecordsBlank()
+        {
+            var store = CreateStoreWithBlankRecords(3);
+
+            store.Write(0, 1, Payload(120));
+
+            var index = store.GetIndexEntry(0);
+
+            foreach (int untouched in new[] { 0, 2 })
+            {
+                index.ReadContainerHeader(untouched);
+                Assert.Equal(0, index.GetSize());
+                Assert.Equal(0, index.GetSectorID());
+            }
+        }
+
+        /// <summary>
         /// The index stream is seeked on both the new-archive and overwrite branches, so a new
         /// archive written after an overwrite lands at its own offset rather than wherever the
         /// preceding ReadContainerHeader left the position.

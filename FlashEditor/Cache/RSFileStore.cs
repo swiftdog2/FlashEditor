@@ -135,10 +135,20 @@ namespace FlashEditor.cache {
             if(!newArchive) {
                 Debug("**Overwriting archive header**");
                 index.ReadContainerHeader(archiveId);
-                curSector = index.GetSectorID(); //Find the first sector
+                int existingSector = index.GetSectorID(); //Find the first sector
                 int oldSize = index.GetSize(); //Get the current sector size
-                oldSectorCount = oldSize / RSSector.DATA_LEN +
-                    (oldSize % RSSector.DATA_LEN > 0 ? 1 : 0);
+
+                /* A record can exist and still describe nothing. An index padded out to reach a
+                   later archive reads back as size 0, sector 0 - and sector 0 is the end-of-chain
+                   marker, not a real location, which is why the reader rejects it. Reusing it as
+                   a chain head appends the payload to the end of the dat2 and then records 0 as
+                   its pointer, so the archive is written correctly and can never be found again.
+                   Leaving both values alone here falls through to the append defaults instead. */
+                if(existingSector > 0 && oldSize > 0) {
+                    curSector = existingSector;
+                    oldSectorCount = oldSize / RSSector.DATA_LEN +
+                        (oldSize % RSSector.DATA_LEN > 0 ? 1 : 0);
+                }
             }
 
             /* Walk the existing chain and allocate any extra sectors BEFORE touching the
@@ -181,10 +191,16 @@ namespace FlashEditor.cache {
             /* Seek for BOTH branches. Previously this only happened when overwriting, so a new
                archive written after an overwrite landed at whatever position the previous
                ReadContainerHeader left behind and silently clobbered a neighbouring record. */
-            Debug("Updating archive header with size: " + data.Length + ", curSector: " + curSector);
+            /* Record the sector the chain was actually written to, rather than the one read off
+               the old record. The two agree whenever an existing chain is being reused, and
+               differ exactly when it is not - so deriving the pointer from the allocation keeps
+               them from drifting apart at all. */
+            int firstSector = sectors[0];
+
+            Debug("Updating archive header with size: " + data.Length + ", firstSector: " + firstSector);
             index.GetStream().Seek(ptr);
             index.GetStream().WriteMedium(data.Length); //Write the archive size
-            index.GetStream().WriteMedium(curSector); //Write the new sector ID
+            index.GetStream().WriteMedium(firstSector); //Write the new sector ID
 
             try {
                 int remaining = (int) data.Length;
@@ -217,9 +233,21 @@ namespace FlashEditor.cache {
                     dataChannel.WriteBytes(sectorPtr, sectorBytes, 0, sectorBytes.Length);
                 }
 
-                // --- round-trip verification ---
+                /* --- round-trip verification ---
+                   Read back through the record that was just written, not through the sector
+                   list still in hand. Verifying from sectors[0] only proves the sectors were
+                   written; it says nothing about the pointer stored in the index, which is the
+                   only thing a reader ever follows. That gap is precisely how a record pointing
+                   at sector 0 survived a write path that already verified itself. */
                 var expected = data.ToArray();
-                JagStream verify = ReadSectorChain(sectors[0], expected.Length);
+
+                index.ReadContainerHeader(archiveId);
+                if(index.GetSize() != expected.Length || index.GetSectorID() != sectors[0])
+                    throw new IOException("Index record does not describe the chain that was written: " +
+                        "record says " + index.GetSize() + " bytes at sector " + index.GetSectorID() +
+                        ", wrote " + expected.Length + " bytes at sector " + sectors[0]);
+
+                JagStream verify = ReadSectorChain(index.GetSectorID(), index.GetSize());
                 if(!verify.ToArray().SequenceEqual(expected))
                     throw new IOException("Sector chain verification failed");
             }

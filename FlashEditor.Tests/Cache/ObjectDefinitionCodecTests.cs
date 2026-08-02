@@ -74,11 +74,11 @@ namespace FlashEditor.Tests.Cache
             /* offsets */
             s.WriteByte(70); s.WriteShort(1);   // offsetX (signed short)
             s.WriteByte(71); s.WriteShort(2);   // offsetY (signed short)
-            s.WriteByte(72); s.WriteByte(3);    // offsetZ (1 UByte, NOT Short!)
+            s.WriteByte(72); s.WriteShort(3);   // offsetZ (signed short, like 70/71)
 
             s.WriteByte(73);                    // obstructsWheelchair (flag)
             s.WriteByte(74);                    // isSolid (flag)
-            s.WriteByte(75);                    // flag only (0 bytes)
+            s.WriteByte(75); s.WriteByte(7);    // 1 UByte payload, not a flag
 
             /*  morph table (92)  */
             s.WriteByte(92);

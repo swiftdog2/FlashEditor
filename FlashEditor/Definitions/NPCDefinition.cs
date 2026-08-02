@@ -523,8 +523,15 @@ namespace FlashEditor {
                     }
 
                 default:
-                    // ignore unknown
-                    break;
+                    /* An NPC definition is a self-delimiting opcode stream, so an opcode whose
+                       payload size is unknown cannot be skipped - the next byte read is then
+                       payload mistaken for an opcode and every field after it is garbage.
+                       Reporting the position beats returning a silently wrong definition.
+                       No opcode outside this switch occurs in the rev-639 cache, so this never
+                       fires for the data the editor ships against. */
+                    throw new InvalidOperationException(
+                        "NPC definition opcode " + opcode + " at offset " + (stream.Position - 1) +
+                        " has no known payload size, so the remainder of the stream cannot be parsed");
             }
         }
 
@@ -539,11 +546,19 @@ namespace FlashEditor {
         public JagStream Encode() {
             var stream = new JagStream();
 
+            /* Every array-valued opcode below is optional in the file format, so the backing
+               array stays null when the definition did not carry that opcode. Emitting the
+               opcode regardless would dereference null - across the rev-639 cache opcode 42 is
+               carried by no NPC at all and opcode 1 by only 12146 of 13359, so an unguarded
+               encode throws for every real definition. Absent data means the opcode is omitted. */
+
             // 1: modelIds
-            stream.WriteByte(1);
-            stream.WriteByte((byte) modelIds.Length);
-            foreach (var id in modelIds)
-                stream.WriteShort(id == -1 ? 0xFFFF : id);
+            if (modelIds != null) {
+                stream.WriteByte(1);
+                stream.WriteByte((byte) modelIds.Length);
+                foreach (var id in modelIds)
+                    stream.WriteShort(id == -1 ? 0xFFFF : id);
+            }
 
             // 2: name
             stream.WriteByte(2);
@@ -560,36 +575,44 @@ namespace FlashEditor {
             }
 
             // 40: recolor
-            stream.WriteByte(40);
-            stream.WriteByte((byte) recolorSrc.Length);
-            for (int i = 0 ; i < recolorSrc.Length ; i++) {
-                stream.WriteShort(recolorSrc[i]);
-                stream.WriteShort(recolorDst[i]);
+            if (recolorSrc != null && recolorDst != null) {
+                stream.WriteByte(40);
+                stream.WriteByte((byte) recolorSrc.Length);
+                for (int i = 0 ; i < recolorSrc.Length ; i++) {
+                    stream.WriteShort(recolorSrc[i]);
+                    stream.WriteShort(recolorDst[i]);
+                }
             }
 
             // 41: retexture
-            stream.WriteByte(41);
-            stream.WriteByte((byte) retextureSrc.Length);
-            for (int i = 0 ; i < retextureSrc.Length ; i++) {
-                stream.WriteShort(retextureSrc[i]);
-                stream.WriteShort(retextureDst[i]);
+            if (retextureSrc != null && retextureDst != null) {
+                stream.WriteByte(41);
+                stream.WriteByte((byte) retextureSrc.Length);
+                for (int i = 0 ; i < retextureSrc.Length ; i++) {
+                    stream.WriteShort(retextureSrc[i]);
+                    stream.WriteShort(retextureDst[i]);
+                }
             }
 
             // 42: palette
-            stream.WriteByte(42);
-            stream.WriteByte((byte) recolorDstPalette.Length);
-            foreach (var b in recolorDstPalette)
-                stream.WriteByte(b);
+            if (recolorDstPalette != null) {
+                stream.WriteByte(42);
+                stream.WriteByte((byte) recolorDstPalette.Length);
+                foreach (var b in recolorDstPalette)
+                    stream.WriteByte(b);
+            }
 
             // 44,45: op44/op45
             stream.WriteByte(44); stream.WriteShort(op44);
             stream.WriteByte(45); stream.WriteShort(op45);
 
             // 60: dialogueModels
-            stream.WriteByte(60);
-            stream.WriteByte((byte) dialogueModels.Length);
-            foreach (var m in dialogueModels)
-                stream.WriteShort(m);
+            if (dialogueModels != null) {
+                stream.WriteByte(60);
+                stream.WriteByte((byte) dialogueModels.Length);
+                foreach (var m in dialogueModels)
+                    stream.WriteShort(m);
+            }
 
             // 93: drawMinimapDot=false
             if (!drawMinimapDot) stream.WriteByte(93);
@@ -611,22 +634,24 @@ namespace FlashEditor {
             stream.WriteByte(103); stream.WriteShort(rotation);
 
             // 106/118: morphs
-            int count = morphs.Length - 2;
-            bool hasLast = morphs[count + 1] != -1;
-            if (!hasLast) {
-                stream.WriteByte(106);
-                stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
-                stream.WriteShort(varp == -1 ? 0xFFFF : varp);
+            if (morphs != null) {
+                int count = morphs.Length - 2;
+                bool hasLast = morphs[count + 1] != -1;
+                if (!hasLast) {
+                    stream.WriteByte(106);
+                    stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
+                    stream.WriteShort(varp == -1 ? 0xFFFF : varp);
+                }
+                else {
+                    stream.WriteByte(118);
+                    stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
+                    stream.WriteShort(varp == -1 ? 0xFFFF : varp);
+                    stream.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
+                }
+                stream.WriteByte((byte) count);
+                for (int i = 0 ; i <= count ; i++)
+                    stream.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
             }
-            else {
-                stream.WriteByte(118);
-                stream.WriteShort(varbit == -1 ? 0xFFFF : varbit);
-                stream.WriteShort(varp == -1 ? 0xFFFF : varp);
-                stream.WriteShort(morphs[count + 1] == -1 ? 0xFFFF : morphs[count + 1]);
-            }
-            stream.WriteByte((byte) count);
-            for (int i = 0 ; i <= count ; i++)
-                stream.WriteShort(morphs[i] == -1 ? 0xFFFF : morphs[i]);
 
             // 107,109,111
             if (!clickable) stream.WriteByte(107);
@@ -648,33 +673,34 @@ namespace FlashEditor {
             stream.WriteSignedByte(walkMask);
 
             // 121: translations
-            stream.WriteByte(121);
-            int tlen = translations == null ? 0 : translations.Length;
+            if (translations != null) {
+                stream.WriteByte(121);
+                int tlen = translations.Length;
 
-            /* The array is sized to modelIds.Length but the decoder only fills the slots
-               named by the record index bytes, so unpopulated slots stay null. The count
-               written here must be the number of records actually emitted below, NOT the
-               array length: declaring the length makes the decoder read records that were
-               never written and overrun into the following opcode. */
-            //tlen is 0 when translations is null, so these loops never run in that case
-            int records = 0;
-            for (int idx = 0 ; idx < tlen ; idx++)
-                if (translations![idx] != null)
-                    records++;
+                /* The array is sized to modelIds.Length but the decoder only fills the slots
+                   named by the record index bytes, so unpopulated slots stay null. The count
+                   written here must be the number of records actually emitted below, NOT the
+                   array length: declaring the length makes the decoder read records that were
+                   never written and overrun into the following opcode. */
+                int records = 0;
+                for (int idx = 0 ; idx < tlen ; idx++)
+                    if (translations[idx] != null)
+                        records++;
 
-            if (records > 255)
-                throw new InvalidOperationException("NPC " + id + " has " + records + " model translations; opcode 121 encodes the record count as a single byte");
+                if (records > 255)
+                    throw new InvalidOperationException("NPC " + id + " has " + records + " model translations; opcode 121 encodes the record count as a single byte");
 
-            stream.WriteByte((byte) records);
-            for (int idx = 0 ; idx < tlen ; idx++) {
-                var t = translations![idx];
-                if (t == null) continue;
-                if (idx > 255)
-                    throw new InvalidOperationException("NPC " + id + " has a model translation at index " + idx + "; opcode 121 encodes the slot index as a single byte");
-                stream.WriteByte((byte) idx);
-                stream.WriteByte((byte) t[0]);
-                stream.WriteByte((byte) t[1]);
-                stream.WriteByte((byte) t[2]);
+                stream.WriteByte((byte) records);
+                for (int idx = 0 ; idx < tlen ; idx++) {
+                    var t = translations[idx];
+                    if (t == null) continue;
+                    if (idx > 255)
+                        throw new InvalidOperationException("NPC " + id + " has a model translation at index " + idx + "; opcode 121 encodes the slot index as a single byte");
+                    stream.WriteByte((byte) idx);
+                    stream.WriteByte((byte) t[0]);
+                    stream.WriteByte((byte) t[1]);
+                    stream.WriteByte((byte) t[2]);
+                }
             }
 
             // 122–128
@@ -721,9 +747,11 @@ namespace FlashEditor {
             if (mainOptionIndex == 0) stream.WriteByte(159);
 
             // 160: campaigns
-            stream.WriteByte(160);
-            stream.WriteByte((byte) campaigns.Length);
-            foreach (var c in campaigns) stream.WriteShort(c);
+            if (campaigns != null) {
+                stream.WriteByte(160);
+                stream.WriteByte((byte) campaigns.Length);
+                foreach (var c in campaigns) stream.WriteShort(c);
+            }
 
             // 162: anInt1101/anInt1090
             stream.WriteByte(162);
