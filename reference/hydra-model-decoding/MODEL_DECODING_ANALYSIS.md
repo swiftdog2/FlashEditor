@@ -136,19 +136,39 @@ The decompiled code uses obfuscated field names. Here's the semantic mapping:
 | Obfuscated Name | Type | Size | Semantic Name | Description |
 |-----------------|------|------|---------------|-------------|
 | `aShortArray1415[]` | short[] | triangles | faceColor | HSL color ID per face |
-| `aByteArray1402[]` | byte[] | triangles | faceAlpha | Per-face transparency (if i5==255) |
-| `aByte1422` | byte | 1 | globalAlpha | Single alpha for all faces (if i5!=255) |
-| `aByteArray1414[]` | byte[] | triangles | faceRenderFlags | Transparency/priority flags |
-| `aByteArray1411[]` | byte[] | triangles | faceRenderType | Render type per face |
-| `anIntArray1395[]` | int[] | triangles | facePriority | Render order priority |
+| `aByteArray1414[]` | byte[] | triangles | faceRenderType | 0 = Gouraud, 1 = flat, **2 = face is not drawn** |
+| `aByteArray1402[]` | byte[] | triangles | facePriority | Per-face draw priority (present when the priority byte is 255) |
+| `aByte1422` | byte | 1 | modelPriority | One priority for the whole model (when that byte is not 255) |
+| `aByteArray1411[]` | byte[] | triangles | faceAlpha | Per-face transparency; 0 = opaque, non-zero = translucent |
+| `anIntArray1395[]` | int[] | triangles | faceSkin | Per-face skin / transform group |
 | `aShortArray1409[]` | short[] | triangles | faceTexture | Texture ID per face (-1 = none) |
 | `aByteArray1420[]` | byte[] | triangles | textureMapping | Texture coord mapping index |
+
+This table used to have five of these rows shuffled - `1414` as faceRenderFlags, `1402` as
+faceAlpha, `1411` as faceRenderType, `1395` as facePriority, and `aByte1422` as a global
+alpha, which is not a thing this format has. The rows above are the order the decoders
+actually read them in (`Model.java:583-607` for the newer format, `Model.java:1493-1523`
+for the legacy one), and each is corroborated by what the client then does with the array:
+
+| Array | Where it is consumed | What that proves |
+|---|---|---|
+| `aByteArray1414` | `Renderable_Sub2.java:397`, `Renderable_Sub3.java:172` | Gates the draw list on `!= 2`, so it is the render type |
+| `aByteArray1411` | `Renderable_Sub2.java:668`, `:542` | Read as `0xff & x` and as `255 - x << 24` into ARGB, so it is alpha |
+| `aByteArray1402` | `Renderable_Sub2.java:485` | Added as `x << 17` to a sort key, so it is priority |
+| `anIntArray1395` | `Model.java:1648` (`method2591`) | Buckets faces by value, mirroring `method2595` on vertex skins |
+
+Note that `aByteArray1411` (byte, per face) and `anIntArray1411` (int, per vertex) are two
+different fields that happen to share a number. The int one is the vertex skin.
+
+**Render type 2 is the one with teeth.** Both renderers drop those faces before anything
+else touches them. 34,528 faces across 12,621 of the 63,604 models in this cache carry it,
+and a decoder or viewer that ignores it draws stray black geometry on one model in five.
 
 ### Vertex Properties
 
 | Obfuscated Name | Type | Size | Semantic Name | Description |
 |-----------------|------|------|---------------|-------------|
-| `anIntArray1411[]` | int[] | vertices | vertexBoneWeight | Bone/skin group for animation |
+| `anIntArray1411[]` | int[] | vertices | vertexSkin | Bone/skin group for animation. A different field from the per-face `aByteArray1411` |
 
 ### Texture Face Data
 
@@ -192,11 +212,11 @@ Offset  Size   Field        Description
 0       2      vertices     Vertex count (unsigned short)
 2       2      triangles    Face count (unsigned short)
 4       1      texFaces     Textured triangle count (unsigned byte)
-5       1      i_5_         Render info flag (1 = has faceRenderFlags, faceTexture, textureMapping)
-6       1      i_6_         Alpha: 255 = per-face array; else = global alpha value
-7       1      i_7_         Render type flag (1 = has faceRenderType array)
-8       1      i_8_         Priority flag (1 = has facePriority array)
-9       1      i_9_         Bone weight flag (1 = has vertexBoneWeight array)
+5       1      i_5_         Render info flag (1 = has faceRenderType, faceTexture, textureMapping)
+6       1      i_6_         Priority: 255 = per-face array; else = the model's single priority
+7       1      i_7_         Alpha flag (1 = has faceAlpha array)
+8       1      i_8_         Skin flag (1 = has faceSkin array)
+9       1      i_9_         Vertex skin flag (1 = has vertexSkin array)
 10      2      i_10_        X-delta data size in bytes
 12      2      i_11_        Y-delta data size in bytes
 14      2      i_12_        Z-delta data size in bytes
@@ -210,11 +230,11 @@ Offset Calculation                 Section                    Contents
 ──────────────────────────────     ───────                    ────────
 0                                  vertexFlags[vertices]      1 byte per vertex (which axes have deltas)
 +vertices                          faceStripType[triangles]   1 byte per face (triangle strip opcode)
-+triangles                         faceAlpha[triangles]       (only if i_6_==255) signed byte per face
-+triangles (cond)                  facePriority[triangles]    (only if i_8_==1) unsigned byte per face
-+triangles (cond)                  faceRenderFlags[triangles] (only if i_5_==1) unsigned byte per face
-+vertices (cond)                   vertexBones[vertices]      (only if i_9_==1) unsigned byte per vertex
-+triangles (cond)                  faceRenderType[triangles]  (only if i_7_==1) signed byte per face
++triangles                         facePriority[triangles]    (only if i_6_==255) signed byte per face
++triangles (cond)                  faceSkin[triangles]        (only if i_8_==1) unsigned byte per face
++triangles (cond)                  faceRenderType[triangles]  (only if i_5_==1) unsigned byte per face
++vertices (cond)                   vertexSkin[vertices]       (only if i_9_==1) unsigned byte per vertex
++triangles (cond)                  faceAlpha[triangles]       (only if i_7_==1) signed byte per face
 i_22_ = above                      faceIndices[i_13_ bytes]  Smart-encoded triangle vertex indices
 i_23_ = i_22_ + i_13_              faceColor[triangles*2]    unsigned short per face (color HSL)
 i_24_ = i_23_ + tri*2              texFaceVerts[texFaces*6]  3x unsigned short per textured face
@@ -258,11 +278,11 @@ For each face f (0..triangles-1):
     if (i_5_ == 1):  // has render info
         renderInfo = readUnsignedByte()
 
-        // Bit 0: face render flag
+        // Bit 0: shading mode
         if (renderInfo & 1 != 1):
-            faceRenderFlags[f] = 0
+            faceRenderType[f] = 0     // Gouraud
         else:
-            faceRenderFlags[f] = 1    // face has special transparency
+            faceRenderType[f] = 1     // flat
 
         // Bit 1: texture mapping
         if (renderInfo & 2 != 2):
@@ -274,16 +294,20 @@ For each face f (0..triangles-1):
             faceColor[f] = 127                      // reset color to neutral
 
     if (i_6_ == 255):
-        faceAlpha[f] = readSignedByte()
+        facePriority[f] = readSignedByte()
 
     if (i_7_ == 1):
-        faceRenderType[f] = readSignedByte()
+        faceAlpha[f] = readSignedByte()
 
     if (i_8_ == 1):
-        facePriority[f] = readUnsignedByte()
+        faceSkin[f] = readUnsignedByte()
 ```
 
 **Important legacy difference**: In the legacy format, texture information is packed INTO the render info flag byte. `bit 1` indicates a textured face, and the texture ID comes from the face color value (which is then replaced with 127). This is very different from newer formats where textures have their own dedicated array.
+
+**The legacy format cannot express render type 2.** Its render type comes from bit 0 of the
+render info byte, so it is only ever 0 or 1. The "not drawn" faces exist only in the newer
+and newest formats, which read the type as a whole signed byte.
 
 ### 5.5 Face Index Decoding (lines 1532-1589)
 
@@ -306,7 +330,7 @@ After decoding, the legacy format runs texture mapping optimization:
 - For each face with a texture mapping, check if the textured face vertices match the face vertices
 - If they match exactly, clear the mapping (set to -1) since the texture maps directly
 - If no face actually needs texture remapping, discard the entire `textureMapping` array
-- Similarly, if no face had the render flag bit set, discard `faceRenderFlags`
+- Similarly, if no face had the render flag bit set, discard `faceRenderType`
 
 ---
 
@@ -325,16 +349,16 @@ Offset  Size   Field        Description
 2       2      triangles    Face count
 4       1      texFaces     Textured triangle count
 5       1      flags        8-bit flags:
-                               bit 0 (0x01): j - has faceRenderFlags
+                               bit 0 (0x01): j - has faceRenderType
                                bit 1 (0x02): k - has model particles
                                bit 2 (0x04): m - has model bonds
                                bit 3 (0x08): n - has formatType embedded
                                (bits 4-7: unused in this decoder)
-6       1      i_62_        Alpha: 255 = per-face; else = global
-7       1      i_63_        Render type flag (1 = has faceRenderType)
-8       1      i_64_        Priority flag (1 = has facePriority)
+6       1      i_62_        Priority: 255 = per-face; else = the model's single priority
+7       1      i_63_        Alpha flag (1 = has faceAlpha)
+8       1      i_64_        Skin flag (1 = has faceSkin)
 9       1      i_65_        Texture flag (1 = has faceTexture/textureMapping)
-10      1      i_66_        Bone weight flag (1 = has vertexBoneWeight)
+10      1      i_66_        Vertex skin flag (1 = has vertexSkin)
 11      2      i_67_        X-delta data size
 13      2      i_68_        Y-delta data size
 15      2      i_69_        Z-delta data size
@@ -353,12 +377,12 @@ Section                      Reader   Start Offset    Contents
 ───────                      ──────   ────────────    ────────
 textureFaceType[texFaces]    RSBuf1   0               1 signed byte per textured face
 vertexFlags[vertices]        RSBuf1   texFaces        1 byte per vertex
-faceRenderFlags[tri]         RSBuf2   (conditional)   1 byte per face (if j flag)
+faceRenderType[tri]          RSBuf2   (conditional)   1 byte per face (if j flag)
 faceStripType[tri]           RSBuf2   (after above)   1 byte per face
-faceAlpha[tri]               RSBuf3   (conditional)   1 byte per face (if i_62_==255)
-facePriority[tri]            RSBuf5   (conditional)   1 byte per face (if i_64_==1)
-vertexBones[vertices]        RSBuf5   (conditional)   1 byte per vertex (if i_66_==1)
-faceRenderType[tri]          RSBuf4   (conditional)   1 byte per face (if i_63_==1)
+facePriority[tri]            RSBuf3   (conditional)   1 byte per face (if i_62_==255)
+faceSkin[tri]                RSBuf5   (conditional)   1 byte per face (if i_64_==1)
+vertexSkin[vertices]         RSBuf5   (conditional)   1 byte per vertex (if i_66_==1)
+faceAlpha[tri]               RSBuf4   (conditional)   1 byte per face (if i_63_==1)
 faceIndices[i_70_ bytes]     RSBuf1   (calculated)    Smart-encoded vertex indices
 faceTexture[tri*2]           RSBuf6   (conditional)   2 bytes per face (if i_65_==1)
 texLayerAlpha[i_71_ bytes]   RSBuf7   (conditional)   1 byte per face (if textures)
@@ -395,10 +419,10 @@ Each property read from its own separate RSBuffer stream:
 ```
 For each face f:
     faceColor[f]      = RSBuf1.readUnsignedShort()
-    if j:  faceRenderFlags[f] = RSBuf2.readSignedByte()
-    if i_62_==255: faceAlpha[f] = RSBuf3.readSignedByte()
-    if i_63_==1:   faceRenderType[f] = RSBuf4.readSignedByte()
-    if i_64_==1:   facePriority[f] = RSBuf5.readUnsignedByte()
+    if j:  faceRenderType[f] = RSBuf2.readSignedByte()
+    if i_62_==255: facePriority[f] = RSBuf3.readSignedByte()
+    if i_63_==1:   faceAlpha[f] = RSBuf4.readSignedByte()
+    if i_64_==1:   faceSkin[f] = RSBuf5.readUnsignedByte()
     if i_65_==1:   faceTexture[f] = RSBuf6.readUnsignedShort() - 1   // -1 = no texture
     if texMapping exists:
         if faceTexture[f] == -1:
@@ -451,19 +475,19 @@ Offset  Size   Field        Description
 2       2      triangles    Face count
 4       2      texFaces     Textured face count (UNSIGNED SHORT in newProtocol vs BYTE in newer)
 6       1      flags        8-bit flags:
-                               bit 0 (0x01): j - has faceRenderFlags
+                               bit 0 (0x01): j - has faceRenderType
                                bit 1 (0x02): k - has particles
                                bit 2 (0x04): m - has bonds
                                bit 3 (0x08): n - has embedded formatType
-                               bit 4 (0x10): i1 - extended vertex bone format
-                               bit 5 (0x20): i2 - extended face priority format
+                               bit 4 (0x10): i1 - extended vertex skin format
+                               bit 5 (0x20): i2 - extended face skin format
                                bit 6 (0x40): i3 - extended bond format
                                bit 7 (0x80): i4 - has extra bone/animation data
-7       1      i5           Alpha: 255 = per-face; else = global
-8       1      i6           Render type flag (1 = has faceRenderType)
-9       1      i7           Priority flag (1 = has facePriority)
+7       1      i5           Priority: 255 = per-face; else = the model's single priority
+8       1      i6           Alpha flag (1 = has faceAlpha)
+9       1      i7           Skin flag (1 = has faceSkin)
 10      1      i8           Texture flag (1 = has faceTexture/textureMapping)
-11      1      i9           Bone weight flag (1 = has vertexBoneWeight)
+11      1      i9           Vertex skin flag (1 = has vertexSkin)
 12      2      i10          X-delta data size
 14      2      i11          Y-delta data size
 16      2      i12          Z-delta data size
@@ -473,8 +497,8 @@ Offset  Size   Field        Description
 
 **When newProtocol, additional footer fields**:
 ```
-22      2      i15          Vertex color/bone count
-24      2      i16          Triangle priority/type count
+22      2      i15          Vertex-skin data size
+24      2      i16          Face-skin data size
 ```
 
 **When NOT newProtocol** (lines 878-891):
@@ -492,8 +516,8 @@ Offset  Size   Field        Description
 | texFaces in footer | UnsignedByte (max 255) | UnsignedShort (max 65535) |
 | Data starts at | Offset 0 | Offset 3 |
 | Flags bits 4-7 | Unused | i1, i2, i3, i4 active |
-| Vertex bone read | `readUnsignedByte()` | `readSmart2()` (if i1 set) |
-| Face priority read | `readUnsignedByte()` | `readSmart2()` (if i2 set) |
+| Vertex skin read | `readUnsignedByte()` | `readSmart2()` (if i1 set) |
+| Face skin read | `readUnsignedByte()` | `readSmart2()` (if i2 set) |
 | Bond data read | `readUnsignedByte()` | `readSmart2()` (if i3 set) |
 | Strip type masking | Raw byte value | `byte & 0x7` (lower 3 bits only) |
 | Extra bone data (i4) | N/A | Has `anInt1413` + bone block at end |
@@ -706,14 +730,14 @@ for each particle:
     if particleId == toOverrideParticleId:
         particleId = customParticleId       // substitution
     faceIndex = readUnsignedShort()         // which face this particle is attached to
-    alpha = (globalAlpha if not per-face) else faceAlpha[faceIndex]
+    priority = (modelPriority if not per-face) else facePriority[faceIndex]
 
     modelParticle = new ModelParticle(
         particleId,
         faceVertexA[faceIndex],
         faceVertexB[faceIndex],
         faceVertexC[faceIndex],
-        alpha
+        priority
     )
 
 emitterCount = readUnsignedByte()
@@ -829,8 +853,8 @@ for each bond:
 | **Texture storage** | Packed in render info | Dedicated arrays | Dedicated arrays |
 | **Tex face types** | Type 0 only | Types 0-3 | Types 0-3 |
 | **UV precision** | N/A | 16/24-bit (formatType) | 16/24-bit (formatType) |
-| **Bone encoding** | UByte only | UByte only | UByte or readSmart2() |
-| **Priority encoding** | UByte only | UByte only | UByte or readSmart2() |
+| **Vertex skin encoding** | UByte only | UByte only | UByte or readSmart2() |
+| **Face skin encoding** | UByte only | UByte only | UByte or readSmart2() |
 | **Strip opcodes** | 1, 2, 3, 4 | 1, 2, 3, 4 | (byte & 0x7): 1-4, bit 3=bone flag |
 | **Extra bone data** | No | No | Yes (i4 flag) |
 | **formatType** | Always 12 | Optional (flag bit 3) | In header or flag bit 3 |
@@ -864,7 +888,7 @@ int anInt907;    // modifier byte
 int anInt666;    // particle vertex A
 int anInt661;    // particle vertex B
 int anInt674;    // particle vertex C
-byte aByte658;   // alpha
+byte aByte658;   // the attached face's priority (see section 11)
 int anInt659;    // particle effect ID
 ```
 

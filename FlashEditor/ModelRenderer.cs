@@ -58,7 +58,18 @@ internal sealed class ModelRenderer
             int[][] vertColours = def.ComputeUnlitColours();
             float[][] vertNormals = def.ComputeFaceVertexNormals();
             for (int i = 0; i < def.TriangleCount; i++)
+            {
+                // Render type 2 means the face is not drawn. Both of the 637 client's
+                // renderers gate their draw list on it before anything else
+                // (Renderable_Sub2.java:397, Renderable_Sub3.java:172), so these faces
+                // never reach the rasteriser. They are stray geometry carrying face
+                // colour HSL 0, and drawing them puts black slivers on the 12,621
+                // models in this cache that contain one.
+                if (def.FaceRenderType != null && def.FaceRenderType[i] == 2)
+                    continue;
+
                 allFaces.Add((def, i, vertColours, vertNormals));
+            }
         }
 
         // Sort faces: opaque first, then translucent; within each group, ascending priority
