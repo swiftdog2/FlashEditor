@@ -1,8 +1,14 @@
 # Porting this into FlashEditor
 
-What the existing C# gets wrong, what is missing entirely, and a phased plan.
+What the existing C# got wrong, what was missing, and the plan that was delivered.
 
-## 1. The existing decoder
+> **Sections 1 to 3 are historical.** They record the state of the code before this work and every
+> defect in them has been fixed. They are kept because each entry explains *why* the code now looks
+> the way it does, and because a future change that reintroduces one of them would otherwise look
+> reasonable. Section 4 describes what was actually built; section 5 is the live list of things still
+> not known.
+
+## 1. The existing decoder, as found
 
 `FlashEditor/Cache/Region/` already contains `Region.cs`, `Location.cs`, `Position.cs` and
 `HeightCalc.cs`. Its **opcode structure is correct** - the `0 / 1 / 2-49 / 50-81 / 82-255` split
