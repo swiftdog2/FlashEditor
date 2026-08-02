@@ -1,4 +1,4 @@
-using static FlashEditor.Utils.DebugUtil;
+﻿using static FlashEditor.Utils.DebugUtil;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -20,15 +20,55 @@ namespace FlashEditor {
 
         /// <summary>Diagnostic flag array tracking which opcodes were read.</summary>
         public bool[] decoded = new bool[256];
+
+        /// <summary>The opcodes this definition was decoded from, in the order they appeared.</summary>
+        /// <remarks>
+        ///     The revision-639 packer does not write item opcodes in ascending order - a typical
+        ///     record runs 1, 7, 8, 4, 6, 5, ... with the name near the end - and nothing in the
+        ///     format says it should, because the client dispatches on whatever opcode it reads
+        ///     next. Order is therefore not recoverable from the decoded fields, so it is kept
+        ///     here and replayed by <see cref="Encode"/>. Without it a saved item is semantically
+        ///     identical but byte-different, which changes the archive, its CRC, and the
+        ///     reference table entry for every item packed alongside it.
+        /// </remarks>
+        public readonly List<int> opcodeOrder = new List<int>();
+
+        /// <summary>The raw payload of each entry in <see cref="opcodeOrder"/>, index for index.</summary>
+        /// <remarks>
+        ///     Three hundred of the twenty thousand items in a revision-639 cache write the same
+        ///     opcode twice, and the client keeps only the second - the first never reaches a
+        ///     field, so nothing but its bytes records that it was ever there.
+        ///     <see cref="Encode"/> replays those bytes verbatim and re-derives only the last
+        ///     occurrence from the fields, which is the one an edit would have changed.
+        /// </remarks>
+        public readonly List<byte[]> opcodePayloads = new List<byte[]>();
+        /// <summary>
+        ///     The ground menu the client assumes when no opcode 30-34 is present.
+        /// </summary>
+        /// <remarks>
+        ///     Held separately from the field initialiser so <see cref="Encode"/> can tell an
+        ///     option the cache actually stored from one that is only there because the decoder
+        ///     seeded it. Emitting the seeded value back would add opcodes the cache never
+        ///     carried.
+        /// </remarks>
+        public static readonly string[] DefaultGroundOptions = { null, null, "take", null, null };
+
+        /// <summary>
+        ///     The inventory menu the client assumes when no opcode 35-39 is present.
+        /// </summary>
+        public static readonly string[] DefaultInventoryOptions = { null, null, null, null, "drop" };
+
         /// <summary>Right-click menu options when the item is on the ground.</summary>
-        public string[] groundOptions = { null, null, "take", null, null };
+        public string[] groundOptions = (string[]) DefaultGroundOptions.Clone();
         /// <summary>Right-click menu options when the item is in the inventory.</summary>
-        public string[] inventoryOptions = { null, null, null, null, "drop" };
+        public string[] inventoryOptions = (string[]) DefaultInventoryOptions.Clone();
 
         /// <summary>Model id used when rendering the item in the inventory.</summary>
         public int inventoryModelId;
+        /// <summary>Zoom level the client assumes when opcode 4 is absent.</summary>
+        public const int DefaultModelZoom = 2000;
         /// <summary>Zoom level for the inventory model.</summary>
-        public int modelZoom = 2000;
+        public int modelZoom = DefaultModelZoom;
         /// <summary>Primary rotation angle of the inventory model (xan2d).</summary>
         public int modelRotation1;
         /// <summary>Secondary rotation angle of the inventory model (yan2d).</summary>
@@ -73,8 +113,10 @@ namespace FlashEditor {
 
         /// <summary>Whether the item stacks in inventory (1 = stackable).</summary>
         public int stackable;
+        /// <summary>Base value the client assumes when opcode 12 is absent.</summary>
+        public const int DefaultValue = 1;
         /// <summary>Base value in coins used by shops and alchemy.</summary>
-        public int value = 1;
+        public int value = DefaultValue;
         /// <summary>Stack size display variant.</summary>
         public int multiStackSize = -1;
         /// <summary>Whether the item is restricted to members worlds.</summary>
@@ -97,8 +139,10 @@ namespace FlashEditor {
         /// <summary>Item id of the bind/shard variant and its template.</summary>
         public int bindId, bindTemplateId;
 
-        /// <summary>Model resize factors (default 128).</summary>
-        public int resizeX = 128, resizeY = 128, resizeZ = 128;
+        /// <summary>Resize factor the client assumes when opcodes 110-112 are absent.</summary>
+        public const int DefaultResize = 128;
+        /// <summary>Model resize factors.</summary>
+        public int resizeX = DefaultResize, resizeY = DefaultResize, resizeZ = DefaultResize;
         /// <summary>Pick size shift value.</summary>
         public int pickSizeShift;
 
@@ -118,6 +162,17 @@ namespace FlashEditor {
         /// <summary>Arbitrary key-value parameters (opcode 249).</summary>
         public SortedDictionary<int, object> itemParams;
 
+        /// <summary>The opcode 249 entries exactly as the record stored them, in stream order.</summary>
+        /// <remarks>
+        ///     <see cref="itemParams"/> is sorted so lookups and the editor's UI see a stable
+        ///     order, and it is a dictionary so a key can appear only once. The cache honours
+        ///     neither constraint: parameter blocks are unsorted and a handful of items repeat a
+        ///     key. Both facts are lost the moment the block lands in the dictionary, so they are
+        ///     recorded here for <see cref="Encode"/> to put back.
+        /// </remarks>
+        public readonly List<KeyValuePair<int, object>> itemParamEntries =
+            new List<KeyValuePair<int, object>>();
+
         /*──────────────────────────*
          *  ▌  SMALL HELPERS       ▐ *
          *──────────────────────────*/
@@ -133,13 +188,34 @@ namespace FlashEditor {
          *  ▌  GLOBAL DECODE ENTRY  ▐ *
          *──────────────────────────*/
 
+        /// <summary>Reads an item definition from the opcode stream at the stream's position.</summary>
+        /// <remarks>
+        ///     The stream is self-delimiting: nothing states how long a record is, so the payload
+        ///     of every opcode has to be sized correctly or the read desynchronises for the rest
+        ///     of the record. Each payload's bytes are kept alongside the opcode so
+        ///     <see cref="Encode"/> can reproduce the record it was read from.
+        /// </remarks>
+        /// <param name="s">The stream to read from.</param>
+        /// <param name="xteaKey">Unused; item definitions are not separately encrypted.</param>
         public void Decode(JagStream s, int[] xteaKey = null) {
             int safety = 0;
 
             while (true) {
                 int op = s.ReadByte();
                 if (op <= 0) break;                       // 0 = terminator, -1 = EOF
+
+                int payloadStart = s.Position;
                 DecodeOpcode(s, op);
+
+                byte[] payload = new byte[s.Position - payloadStart];
+                if (payload.Length > 0) {
+                    s.Position = payloadStart;
+                    s.Read(payload, 0, payload.Length);
+                }
+
+                opcodeOrder.Add(op);
+                opcodePayloads.Add(payload);
+
                 if (++safety > 256) break;                // corrupt-stream guard
             }
         }
@@ -324,11 +400,15 @@ namespace FlashEditor {
                 /* params */
                 case 249: {
                         int n = buf.ReadByte();
+                        //A repeated opcode 249 replaces the whole block, so the entries recorded
+                        //for the previous one describe nothing any more.
                         itemParams = new SortedDictionary<int, object>();
+                        itemParamEntries.Clear();
                         for (int i = 0 ; i < n ; i++) {
                             bool isStr = buf.ReadByte() == 1;
                             int key = buf.ReadMedium();
                             object val = isStr ? buf.ReadJagexString() : buf.ReadInt();
+                            itemParamEntries.Add(new KeyValuePair<int, object>(key, val));
                             if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
                         }
                         return;
@@ -345,168 +425,302 @@ namespace FlashEditor {
          *  ▌  ENCODE (round-trip)  ▐ *
          *──────────────────────────*/
 
+        /// <summary>
+        ///     Writes this definition back out as the opcode stream the client reads.
+        /// </summary>
+        /// <remarks>
+        ///     Opcodes the definition was decoded from are replayed first, in their original
+        ///     order, and then any remaining field that is not at its default is appended in
+        ///     ascending opcode order. Both halves matter: the first is what makes an untouched
+        ///     definition re-encode to the bytes it came from, and the second is what lets a
+        ///     field the editor sets on a definition that never carried that opcode still reach
+        ///     the file.
+        ///     <para>
+        ///     Where an opcode was stored more than once only its final occurrence is rebuilt
+        ///     from the fields, since that is the one the decoder let reach them; the earlier
+        ///     occurrences are copied back byte for byte.
+        ///     </para>
+        /// </remarks>
+        /// <returns>A flipped stream holding the encoded definition.</returns>
         public JagStream Encode() {
             var o = new JagStream();
+            var written = new bool[256];
 
-            void Emit(int code, Action payload = null) {
-                o.WriteByte((byte) code);
-                payload?.Invoke();
+            var lastOccurrence = new int[256];
+            for (int op = 0 ; op < lastOccurrence.Length ; op++)
+                lastOccurrence[op] = -1;
+            for (int i = 0 ; i < opcodeOrder.Count ; i++) {
+                int op = opcodeOrder[i];
+                if (op > 0 && op < 256)
+                    lastOccurrence[op] = i;
             }
 
-            /* model & basic */
-            Emit(1, () => o.WriteShort(inventoryModelId));
-            if (!string.IsNullOrEmpty(name)) Emit(2, () => o.WriteJagexString(name));
-            Emit(4, () => o.WriteShort(modelZoom));
-            Emit(5, () => o.WriteShort(modelRotation1));
-            Emit(6, () => o.WriteShort(modelRotation2));
-            if (modelOffsetX != 0) Emit(7, () => o.WriteShort((short) modelOffsetX));
-            if (modelOffsetY != 0) Emit(8, () => o.WriteShort((short) modelOffsetY));
+            for (int i = 0 ; i < opcodeOrder.Count ; i++) {
+                int op = opcodeOrder[i];
+                if (op <= 0 || op > 255)
+                    continue;
 
-            /* stackable / value */
-            if (stackable == 1) Emit(11);
-            Emit(12, () => o.WriteInteger(value));
-            if (membersOnly) Emit(16);
-            if (multiStackSize != -1) Emit(18, () => o.WriteShort(multiStackSize));
+                if (i == lastOccurrence[op]) {
+                    written[op] = true;
+                    EmitOpcode(o, op, true);
+                    continue;
+                }
 
-            /* worn models */
-            if (maleWearModel1 != 0) Emit(23, () => o.WriteShort(maleWearModel1));
-            if (maleWearModel2 != 0) Emit(24, () => o.WriteShort(maleWearModel2));
-            if (femaleWearModel1 != 0) Emit(25, () => o.WriteShort(femaleWearModel1));
-            if (femaleWearModel2 != 0) Emit(26, () => o.WriteShort(femaleWearModel2));
+                //A superseded occurrence has no field left to rebuild it from, so its bytes are
+                //all that is left of it.
+                o.WriteByte((byte) op);
+                if (i < opcodePayloads.Count && opcodePayloads[i] != null)
+                    o.Write(opcodePayloads[i], 0, opcodePayloads[i].Length);
+            }
 
-            /* ground / inventory actions */
-            for (int i = 0 ; i < 5 ; i++)
-                if (groundOptions[i] != null)
-                    Emit(30 + i, () => o.WriteJagexString(groundOptions[i]));
-
-            for (int i = 0 ; i < 5 ; i++)
-                if (inventoryOptions[i] != null)
-                    Emit(35 + i, () => o.WriteJagexString(inventoryOptions[i]));
-
-            /* recolour */
-            if (originalModelColors != null)
-                Emit(40, () => {
-                    o.WriteByte((byte) originalModelColors.Length);
-                    for (int i = 0 ; i < originalModelColors.Length ; i++) {
-                        o.WriteShort(originalModelColors[i]);
-                        o.WriteShort(modifiedModelColors[i]);
-                    }
-                });
-
-            /* retexture */
-            if (textureColour1 != null)
-                Emit(41, () => {
-                    o.WriteByte((byte) textureColour1.Length);
-                    for (int i = 0 ; i < textureColour1.Length ; i++) {
-                        o.WriteShort(textureColour1[i]);
-                        o.WriteShort(textureColour2[i]);
-                    }
-                });
-
-            /* priorities */
-            if (texturePriorities != null)
-                Emit(42, () => {
-                    o.WriteByte((byte) texturePriorities.Length);
-                    foreach (sbyte b in texturePriorities) o.WriteSignedByte(b);
-                });
-
-            /* GE tradeable */
-            if (unnoted) Emit(65);
-
-            /* tertiary worn models */
-            if (maleWearModel3 != 0) Emit(78, () => o.WriteShort(maleWearModel3));
-            if (femaleWearModel3 != 0) Emit(79, () => o.WriteShort(femaleWearModel3));
-
-            /* chathead models */
-            if (maleHeadModel1 != 0) Emit(90, () => o.WriteShort(maleHeadModel1));
-            if (maleHeadModel2 != 0) Emit(91, () => o.WriteShort(maleHeadModel2));
-            if (femaleHeadModel1 != 0) Emit(92, () => o.WriteShort(femaleHeadModel1));
-            if (femaleHeadModel2 != 0) Emit(93, () => o.WriteShort(femaleHeadModel2));
-
-            /* z-axis rotation */
-            if (zan2d != 0) Emit(95, () => o.WriteShort(zan2d));
-
-            /* dummy item */
-            if (dummyItem != 0) Emit(96, () => o.WriteByte((byte) dummyItem));
-
-            /* noted */
-            if (notedId != 0) Emit(97, () => o.WriteShort(notedId));
-            if (notedTemplateId != 0) Emit(98, () => o.WriteShort(notedTemplateId));
-
-            /* stack variants */
-            if (stackIds != null)
-                for (int i = 0 ; i < 10 ; i++)
-                    if (stackIds[i] != 0)
-                        Emit(100 + i, () => {
-                            o.WriteShort(stackIds[i]);
-                            o.WriteShort(stackAmounts[i]);
-                        });
-
-            /* model resize */
-            if (resizeX != 128) Emit(110, () => o.WriteShort(resizeX));
-            if (resizeY != 128) Emit(111, () => o.WriteShort(resizeY));
-            if (resizeZ != 128) Emit(112, () => o.WriteShort(resizeZ));
-
-            /* ambient / contrast */
-            if (ambient != 0) Emit(113, () => o.WriteSignedByte((sbyte) ambient));
-            if (contrast != 0) Emit(114, () => o.WriteSignedByte((sbyte) (contrast / 5)));
-            if (teamId != 0) Emit(115, () => o.WriteByte((byte) teamId));
-
-            /* lending */
-            if (lendId != 0) Emit(121, () => o.WriteShort(lendId));
-            if (lendTemplateId != 0) Emit(122, () => o.WriteShort(lendTemplateId));
-
-            /* wear offsets */
-            if (manWearXOffset != 0 || manWearYOffset != 0 || manWearZOffset != 0)
-                Emit(125, () => {
-                    o.WriteSignedByte((sbyte) (manWearXOffset >> 2));
-                    o.WriteSignedByte((sbyte) (manWearYOffset >> 2));
-                    o.WriteSignedByte((sbyte) (manWearZOffset >> 2));
-                });
-            if (womanWearXOffset != 0 || womanWearYOffset != 0 || womanWearZOffset != 0)
-                Emit(126, () => {
-                    o.WriteSignedByte((sbyte) (womanWearXOffset >> 2));
-                    o.WriteSignedByte((sbyte) (womanWearYOffset >> 2));
-                    o.WriteSignedByte((sbyte) (womanWearZOffset >> 2));
-                });
-
-            /* cursor overrides */
-            if (cursor1Op >= 0) Emit(127, () => { o.WriteByte((byte) cursor1Op); o.WriteShort(cursor1Id); });
-            if (cursor2Op >= 0) Emit(128, () => { o.WriteByte((byte) cursor2Op); o.WriteShort(cursor2Id); });
-            if (cursor3Op >= 0) Emit(129, () => { o.WriteByte((byte) cursor3Op); o.WriteShort(cursor3Id); });
-            if (cursor4Op >= 0) Emit(130, () => { o.WriteByte((byte) cursor4Op); o.WriteShort(cursor4Id); });
-            if (cursor5Op >= 0) Emit(131, () => { o.WriteByte((byte) cursor5Op); o.WriteShort(cursor5Id); });
-
-            /* quest requirements */
-            if (quests != null && quests.Length > 0)
-                Emit(132, () => {
-                    o.WriteByte((byte) quests.Length);
-                    foreach (int q in quests) o.WriteShort(q);
-                });
-
-            /* pick size shift */
-            if (pickSizeShift != 0) Emit(134, () => o.WriteByte((byte) pickSizeShift));
-
-            /* bind/shard */
-            if (bindId != 0) Emit(139, () => o.WriteShort(bindId));
-            if (bindTemplateId != 0) Emit(140, () => o.WriteShort(bindTemplateId));
-
-            /* params */
-            if (itemParams != null && itemParams.Count > 0)
-                Emit(249, () => {
-                    o.WriteByte((byte) itemParams.Count);
-                    foreach (var kv in itemParams) {
-                        bool isStr = kv.Value is string;
-                        o.WriteByte((byte) (isStr ? 1 : 0));
-                        o.WriteMedium(kv.Key);
-                        if (isStr) o.WriteJagexString((string) kv.Value);
-                        else o.WriteInteger((int) kv.Value);
-                    }
-                });
+            for (int op = 1 ; op < 256 ; op++) {
+                if (written[op])
+                    continue;
+                EmitOpcode(o, op, false);
+            }
 
             /* terminator */
             o.WriteByte(0);
             return o.Flip();
         }
+
+        /// <summary>
+        ///     Writes one opcode and its payload, if this definition has anything to say with it.
+        /// </summary>
+        /// <remarks>
+        ///     An opcode the record already carried is written back whatever its value, because
+        ///     the revision-639 packer does store fields at their default - opcode 12 with a
+        ///     value of 1 is common - and dropping them would shorten the record. An opcode the
+        ///     record did not carry is written only when its field has moved off the value the
+        ///     client assumes in its absence, so that saving an untouched item cannot grow it.
+        /// </remarks>
+        /// <param name="o">The stream to append to.</param>
+        /// <param name="op">The opcode to consider writing.</param>
+        /// <param name="stored">Whether the decoded record carried this opcode.</param>
+        private void EmitOpcode(JagStream o, int op, bool stored) {
+            void Emit(Action payload = null) {
+                o.WriteByte((byte) op);
+                payload?.Invoke();
+            }
+
+            switch (op) {
+                /* model and basic */
+                case 1: if (stored || inventoryModelId != 0) Emit(() => o.WriteShort(inventoryModelId)); return;
+                case 2: if (name != null && (stored || name.Length > 0)) Emit(() => o.WriteJagexString(name)); return;
+                case 4: if (stored || modelZoom != DefaultModelZoom) Emit(() => o.WriteShort(modelZoom)); return;
+                case 5: if (stored || modelRotation1 != 0) Emit(() => o.WriteShort(modelRotation1)); return;
+                case 6: if (stored || modelRotation2 != 0) Emit(() => o.WriteShort(modelRotation2)); return;
+                case 7: if (stored || modelOffsetX != 0) Emit(() => o.WriteShort((short) modelOffsetX)); return;
+                case 8: if (stored || modelOffsetY != 0) Emit(() => o.WriteShort((short) modelOffsetY)); return;
+
+                /* stackable / value. Opcodes 11 and 16 are bare flags, so the field alone says
+                   whether they belong in the stream. */
+                case 11: if (stackable == 1) Emit(); return;
+                case 12: if (stored || value != DefaultValue) Emit(() => o.WriteInteger(value)); return;
+                case 16: if (membersOnly) Emit(); return;
+                case 18: if (stored || multiStackSize != -1) Emit(() => o.WriteShort(multiStackSize)); return;
+
+                /* worn models */
+                case 23: if (stored || maleWearModel1 != 0) Emit(() => o.WriteShort(maleWearModel1)); return;
+                case 24: if (stored || maleWearModel2 != 0) Emit(() => o.WriteShort(maleWearModel2)); return;
+                case 25: if (stored || femaleWearModel1 != 0) Emit(() => o.WriteShort(femaleWearModel1)); return;
+                case 26: if (stored || femaleWearModel2 != 0) Emit(() => o.WriteShort(femaleWearModel2)); return;
+
+                /* ground / inventory menus. An option the record did not carry is compared
+                   against the seeded default rather than against null: the decoder starts
+                   groundOptions[2] at "take" and inventoryOptions[4] at "drop", so a null test
+                   would write those two back for every item in the cache. */
+                case int g when g >= 30 && g < 35: {
+                        string option = groundOptions[g - 30];
+                        if (option != null && (stored || option != DefaultGroundOptions[g - 30]))
+                            Emit(() => o.WriteJagexString(option));
+                        return;
+                    }
+
+                case int v when v >= 35 && v < 40: {
+                        string option = inventoryOptions[v - 35];
+                        if (option != null && (stored || option != DefaultInventoryOptions[v - 35]))
+                            Emit(() => o.WriteJagexString(option));
+                        return;
+                    }
+
+                /* recolour */
+                case 40:
+                    if (originalModelColors != null)
+                        Emit(() => {
+                            o.WriteByte((byte) originalModelColors.Length);
+                            for (int i = 0 ; i < originalModelColors.Length ; i++) {
+                                o.WriteShort(originalModelColors[i]);
+                                o.WriteShort(modifiedModelColors[i]);
+                            }
+                        });
+                    return;
+
+                /* retexture */
+                case 41:
+                    if (textureColour1 != null)
+                        Emit(() => {
+                            o.WriteByte((byte) textureColour1.Length);
+                            for (int i = 0 ; i < textureColour1.Length ; i++) {
+                                o.WriteShort(textureColour1[i]);
+                                o.WriteShort(textureColour2[i]);
+                            }
+                        });
+                    return;
+
+                /* texture priorities */
+                case 42:
+                    if (texturePriorities != null)
+                        Emit(() => {
+                            o.WriteByte((byte) texturePriorities.Length);
+                            foreach (sbyte b in texturePriorities) o.WriteSignedByte(b);
+                        });
+                    return;
+
+                /* GE tradeable */
+                case 65: if (unnoted) Emit(); return;
+
+                /* tertiary worn models */
+                case 78: if (stored || maleWearModel3 != 0) Emit(() => o.WriteShort(maleWearModel3)); return;
+                case 79: if (stored || femaleWearModel3 != 0) Emit(() => o.WriteShort(femaleWearModel3)); return;
+
+                /* chathead models */
+                case 90: if (stored || maleHeadModel1 != 0) Emit(() => o.WriteShort(maleHeadModel1)); return;
+                case 91: if (stored || maleHeadModel2 != 0) Emit(() => o.WriteShort(maleHeadModel2)); return;
+                case 92: if (stored || femaleHeadModel1 != 0) Emit(() => o.WriteShort(femaleHeadModel1)); return;
+                case 93: if (stored || femaleHeadModel2 != 0) Emit(() => o.WriteShort(femaleHeadModel2)); return;
+
+                /* z-axis rotation */
+                case 95: if (stored || zan2d != 0) Emit(() => o.WriteShort(zan2d)); return;
+
+                /* dummy item */
+                case 96: if (stored || dummyItem != 0) Emit(() => o.WriteByte((byte) dummyItem)); return;
+
+                /* noted pair */
+                case 97: if (stored || notedId != 0) Emit(() => o.WriteShort(notedId)); return;
+                case 98: if (stored || notedTemplateId != 0) Emit(() => o.WriteShort(notedTemplateId)); return;
+
+                /* stack variants 100-109 */
+                case int s when s >= 100 && s < 110: {
+                        int slot = s - 100;
+                        if (stackIds != null && (stored || stackIds[slot] != 0))
+                            Emit(() => {
+                                o.WriteShort(stackIds[slot]);
+                                o.WriteShort(stackAmounts[slot]);
+                            });
+                        return;
+                    }
+
+                /* model resize */
+                case 110: if (stored || resizeX != DefaultResize) Emit(() => o.WriteShort(resizeX)); return;
+                case 111: if (stored || resizeY != DefaultResize) Emit(() => o.WriteShort(resizeY)); return;
+                case 112: if (stored || resizeZ != DefaultResize) Emit(() => o.WriteShort(resizeZ)); return;
+
+                /* ambient / contrast / team */
+                case 113: if (stored || ambient != 0) Emit(() => o.WriteSignedByte((sbyte) ambient)); return;
+                case 114: if (stored || contrast != 0) Emit(() => o.WriteSignedByte((sbyte) (contrast / 5))); return;
+                case 115: if (stored || teamId != 0) Emit(() => o.WriteByte((byte) teamId)); return;
+
+                /* lending */
+                case 121: if (stored || lendId != 0) Emit(() => o.WriteShort(lendId)); return;
+                case 122: if (stored || lendTemplateId != 0) Emit(() => o.WriteShort(lendTemplateId)); return;
+
+                /* wear offsets */
+                case 125:
+                    if (stored || manWearXOffset != 0 || manWearYOffset != 0 || manWearZOffset != 0)
+                        Emit(() => {
+                            o.WriteSignedByte((sbyte) (manWearXOffset >> 2));
+                            o.WriteSignedByte((sbyte) (manWearYOffset >> 2));
+                            o.WriteSignedByte((sbyte) (manWearZOffset >> 2));
+                        });
+                    return;
+
+                case 126:
+                    if (stored || womanWearXOffset != 0 || womanWearYOffset != 0 || womanWearZOffset != 0)
+                        Emit(() => {
+                            o.WriteSignedByte((sbyte) (womanWearXOffset >> 2));
+                            o.WriteSignedByte((sbyte) (womanWearYOffset >> 2));
+                            o.WriteSignedByte((sbyte) (womanWearZOffset >> 2));
+                        });
+                    return;
+
+                /* cursor overrides. The -1 default cannot be written as an unsigned byte, so an
+                   unset cursor has nothing to emit whether or not the record carried it. */
+                case 127: if (cursor1Op >= 0) Emit(() => { o.WriteByte((byte) cursor1Op); o.WriteShort(cursor1Id); }); return;
+                case 128: if (cursor2Op >= 0) Emit(() => { o.WriteByte((byte) cursor2Op); o.WriteShort(cursor2Id); }); return;
+                case 129: if (cursor3Op >= 0) Emit(() => { o.WriteByte((byte) cursor3Op); o.WriteShort(cursor3Id); }); return;
+                case 130: if (cursor4Op >= 0) Emit(() => { o.WriteByte((byte) cursor4Op); o.WriteShort(cursor4Id); }); return;
+                case 131: if (cursor5Op >= 0) Emit(() => { o.WriteByte((byte) cursor5Op); o.WriteShort(cursor5Id); }); return;
+
+                /* quest requirements */
+                case 132:
+                    if (quests != null)
+                        Emit(() => {
+                            o.WriteByte((byte) quests.Length);
+                            foreach (int q in quests) o.WriteShort(q);
+                        });
+                    return;
+
+                /* pick size shift */
+                case 134: if (stored || pickSizeShift != 0) Emit(() => o.WriteByte((byte) pickSizeShift)); return;
+
+                /* bind/shard pair */
+                case 139: if (stored || bindId != 0) Emit(() => o.WriteShort(bindId)); return;
+                case 140: if (stored || bindTemplateId != 0) Emit(() => o.WriteShort(bindTemplateId)); return;
+
+                /* params */
+                case 249:
+                    if (itemParams != null)
+                        Emit(() => WriteParams(o));
+                    return;
+
+                /* an opcode the format does not define carries no field to write */
+                default: return;
+            }
+        }
+
+        /// <summary>
+        ///     Writes the opcode 249 parameter block in the order the record stored it.
+        /// </summary>
+        /// <remarks>
+        ///     Values come from <see cref="itemParams"/> so an edit reaches the file, but only
+        ///     for the first occurrence of a key: that is the one the decoder let into the
+        ///     dictionary, so a repeated key's later values exist nowhere but
+        ///     <see cref="itemParamEntries"/>. A key dropped from the dictionary is dropped from
+        ///     the block, and a key added to it is appended after the recorded entries.
+        /// </remarks>
+        /// <param name="o">The stream to append to.</param>
+        private void WriteParams(JagStream o) {
+            var entries = new List<KeyValuePair<int, object>>();
+            var seen = new HashSet<int>();
+
+            foreach (var recorded in itemParamEntries) {
+                if (!itemParams.TryGetValue(recorded.Key, out object current))
+                    continue;
+                entries.Add(new KeyValuePair<int, object>(
+                    recorded.Key, seen.Add(recorded.Key) ? current : recorded.Value));
+            }
+
+            foreach (var kv in itemParams)
+                if (!seen.Contains(kv.Key))
+                    entries.Add(kv);
+
+            o.WriteByte((byte) entries.Count);
+            foreach (var kv in entries)
+                WriteParam(o, kv.Key, kv.Value);
+        }
+
+        /// <summary>Writes one opcode 249 key-value pair.</summary>
+        /// <param name="o">The stream to append to.</param>
+        /// <param name="key">The parameter key, a 24 bit id.</param>
+        /// <param name="param">The parameter value, a string or an int.</param>
+        private static void WriteParam(JagStream o, int key, object param) {
+            bool isStr = param is string;
+            o.WriteByte((byte) (isStr ? 1 : 0));
+            o.WriteMedium(key);
+            if (isStr) o.WriteJagexString((string) param);
+            else o.WriteInteger((int) param);
+        }
     }
 }
+
