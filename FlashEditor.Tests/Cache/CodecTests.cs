@@ -401,6 +401,98 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     An index with no archives still gets a reference table, and a real 639 cache ships
+        ///     one: a four byte format-5 stub. Sizing the identifier array from the highest
+        ///     archive id threw on it, so the table describing an empty index took the whole
+        ///     decode down rather than returning an empty table.
+        /// </summary>
+        [Fact]
+        public void ReferenceTable_WithNoArchives_DecodesAndReEncodes()
+        {
+            //Format 5, so no version field follows the format byte
+            byte[] wire = { 5, 0, 0, 0 };
+
+            RSReferenceTable table = ReferenceTableCodec.Decode(new JagStream(wire));
+
+            Assert.Equal(5, table.format);
+            Assert.Empty(table.GetArchiveEntries());
+            Assert.Equal(wire, ReferenceTableCodec.Encode(table).ToArray());
+        }
+
+        /// <summary>
+        ///     Builds the wire bytes of a two file, three chunk archive by hand.
+        /// </summary>
+        /// <remarks>
+        ///     A multi-chunk archive is stored chunk-major - chunk 0 of every file, then chunk 1
+        ///     of every file - and the size table is delta-encoded across the files within a
+        ///     chunk, restarting the running total on each chunk. File 0 is split 2/1/3 and file
+        ///     1 is split 3/4/1, with byte values that make the interleaving visible.
+        /// </remarks>
+        private static byte[] ThreeChunkArchiveBytes()
+        {
+            var wire = new JagStream();
+
+            //Payload, chunk-major
+            wire.Write(new byte[] { 0x01, 0x02 }, 0, 2);              // chunk 0, file 0
+            wire.Write(new byte[] { 0x11, 0x12, 0x13 }, 0, 3);        // chunk 0, file 1
+            wire.Write(new byte[] { 0x03 }, 0, 1);                    // chunk 1, file 0
+            wire.Write(new byte[] { 0x14, 0x15, 0x16, 0x17 }, 0, 4);  // chunk 1, file 1
+            wire.Write(new byte[] { 0x04, 0x05, 0x06 }, 0, 3);        // chunk 2, file 0
+            wire.Write(new byte[] { 0x18 }, 0, 1);                    // chunk 2, file 1
+
+            //Size table: per chunk, the delta from the previous file's size in that chunk
+            wire.WriteInteger(2); wire.WriteInteger(1);    // chunk 0 - sizes 2, 3
+            wire.WriteInteger(1); wire.WriteInteger(3);    // chunk 1 - sizes 1, 4
+            wire.WriteInteger(3); wire.WriteInteger(-2);   // chunk 2 - sizes 3, 1
+
+            wire.WriteByte(3);                             // chunk count
+
+            return wire.ToArray();
+        }
+
+        /// <summary>
+        ///     Most multi-file archives in a real 639 cache are stored across three chunks, not
+        ///     one. Decoding reassembles each file from its slices, so encoding has to put them
+        ///     back the same way - laying the files out one after another instead reorders the
+        ///     payload and writes a size table describing whole files rather than slices. Both
+        ///     survive a decode by this codec, which is why only captured bytes catch it.
+        /// </summary>
+        [Fact]
+        public void Archive_MultiChunk_ReEncodesToTheSameBytes()
+        {
+            byte[] original = ThreeChunkArchiveBytes();
+
+            RSArchive decoded = RSArchive.Decode(new JagStream(original), new[] { 0, 1 });
+
+            Assert.Equal(3, decoded.chunks);
+            Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, decoded.GetFile(0).ToArray());
+            Assert.Equal(new byte[] { 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18 }, decoded.GetFile(1).ToArray());
+            Assert.Equal(original, decoded.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     Editing a file invalidates the chunk split it was decoded with, so the archive is
+        ///     written back as a single chunk. That is a shape the client reads for any archive
+        ///     whose trailer says one chunk, and it has to carry the edit plus every untouched
+        ///     file intact - keeping the stale split would slice the files at offsets that no
+        ///     longer exist.
+        /// </summary>
+        [Fact]
+        public void Archive_MultiChunk_EditedArchiveFallsBackToASingleChunk()
+        {
+            RSArchive decoded = RSArchive.Decode(new JagStream(ThreeChunkArchiveBytes()), new[] { 0, 1 });
+
+            decoded.PutFile(1, new JagStream(new byte[] { 0xAA, 0xBB }));
+
+            Assert.Equal(1, decoded.chunks);
+
+            RSArchive reloaded = RSArchive.Decode(new JagStream(decoded.Encode().ToArray()), new[] { 0, 1 });
+
+            Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, reloaded.GetFile(0).ToArray());
+            Assert.Equal(new byte[] { 0xAA, 0xBB }, reloaded.GetFile(1).ToArray());
+        }
+
+        /// <summary>
         ///     Ensures container headers remain byte‑accurate through multiple
         ///     encode/decode cycles for all compression methods and for
         ///     multi‑file archives.

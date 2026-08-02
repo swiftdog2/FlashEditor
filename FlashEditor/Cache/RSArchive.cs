@@ -13,6 +13,29 @@ namespace FlashEditor.cache
         public int chunks = 1;
 
         /// <summary>
+        ///     How many bytes of each file live in each chunk, as <c>[chunk][file]</c> over the
+        ///     files in ascending id order. Null for an archive that was not decoded from a
+        ///     multi-chunk payload.
+        /// </summary>
+        /// <remarks>
+        ///     A multi-chunk archive is stored chunk-major - every file's first slice, then every
+        ///     file's second slice, and so on - so the split is part of the byte layout and cannot
+        ///     be recovered from the reassembled files. Keeping it is what lets
+        ///     <see cref="Encode"/> reproduce the payload it was decoded from; without it the
+        ///     encoder lays the files out file-major and silently reorders the archive.
+        ///     <para>
+        ///     The file dimension is positional. <see cref="Decode"/> fills it in the order of
+        ///     the <c>fileIds</c> it was handed, while <see cref="Encode"/> reads it in the sorted
+        ///     order of <see cref="files"/>. Those agree because a reference table always yields
+        ///     ascending file ids; if a caller ever passed unsorted ids the columns would refer
+        ///     to different files, which <see cref="ChunkSizesMatchFiles"/> catches through the
+        ///     per-file totals and degrades to a single chunk rather than writing a scrambled
+        ///     archive.
+        ///     </para>
+        /// </remarks>
+        private int[][] chunkSizes;
+
+        /// <summary>
         /// Create a new Archive
         /// </summary>
         public RSArchive()
@@ -119,6 +142,9 @@ namespace FlashEditor.cache
             for (int id = 0; id < size; id++)
                 archive.files[fileIds[id]].Flip();
 
+            //Remember the chunk split so Encode can put the payload back the way it was found
+            archive.chunkSizes = chunkSizes;
+
             //Return the archive
             return archive;
         }
@@ -144,20 +170,23 @@ namespace FlashEditor.cache
         ///   chunk-count byte here would hand it straight back as file data and
         ///   grow the file by one byte on every save cycle.<br/>
         /// ─ For <c>&gt;1</c> files we output one <c>int32</c> per file and per
-        ///   chunk, followed by the chunk-count byte.  Because this
-        ///   implementation always stores exactly one chunk, the delta we emit
-        ///   for file <i>i</i> is simply <c>len<i>i</i> - len<i>i-1</i></c> (the
-        ///   convention expected by <see cref="Decode"/>).  See lines around
-        ///   <c>cumulativeChunkSize += delta;</c> in the decoder for the
-        ///   corresponding read-side logic.
+        ///   chunk, followed by the chunk-count byte. The sizes are delta-encoded
+        ///   <i>across the files within a chunk</i>, and the running total restarts
+        ///   on each chunk - see the <c>cumulativeChunkSize</c> reset in the
+        ///   decoder for the corresponding read-side logic.
         /// </para>
         /// <para>
-        /// <b>Future multi-chunk support.</b>
-        /// When <c>chunks &gt; 1</c> you must split each file into <c>chunks</c>
-        /// equal parts, write them in
-        /// <c>chunk0 file0 … fileN, chunk1 file0 …</c> order, and change the
-        /// delta calculation to be "this chunk's size minus the previous chunk's
-        /// size of the <i>same</i> file".
+        /// <b>Multi-chunk archives.</b>
+        /// Chunks are <i>not</i> equal parts, and the payload is stored chunk-major:
+        /// <c>chunk0 file0 … fileN, chunk1 file0 …</c>. The split is therefore part
+        /// of the byte layout and cannot be recovered from the reassembled files,
+        /// so <see cref="Decode"/> retains it and this method reproduces it. Most
+        /// multi-file archives in a real 639 cache use three chunks; writing the
+        /// files end to end instead yields a payload of exactly the same length
+        /// with the bytes in the wrong order. An archive whose files have been
+        /// edited no longer fits the split it was decoded with, so
+        /// <see cref="PutFile"/> drops it and the archive is written as a single
+        /// chunk - a shape the client reads for any archive.
         /// </para>
         /// </remarks>
         /// <returns>
@@ -168,13 +197,40 @@ namespace FlashEditor.cache
         {
             var stream = new JagStream();
 
+            int fileCount = files.Count;
+            bool multiChunk = fileCount > 1 && chunks > 1 && ChunkSizesMatchFiles();
+
             //------------------------------------------------------------------
-            // 1)  Write raw payloads – one contiguous block per file
+            // 1)  Write raw payloads
             //------------------------------------------------------------------
-            foreach (var kvp in files)
+            if (multiChunk)
             {
-                kvp.Value.Seek0();          // defensive rewind
-                kvp.Value.WriteTo(stream);  // copy verbatim
+                //Chunk-major, exactly as Decode reads it back: chunk 0 of every file, then
+                //chunk 1 of every file, and so on.
+                byte[][] payloads = new byte[fileCount][];
+                int position = 0;
+                foreach (var kvp in files)                              // sorted by key
+                    payloads[position++] = kvp.Value.ToArray();
+
+                int[] offsets = new int[fileCount];
+                for (int chunk = 0; chunk < chunks; chunk++)
+                {
+                    for (int index = 0; index < fileCount; index++)
+                    {
+                        int length = chunkSizes[chunk][index];
+                        stream.Write(payloads[index], offsets[index], length);
+                        offsets[index] += length;
+                    }
+                }
+            }
+            else
+            {
+                //One contiguous block per file, which is the single-chunk layout
+                foreach (var kvp in files)
+                {
+                    kvp.Value.Seek0();          // defensive rewind
+                    kvp.Value.WriteTo(stream);  // copy verbatim
+                }
             }
 
             //------------------------------------------------------------------
@@ -184,24 +240,59 @@ namespace FlashEditor.cache
             // and takes the entire payload as the file, so appending a chunk-count
             // byte here would hand that byte back as file data and grow the file by
             // one byte on every save cycle.
-            int fileCount = files.Count;
             if (fileCount > 1)
             {
-                for (int chunk = 0; chunk < chunks; ++chunk)            // always 1 today
+                //Sizes are delta-encoded across the files *within* a chunk, and the running
+                //total restarts on each chunk - see the cumulativeChunkSize reset in Decode.
+                int chunkCount = multiChunk ? chunks : 1;
+                for (int chunk = 0; chunk < chunkCount; ++chunk)
                 {
                     int prev = 0;
+                    int index = 0;
                     foreach (var kvp in files)                        // sorted by key
                     {
-                        int chunkSize = (int)kvp.Value.Length;          // full len (1-chunk)
+                        int chunkSize = multiChunk ? chunkSizes[chunk][index] : (int)kvp.Value.Length;
                         stream.WriteInteger(chunkSize - prev);          // Δ vs previous file
                         prev = chunkSize;
+                        index++;
                     }
                 }
 
-                stream.WriteByte((byte)chunks);   // spec = 1, keeps decoder happy
+                stream.WriteByte((byte)chunkCount);
             }
 
             return stream.Flip();             // ready for reading
+        }
+
+        /// <summary>
+        ///     Whether the retained chunk split still describes the files currently held.
+        /// </summary>
+        /// <remarks>
+        ///     Editing a file changes its length, at which point the split it was decoded with no
+        ///     longer adds up. <see cref="PutFile"/> drops the split for that reason; this is the
+        ///     belt-and-braces check that the shape matches before it is trusted.
+        /// </remarks>
+        private bool ChunkSizesMatchFiles()
+        {
+            if (chunkSizes == null || chunkSizes.Length != chunks)
+                return false;
+
+            foreach (int[] perFile in chunkSizes)
+                if (perFile == null || perFile.Length != files.Count)
+                    return false;
+
+            int index = 0;
+            foreach (var kvp in files)
+            {
+                long total = 0;
+                for (int chunk = 0; chunk < chunks; chunk++)
+                    total += chunkSizes[chunk][index];
+                if (total != kvp.Value.Length)
+                    return false;
+                index++;
+            }
+
+            return true;
         }
 
 
@@ -247,8 +338,22 @@ namespace FlashEditor.cache
             return files.Keys.ToArray();
         }
 
+        /// <summary>
+        ///     Adds or replaces a file, and abandons any retained multi-chunk split.
+        /// </summary>
+        /// <remarks>
+        ///     The split describes how the decoded files were spread across chunks, so it stops
+        ///     describing anything the moment a file's length changes or a file is added. The
+        ///     archive is written back as a single chunk instead, which holds the same files and
+        ///     is what the client reads for any archive whose trailer says one chunk.
+        /// </remarks>
+        /// <param name="fileId">The file id to write.</param>
+        /// <param name="data">The file payload.</param>
         public void PutFile(int fileId, JagStream data)
         {
+            chunkSizes = null;
+            chunks = 1;
+
             if (files.ContainsKey(fileId))
             {
                 //Update the file

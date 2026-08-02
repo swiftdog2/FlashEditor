@@ -19,4 +19,14 @@
 	<ItemGroup>
 		<ProjectReference Include="..\FlashEditor\FlashEditor.csproj" />
 	</ItemGroup>
+
+	<!-- Bytes captured from a real revision-639 cache. Small enough to commit, so the codec
+	     stays pinned to shipped bytes on machines that have no cache to point the
+	     conformance suite at. -->
+	<ItemGroup>
+		<!-- Always, not PreserveNewest: these are compared byte for byte, and a stale copy
+		     left in the output directory fails the tests in a way that looks like a codec
+		     regression rather than a build artefact. -->
+		<None Include="Fixtures\RealCache\*.bin" CopyToOutputDirectory="Always" />
+	</ItemGroup>
 </Project>

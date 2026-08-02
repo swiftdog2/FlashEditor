@@ -47,7 +47,12 @@ namespace FlashEditor.cache
             }
 
             /* ── Optional 32-bit identifier hashes ─────────────────── */
-            int[] identifiersTmp = new int[table.GetArchiveEntries().Keys.Max() + 1];
+            //A table may legitimately hold no archives at all - the reference cache ships one
+            //such table, a four byte format-5 stub. Max() throws on an empty sequence, so the
+            //table that describes an empty index used to take the whole decode down with it.
+            int[] identifiersTmp = table.GetArchiveEntries().Count == 0
+                ? Array.Empty<int>()
+                : new int[table.GetArchiveEntries().Keys.Max() + 1];
             if (table.hasIdentifiers)
             {
                 foreach (var kv in table.GetArchiveEntries())

@@ -58,7 +58,33 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 - `compressedSize` (4 bytes)
 - `uncompressedSize` (4 bytes when compressed)
 - Payload (optionally XTEA-encrypted)
-- Optional 3-byte `cumulativeLengths[]` table when the container has multiple files
+- Optional 2-byte version trailer. **Present or absent depending on the container** - in a
+  real 639 cache every archive container carries one and every reference-table container in
+  the meta index does not. Derive its length by subtracting the header and `compressedSize`
+  from the stored length; never assume 2. The archive CRC and the reference table's
+  `compressed` size are both taken over the stored container *minus* this trailer, so a
+  wrong trailer length puts both out of step with the client.
+
+### Group (archive) payload
+What sits inside the container once decompressed. The file count comes from the reference
+table, not from the payload.
+
+- **One file** - no trailer at all. The whole payload is the file. The client special-cases
+  a file count of 1, so writing a size table or a chunk-count byte here hands those bytes
+  back as file data and grows the file on every save.
+- **More than one file** - payload first, then the trailer:
+  - `chunks x fileCount` big-endian `int32` sizes
+  - a final unsigned byte holding `chunks`
+- The payload is stored **chunk-major**: chunk 0 of every file, then chunk 1 of every file,
+  and so on. Files are in ascending id order within each chunk.
+- The size table is delta-encoded **across the files within a chunk**, and the running total
+  restarts on each chunk. So for chunk `c`, `size[c][0]` is the first delta and
+  `size[c][i] = size[c][i-1] + delta`.
+- `chunks` is commonly **3**, not 1 - roughly two thirds of the multi-file archives in a real
+  639 cache use three. Laying the files out end to end instead of chunk-major produces a
+  payload of exactly the same length with the bytes in the wrong order, which a round trip
+  through this codec cannot detect. Encoding must either reproduce the split it decoded or
+  drop to a single chunk, which is a shape the client also reads.
 
 Revision 639 (and later) expects the header layout above. Some earlier
 revisions swapped the two length fields, so both encode and decode must

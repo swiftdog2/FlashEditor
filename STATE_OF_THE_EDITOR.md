@@ -417,10 +417,74 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    round trip the suite was missing, which also pins the pair's position on the wire
    between the whirlpool digests and the archive versions. `AGENTS.md`'s reference-table
    blueprint now documents both sizes.
-7d. Pin the codec against a real 639 cache. Every codec test round-trips this encoder
-   against this decoder, so a shared misreading of the wire format would pass. The
-   single-file no-trailer rule in particular is argued from the client's unpacker and
-   from AGENTS.md, not demonstrated against captured bytes.
+7d. ~~Pin the codec against a real 639 cache.~~ **Done 2026-08-02.** Every codec test
+   round-tripped this encoder against this decoder, so a shared misreading of the wire
+   format would have passed all of them - and one did.
+   `RealCacheConformanceTests` now asserts against bytes this project did not write.
+   It reads a cache from a `cache/` directory at the repo root or from
+   `FLASHEDITOR_TEST_CACHE`, and skips - naming the reason - when there is none, so the
+   suite still runs on a machine without one. `FLASHEDITOR_TEST_CACHE_FULL=1` sweeps every
+   archive instead of 250 per index; the sampled run reports that it sampled, so a capped
+   run is never mistaken for full coverage. Against the reference cache the full sweep
+   covers 102,467 archives, 110,505 index records and all 35 reference tables:
+   - **Archive CRCs.** All 102,467 match a CRC-32 taken over the stored container minus its
+     version trailer. Nothing here produced those checksums, so they independently confirm
+     both the container header layout and the exact span 7c reasoned about.
+   - **Archives re-encode to their captured payload.** 96,653 single-file and 5,155
+     multi-file archives, byte for byte.
+   - **The single-file no-trailer rule is now demonstrated, not argued.** Of 95,996
+     single-file archives, zero have a payload that would parse as a valid one-file trailer
+     (final byte 1, preceded by an int equal to the remaining length). That is positive
+     evidence for the special case rather than an absence of evidence against it. The count
+     is lower than the 96,653 single-file archives re-encoded above because payloads shorter
+     than five bytes cannot express a trailer either way and are not counted as evidence.
+   - **Reference tables re-encode to their captured bytes.** 31 of 35 exactly. The other
+     four (indexes 9, 26, 27, 29) carry a zero-filled block of four bytes per file after the
+     final field with the identifiers flag clear - the signature of a repacker that emitted
+     the per-file identifier block unconditionally. Only trailing *zero* padding is
+     tolerated, so a re-encode dropping a field with a value would still fail. Note the
+     consequence the test accepts: saving one of those four indexes drops its padding, 6,200
+     bytes across the four. Nothing reads it and the client derives the block's presence from
+     the flags byte, so this is believed harmless - but it is a real difference on disk and
+     the only place the write path is knowingly not byte-preserving.
+   Two production defects had to be fixed for the suite to pass, neither reachable by a
+   round-trip test:
+   - **Multi-chunk archives were being corrupted on encode.** A group's payload is stored
+     chunk-major - chunk 0 of every file, then chunk 1 of every file - and its size table is
+     delta-encoded across the files *within* a chunk, restarting each chunk. `Decode` read
+     that correctly; `Encode` wrote every file end to end and emitted whole-file lengths as
+     the size table. That is only equivalent when `chunks == 1`, and in a real cache
+     **3,517 of 5,155 multi-file archives use three chunks** - so the encoder reordered the
+     payload of roughly two thirds of them while producing a payload of exactly the same
+     length. Since `RSCache.WriteFile` re-encodes the whole group, editing any one file in
+     such an archive silently scrambled every file in it. `RSArchive` now retains the chunk
+     split through `Decode` and reproduces it in `Encode`; `PutFile` drops the split and
+     falls back to a single chunk, since an edited file's length no longer fits the split it
+     was decoded with and one chunk is a shape the client reads for any archive.
+   - **A reference table holding no archives crashed `Decode`.** It sized the identifier
+     array from `Keys.Max()`, which throws on an empty sequence. The reference cache ships
+     exactly such a table - a four byte format-5 stub for index 36.
+   Pinned in two places. `RealCacheConformanceTests` is the exhaustive version and needs a
+   cache; `CapturedCacheBytesTests` runs always, against a few hundred bytes of real cache
+   committed under `FlashEditor.Tests/Fixtures/RealCache` - a reference table, a three-chunk
+   archive, a single-file archive and their CRCs. `CodecTests` gained a hand-built
+   three-chunk archive and an empty-table case, so both layout rules are stated in the suite
+   independently of any fixture.
+   One caveat on the cache-free half: `Decode`/`Encode` special-case a file count of one at
+   both ends, so round-tripping a single-file fixture holds for any bytes at all and proves
+   nothing by itself. The fixture test therefore asserts the captured payload is *not*
+   consistent with a trailer, which is the part that can actually fail. The exhaustive
+   version makes the same argument across 95,996 archives rather than one. `AGENTS.md` now documents the group payload layout and the fact that the
+   container version trailer is present on archive containers and absent on reference-table
+   containers, which is what makes 7c's "read the trailer length off the container" rule
+   load-bearing rather than defensive.
+
+   Not exercised by the reference cache, and so still unproven: every table in it is format
+   6, so the format-7 archive-flags byte (7b) is untested against real bytes; no table sets
+   `FLAG_SIZES`, so 7c's recomputed pair is untested against real bytes; and 659 of the
+   5,203 map archives are XTEA encrypted with no key table shipped, so they are skipped -
+   which leaves item 3 (validating `XTEAKeyTable` against a real key dump) exactly where it
+   was.
 7e. ~~Stop `RSReferenceTable` storing its flag state twice.~~ **Done 2026-08-02**, found
    reviewing 7c. The table held the raw `flags` byte *and* four independent public bools
    (`hasIdentifiers`, `usesWhirlpool`, `entryHashes`, `sizes`) with nothing keeping them in
