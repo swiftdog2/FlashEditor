@@ -563,6 +563,28 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        /// Unsigned smart with a 32767 continuation: reads smarts while each one is the
+        /// maximum 32767, accumulating, so the encodable range is not capped at a short.
+        /// </summary>
+        /// <remarks>
+        ///     This is a third smart form, distinct from <see cref="ReadUnsignedSmart"/> and
+        ///     <see cref="ReadSignedSmart"/>. The 637 client reads it with <c>RSBuffer.method1208</c>
+        ///     (RSBuffer.java:288-304) and uses it for exactly one field: the object-id delta in the
+        ///     loc stream. Reading that field as a plain smart terminates the continuation early and
+        ///     desynchronises the rest of the file - 63 of the shipped <c>l</c> groups and 260 of the
+        ///     <c>ul</c> groups contain a continuation. The position delta in the same stream is a
+        ///     plain smart and must not be read with this.
+        /// </remarks>
+        /// <returns>The accumulated value.</returns>
+        public int ReadExtendedUnsignedSmart() {
+            int total = 0;
+            int value;
+            while ((value = ReadUnsignedSmart()) == 32767)
+                total += 32767;
+            return total + value;
+        }
+
+        /// <summary>
         /// Writes an unsigned smart: single byte for 0–127, two-byte short
         /// (value + 32768) for 128–32767. Inverse of <see cref="ReadUnsignedSmart"/>.
         /// </summary>

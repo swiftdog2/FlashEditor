@@ -18,7 +18,6 @@ namespace FlashEditor.Cache.Region {
             XXLARGE = 168
         }
 
-        private int size;
         private int mapSize;
         private int x;
         private int y;
@@ -30,7 +29,11 @@ namespace FlashEditor.Cache.Region {
             this.x = x;
             this.y = y;
             this.height = height;
-            this.size = mapSize;
+
+            //This assigned `size`, leaving `mapSize` at 0. Every method that consults mapSize -
+            //GetLocalX, GetLocalY and both overloads - therefore subtracted a half-window of 0,
+            //and GetMapSize always returned 0. `size` was read by nothing.
+            this.mapSize = mapSize;
         }
 
         public Position(int localX, int localY, int height, int regionId, int mapSize) : this(localX + (((regionId >> 8) & 0xFF) << 6), localY + ((regionId & 0xff) << 6), height, mapSize) { }

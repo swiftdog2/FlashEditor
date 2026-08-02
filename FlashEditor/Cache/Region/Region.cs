@@ -1,182 +1,354 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace FlashEditor.Cache.Region {
     /// <summary>
-    ///     Represents a 64×64 map region and exposes methods for
-    ///     decoding its terrain and location data.
+    ///     One 64x64 map square, and the decoders for its terrain (<c>m</c>) and location
+    ///     (<c>l</c>) files.
     /// </summary>
+    /// <remarks>
+    ///     Byte formats are documented in <c>reference/hydra-637-maps/02-terrain-m.md</c> and
+    ///     <c>03-locs-l.md</c>, both derived from the bundled 637 client and verified by decoding
+    ///     every map square in the shipped 639 cache to exact buffer consumption.
+    /// </remarks>
     public class Region {
-        public static int WIDTH = 64;
-        public static int HEIGHT = 64;
+        /// <summary>Tiles along each axis of a map square.</summary>
+        public const int WIDTH = 64;
 
-        private int regionID;
-        private int baseX;
-        private int baseY;
+        /// <summary>Tiles along each axis of a map square.</summary>
+        public const int HEIGHT = 64;
 
-        private int[, ,] tileHeights = new int[4,104,104];
-        private byte[, ,] renderRules = new byte[4,104,104];
-        private byte[, ,] overlayIds = new byte[4,104,104];
-        private byte[, ,] overlayPaths = new byte[4,104,104];
-        private byte[, ,] overlayRotations = new byte[4,104,104];
-        private byte[, ,] underlayIds = new byte[4,104,104];
+        /// <summary>Planes in a surface terrain file.</summary>
+        public const int PLANES = 4;
 
-        private List<Location> locations = new List<Location>();
+        /// <summary>
+        ///     World units the terrain rises per unit of the stored height byte.
+        /// </summary>
+        /// <remarks>
+        ///     This client is a 4x rescale of RS2 - tile size is 512 rather than 128 - so every
+        ///     vertical quantity is four times the RS2 value. Class305.java:1970 computes
+        ///     <c>-h * 8 &lt;&lt; 2</c>. Negative because Y-up is negative here.
+        /// </remarks>
+        public const int HEIGHT_UNITS_PER_STEP = 32;
 
+        /// <summary>
+        ///     World units each plane sits above the one below when a tile carries no height.
+        /// </summary>
+        /// <remarks>Class305.java:1940-1941. The RS2 value is 240.</remarks>
+        public const int PLANE_HEIGHT_DROP = 960;
+
+        private readonly int regionID;
+        private readonly int baseX;
+        private readonly int baseY;
+
+        //Heights are a VERTEX grid, one larger on each axis than the tile grid: the renderer
+        //reads vertex x+1 and y+1 when building a tile quad (Class305.java:127).
+        private int[,,] tileHeights = new int[0, 0, 0];
+        private byte[,,] renderRules = new byte[0, 0, 0];
+        private int[,,] overlayIds = new int[0, 0, 0];
+        private byte[,,] overlayShapes = new byte[0, 0, 0];
+        private byte[,,] overlayRotations = new byte[0, 0, 0];
+        private int[,,] underlayIds = new int[0, 0, 0];
+
+        private int planeCount;
+
+        private readonly List<Location> locations = new List<Location>();
+
+        /// <summary>Number of planes the last terrain load decoded.</summary>
+        public int PlaneCount => planeCount;
+
+        /// <summary>
+        ///     The bytes of the terrain file following the tile grid, kept verbatim.
+        /// </summary>
+        /// <remarks>
+        ///     Environment, point lights and a shadow map. Nothing here models them, but they
+        ///     cannot be re-derived either, so a write path has to put them back untouched. 1324 of
+        ///     the 1684 shipped terrain files carry one.
+        /// </remarks>
+        public byte[] ExtrasTail { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>Creates a region from its packed id.</summary>
+        /// <param name="id">Region id, <c>(regionX &lt;&lt; 8) | regionY</c>.</param>
         public Region(int id) {
-            this.regionID = id;
-            this.baseX = (id >> 8 & 0xFF) << 6;
-            this.baseY = (id & 0xFF) << 6;
+            regionID = id;
+            baseX = (id >> 8 & 0xFF) << 6;
+            baseY = (id & 0xFF) << 6;
+            Allocate(PLANES);
         }
 
-        /**
-        * Decodes terrain data stored in the specified {@link JagStream}.
-        *
-        * @param buf
-        *      The JagStream.
-        */
-        public void LoadTerrain(JagStream buf) {
-            for(int z = 0; z < 4; z++) {
-                for(int x = 0; x < 64; x++) {
-                    for(int y = 0; y < 64; y++) {
-                        while(true) {
-                            //ReadUnsignedByte throws at EOF; ReadByte returns -1, which would
-                            //match the <= 49 arm below and spin this loop forever on truncated data
-                            int attribute = buf.ReadUnsignedByte();
+        private void Allocate(int planes) {
+            planeCount = planes;
+            tileHeights = new int[planes, WIDTH + 1, HEIGHT + 1];
+            renderRules = new byte[planes, WIDTH, HEIGHT];
+            overlayIds = new int[planes, WIDTH, HEIGHT];
+            overlayShapes = new byte[planes, WIDTH, HEIGHT];
+            overlayRotations = new byte[planes, WIDTH, HEIGHT];
+            underlayIds = new int[planes, WIDTH, HEIGHT];
+            locations.Clear();
+            ExtrasTail = Array.Empty<byte>();
+        }
 
-                            //Opcodes 0 and 1 write the tile height and terminate this tile.
-                            //An if/else chain is required here: a `break` inside a `switch`
-                            //binds to the switch, not to this while loop, so the switch form
-                            //could never leave the loop and the y++ above was unreachable.
-                            if(attribute == 0) {
-                                if(z == 0) {
-                                    // TODO: Verify the height calculation matches the game client
-                                    tileHeights[0, x, y] = HeightCalc.Calculate(baseX, baseY, x, y) << 3;
-                                } else {
-                                    tileHeights[z, x, y] = tileHeights[z - 1, x, y] - 240;
-                                }
-                                break;
-                            } else if(attribute == 1) {
-                                int height = buf.ReadUnsignedByte();
-                                if(height == 1)
-                                    height = 0;
+        /// <summary>
+        ///     Decodes a terrain (<c>m</c> or <c>um</c>) file.
+        /// </summary>
+        /// <remarks>
+        ///     Iteration is plane-major, then X, then Y (Class305.java:759-767). Getting that order
+        ///     wrong transposes the square. After the grid the same buffer continues into a
+        ///     variable-length extras section, which is captured whole rather than parsed.
+        /// </remarks>
+        /// <param name="buf">The decompressed terrain file.</param>
+        /// <param name="planes">
+        ///     Planes to decode. Surface squares carry 4; the underwater <c>um</c> squares carry 1,
+        ///     and every one of the 900 shipped <c>um</c> files fails to consume exactly with more.
+        /// </param>
+        /// <exception cref="System.IO.InvalidDataException">The stream desynchronised.</exception>
+        public void LoadTerrain(JagStream buf, int planes = PLANES) {
+            Allocate(planes);
 
-                                if(z == 0)
-                                    tileHeights[0, x, y] = -height << 3;
-                                else
-                                    //Parentheses are required: additive binds tighter than <<,
-                                    //so `a - height << 3` would re-scale the level below by 8
-                                    tileHeights[z, x, y] = tileHeights[z - 1, x, y] - (height << 3);
-
-                                break;
-                            } else if(attribute <= 49) {
-                                //Opcodes 2..49 carry overlay data and do not end the tile
-                                overlayIds[z, x, y] = (byte) buf.ReadUnsignedByte();
-                                overlayPaths[z, x, y] = (byte) ((attribute - 2) / 4);
-                                overlayRotations[z, x, y] = (byte) (attribute - 2 & 0x3);
-                            } else if(attribute <= 81) {
-                                //Opcodes 50..81 carry render rules
-                                renderRules[z, x, y] = (byte) (attribute - 49);
-                            } else {
-                                //Opcodes 82..255 carry the underlay id
-                                underlayIds[z, x, y] = (byte) (attribute - 81);
-                            }
-                        }
+            for (int z = 0; z < planes; z++) {
+                for (int x = 0; x < WIDTH; x++) {
+                    for (int y = 0; y < HEIGHT; y++) {
+                        DecodeTile(buf, z, x, y);
                     }
+                }
+            }
+
+            int tailStart = buf.Position;
+            ParseExtrasTail(buf);
+
+            int tailLength = buf.Position - tailStart;
+            if (tailLength > 0) {
+                buf.Seek(tailStart);
+                ExtrasTail = buf.ReadBytes(tailLength);
+            }
+        }
+
+        /// <summary>
+        ///     Walks the environment, lighting and shadow section that follows the tile grid.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing here is modelled - the section is kept verbatim in <see cref="ExtrasTail"/>
+        ///     so a write path can put it back. It is walked rather than skipped because doing so
+        ///     is the only way to prove the grid decoder stopped in the right place: the grid has
+        ///     no length prefix, so an error in it would otherwise be absorbed silently by
+        ///     whatever bytes remain. Every opcode here is fixed-length or self-describing, so a
+        ///     grid that ended one byte out lands on an opcode that does not exist.
+        ///
+        ///     The client throws on an unrecognised opcode too (Class305_Sub1.java:277).
+        /// </remarks>
+        /// <exception cref="System.IO.InvalidDataException">
+        ///     An unknown opcode, which in practice means the tile grid desynchronised.
+        /// </exception>
+        private void ParseExtrasTail(JagStream buf) {
+            while (buf.Remaining() > 0) {
+                int opcode = buf.ReadUnsignedByte();
+
+                switch (opcode) {
+                    case 0:
+                        //Environment. A bitmask followed by a field per set bit.
+                        int mask = buf.ReadUnsignedByte();
+                        if ((mask & 0x01) != 0) buf.ReadBytes(4);
+                        if ((mask & 0x02) != 0) buf.ReadBytes(2);
+                        if ((mask & 0x04) != 0) buf.ReadBytes(2);
+                        if ((mask & 0x08) != 0) buf.ReadBytes(2);
+                        if ((mask & 0x10) != 0) buf.ReadBytes(6);
+                        if ((mask & 0x20) != 0) buf.ReadBytes(4);
+                        if ((mask & 0x40) != 0) buf.ReadBytes(2);
+                        if ((mask & 0x80) != 0) buf.ReadBytes(12);
+                        break;
+
+                    case 1:
+                        int lights = buf.ReadUnsignedByte();
+                        for (int i = 0; i < lights; i++)
+                            SkipPointLight(buf);
+                        break;
+
+                    case 2:
+                        buf.ReadBytes(3);
+                        break;
+
+                    case 128:
+                        buf.ReadBytes(10);
+                        break;
+
+                    case 129:
+                        //Shadow map: one signed kind byte per plane, and only kind 1 carries data.
+                        for (int plane = 0; plane < PLANES; plane++) {
+                            int kind = (sbyte) buf.ReadUnsignedByte();
+                            if (kind == 1)
+                                buf.ReadBytes(256);
+                        }
+                        break;
+
+                    default:
+                        throw new System.IO.InvalidDataException(
+                            "Unknown terrain extras opcode " + opcode + " in region " + regionID +
+                            " at offset " + (buf.Position - 1) +
+                            " - the tile grid almost certainly desynchronised");
                 }
             }
         }
 
-        /**
-        * Decodes location data stored in the specified {@link JagStream}.
-        *
-        * @param buf
-        *      The JagStream.
-        */
+        /// <summary>Skips one point-light record.</summary>
+        private static void SkipPointLight(JagStream buf) {
+            buf.ReadBytes(1);      //flags and plane
+            buf.ReadBytes(6);      //x, z, y
+            int n = buf.ReadUnsignedByte();
+            buf.ReadBytes((2 * n + 1) * 2);
+            buf.ReadBytes(2);      //colour
+
+            int type = buf.ReadUnsignedByte();
+
+            //Measured: this fires 376 times across the shipped cache, so it is not optional.
+            if ((type & 0x1f) == 31)
+                buf.ReadBytes(2);
+        }
+
+        /// <summary>Decodes the opcode run for a single tile.</summary>
+        private void DecodeTile(JagStream buf, int z, int x, int y) {
+            while (true) {
+                //ReadUnsignedByte throws at EOF. ReadByte returns -1, which would fall into the
+                //overlay arm below and spin here forever on a truncated file.
+                int attribute = buf.ReadUnsignedByte();
+
+                //Opcodes 0 and 1 are the only ones that end a tile, so this cannot be a switch:
+                //a break inside one would bind to the switch rather than to this loop.
+                if (attribute == 0) {
+                    tileHeights[z, x, y] = z == 0
+                        ? -HeightCalc.Calculate(baseX, baseY, x, y) * HEIGHT_UNITS_PER_STEP
+                        : tileHeights[z - 1, x, y] - PLANE_HEIGHT_DROP;
+                    return;
+                }
+
+                if (attribute == 1) {
+                    int height = buf.ReadUnsignedByte();
+
+                    //A stored 1 means zero. Hot: 15.5% of all opcode-1 tiles in the shipped cache.
+                    if (height == 1)
+                        height = 0;
+
+                    tileHeights[z, x, y] = z == 0
+                        ? -height * HEIGHT_UNITS_PER_STEP
+                        : tileHeights[z - 1, x, y] - height * HEIGHT_UNITS_PER_STEP;
+                    return;
+                }
+
+                if (attribute <= 49) {
+                    overlayIds[z, x, y] = buf.ReadUnsignedByte();
+                    overlayShapes[z, x, y] = (byte) ((attribute - 2) / 4);
+
+                    //No rotation addend here. The client adds one, but on the static region path
+                    //it is a literal 0 - it is the chunk rotation, and only the dynamic/instanced
+                    //loader passes a non-zero value. Adding it unconditionally rotates every
+                    //overlay in the world.
+                    overlayRotations[z, x, y] = (byte) ((attribute - 2) & 3);
+                }
+                else if (attribute <= 81) {
+                    renderRules[z, x, y] = (byte) (attribute - 49);
+                }
+                else {
+                    underlayIds[z, x, y] = attribute - 81;
+                }
+            }
+        }
+
+        /// <summary>
+        ///     Decodes a location (<c>l</c> or <c>ul</c>) file.
+        /// </summary>
+        /// <remarks>
+        ///     Delta-encoded throughout. The object-id delta is an <em>extended</em> smart and the
+        ///     position delta is a plain one - see
+        ///     <see cref="JagStream.ReadExtendedUnsignedSmart"/> for why the difference matters.
+        /// </remarks>
+        /// <param name="buf">The decompressed, and where necessary decrypted, location file.</param>
+        /// <exception cref="System.IO.InvalidDataException">The stream desynchronised.</exception>
         public void LoadLocations(JagStream buf) {
+            locations.Clear();
+
             int id = -1;
             int idOffset;
 
-            while((idOffset = buf.ReadUnsignedSmart()) != 0) {
+            while ((idOffset = buf.ReadExtendedUnsignedSmart()) != 0) {
                 id += idOffset;
 
                 int position = 0;
                 int positionOffset;
 
-                while((positionOffset = buf.ReadUnsignedSmart()) != 0) {
+                while ((positionOffset = buf.ReadUnsignedSmart()) != 0) {
                     position += positionOffset - 1;
 
-                    int localY = position & 0x3F;
-                    int localX = position >> 6 & 0x3F;
-                    int height = position >> 12 & 0x3;
-
-                    int attributes = buf.ReadByte() & 0xFF;
+                    int attributes = buf.ReadUnsignedByte();
                     int type = attributes >> 2;
                     int orientation = attributes & 0x3;
 
-                    locations.Add(new Location(id, type, orientation, new Position(baseX + localX, baseY + localY, height)));
+                    //The plane is not masked - Class305_Sub1.java:432 is a bare >> 12. The
+                    //measured maximum position across every readable loc file is 16383, so a mask
+                    //could only ever fire on a desynced stream, where it would turn a garbage
+                    //plane into a plausible one and hide the fault. These two bounds are the
+                    //cheapest detector available for the wrong smart reader.
+                    if (position > 16383 || type > 22)
+                        throw new System.IO.InvalidDataException(
+                            "Loc stream desync in region " + regionID +
+                            " (position " + position + ", shape " + type + ")");
+
+                    int localY = position & 0x3F;
+                    int localX = position >> 6 & 0x3F;
+                    int plane = position >> 12;
+
+                    locations.Add(new Location(
+                        id, type, orientation, localX, localY, plane,
+                        new Position(baseX + localX, baseY + localY, plane)));
                 }
             }
         }
 
-        public int GetRegionID() {
-            return regionID;
-        }
+        /// <summary>Gets the packed region id.</summary>
+        public int GetRegionID() => regionID;
 
-        public int GetBaseX() {
-            return baseX;
-        }
+        /// <summary>Gets the absolute world X of the square's western edge.</summary>
+        public int GetBaseX() => baseX;
 
-        public int GetBaseY() {
-            return baseY;
-        }
+        /// <summary>Gets the absolute world Y of the square's southern edge.</summary>
+        public int GetBaseY() => baseY;
 
-        public int GetTileHeight(int z, int x, int y) {
-            return tileHeights[z, x, y];
-        }
+        /// <summary>Gets a vertex height in world units. Valid to 64 inclusive on both axes.</summary>
+        public int GetTileHeight(int z, int x, int y) => tileHeights[z, x, y];
 
-        public byte GetRenderRule(int z, int x, int y) {
-            return renderRules[z, x, y];
-        }
+        /// <summary>Gets the tile flag byte written by terrain opcodes 50..81.</summary>
+        public byte GetRenderRule(int z, int x, int y) => renderRules[z, x, y];
 
-        public int GetOverlayId(int z, int x, int y) {
-            return overlayIds[z, x, y] & 0xFF;
-        }
+        /// <summary>Gets the floor overlay id, 0 meaning none.</summary>
+        public int GetOverlayId(int z, int x, int y) => overlayIds[z, x, y];
 
-        public byte GetOverlayPath(int z, int x, int y) {
-            return overlayPaths[z, x, y];
-        }
+        /// <summary>Gets the overlay tile shape, 0..11.</summary>
+        public byte GetOverlayShape(int z, int x, int y) => overlayShapes[z, x, y];
 
-        public byte GetOverlayRotation(int z, int x, int y) {
-            return overlayRotations[z, x, y];
-        }
+        /// <summary>Gets the overlay rotation, 0..3.</summary>
+        public byte GetOverlayRotation(int z, int x, int y) => overlayRotations[z, x, y];
 
-        public int GetUnderlayId(int z, int x, int y) {
-            return underlayIds[z, x, y] & 0xFF;
-        }
+        /// <summary>Gets the floor underlay id, 0 meaning none.</summary>
+        public int GetUnderlayId(int z, int x, int y) => underlayIds[z, x, y];
 
-        public bool IsLinkedBelow(int z, int x, int y) {
-            return (GetRenderRule(z, x, y) & 0x2) != 0;
-        }
+        /// <summary>
+        ///     Whether this tile is bridged to the plane below.
+        /// </summary>
+        /// <remarks>
+        ///     The client reads bit 0x2 from plane 1 specifically, not from the caller's plane
+        ///     (Node_Sub31_Sub4.method1390:184), and only acts on it above plane 0.
+        /// </remarks>
+        public bool IsLinkedBelow(int x, int y) =>
+            planeCount > 1 && (renderRules[1, x, y] & 0x2) != 0;
 
-        public bool IsVisibleBelow(int z, int x, int y) {
-            return (GetRenderRule(z, x, y) & 0x8) != 0;
-        }
+        /// <summary>Whether this tile forces rendering at plane 0 (tile flag bit 0x8).</summary>
+        public bool IsVisibleBelow(int z, int x, int y) => (GetRenderRule(z, x, y) & 0x8) != 0;
 
-        public List<Location> GetLocations() {
-            return locations;
-        }
+        /// <summary>Gets the decoded locations.</summary>
+        public List<Location> GetLocations() => locations;
 
-        public string GetLocationsIdentifier() {
-            return "l" + (regionID >> 8) + "_" + (regionID & 0xFF);
-        }
+        /// <summary>The index-5 group name holding this square's locations.</summary>
+        public string GetLocationsIdentifier() => MapSquareNames.Locations(regionID);
 
-        public string GetTerrainIdentifier() {
-            return "m" + (regionID >> 8) + "_" + (regionID & 0xFF);
-        }
+        /// <summary>The index-5 group name holding this square's terrain.</summary>
+        public string GetTerrainIdentifier() => MapSquareNames.Terrain(regionID);
     }
 }
-

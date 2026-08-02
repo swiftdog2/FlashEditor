@@ -1,4 +1,5 @@
 ﻿using FlashEditor.Cache.CheckSum;
+using FlashEditor.Cache.Util;
 using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,6 +57,23 @@ namespace FlashEditor.cache
         public int indexId;
 
         internal RSIdentifiers identifiers;
+
+        /// <summary>
+        ///     Resolves a group name to its archive id through the table's identifier map.
+        /// </summary>
+        /// <remarks>
+        ///     This is the only way to address index 5. A map square is found by hashing
+        ///     <c>m50_50</c>; the <c>map_index.dat</c> mechanism the client ships is dead code and
+        ///     does not agree with this cache.
+        /// </remarks>
+        /// <param name="name">The group name, case-insensitive.</param>
+        /// <returns>The archive id, or -1 when the table has no group of that name.</returns>
+        public int GetArchiveId(string name)
+        {
+            if (identifiers == null || name == null)
+                return -1;
+            return identifiers.getFile(NameHasher.GetNameHash(name));
+        }
 
         /// <summary>
         /// Updates CRC, XTEA flag and version for a single archive,

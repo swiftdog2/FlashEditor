@@ -65,6 +65,13 @@ namespace FlashEditor.Tests.Cache.RealCache
         }
 
         /// <summary>
+        ///     The open cache, for tests that exercise a reader built on top of it rather than
+        ///     comparing captured bytes.
+        /// </summary>
+        /// <returns>The cache opened by this fixture.</returns>
+        public RSCache OpenCache() => _cache;
+
+        /// <summary>
         ///     Returns the stored container bytes for an archive exactly as they sit in the dat2,
         ///     or <c>null</c> when the index record is empty.
         /// </summary>
