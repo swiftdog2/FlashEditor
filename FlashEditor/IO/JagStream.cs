@@ -13,7 +13,48 @@ namespace FlashEditor {
     public class JagStream {
         private byte[] Buffer;
         public int Position;
-        public int Length;
+        private int _length;
+
+        /// <summary>
+        ///     The number of bytes the stream holds.
+        /// </summary>
+        /// <remarks>
+        ///     Assigning this used to be able to lie. It was a plain field, so setting it past
+        ///     the backing array made the stream claim bytes that were never allocated, and the
+        ///     next read failed in a particularly misleading way: every read guards on
+        ///     <see cref="Length"/> and then indexes <see cref="Buffer"/>, so the guard passed and
+        ///     the indexer threw <see cref="IndexOutOfRangeException"/> from a method written to
+        ///     raise <see cref="EndOfStreamException"/> for exactly that case.
+        ///     <para>
+        ///     Growing now allocates and zero-fills the new region, so the invariant that
+        ///     <see cref="Length"/> never exceeds capacity cannot be broken from outside, and a
+        ///     grow behaves like it does on any other stream. Shrinking leaves the bytes above
+        ///     the new length in place but unreachable, and <see cref="Position"/> is pulled back
+        ///     so it can never sit past the end.
+        ///     </para>
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
+        public int Length {
+            get => _length;
+            set {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), "Stream length cannot be negative");
+
+                if (value > _length) {
+                    EnsureCapacity(value);
+
+                    /* Array.Resize zeroes only what it appends, so the span between the old
+                       length and the old capacity can still hold bytes from a previous write. */
+                    Buffer.AsSpan(_length, value - _length).Clear();
+                }
+
+                _length = value;
+
+                if (Position > _length)
+                    Position = _length;
+            }
+        }
+
         public int Capacity => Buffer.Length;
 
         /// <summary>
@@ -44,7 +85,11 @@ namespace FlashEditor {
         /// </summary>
         public JagStream(int capacity) {
             Buffer = new byte[capacity];
-            Length = 0;
+
+            /* The constructors assign the backing field rather than the property. The buffer is
+               already populated by the time the length is set, and the property zero-fills the
+               region a grow exposes - which here is the data itself. */
+            _length = 0;
             Position = 0;
         }
 
@@ -53,7 +98,7 @@ namespace FlashEditor {
         /// </summary>
         public JagStream(byte[] buffer) {
             Buffer = buffer;
-            Length = buffer.Length;
+            _length = buffer.Length;
             Position = 0;
         }
 
@@ -69,7 +114,7 @@ namespace FlashEditor {
             // publiclyVisible: we expose the full buffer via GetBuffer()
             Buffer = new byte[count];
             Array.Copy(buffer, index, Buffer, 0, count);
-            Length = count;
+            _length = count;
             Position = 0;
         }
 
@@ -226,7 +271,11 @@ namespace FlashEditor {
             EnsureCapacity(Position + span.Length);
             span.CopyTo(Buffer.AsSpan(Position));
             Position += span.Length;
-            if (Position > Length) Length = Position;
+
+            /* Extend the backing field rather than the property. The bytes between the old
+               length and the new position are what was just written, and the property zero-fills
+               exactly that region when it grows. */
+            if (Position > _length) _length = Position;
         }
 
         /// <summary>
@@ -253,7 +302,9 @@ namespace FlashEditor {
         public void WriteByte(byte value) {
             EnsureCapacity(Position + 1);
             Buffer[Position++] = value;
-            if (Position > Length) Length = Position;
+
+            //Backing field, not the property - see the note in Write(ReadOnlySpan<byte>)
+            if (Position > _length) _length = Position;
         }
 
         /// <summary>
