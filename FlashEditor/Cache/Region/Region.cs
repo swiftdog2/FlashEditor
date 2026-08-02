@@ -50,6 +50,19 @@ namespace FlashEditor.Cache.Region {
         private byte[,,] overlayRotations = new byte[0, 0, 0];
         private int[,,] underlayIds = new int[0, 0, 0];
 
+        //Whether a tile stored its height explicitly (opcode 1) rather than leaving the
+        //decoder to derive one (opcode 0). Some tiles store a height that happens to equal
+        //the derived value, so the choice cannot be recovered by comparing them.
+        private bool[,,] heightExplicit = new bool[0, 0, 0];
+
+        //The height byte exactly as stored. It cannot be recomputed from the decoded height: the
+        //decoder maps a stored 1 to 0, so bytes 0 and 1 both mean height 0, and the shipped files
+        //use both.
+        private byte[,,] rawHeightByte = new byte[0, 0, 0];
+
+        //Whether an edit replaced the height, in which case the stored byte has to be recomputed.
+        private bool[,,] heightEdited = new bool[0, 0, 0];
+
         private int planeCount;
 
         private readonly List<Location> locations = new List<Location>();
@@ -66,6 +79,19 @@ namespace FlashEditor.Cache.Region {
         ///     the 1684 shipped terrain files carry one.
         /// </remarks>
         public byte[] ExtrasTail { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>
+        ///     The terrain file exactly as decoded, or empty when none was loaded.
+        /// </summary>
+        /// <remarks>
+        ///     Retained so an unedited square can be written back as the bytes it came from rather
+        ///     than re-encoded. The archive CRC covers those bytes, so re-encoding a square nobody
+        ///     touched risks changing them for no reason.
+        /// </remarks>
+        public byte[] RawTerrain { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>The location file exactly as decoded, or empty when none was loaded.</summary>
+        public byte[] RawLocations { get; private set; } = Array.Empty<byte>();
 
         /// <summary>Creates a region from its packed id.</summary>
         /// <param name="id">Region id, <c>(regionX &lt;&lt; 8) | regionY</c>.</param>
@@ -84,8 +110,13 @@ namespace FlashEditor.Cache.Region {
             overlayShapes = new byte[planes, WIDTH, HEIGHT];
             overlayRotations = new byte[planes, WIDTH, HEIGHT];
             underlayIds = new int[planes, WIDTH, HEIGHT];
+            heightExplicit = new bool[planes, WIDTH, HEIGHT];
+            rawHeightByte = new byte[planes, WIDTH, HEIGHT];
+            heightEdited = new bool[planes, WIDTH, HEIGHT];
             locations.Clear();
             ExtrasTail = Array.Empty<byte>();
+            RawTerrain = Array.Empty<byte>();
+            RawLocations = Array.Empty<byte>();
         }
 
         /// <summary>
@@ -105,6 +136,8 @@ namespace FlashEditor.Cache.Region {
         public void LoadTerrain(JagStream buf, int planes = PLANES) {
             Allocate(planes);
 
+            int start = buf.Position;
+
             for (int z = 0; z < planes; z++) {
                 for (int x = 0; x < WIDTH; x++) {
                     for (int y = 0; y < HEIGHT; y++) {
@@ -121,6 +154,12 @@ namespace FlashEditor.Cache.Region {
                 buf.Seek(tailStart);
                 ExtrasTail = buf.ReadBytes(tailLength);
             }
+
+            int end = buf.Position;
+            buf.Seek(start);
+            RawTerrain = buf.ReadBytes(end - start);
+
+            Dirty = false;
         }
 
         /// <summary>
@@ -217,11 +256,13 @@ namespace FlashEditor.Cache.Region {
                     tileHeights[z, x, y] = z == 0
                         ? -HeightCalc.Calculate(baseX, baseY, x, y) * HEIGHT_UNITS_PER_STEP
                         : tileHeights[z - 1, x, y] - PLANE_HEIGHT_DROP;
+                    heightExplicit[z, x, y] = false;
                     return;
                 }
 
                 if (attribute == 1) {
                     int height = buf.ReadUnsignedByte();
+                    rawHeightByte[z, x, y] = (byte) height;
 
                     //A stored 1 means zero. Hot: 15.5% of all opcode-1 tiles in the shipped cache.
                     if (height == 1)
@@ -230,6 +271,7 @@ namespace FlashEditor.Cache.Region {
                     tileHeights[z, x, y] = z == 0
                         ? -height * HEIGHT_UNITS_PER_STEP
                         : tileHeights[z - 1, x, y] - height * HEIGHT_UNITS_PER_STEP;
+                    heightExplicit[z, x, y] = true;
                     return;
                 }
 
@@ -265,6 +307,7 @@ namespace FlashEditor.Cache.Region {
         public void LoadLocations(JagStream buf) {
             locations.Clear();
 
+            int start = buf.Position;
             int id = -1;
             int idOffset;
 
@@ -300,6 +343,12 @@ namespace FlashEditor.Cache.Region {
                         new Position(baseX + localX, baseY + localY, plane)));
                 }
             }
+
+            int end = buf.Position;
+            buf.Seek(start);
+            RawLocations = buf.ReadBytes(end - start);
+
+            Dirty = false;
         }
 
         /// <summary>
@@ -321,8 +370,31 @@ namespace FlashEditor.Cache.Region {
         /// <summary>Sets a vertex height in world units.</summary>
         public void SetTileHeight(int z, int x, int y, int height) {
             tileHeights[z, x, y] = height;
+
+            //An edited height must be stored, not re-derived: the derivation would discard it.
+            if (x < WIDTH && y < HEIGHT) {
+                heightExplicit[z, x, y] = true;
+                heightEdited[z, x, y] = true;
+            }
+
             Dirty = true;
         }
+
+        /// <summary>
+        ///     Whether a tile stores its height explicitly rather than leaving it to be derived.
+        /// </summary>
+        /// <remarks>
+        ///     Preserved from the decode so an untouched square re-encodes byte-for-byte. Tiles
+        ///     exist whose stored height equals the value opcode 0 would produce, so the two forms
+        ///     cannot be told apart after the fact.
+        /// </remarks>
+        public bool HasExplicitHeight(int z, int x, int y) => heightExplicit[z, x, y];
+
+        /// <summary>The height byte as decoded, meaningful only when the height was not edited.</summary>
+        public byte GetRawHeightByte(int z, int x, int y) => rawHeightByte[z, x, y];
+
+        /// <summary>Whether an edit replaced this tile's height since it was decoded.</summary>
+        public bool HasEditedHeight(int z, int x, int y) => heightEdited[z, x, y];
 
         /// <summary>Sets the tile flag byte.</summary>
         public void SetRenderRule(int z, int x, int y, byte flags) {

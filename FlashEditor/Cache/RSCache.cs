@@ -57,6 +57,12 @@ namespace FlashEditor.cache {
         /// </summary>
         private XTEAKeyTable xteaKeys;
 
+        /// <summary>Indexes whose reference table a batch still has to write.</summary>
+        private readonly HashSet<int> pendingTableWrites = new HashSet<int>();
+
+        /// <summary>Nesting depth of <see cref="BeginBatch"/> scopes.</summary>
+        private int batchDepth;
+
         /// <summary>
         /// Create a new Cache instance, and automatically memoizes the archives and their reference tables
         /// </summary>
@@ -241,7 +247,13 @@ namespace FlashEditor.cache {
             var crc = new Crc32();
             crc.Update(hashableStream.ToArray());      // feeds the bytes
             archiveEntry.SetCrc((int) crc.Value);              // .Value is UInt32
-            archiveEntry.SetVersion(1337);
+
+            /* Bump the archive version rather than stamping a constant. It is a monotonic counter
+               the JS5 update protocol compares against what a client already holds, so a fixed
+               value tells every client the same thing regardless of how many times the archive has
+               actually changed - and stamping it downward tells them their stale copy is current.
+               Incrementing is the only behaviour that keeps the comparison meaningful. */
+            archiveEntry.SetVersion(archiveEntry.GetVersion() + 1);
 
             /* Recompute the FLAG_SIZES pair. These describe the archive as it is now stored, so
                left alone they go stale on the first edit and stay wrong for every later one.
@@ -271,16 +283,88 @@ namespace FlashEditor.cache {
             //Add the archive entry to the reference table
             table.PutArchiveEntry(archiveId, archiveEntry);
 
-            //Write out the reference table
-            RSContainer tableContainer = new RSContainer(RSConstants.META_INDEX, indexId, RSConstants.GZIP_COMPRESSION, ReferenceTableCodec.Encode(table), 1337);
-            store.Write(RSConstants.META_INDEX, indexId, tableContainer.Encode());
             store.Write(indexId, archiveId, stream);
+
+            /* The reference table is written once per file by default, which is correct but costly:
+               index 5's table is a 114KB payload, so saving forty map squares re-encodes and
+               rewrites it forty times, each rewrite reallocating its sector chain. Inside a batch
+               the write is deferred to the end, where one rewrite covers every file in it. */
+            if (batchDepth > 0)
+                pendingTableWrites.Add(indexId);
+            else
+                WriteReferenceTable(indexId, table);
 
             /* The store now holds an encoding of this exact payload, so it becomes the baseline
                the next save is measured against. Asserted only once both writes have landed: a
                write that threw part way leaves the store describing something else, and claiming
                otherwise would let the following save skip a change that was never stored. */
             container.PayloadIsAsStored = true;
+        }
+
+        /// <summary>
+        ///     Encodes a reference table and writes it into the meta index.
+        /// </summary>
+        /// <remarks>
+        ///     The table's own container version is bumped alongside the write, for the same reason
+        ///     the archive versions are: a client compares it to decide whether its cached copy of
+        ///     the table is stale.
+        /// </remarks>
+        /// <param name="indexId">The index whose table is being written.</param>
+        /// <param name="table">The table to write.</param>
+        private void WriteReferenceTable(int indexId, RSReferenceTable table) {
+            table.version++;
+
+            var container = new RSContainer(RSConstants.META_INDEX, indexId,
+                RSConstants.GZIP_COMPRESSION, ReferenceTableCodec.Encode(table), table.version);
+
+            store.Write(RSConstants.META_INDEX, indexId, container.Encode());
+        }
+
+        /// <summary>
+        ///     Defers reference-table writes until the returned scope is disposed.
+        /// </summary>
+        /// <remarks>
+        ///     Use around a run of <see cref="WriteFile"/> calls. Each index's table is then encoded
+        ///     and written once at the end rather than once per file. Nesting is supported; only the
+        ///     outermost scope flushes.
+        ///
+        ///     This does not make the run atomic. A failure part way through leaves the archives
+        ///     that were written on disk with a stale table describing them, which is recoverable
+        ///     by saving again but is not a transaction.
+        /// </remarks>
+        /// <returns>A scope that flushes the deferred writes when disposed.</returns>
+        public IDisposable BeginBatch() {
+            batchDepth++;
+            return new BatchScope(this);
+        }
+
+        private void EndBatch() {
+            if (--batchDepth > 0)
+                return;
+
+            foreach (int indexId in pendingTableWrites) {
+                RSReferenceTable table = GetReferenceTable(indexId);
+                if (table != null)
+                    WriteReferenceTable(indexId, table);
+            }
+
+            pendingTableWrites.Clear();
+        }
+
+        private sealed class BatchScope : IDisposable {
+            private RSCache owner;
+
+            public BatchScope(RSCache owner) {
+                this.owner = owner;
+            }
+
+            public void Dispose() {
+                if (owner == null)
+                    return;
+                RSCache target = owner;
+                owner = null;
+                target.EndBatch();
+            }
         }
 
         /// <summary>

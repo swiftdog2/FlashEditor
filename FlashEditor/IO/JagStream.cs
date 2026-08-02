@@ -585,6 +585,28 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        /// Writes the extended unsigned smart form read by <see cref="ReadExtendedUnsignedSmart"/>.
+        /// </summary>
+        /// <remarks>
+        ///     Emits as many 32767 continuation chunks as the value needs, then the remainder. A
+        ///     value that is exactly 32767 therefore takes two smarts, 32767 followed by 0, because
+        ///     a single 32767 would be read as a continuation with nothing after it.
+        /// </remarks>
+        /// <param name="value">The value to write. Must not be negative.</param>
+        /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
+        public void WriteExtendedUnsignedSmart(int value) {
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Cannot be negative");
+
+            while (value >= 32767) {
+                WriteUnsignedSmart(32767);
+                value -= 32767;
+            }
+
+            WriteUnsignedSmart(value);
+        }
+
+        /// <summary>
         /// Writes an unsigned smart: single byte for 0–127, two-byte short
         /// (value + 32768) for 128–32767. Inverse of <see cref="ReadUnsignedSmart"/>.
         /// </summary>

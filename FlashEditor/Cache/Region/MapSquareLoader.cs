@@ -134,6 +134,50 @@ namespace FlashEditor.Cache.Region {
         }
 
         /// <summary>
+        ///     Stages a square's terrain and locations back into the cache.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This does not touch the disk.</b> The store keeps every write staged in memory
+        ///     until the cache is committed, which is what makes a multi-square edit land as one
+        ///     consistent set of files rather than a sequence of 188MB rewrites.
+        ///
+        ///     A square that has not been edited stages nothing at all. Rewriting an untouched
+        ///     archive would bump its version and recompute its CRC over bytes that did not need to
+        ///     change, which tells every client its cached copy is stale for no reason.
+        ///
+        ///     Both files go through one batch, so the index-5 reference table - a 114KB payload -
+        ///     is encoded once rather than once per file.
+        /// </remarks>
+        /// <param name="region">The square to save.</param>
+        /// <param name="regionX">Region X.</param>
+        /// <param name="regionY">Region Y.</param>
+        /// <returns><c>true</c> when something was written.</returns>
+        public bool Save(Region region, int regionX, int regionY) {
+            if (region == null) throw new ArgumentNullException(nameof(region));
+
+            if (!region.Dirty)
+                return false;
+
+            using (cache.BeginBatch()) {
+                int terrainGroup = ResolveGroup(MapSquareNames.Terrain(regionX, regionY));
+                if (terrainGroup != -1)
+                    cache.WriteFile(RSConstants.MAPS_INDEX, terrainGroup, 0,
+                        new JagStream(RegionCodec.EncodeTerrain(region)));
+
+                //Only write locations back where the square actually had a readable loc file. A
+                //square whose locations could not be decrypted decoded to an empty list, and
+                //writing that empty list would erase every object in it.
+                int locGroup = ResolveGroup(MapSquareNames.Locations(regionX, regionY));
+                if (locGroup != -1 && region.RawLocations.Length > 0)
+                    cache.WriteFile(RSConstants.MAPS_INDEX, locGroup, 0,
+                        new JagStream(RegionCodec.EncodeLocations(region)));
+            }
+
+            region.ClearDirty();
+            return true;
+        }
+
+        /// <summary>
         ///     The raw decoded bytes of an index-5 group.
         /// </summary>
         /// <param name="groupId">The archive id.</param>

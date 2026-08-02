@@ -146,13 +146,10 @@ namespace FlashEditor.Map {
                 }
 
                 case MapTool.RaiseHeight:
-                    //One height step is 32 world units in this client, not 8.
-                    return new SetHeightEdit(square, p, x, y,
-                        square.GetTileHeight(p, x, y) - MapRegion.HEIGHT_UNITS_PER_STEP);
+                    return new SetHeightEdit(square, p, x, y, StepHeight(square, p, x, y, +1));
 
                 case MapTool.LowerHeight:
-                    return new SetHeightEdit(square, p, x, y,
-                        square.GetTileHeight(p, x, y) + MapRegion.HEIGHT_UNITS_PER_STEP);
+                    return new SetHeightEdit(square, p, x, y, StepHeight(square, p, x, y, -1));
 
                 case MapTool.ToggleBlockedFlag:
                     return new SetTileFlagsEdit(square, p, x, y,
@@ -169,6 +166,32 @@ namespace FlashEditor.Map {
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        ///     Moves a tile's height by whole storable steps.
+        /// </summary>
+        /// <remarks>
+        ///     One step is 32 world units, not the 8 of RS2. Step 1 is skipped because the decoder
+        ///     maps a stored 1 to 0, so a height of exactly one step below the reference has no
+        ///     encoding and would be rejected on save.
+        /// </remarks>
+        /// <param name="square">The square.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="x">Tile X within the square.</param>
+        /// <param name="y">Tile Y within the square.</param>
+        /// <param name="direction">+1 to raise, -1 to lower.</param>
+        /// <returns>The new height in world units.</returns>
+        private static int StepHeight(MapRegion square, int plane, int x, int y, int direction) {
+            int reference = plane == 0 ? 0 : square.GetTileHeight(plane - 1, x, y);
+            int steps = (reference - square.GetTileHeight(plane, x, y)) / MapRegion.HEIGHT_UNITS_PER_STEP;
+
+            steps += direction;
+            if (steps == 1)
+                steps += direction;
+
+            steps = Math.Clamp(steps, 0, 255);
+            return reference - steps * MapRegion.HEIGHT_UNITS_PER_STEP;
         }
 
         private void AfterEdit() {
