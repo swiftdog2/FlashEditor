@@ -36,6 +36,7 @@ namespace FlashEditor.Map {
         private readonly Button undoButton = new Button { Text = "Undo", Width = 60, Enabled = false };
         private readonly Button redoButton = new Button { Text = "Redo", Width = 60, Enabled = false };
         private readonly Button saveButton = new Button { Text = "Save cache", Width = 90, Enabled = false };
+        private readonly WorldNavigatorControl navigator = new WorldNavigatorControl { Dock = DockStyle.Fill };
 
         private readonly MapEditHistory history = new MapEditHistory();
 
@@ -71,6 +72,7 @@ namespace FlashEditor.Map {
             ("Overlay", MapLayers.Overlay),
             ("Walls", MapLayers.Walls),
             ("Ground decoration", MapLayers.GroundDecoration),
+            ("Map scene icons", MapLayers.MapSceneIcons),
             ("Game objects", MapLayers.GameObjects),
             ("Tile flags", MapLayers.TileFlags),
             ("Grid", MapLayers.Grid)
@@ -96,6 +98,16 @@ namespace FlashEditor.Map {
             };
 
             saveButton.Click += (_, _) => SaveEdits();
+
+            navigator.RegionPicked += (_, region) => {
+                if (!navigator.Exists(region.X, region.Y)) {
+                    status.Text = $"m{region.X}_{region.Y} does not exist in this cache";
+                    return;
+                }
+                regionX.Value = region.X;
+                regionY.Value = region.Y;
+                LoadRegion(region.X, region.Y);
+            };
         }
 
         private MapTool SelectedTool =>
@@ -266,7 +278,8 @@ namespace FlashEditor.Map {
             };
 
             //Left: navigation and layers.
-            var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
             left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 110));
@@ -293,9 +306,13 @@ namespace FlashEditor.Map {
             var toolsGroup = new GroupBox { Text = "Tool", Dock = DockStyle.Fill };
             toolsGroup.Controls.Add(tools);
 
-            left.Controls.Add(nav, 0, 0);
-            left.Controls.Add(layersGroup, 0, 1);
-            left.Controls.Add(toolsGroup, 0, 2);
+            var worldGroup = new GroupBox { Text = "World", Dock = DockStyle.Fill };
+            worldGroup.Controls.Add(navigator);
+
+            left.Controls.Add(worldGroup, 0, 0);
+            left.Controls.Add(nav, 0, 1);
+            left.Controls.Add(layersGroup, 0, 2);
+            left.Controls.Add(toolsGroup, 0, 3);
 
             //Right: canvas above, inspector below.
             var right = new SplitContainer {
@@ -343,6 +360,7 @@ namespace FlashEditor.Map {
                 loader = null;
                 rasteriser = null;
                 viewer.Show(null, null);
+                navigator.Build(null);
                 status.Text = "No cache loaded";
                 saveButton.Enabled = false;
                 return;
@@ -350,6 +368,8 @@ namespace FlashEditor.Map {
 
             loader = new MapSquareLoader(cache);
             rasteriser = new MapRasteriser(cache);
+
+            navigator.Build(loader);
             LoadRegion((int) regionX.Value, (int) regionY.Value);
         }
 
@@ -375,6 +395,8 @@ namespace FlashEditor.Map {
 
             //A square whose locations could not be decrypted renders its terrain and no objects.
             //Saying so is the difference between "this area is empty" and "we cannot read it".
+            navigator.SetCurrent(rx, ry);
+
             string keys = scene.SquaresMissingKeys.Count == 0
                 ? "keys ok"
                 : $"{scene.SquaresMissingKeys.Count} square(s) missing XTEA keys - objects hidden";

@@ -149,10 +149,36 @@ standing half in water will not tint.
 
 | Type | Index | Group | Count | Decoder |
 |---|---:|---:|---:|---|
-| MapScene (bank / altar / staircase icons) | 2 | 34 | 100 | `Class9.method193` (`Class9.java:161-204`) |
+| MapScene (bank / altar / staircase icons) | 2 | 34 | 100 | `Class9.method193` (`Class9.java:233-258`) |
 | MapElement / world-map area | 2 | 36 | - | `Class341.java:141,185` |
 
-MapScene opcodes: `1` = u16 sprite id into index 8, `2` = u24 rgb, `3` = flat flag, `4` = sprite
-id -1.
+MapScene opcodes, **CONFIRMED** against `Class9.java:240-251`:
 
-Neither has any decoder in FlashEditor today.
+| Op | Field | Read | Meaning |
+|---:|---|---|---|
+| 1 | sprite group | u16 | Group in JS5 index 8. The icon is **file 0** of that group |
+| 2 | tint | u24 | A flat silhouette fill, not a blend. 0 means untinted |
+| 3 | stretch | none | Scale the icon to the object's footprint instead of drawing at native size |
+| 4 | sprite group = -1 | none | Explicitly no icon; the client then draws nothing |
+
+> **The opcode that links an object to its icon is 102, not 68.** This matters more than it looks.
+> `Class352.anInt2990` is what every mapscene draw site reads (`Class122.java:92`,
+> `Class277.java:121`, `Class278.java:872`), and it is written only at `Class352.java:1158-1160`
+> from **opcode 102**. **Opcode 68 is not handled by the 637 client at all** - the else-if chain
+> steps straight from 67 to 69 (`Class352.java:1106-1108`) - and **MEASURED**, no definition in the
+> 639 cache carries it. FlashEditor's field names invert this: the field called `mapSceneId` is the
+> dead opcode 68, and the field called `mapAreaId` is the real icon link. Use
+> `ObjectDefinition.mapSceneIcon`, which is the accessor over opcode 102.
+>
+> The field named `mapIconId` (opcode 107) is a third thing again: a **map element**, from config
+> group 36, driving world-map markers and labels. 170 definitions carry it.
+
+Drawing rules, **CONFIRMED** at `Class122.java:104-124`:
+
+- Anchored on the **south-west tile** of the footprint, raised by `4 * (sizeY - 1)` pixels, not
+  centred on the object.
+- Drawn at the sprite's **native pixel size**, which is authored for the minimap's 4 pixels per
+  tile. At any other zoom the world map scales it by `pixelsPerTile / 4` (`Class278.java:878`).
+- The icon replaces the default mark for **every** loc group, not just game objects: a bank booth
+  is a wall, and the client draws the bank icon rather than a wall line (`Class277.java:122`,
+  `:178`, `:203`). Ground decoration with no icon draws nothing at all.

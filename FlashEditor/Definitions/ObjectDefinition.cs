@@ -221,6 +221,42 @@ namespace FlashEditor.Definitions
         /// </remarks>
         public int modelContrast => contrastLighting;    // opcode 39
 
+        /// <summary>
+        /// The map scene icon this object draws on the minimap and world map, or -1 for none.
+        /// </summary>
+        /// <remarks>
+        /// A read-only view over opcode <b>102</b>, whose private field is named
+        /// <c>mapAreaId</c>. The name is a misnomer inherited from an early guess and the field is
+        /// left alone rather than renamed, because the codec tests and the reference tables are
+        /// written against it.
+        ///
+        /// The field spelled <see cref="mapSceneIdOpcode68"/> is <b>not</b> this. Opcode 68 is not
+        /// handled by the 637 client at all - the else-if chain steps straight from 67 to 69
+        /// (Class352.java:1106-1108) - and no definition in the 639 cache carries it. Opcode 102 is
+        /// the one the client feeds to every mapscene draw site (Class122.java:92,
+        /// Class277.java:121, Class278.java:872), and 3,267 definitions carry it.
+        /// </remarks>
+        public int mapSceneIcon => mapAreaId;            // opcode 102
+
+        /// <summary>
+        /// Opcode 68, which this codec reads and the 637 client does not. Almost certainly unused.
+        /// </summary>
+        /// <remarks>
+        /// Exposed only so the discrepancy is visible rather than hidden behind a private field.
+        /// Zero definitions in the 639 cache carry opcode 68. Use <see cref="mapSceneIcon"/>.
+        /// </remarks>
+        public int mapSceneIdOpcode68 => mapSceneId;     // opcode 68, dead
+
+        /// <summary>
+        /// The map element marker for this object, or -1 for none - a read-only view over opcode 107.
+        /// </summary>
+        /// <remarks>
+        /// A different definition type from <see cref="mapSceneIcon"/>: map elements live in config
+        /// group 36 (Class341.java:141) and drive world-map markers and labels, whereas mapscene
+        /// icons live in group 34. 170 definitions carry it.
+        /// </remarks>
+        public int mapElementId => mapIconId;            // opcode 107
+
         // ───── misc metadata ──────────────────────────
         /// <summary>Object category grouping id.</summary>
         public byte category;          // opcode 19
@@ -285,7 +321,7 @@ namespace FlashEditor.Definitions
         private int obstructsGround = -1;   // 23 / 103
         private bool randomAnimStart;       // 27
         private sbyte[] texturePriorities;  // 42
-        private int mapSceneId;             // 68  (may not exist in 633, kept for safety)
+        private int mapSceneId = -1;        // 68  (not parsed by the 637 client; absent from the 639 cache)
         private byte minimapForceClip;      // 69  (cflag)
         private int offsetX;                // 70
         private int offsetY;                // 71
@@ -301,11 +337,11 @@ namespace FlashEditor.Definitions
         private int cursorType2;            // 100 (anInt3844 = UByte)
         private int cursorSprite2;          // 100 (anInt3913 = UShort)
         private int ambientVolume;          // 101 (anInt3865)
-        private int mapAreaId;              // 102 (anInt3838)
+        private int mapAreaId = -1;         // 102 (anInt3838) - the MAP SCENE icon id; client default -1 at Class352.java:266
         private int soundVolume;            // 104 (anInt3850)
         private int[] animationIds;         // 106 (animations[])
         private int[] animationWeights;     // 106 (anIntArray3869[])
-        private int mapIconId;              // 107 (anInt3851)
+        private int mapIconId = -1;         // 107 (anInt3851) - client default -1 at Class352.java:256
         private int unknownInt162;          // 162 (4-byte int)
         private sbyte unknownByte163a;      // 163
         private sbyte unknownByte163b;      // 163

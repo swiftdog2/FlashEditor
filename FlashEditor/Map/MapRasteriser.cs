@@ -6,6 +6,8 @@ using FlashEditor.cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util;
 using FlashEditor.Definitions;
+using FlashEditor.cache.sprites;
+using FlashEditor.Definitions.Sprites;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
@@ -37,6 +39,9 @@ namespace FlashEditor.Map {
         /// <summary>Square and chunk boundaries.</summary>
         Grid = 64,
 
+        /// <summary>Bank, altar, staircase and furnace icons.</summary>
+        MapSceneIcons = 128,
+
         /// <summary>Everything that reads as terrain.</summary>
         Terrain = Underlay | Overlay,
 
@@ -49,7 +54,7 @@ namespace FlashEditor.Map {
         ///     mapscene icons only - and at a dense square it puts a box around every tree and fence
         ///     post, which buries the terrain underneath.
         /// </remarks>
-        Default = Underlay | Overlay | Walls | GroundDecoration | Grid
+        Default = Underlay | Overlay | Walls | GroundDecoration | MapSceneIcons | Grid
     }
 
     /// <summary>
@@ -67,7 +72,10 @@ namespace FlashEditor.Map {
         private readonly RSCache cache;
         private readonly Dictionary<int, UnderlayColour?> underlayCache = new Dictionary<int, UnderlayColour?>();
         private readonly Dictionary<int, FloorOverlayDefinition> overlayCache = new Dictionary<int, FloorOverlayDefinition>();
-        private readonly Dictionary<int, ObjectFootprint> footprintCache = new Dictionary<int, ObjectFootprint>();
+        private readonly Dictionary<int, ObjectInfo> objectCache = new Dictionary<int, ObjectInfo>();
+        private readonly Dictionary<int, int> textureColourCache = new Dictionary<int, int>();
+        private readonly Dictionary<int, Bitmap> iconCache = new Dictionary<int, Bitmap>();
+        private readonly Dictionary<int, bool> iconStretch = new Dictionary<int, bool>();
 
         /// <summary>Screen pixels per map tile. The client's minimap uses 4.</summary>
         public int TilePixels { get; set; } = 8;
@@ -210,6 +218,13 @@ namespace FlashEditor.Map {
                 foreach ((Location loc, int sceneX, int sceneY) in scene.Locations(plane)) {
                     RectangleF tile = TileRect(scene, sceneX, sceneY);
 
+                    /* An object carrying a map scene icon draws the icon INSTEAD of its default
+                       mark, whatever group it belongs to - the client does this for walls, wall
+                       decorations and ground decorations alike (Class277.java:122, :178, :203).
+                       A bank booth is a wall, and it should read as a bank rather than as a line. */
+                    if ((layers & MapLayers.MapSceneIcons) != 0 && DrawMapSceneIcon(g, scene, loc, sceneX, sceneY))
+                        continue;
+
                     switch (LocGroups.Of(loc.Shape)) {
                         case LocGroup.Wall:
                         case LocGroup.WallDecoration:
@@ -302,22 +317,63 @@ namespace FlashEditor.Map {
         }
 
         private void DrawFootprint(Graphics g, Pen pen, MapScene scene, Location loc, int sceneX, int sceneY) {
+            RectangleF area = FootprintRect(scene, loc, sceneX, sceneY);
+            g.DrawRectangle(pen, area.Left, area.Top, area.Width - 1, area.Height - 1);
+        }
+
+        /// <summary>
+        ///     The screen rectangle a location's tile footprint covers.
+        /// </summary>
+        /// <remarks>
+        ///     Anchored on the south-west tile, which is where a multi-tile location is recorded and
+        ///     where the client anchors both its outline and its icon (Class122.java:122). Odd
+        ///     rotations swap the two extents: the definition's opcode 14 is the X extent at
+        ///     rotation 0 and opcode 15 the Y extent, despite the client's field names saying the
+        ///     reverse - see reference/hydra-637-maps/03-locs-l.md.
+        /// </remarks>
+        private RectangleF FootprintRect(MapScene scene, Location loc, int sceneX, int sceneY) {
             ObjectFootprint footprint = ResolveFootprint(loc.Id);
 
-            //Odd rotations swap the two extents. The definition's opcode 14 is the X extent at
-            //rotation 0 and opcode 15 the Y extent, despite the client's field names saying the
-            //reverse - see reference/hydra-637-maps/03-locs-l.md.
             int extentX = (loc.Orientation & 1) == 0 ? footprint.SizeX : footprint.SizeY;
             int extentY = (loc.Orientation & 1) == 0 ? footprint.SizeY : footprint.SizeX;
 
             RectangleF origin = TileRect(scene, sceneX, sceneY);
-            var area = new RectangleF(
+            return new RectangleF(
                 origin.Left,
                 origin.Top - (extentY - 1) * TilePixels,
                 extentX * TilePixels,
                 extentY * TilePixels);
+        }
 
-            g.DrawRectangle(pen, area.Left, area.Top, area.Width - 1, area.Height - 1);
+        /// <summary>
+        ///     Draws a location's map scene icon, if it has one.
+        /// </summary>
+        /// <remarks>
+        ///     The client draws the sprite at its native pixel size, authored for 4 pixels per tile,
+        ///     unless the icon sets its stretch flag - in which case it fills the footprint instead
+        ///     (Class122.java:112-117). At any other zoom the world map scales the native size by
+        ///     <c>pixelsPerTile / 4</c> (Class278.java:878), which is what happens here.
+        /// </remarks>
+        /// <returns><c>true</c> when an icon was drawn, so the caller skips the default mark.</returns>
+        private bool DrawMapSceneIcon(Graphics g, MapScene scene, Location loc, int sceneX, int sceneY) {
+            Bitmap icon = ResolveIcon(loc.Id);
+            if (icon == null)
+                return false;
+
+            RectangleF area = FootprintRect(scene, loc, sceneX, sceneY);
+
+            float width = icon.Width * TilePixels / 4f;
+            float height = icon.Height * TilePixels / 4f;
+
+            if (StretchIconToFootprint(loc.Id)) {
+                width = area.Width;
+                height = area.Height;
+            }
+
+            //Anchored to the footprint's south-west corner, growing north and east, matching the
+            //client rather than centring the icon on the object.
+            g.DrawImage(icon, area.Left, area.Bottom - height, width, height);
+            return true;
         }
 
         private void DrawGrid(Graphics g, MapScene scene) {
@@ -404,14 +460,16 @@ namespace FlashEditor.Map {
         ///     Picks a tile's overlay colour the way the client does.
         /// </summary>
         /// <remarks>
-        ///     Secondary colour wins, then the texture's average colour, then primary
-        ///     (Node_Sub16.method1149). Textures are owned by a separate workstream, so the middle
-        ///     rung is not wired up: a textured overlay with no secondary colour falls through to
-        ///     its primary, which is the closest available approximation.
+        ///     Secondary colour, then the texture's representative colour, then primary
+        ///     (Node_Sub16.method1149).
         /// </remarks>
-        private static int ResolveOverlayColour(FloorOverlayDefinition overlay) {
+        private int ResolveOverlayColour(FloorOverlayDefinition overlay) {
             if (overlay.SecondaryRgb != -1)
                 return MapPalette.FromRgb(overlay.SecondaryRgb);
+
+            int textured = ResolveTextureColour(overlay.TextureId);
+            if (textured != MapPalette.NoColour)
+                return textured;
 
             if (!overlay.HasPrimaryRgb)
                 return MapPalette.NoColour;
@@ -419,23 +477,163 @@ namespace FlashEditor.Map {
             return MapPalette.FromRgb(overlay.PrimaryRgb);
         }
 
-        private ObjectFootprint ResolveFootprint(int objectId) {
-            if (footprintCache.TryGetValue(objectId, out ObjectFootprint known))
+        /// <summary>
+        ///     A texture's declared colour, as packed map HSL.
+        /// </summary>
+        /// <remarks>
+        ///     <c>field1831</c> is already a packed HSL in the same space as an overlay's primary
+        ///     and secondary colours, and the client returns it verbatim
+        ///     (Node_Sub16.java:75-80, <c>return class238.aShort1831</c>). It must not be routed
+        ///     through <c>TextureManager.RepresentativeRgb</c>, which converts it to RGB through the
+        ///     <em>model</em> palette for the renderer's benefit; doing that and folding the result
+        ///     back through the map palette turns the whole world flat green and drains the colour
+        ///     out of water.
+        ///
+        ///     <c>field1825</c> is the client's <c>aBoolean1825</c> gate: when set, the texture
+        ///     declines to stand in for a colour and the tile falls through to its primary.
+        ///
+        ///     Texture metadata is loaded by <c>GLTextureCache</c> at cache-open. A renderer used
+        ///     before that, or in a headless test, sees an empty table and every textured tile falls
+        ///     back to its primary colour rather than failing.
+        /// </remarks>
+        /// <param name="textureId">A texture id, or -1 for none.</param>
+        /// <returns>Packed map HSL, or <see cref="MapPalette.NoColour"/>.</returns>
+        private int ResolveTextureColour(int textureId) {
+            if (textureId < 0)
+                return MapPalette.NoColour;
+
+            if (textureColourCache.TryGetValue(textureId, out int known))
                 return known;
 
-            ObjectFootprint footprint = new ObjectFootprint(1, 1);
+            int colour = MapPalette.NoColour;
+            if (TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def)
+                && def != null && !def.field1825) {
+                //Both consumers clamp the lightness before the palette lookup (Class345.method3825,
+                //reached from Class278.java:731 and from the scene path). A texture whose declared
+                //lightness sits at either extreme would otherwise come out pure black or white.
+                int hsl = def.field1831 & 0xFFFF;
+                int lightness = Math.Clamp(hsl & 0x7F, 2, 126);
+                colour = (hsl & 0xFF80) | lightness;
+            }
+
+            //The resolved colour is cached, never the definition: reopening a cache calls
+            //TextureManager.Clear(), which disposes every TextureDefinition it holds.
+            textureColourCache[textureId] = colour;
+            return colour;
+        }
+
+        /// <summary>
+        ///     The icon bitmap for an object, or <c>null</c> when it has none.
+        /// </summary>
+        /// <remarks>
+        ///     Memoised by object id. 3,267 object definitions carry an icon and there are only
+        ///     around 100 distinct icons, but <c>RSCache.GetSprite</c> re-decodes on every call and
+        ///     throws rather than returning null when a group is absent, so an unmemoised lookup
+        ///     would decode the same sprite thousands of times per repaint.
+        /// </remarks>
+        private Bitmap ResolveIcon(int objectId) => ResolveObject(objectId).Icon;
+
+        private bool StretchIconToFootprint(int objectId) => ResolveObject(objectId).StretchIcon;
+
+        /// <summary>
+        ///     Everything the renderer needs about an object, resolved once per id.
+        /// </summary>
+        /// <remarks>
+        ///     Footprint and icon come from the same definition, so they are read together. Looking
+        ///     them up separately doubled the number of <c>GetObjectDefinition</c> calls, and with
+        ///     over twenty thousand locations in a dense scene that alone took the render from
+        ///     150ms to well over a second.
+        /// </remarks>
+        private ObjectInfo ResolveObject(int objectId) {
+            if (objectCache.TryGetValue(objectId, out ObjectInfo known))
+                return known;
+
+            var info = new ObjectInfo { SizeX = 1, SizeY = 1 };
+
             try {
                 ObjectDefinition def = cache.GetObjectDefinition(objectId >> 8, objectId & 0xFF);
+
                 //The size fields are bytes, so widen before comparing or the overload is ambiguous.
-                footprint = new ObjectFootprint(Math.Max(1, (int) def.sizeX), Math.Max(1, (int) def.sizeY));
+                info.SizeX = Math.Max(1, (int) def.sizeX);
+                info.SizeY = Math.Max(1, (int) def.sizeY);
+
+                //Opcode 102, despite the private field being called mapAreaId. Opcode 68 is dead.
+                int iconId = def.mapSceneIcon;
+                if (iconId >= 0) {
+                    info.Icon = ResolveIconBitmap(iconId);
+                    info.StretchIcon = iconStretch.TryGetValue(iconId, out bool stretch) && stretch;
+                }
             }
             catch (Exception) {
                 //Eight shipped loc files reference ids that index 16 does not carry, so a missing
-                //definition is expected data rather than an error. A 1x1 footprint is the safe read.
+                //definition is expected data rather than an error. A 1x1 footprint and no icon is
+                //the safe read.
             }
 
-            footprintCache[objectId] = footprint;
-            return footprint;
+            objectCache[objectId] = info;
+            return info;
+        }
+
+        /// <summary>
+        ///     The bitmap for one map scene icon, keyed by icon id rather than by object.
+        /// </summary>
+        /// <remarks>
+        ///     There are about a hundred icons and several thousand objects referencing them, so
+        ///     keying the bitmap - and the per-pixel tint that builds it - by object id would repeat
+        ///     the same work dozens of times per icon.
+        /// </remarks>
+        private Bitmap ResolveIconBitmap(int iconId) {
+            if (iconCache.TryGetValue(iconId, out Bitmap known))
+                return known;
+
+            Bitmap icon = null;
+            try {
+                MapSceneIconDefinition scene = cache.GetMapSceneIcon(iconId);
+                iconStretch[iconId] = scene.StretchToFootprint;
+
+                if (scene.SpriteGroupId > 0) {
+                    SpriteDefinition sprite = cache.GetSprite(scene.SpriteGroupId);
+                    if (sprite?.thumb != null)
+                        icon = Tint(sprite.thumb, scene.TintRgb);
+                }
+            }
+            catch (Exception) {
+                //A missing icon definition or sprite group means no icon, not a failed render.
+            }
+
+            iconCache[iconId] = icon;
+            return icon;
+        }
+
+        /// <summary>
+        ///     Copies a sprite, optionally recolouring it to a flat tint.
+        /// </summary>
+        /// <remarks>
+        ///     The client's tint is a silhouette fill, not a blend: it draws the sprite's shape
+        ///     entirely in the tint colour (Class122.java:119-120 into ImageArchive.java:35-37).
+        ///     Applied once per icon rather than per draw.
+        /// </remarks>
+        private static Bitmap Tint(Bitmap source, int tintRgb) {
+            var copy = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+            for (int x = 0; x < source.Width; x++) {
+                for (int y = 0; y < source.Height; y++) {
+                    Color pixel = source.GetPixel(x, y);
+                    if (pixel.A == 0)
+                        continue;
+
+                    copy.SetPixel(x, y, tintRgb == 0
+                        ? pixel
+                        : Color.FromArgb(pixel.A, (tintRgb >> 16) & 0xFF, (tintRgb >> 8) & 0xFF, tintRgb & 0xFF));
+                }
+            }
+
+            return copy;
+        }
+
+        private ObjectFootprint ResolveFootprint(int objectId) {
+            ObjectInfo info = ResolveObject(objectId);
+            return new ObjectFootprint(info.SizeX, info.SizeY);
         }
 
         private readonly struct ObjectFootprint {
@@ -446,6 +644,21 @@ namespace FlashEditor.Map {
                 SizeX = sizeX;
                 SizeY = sizeY;
             }
+        }
+
+        /// <summary>What the renderer needs about one object definition.</summary>
+        private sealed class ObjectInfo {
+            /// <summary>Tile extent along X at rotation 0, from opcode 14.</summary>
+            public int SizeX { get; set; }
+
+            /// <summary>Tile extent along Y at rotation 0, from opcode 15.</summary>
+            public int SizeY { get; set; }
+
+            /// <summary>The map scene icon to draw, or null.</summary>
+            public Bitmap Icon { get; set; }
+
+            /// <summary>Whether that icon stretches to the footprint rather than drawing at native size.</summary>
+            public bool StretchIcon { get; set; }
         }
     }
 }

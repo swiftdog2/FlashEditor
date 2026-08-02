@@ -727,6 +727,21 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        ///     Decodes a map scene icon definition from the config index.
+        /// </summary>
+        /// <remarks>
+        ///     JS5 index 2, group <see cref="RSConstants.MAP_SCENE_GROUP"/>. An object definition
+        ///     points at one of these through <c>ObjectDefinition.mapSceneIcon</c>, which is opcode
+        ///     102 rather than the identically-named-looking opcode 68.
+        /// </remarks>
+        /// <param name="definitionId">The icon id.</param>
+        /// <returns>The decoded definition.</returns>
+        public MapSceneIconDefinition GetMapSceneIcon(int definitionId) {
+            JagStream data = ReadFile(RSConstants.CONFIG, RSConstants.MAP_SCENE_GROUP, definitionId);
+            return new MapSceneIconDefinition { Id = definitionId }.Decode(data);
+        }
+
+        /// <summary>
         ///     Returns a file's bytes, as stored, for callers that want to decode it themselves.
         /// </summary>
         /// <param name="indexId">The index the archive belongs to.</param>
