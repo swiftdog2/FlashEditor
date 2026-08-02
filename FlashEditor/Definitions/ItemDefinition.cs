@@ -466,11 +466,23 @@ namespace FlashEditor {
                     continue;
                 }
 
-                //A superseded occurrence has no field left to rebuild it from, so its bytes are
-                //all that is left of it.
+                /* A bare flag - 11, 16 and 65 are the only zero-payload item opcodes - carries no
+                   value, so a superseded occurrence of one is the same single byte as its last
+                   occurrence and can be rebuilt from the field just as well. Rebuilding it is
+                   what lets an edit that turns the flag off remove every copy: replayed verbatim,
+                   the earlier copy would survive and the client would still read the flag as set,
+                   so the row would change, the save would report success and the item would come
+                   back members-only. */
+                byte[] payload = i < opcodePayloads.Count ? opcodePayloads[i] : null;
+                if (payload == null || payload.Length == 0) {
+                    EmitOpcode(o, op, true);
+                    continue;
+                }
+
+                //A superseded occurrence with a payload has no field left to rebuild it from, so
+                //its bytes are all that is left of it.
                 o.WriteByte((byte) op);
-                if (i < opcodePayloads.Count && opcodePayloads[i] != null)
-                    o.Write(opcodePayloads[i], 0, opcodePayloads[i].Length);
+                o.Write(payload, 0, payload.Length);
             }
 
             for (int op = 1 ; op < 256 ; op++) {

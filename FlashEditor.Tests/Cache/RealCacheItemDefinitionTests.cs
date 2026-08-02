@@ -361,6 +361,155 @@ namespace FlashEditor.Tests.Cache
         }
 
         // ===================================================================
+        //  Bare flags
+        // ===================================================================
+
+        /// <summary>
+        ///     Every presence-only opcode on an item definition, with the accessor that reads and
+        ///     writes it phrased as "the record carries this opcode".
+        /// </summary>
+        /// <remarks>
+        ///     Unlike the NPC and object codecs, this one already emitted these three from their
+        ///     fields rather than from the recorded opcode list, so clearing one has always
+        ///     dropped the last occurrence. The tests below pin that, and pin the one case it did
+        ///     not cover - a record that stores the same flag twice.
+        /// </remarks>
+        private static readonly (int Opcode, string Name,
+            Func<ItemDefinition, bool> Carried, Action<ItemDefinition, bool> SetCarried)[] BareFlags =
+        {
+            (11, "stackable",   d => d.stackable == 1, (d, on) => d.stackable = on ? 1 : 0),
+            (16, "membersOnly", d => d.membersOnly,    (d, on) => d.membersOnly = on),
+            (65, "unnoted",     d => d.unnoted,        (d, on) => d.unnoted = on),
+        };
+
+        /// <summary>
+        ///     Turning a bare flag off removes its opcode, so the next encode does not carry it.
+        /// </summary>
+        /// <remarks>
+        ///     membersOnly is bound to an editable grid column. If this regresses, every "Members"
+        ///     tick the user clears is written straight back out from the recorded record: the row
+        ///     changes, the save reports success and the item stays members-only in the cache.
+        /// </remarks>
+        [Fact]
+        public void ABareFlagTurnedOff_IsRemovedFromTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                //Opcode 115 gives the record something to keep, so a dropped flag is
+                //distinguishable from an encoder that lost the whole record.
+                var definition = new ItemDefinition();
+                definition.Decode(new JagStream(new byte[] { 115, 3, (byte)opcode, 0 }));
+                Assert.True(carried(definition), $"{name}: opcode {opcode} did not decode as carried");
+
+                setCarried(definition, false);
+
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 115, 3, 0 }, encoded);
+
+                var reread = new ItemDefinition();
+                reread.Decode(new JagStream(encoded));
+                Assert.False(carried(reread), $"{name}: opcode {opcode} came back after being cleared");
+                Assert.Equal(3, reread.teamId);
+            }
+        }
+
+        /// <summary>
+        ///     Turning a bare flag on emits its opcode, even on a record that never carried it.
+        /// </summary>
+        [Fact]
+        public void ABareFlagTurnedOn_IsAppendedToTheEncodedStream()
+        {
+            foreach ((int opcode, string name, var carried, var setCarried) in BareFlags)
+            {
+                var definition = new ItemDefinition();
+                definition.Decode(new JagStream(new byte[] { 115, 3, 0 }));
+                Assert.False(carried(definition), $"{name}: opcode {opcode} was carried by a record without it");
+
+                setCarried(definition, true);
+
+                //115 was recorded so it keeps its place; the new opcode is appended after it.
+                byte[] encoded = definition.Encode().ToArray();
+                Assert.Equal(new byte[] { 115, 3, (byte)opcode, 0 }, encoded);
+
+                var reread = new ItemDefinition();
+                reread.Decode(new JagStream(encoded));
+                Assert.True(carried(reread), $"{name}: opcode {opcode} did not survive being set");
+            }
+        }
+
+        /// <summary>
+        ///     A record that never carried a bare flag reports the client-side default for it and
+        ///     encodes without it.
+        /// </summary>
+        [Fact]
+        public void ARecordThatNeverCarriedABareFlag_KeepsTheDefaultAndEncodesWithoutIt()
+        {
+            var definition = new ItemDefinition();
+            definition.Decode(new JagStream(new byte[] { 115, 3, 0 }));
+
+            Assert.Equal(0, definition.stackable);
+            Assert.False(definition.membersOnly);
+            Assert.False(definition.unnoted);
+            Assert.Equal(new byte[] { 115, 3, 0 }, definition.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     A record carrying every bare flag re-encodes to the bytes it came from when nothing
+        ///     is edited.
+        /// </summary>
+        /// <remarks>
+        ///     The regression guard for the tests above: no setter runs for an item the user merely
+        ///     opened, so the recorded record has to replay untouched, opcode order included.
+        /// </remarks>
+        [Fact]
+        public void BareFlagsLeftUntouched_ReEncodeToTheirStoredBytes()
+        {
+            byte[] captured = { 65, 115, 3, 11, 16, 0 };
+
+            var definition = new ItemDefinition();
+            var stream = new JagStream(captured);
+            definition.Decode(stream);
+
+            Assert.Equal(captured.Length, stream.Position);
+            Assert.Equal(1, definition.stackable);
+            Assert.True(definition.membersOnly);
+            Assert.True(definition.unnoted);
+            Assert.Equal(captured, definition.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     Clearing a bare flag removes every occurrence of its opcode, not merely the last.
+        /// </summary>
+        /// <remarks>
+        ///     A superseded occurrence is normally replayed from the bytes it was read from, which
+        ///     is what keeps the three hundred items that repeat an opcode byte-exact. A bare flag
+        ///     has no bytes beyond the opcode itself, so replaying it would leave an earlier copy
+        ///     behind and the client would still read the flag as set - the edit would look applied
+        ///     and do nothing. Repeated occurrences of a flag left switched on are still both
+        ///     written, which is the half this must not break.
+        /// </remarks>
+        [Fact]
+        public void ClearingARepeatedBareFlag_RemovesEveryOccurrence()
+        {
+            byte[] captured = { 16, 115, 3, 16, 0 };
+
+            var stored = new ItemDefinition();
+            stored.Decode(new JagStream(captured));
+            Assert.Equal(captured, stored.Encode().ToArray());
+
+            var edited = new ItemDefinition();
+            edited.Decode(new JagStream(captured));
+            edited.membersOnly = false;
+
+            byte[] encoded = edited.Encode().ToArray();
+            Assert.Equal(new byte[] { 115, 3, 0 }, encoded);
+
+            var reread = new ItemDefinition();
+            reread.Decode(new JagStream(encoded));
+            Assert.False(reread.membersOnly);
+        }
+
+        // ===================================================================
         //  Reading the definitions out of the cache
         // ===================================================================
 
