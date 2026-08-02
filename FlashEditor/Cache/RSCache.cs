@@ -172,8 +172,17 @@ namespace FlashEditor.cache {
             //Wrap the archive back into a container
             container.SetStream(archive.Encode());
 
-            //Grab the bytes we need for the checksum
-            JagStream stream = container.Encode(); //already checked definitely correct upto this point
+            /* Written back under the key it was read under, or not at all. An archive that was
+               decrypted on read and written back as plaintext looks perfectly healthy from here
+               - the CRC and the reference table below are both recomputed over the plaintext, so
+               they agree with it - and is destroyed at the client, which deciphers it regardless
+               and gets noise. On a format 6 table there is no flag to record the change of state,
+               so nothing anywhere reports it. */
+            int[] xteaKey = ResolveWriteKey(container, indexId, archiveId);
+
+            //Grab the bytes we need for the checksum. The CRC below covers the STORED bytes, so
+            //it has to be taken over this ciphertext rather than over the plaintext payload.
+            JagStream stream = container.Encode(xteaKey);
 
             /* The trailing version short is not part of the checksummed span - but it is only
                present when the container carries a version at all. RSContainer.Decode leaves the
@@ -209,6 +218,12 @@ namespace FlashEditor.cache {
                 byte[] digest = Whirlpool.ComputeHash(hashableStream.ToArray());
                 archiveEntry.SetWhirlpool(digest);
             }
+
+            /* Where a per-archive encryption flag exists, keep it describing what was just
+               written. Only a format 7 table has one - which is exactly why the state has to be
+               carried on the container as well, since a format 6 table cannot hold it. */
+            if (table.format >= 7)
+                archiveEntry.UsesXtea = xteaKey != null;
 
             //Add the archive entry to the reference table
             table.PutArchiveEntry(archiveId, archiveEntry);
@@ -644,6 +659,42 @@ namespace FlashEditor.cache {
                       " (" + ex.Message + "); reading it unencrypted", LOG_DETAIL.ADVANCED);
                 return RSContainer.Decode(new JagStream(raw), null);
             }
+        }
+
+        /// <summary>
+        ///     Returns the key an archive has to be written back under, or null when it was
+        ///     stored in the clear and must stay that way.
+        /// </summary>
+        /// <remarks>
+        ///     Only two outcomes are acceptable, and neither of them is a guess. Either the
+        ///     archive is written in the state it was read in, or the save fails: silently
+        ///     writing plaintext over an encrypted map square destroys it with no error anywhere,
+        ///     and silently encrypting an archive that was stored plaintext destroys it just as
+        ///     thoroughly in the other direction. The key table cannot arbitrate that, because it
+        ///     holds keys for many archives that are not encrypted - so the decision rests
+        ///     entirely on <see cref="RSContainer.StoredEncrypted"/>, recorded when the archive
+        ///     was decoded, and the key table is consulted only once that says encryption is
+        ///     required.
+        /// </remarks>
+        /// <param name="container">The container about to be encoded.</param>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
+        /// <returns>The key to encipher with, or null to write plaintext.</returns>
+        /// <exception cref="InvalidOperationException">
+        ///     The archive was stored encrypted but no key is available to re-encrypt it.
+        /// </exception>
+        private int[] ResolveWriteKey(RSContainer container, int indexId, int archiveId) {
+            if (!container.StoredEncrypted)
+                return null;
+
+            int[] key = ResolveXTEAKey(indexId, archiveId);
+            if (key == null)
+                throw new InvalidOperationException(
+                    "Refusing to write index " + indexId + ", archive " + archiveId +
+                    " in plaintext: it was decrypted on read, so writing it unencrypted would" +
+                    " corrupt it beyond recovery. Load the XTEA key file for this cache and retry.");
+
+            return key;
         }
 
         /// <summary>

@@ -301,5 +301,45 @@ namespace FlashEditor.Tests.Cache
             //And the whole container is not the span - otherwise the rule above says nothing
             Assert.NotEqual(expectedCrc, CRC32Helper.ComputeCrc32(stored));
         }
+
+        /// <summary>
+        ///     The span a CRC covers is the stored one, so for an encrypted archive it is the
+        ///     ciphertext. Encoding the container without its key checksums the plaintext
+        ///     instead, which writes a CRC no client will ever agree with.
+        /// </summary>
+        [Fact]
+        public void ApplyCrcAndVersion_EncryptedContainer_ChecksumsTheStoredCiphertext()
+        {
+            int[] key = { 829329687, 2060676264, 581836269, -714741378 };
+            RSContainer container = RSContainer.Decode(new JagStream(Fixture("archive-xtea.container.bin")), key);
+
+            var table = new RSReferenceTable { format = 7, version = 1 };
+            table.PutArchiveEntry(0, new RSArchiveEntry(0));
+
+            CRC32Helper.ApplyCrcAndVersion(container, table, 0, key);
+
+            uint expected = CRC32Helper.ComputeCrc32(CrcSpan(container.Encode(key).ToArray()));
+            Assert.Equal(expected, unchecked((uint) table.GetArchiveEntry(0).GetCrc()));
+            Assert.True(table.GetArchiveEntry(0).UsesXtea);
+        }
+
+        /// <summary>
+        ///     And with no key it must refuse. The helper hands its caller the encoded container
+        ///     back, so quietly encoding an encrypted archive in the clear does not merely
+        ///     mis-checksum it - it produces the plaintext that then gets stored over a map
+        ///     square the client still expects to decipher.
+        /// </summary>
+        [Fact]
+        public void ApplyCrcAndVersion_EncryptedContainerWithNoKey_Throws()
+        {
+            int[] key = { 829329687, 2060676264, 581836269, -714741378 };
+            RSContainer container = RSContainer.Decode(new JagStream(Fixture("archive-xtea.container.bin")), key);
+
+            var table = new RSReferenceTable { format = 7, version = 1 };
+            table.PutArchiveEntry(0, new RSArchiveEntry(0));
+
+            Assert.Throws<InvalidOperationException>(
+                () => CRC32Helper.ApplyCrcAndVersion(container, table, 0, null));
+        }
     }
 }
