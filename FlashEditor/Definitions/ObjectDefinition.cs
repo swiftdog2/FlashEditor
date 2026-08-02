@@ -37,7 +37,31 @@ namespace FlashEditor.Definitions
         /// <summary>North-south tile footprint (default 1).</summary>
         public byte sizeY = 1;          // op-code 15
         /// <summary>Whether players can walk through this object.</summary>
-        public bool walkable = true;
+        /// <remarks>
+        /// A view over the walk-blocking opcodes rather than a field of its own. Nothing in the
+        /// stream states walkability directly - opcodes 17 and 18 are bare flags whose presence
+        /// blocks the tile - and the encoder emits those flags from the opcode hit map, so a
+        /// standalone field would be read by the grid and then thrown away on save. Clearing the
+        /// flag drops the opcode outright, which is why the recorded stream position goes too.
+        /// </remarks>
+        public bool walkable
+        {
+            get => !(decoded[17] || decoded[18]);
+            set
+            {
+                if (value)
+                {
+                    DropOpcode(17);
+                    DropOpcode(18);
+                }
+                else if (!decoded[17] && !decoded[18])
+                {
+                    //18 rather than 17: it blocks the tile without also resetting the clip type,
+                    //so it is the narrower of the two claims to make on the user's behalf.
+                    decoded[18] = true;
+                }
+            }
+        }
         /// <summary>Whether the object contributes to the collision map.</summary>
         public bool isClipped = false;
         /// <summary>Lighting parameters (brightness and contrast) for the 3D model.</summary>
@@ -113,9 +137,10 @@ namespace FlashEditor.Definitions
         private byte minimapForceClip;      // 69  (cflag)
         private int offsetX;                // 70
         private int offsetY;                // 71
-        private int offsetZ;                // 72  (1 UByte in 633)
+        private int offsetZ;                // 72  (anInt2946, signed short << 2)
         private bool obstructsWheelchair;   // 73  (secondBool)
         private bool isSolid;               // 74  (ignoreClipOnAlternativeRoute)
+        private int unknownByte75;          // 75  (anInt2975, 1 UByte - not a flag)
         private int decorDisplacement;      // 28  (anInt3892)
         private int ambientLighting;        // 29  (anInt3878)
         private int contrastLighting;       // 39  (anInt3840)
@@ -165,12 +190,44 @@ namespace FlashEditor.Definitions
 
         // ─── Misc bookkeeping ───────────────────────────
         /// <summary>Diagnostic flag array tracking which opcodes were read.</summary>
-        public readonly bool[] decoded = new bool[256];  // opcode hit-map
+        public bool[] decoded = new bool[256];  // opcode hit-map
+
+        /// <summary>
+        /// Every opcode the stream carried, in order, paired with the exact payload bytes it was
+        /// read from.
+        /// </summary>
+        /// <remarks>
+        /// Nothing in the format fixes an opcode order, and the definitions shipped in the cache
+        /// are not in ascending order, so an encoder that emitted its own order would rewrite
+        /// every definition the user merely opened. Replaying the order the decoder saw is what
+        /// makes an untouched definition re-encode to the bytes it came from.
+        /// <para>
+        /// The payload is kept as well because a few hundred definitions repeat an opcode with a
+        /// different value each time. The decoder keeps only the last value, as the client does,
+        /// so the earlier occurrences can only be reproduced from the bytes they were read from.
+        /// </para>
+        /// </remarks>
+        private List<KeyValuePair<int, byte[]>> _streamRecords =
+            new List<KeyValuePair<int, byte[]>>();
 
         /*───────────────────────────────────────────*
          *  ▌  Clone support                        ▐
          *───────────────────────────────────────────*/
-        public ObjectDefinition Clone() => (ObjectDefinition)MemberwiseClone();
+        /// <summary>Takes an independent copy of this definition.</summary>
+        /// <remarks>
+        /// The editor clones a definition to hold what it looked like before an edit, so the two
+        /// cannot share the opcode hit map or the recorded stream: turning a flag off writes to
+        /// both, and the snapshot would then agree with the edit it exists to remember.
+        /// </remarks>
+        /// <returns>A copy whose bookkeeping the original does not share.</returns>
+        public ObjectDefinition Clone()
+        {
+            var clone = (ObjectDefinition)MemberwiseClone();
+            clone.decoded = (bool[])decoded.Clone();
+            clone._streamRecords = new List<KeyValuePair<int, byte[]>>(_streamRecords);
+            return clone;
+        }
+
         object ICloneable.Clone() => Clone();
 
         /*───────────────────────────────────────────*
@@ -186,7 +243,12 @@ namespace FlashEditor.Definitions
                 int op = stream.ReadByte();
                 if (op <= 0) break;          // 0 = terminator, -1 = EOF
                 decoded[op] = true;
+
+                int payloadStart = stream.Position;
                 Decode(stream, op);
+                int payloadEnd = stream.Position;
+                stream.Position = payloadStart;
+                _streamRecords.Add(new KeyValuePair<int, byte[]>(op, stream.ReadBytes(payloadEnd - payloadStart)));
 
                 if (++safeGuard > 256)
                     throw new InvalidOperationException("Opcode overflow while decoding ObjectDefinition.");
@@ -251,14 +313,14 @@ namespace FlashEditor.Definitions
                 case 14: sizeX = (byte) buf.ReadByte(); break;
                 case 15: sizeY = (byte) buf.ReadByte(); break;
 
+                //Both flags block walking; that is read back off the opcode hit map rather than
+                //stored, so these cases only carry the side effects the flags also have.
                 case 17:
                     clipType = 0;
                     projectileClipped = false;
-                    walkable = false;
                     break;
                 case 18:
                     projectileClipped = false;
-                    walkable = false;
                     break;
 
                 // category/id-grouping
@@ -365,11 +427,11 @@ namespace FlashEditor.Definitions
                 /* signed short offsets */
                 case 70: offsetX = buf.ReadShort() << 2; return;    // 2 bytes
                 case 71: offsetY = buf.ReadShort() << 2; return;    // 2 bytes
-                case 72: offsetZ = buf.ReadUnsignedByte(); return;  // 1 UByte (NOT Short<<2!)
+                case 72: offsetZ = buf.ReadShort() << 2; return;    // 2 bytes (anInt2946)
 
                 case 73: obstructsWheelchair = true; return;        // flag only
                 case 74: isSolid = true; return;                    // flag only
-                case 75: /* flag only, 0 bytes */ return;           // aBoolean3873 = true
+                case 75: unknownByte75 = buf.ReadUnsignedByte(); return; // 1 byte (anInt2975)
 
                 /*──────── morph (77 / 92) ────────*/
                 case 77:
@@ -567,13 +629,21 @@ namespace FlashEditor.Definitions
          *───────────────────────────────────────────*/
         public JagStream Encode()
         {
+            /* Each opcode's payload is built into its own buffer first, so the records can then
+               be laid down in whatever order the definition arrived in. `o` is reassigned around
+               each payload rather than passed in because every payload below closes over it. */
+            var records = new List<KeyValuePair<int, byte[]>>();
             var o = new JagStream();
 
             /* local helper */
             void Emit(int op, Action payload = null)
             {
-                o.WriteByte((byte)op);
+                JagStream outer = o;
+                var buffer = new JagStream();
+                o = buffer;
                 payload?.Invoke();
+                o = outer;
+                records.Add(new KeyValuePair<int, byte[]>(op, buffer.Flip().ToArray()));
             }
 
             /*─── 1 / 5  – model-group tables ───────────────────────────*/
@@ -598,27 +668,32 @@ namespace FlashEditor.Definitions
                 });
             }
 
+            /* Each block below emits when the stream carried the opcode OR when the field says it
+               is needed. The hit-map arm is what keeps an opcode whose payload happens to equal
+               the field's default - a stored "19 00" or "70 00 00" - instead of silently dropping
+               it and changing the definition's bytes the first time the user saves. */
+
             /*─── 2 – name ──────────────────────────────────────────────*/
-            if (!string.IsNullOrEmpty(name))
-                Emit(2, () => o.WriteJagexString(name));
+            if (decoded[2] || !string.IsNullOrEmpty(name))
+                Emit(2, () => o.WriteJagexString(name ?? ""));
 
             /*─── size (14 / 15) ───────────────────────────────────────*/
-            if (sizeX != 1) Emit(14, () => o.WriteByte(sizeX));
-            if (sizeY != 1) Emit(15, () => o.WriteByte(sizeY));
+            if (decoded[14] || sizeX != 1) Emit(14, () => o.WriteByte(sizeX));
+            if (decoded[15] || sizeY != 1) Emit(15, () => o.WriteByte(sizeY));
 
             /*─── walk-blocking flags (17 / 18) ────────────────────────*/
             if (decoded[17]) Emit(17);
             else if (decoded[18]) Emit(18);
 
             /*─── 19 – category id ─────────────────────────────────────*/
-            if (category != 0)
+            if (decoded[19] || category != 0)
                 Emit(19, () => o.WriteByte(category));
 
             /*─── 21 – contour ground type 1 (flag only) ──────────────*/
             if (decoded[21]) Emit(21);
-            if (isClipped) Emit(22);
+            if (decoded[22] || isClipped) Emit(22);
             if (decoded[23]) Emit(23);
-            if (animationId != -1) Emit(24, () => o.WriteShort(animationId));
+            if (decoded[24] || animationId != -1) Emit(24, () => o.WriteShort(animationId));
 
             /*─── 27 – clip type 1 ─────────────────────────────────────*/
             if (decoded[27]) Emit(27);
@@ -677,22 +752,22 @@ namespace FlashEditor.Definitions
                 Emit(45, () => o.WriteShort(EncodeBitmapArray(unknownArray4)));
 
             /*─── render-side flags 62-75 ─────────────────────────────*/
-            if (flipped) Emit(62);
-            if (!castsShadow) Emit(64);
-            if (scaleX != 0) Emit(65, () => o.WriteShort(scaleX));
-            if (scaleY != 0) Emit(66, () => o.WriteShort(scaleY));
-            if (scaleZ != 0) Emit(67, () => o.WriteShort(scaleZ));
+            if (decoded[62] || flipped) Emit(62);
+            if (decoded[64] || !castsShadow) Emit(64);
+            if (decoded[65] || scaleX != 0) Emit(65, () => o.WriteShort(scaleX));
+            if (decoded[66] || scaleY != 0) Emit(66, () => o.WriteShort(scaleY));
+            if (decoded[67] || scaleZ != 0) Emit(67, () => o.WriteShort(scaleZ));
             if (decoded[68]) Emit(68, () => o.WriteShort(mapSceneId));
-            if (minimapForceClip != 0)
+            if (decoded[69] || minimapForceClip != 0)
                 Emit(69, () => o.WriteByte(minimapForceClip));
 
-            if (offsetX != 0) Emit(70, () => o.WriteShort((short)(offsetX >> 2)));
-            if (offsetY != 0) Emit(71, () => o.WriteShort((short)(offsetY >> 2)));
-            if (decoded[72]) Emit(72, () => o.WriteByte((byte)offsetZ));
+            if (decoded[70] || offsetX != 0) Emit(70, () => o.WriteShort((short)(offsetX >> 2)));
+            if (decoded[71] || offsetY != 0) Emit(71, () => o.WriteShort((short)(offsetY >> 2)));
+            if (decoded[72]) Emit(72, () => o.WriteShort((short)(offsetZ >> 2)));
 
-            if (obstructsWheelchair) Emit(73);
-            if (isSolid) Emit(74);
-            if (decoded[75]) Emit(75); // flag only
+            if (decoded[73] || obstructsWheelchair) Emit(73);
+            if (decoded[74] || isSolid) Emit(74);
+            if (decoded[75]) Emit(75, () => o.WriteByte((byte)unknownByte75));
 
             /*─── morph table (77 / 92) ───────────────────────────────*/
             if (morphIds != null)
@@ -715,9 +790,15 @@ namespace FlashEditor.Definitions
             }
 
             /*─── ambient sounds (78 / 79) ────────────────────────────*/
-            if (ambientSoundId != -1)
+            if (decoded[78] || decoded[79] || ambientSoundId != -1)
             {
-                if (extraSounds == null)
+                /* Both opcodes write the same fields, and forty-odd definitions in the cache carry
+                   both, so only the one the decoder read last still has its values in the fields.
+                   The other is replayed from its own bytes by WriteRecordsInStreamOrder. */
+                bool use79 = LastStreamIndexOf(79) > LastStreamIndexOf(78)
+                             || (!decoded[78] && !decoded[79] && extraSounds != null);
+
+                if (!use79)
                     Emit(78, () =>
                     {
                         o.WriteShort(ambientSoundId);
@@ -815,11 +896,11 @@ namespace FlashEditor.Definitions
                         Emit(190 + i, () => o.WriteShort(extraOpcodeArray[i]));
 
             /*─── params (249) ───────────────────────────────────────*/
-            if (parameters != null && parameters.Count > 0)
+            if (decoded[249] || (parameters != null && parameters.Count > 0))
                 Emit(249, () =>
                 {
-                    o.WriteByte((byte)parameters.Count);
-                    foreach (var kv in parameters)
+                    o.WriteByte((byte)(parameters?.Count ?? 0));
+                    foreach (var kv in parameters ?? new SortedDictionary<int, object>())
                     {
                         bool isStr = kv.Value is string;
                         o.WriteByte((byte)(isStr ? 1 : 0));
@@ -828,6 +909,98 @@ namespace FlashEditor.Definitions
                         else o.WriteInteger((int)kv.Value);
                     }
                 });
+
+            return WriteRecordsInStreamOrder(records);
+        }
+
+        /// <summary>
+        /// Forgets an opcode entirely, so neither the hit map nor the recorded stream order will
+        /// put it back on the next encode.
+        /// </summary>
+        /// <remarks>
+        /// Clearing <see cref="decoded"/> alone is not enough: an opcode still listed in
+        /// <see cref="_streamRecords"/> is written back from the bytes it was read from, which is
+        /// what keeps repeated opcodes byte-exact but would also resurrect a flag the user just
+        /// turned off.
+        /// </remarks>
+        /// <param name="op">The opcode to remove.</param>
+        private void DropOpcode(int op)
+        {
+            decoded[op] = false;
+            _streamRecords.RemoveAll(record => record.Key == op);
+        }
+
+        /// <summary>
+        /// Where an opcode last appeared in the decoded stream, or -1 when it never did.
+        /// </summary>
+        /// <param name="op">The opcode to look for.</param>
+        /// <returns>The index into <see cref="_streamRecords"/>, or -1.</returns>
+        private int LastStreamIndexOf(int op)
+        {
+            for (int i = _streamRecords.Count - 1; i >= 0; i--)
+                if (_streamRecords[i].Key == op)
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Lays the encoded opcode records down in the order the definition was decoded in, then
+        /// appends anything the decoder never saw.
+        /// </summary>
+        /// <remarks>
+        /// A freshly encoded record with no place in <see cref="_streamRecords"/> is one the field
+        /// values asked for but the original stream did not carry - a value the user set on a
+        /// definition that arrived without that opcode. Appending it keeps such an edit rather
+        /// than dropping it, which is what the value-driven encoder above did before the order was
+        /// recorded.
+        /// <para>
+        /// Only the last occurrence of an opcode takes the freshly encoded payload, because that
+        /// is the occurrence whose value the decoder kept and therefore the only one an edit can
+        /// have changed. Every earlier occurrence, and any opcode the field-driven pass declined
+        /// to re-emit at all - opcode 78 on a definition that also carries 79, for instance - is
+        /// written back from the bytes it was read from.
+        /// </para>
+        /// </remarks>
+        /// <param name="records">Each opcode and the payload bytes freshly encoded for it.</param>
+        /// <returns>The complete definition stream, terminator included, ready to read.</returns>
+        private JagStream WriteRecordsInStreamOrder(List<KeyValuePair<int, byte[]>> records)
+        {
+            var o = new JagStream();
+            var encoded = new Dictionary<int, byte[]>(records.Count);
+            foreach (KeyValuePair<int, byte[]> record in records)
+                encoded[record.Key] = record.Value;
+
+            var lastOccurrence = new Dictionary<int, int>();
+            for (int i = 0; i < _streamRecords.Count; i++)
+                lastOccurrence[_streamRecords[i].Key] = i;
+
+            var replaced = new HashSet<int>();
+
+            void Put(int op, byte[] payload)
+            {
+                o.WriteByte((byte)op);
+                if (payload.Length > 0)
+                    o.Write(payload);
+            }
+
+            for (int i = 0; i < _streamRecords.Count; i++)
+            {
+                int op = _streamRecords[i].Key;
+
+                if (lastOccurrence[op] == i && encoded.TryGetValue(op, out byte[] fresh))
+                {
+                    Put(op, fresh);
+                    replaced.Add(op);
+                }
+                else
+                {
+                    Put(op, _streamRecords[i].Value);
+                }
+            }
+
+            foreach (KeyValuePair<int, byte[]> record in records)
+                if (!replaced.Contains(record.Key))
+                    Put(record.Key, record.Value);
 
             /* terminator */
             o.WriteByte(0);
