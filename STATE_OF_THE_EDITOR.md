@@ -375,7 +375,10 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
    Pinned by `CapturedCacheBytesTests`, which decrypts a committed real encrypted map archive
    with its real shipped key and asserts the same bytes do *not* decode without it, and by
    `RealCacheConformanceTests.EncryptedMapArchives_DecryptWithTheKeysForThisBuild` over the
-   whole cache. Drop a key file beside the cache as `xteas.json` and the suite picks it up.
+   whole cache. The keys themselves are committed at `xteas/xteas.json`, which
+   `XTEAKeyTable.FindKeyFile` discovers as the cache directory's sibling with no
+   configuration; see `xteas/README.md` for their provenance and for what the 61 missing
+   keys are.
 
 **P1 - stop the write path destroying caches**
 3. ~~Make `MappedDataChannel` open the source dat2 **read-only**; stage all writes and
