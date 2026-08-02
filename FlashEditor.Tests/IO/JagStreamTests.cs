@@ -604,5 +604,632 @@ namespace FlashEditor.Tests.IO
         }
 
         #endregion
+
+        #region Raw byte access
+
+        /// <summary>
+        ///     ReadByte is the only reader that reports EOF by value instead of by exception,
+        ///     and it must not move the cursor when it does. ItemDefinition's opcode loop reads
+        ///     an opcode and breaks on any non-positive result, so 0 (terminator) and -1 (EOF)
+        ///     share a path; if EOF advanced Position, a truncated record would leave the cursor
+        ///     one byte past the end and the caller's "did I consume it all" check would compare
+        ///     against the wrong number.
+        ///
+        ///     It is also why a bare Position == Length assertion can pass vacuously: repeated
+        ///     reads at EOF are idempotent, so the check holds no matter how many times the
+        ///     decoder over-read.
+        /// </summary>
+        [Fact]
+        public void ReadByte_AtEndOfStream_ReturnsMinusOneWithoutAdvancingPosition()
+        {
+            var stream = Wire(7);
+            Assert.Equal(7, stream.ReadByte());
+            Assert.Equal(1, stream.Position);
+
+            Assert.Equal(-1, stream.ReadByte());
+            Assert.Equal(1, stream.Position);
+
+            //Idempotent: over-reading can never push Position past Length
+            Assert.Equal(-1, stream.ReadByte());
+            Assert.Equal(-1, stream.ReadByte());
+            Assert.Equal(1, stream.Position);
+            Assert.Equal(stream.Length, stream.Position);
+        }
+
+        /// <param name="raw">
+        ///     0x7F and 0x80 straddle the sign boundary. ReadByte is the unsigned view, so 0x80
+        ///     must come back as 128; anything that sign-extends here turns every high byte in
+        ///     the cache into a negative opcode and terminates the decode loop early.
+        /// </param>
+        [Theory]
+        [InlineData(0x00, 0)]
+        [InlineData(0x01, 1)]
+        [InlineData(0x7F, 127)]
+        [InlineData(0x80, 128)]
+        [InlineData(0xFF, 255)]
+        public void ReadByte_AnyValue_ReturnsItUnsigned(byte raw, int expected)
+        {
+            Assert.Equal(expected, Wire(raw).ReadByte());
+        }
+
+        [Fact]
+        public void Read_IntoALargerDestination_ReturnsOnlyWhatWasAvailable()
+        {
+            var stream = Wire(1, 2, 3);
+            byte[] destination = new byte[10];
+
+            int got = stream.Read(destination, 0, 10);
+
+            Assert.Equal(3, got);
+            Assert.Equal(3, stream.Position);
+            Assert.Equal(new byte[] { 1, 2, 3, 0, 0, 0, 0, 0, 0, 0 }, destination);
+        }
+
+        /// <summary>
+        ///     Read reports EOF as 0, not -1 like ReadByte. A caller that copied ReadByte's
+        ///     convention and tested for -1 would loop forever on a truncated stream.
+        /// </summary>
+        [Fact]
+        public void Read_AtEndOfStream_ReturnsZero()
+        {
+            var stream = Wire(1);
+            stream.Seek(1);
+
+            Assert.Equal(0, stream.Read(new byte[4], 0, 4));
+            Assert.Equal(1, stream.Position);
+        }
+
+        [Fact]
+        public void Read_WithOffsetAndCount_FillsOnlyTheRequestedWindow()
+        {
+            var stream = Wire(1, 2, 3, 4);
+            byte[] destination = new byte[4];
+
+            int got = stream.Read(destination, 1, 2);
+
+            Assert.Equal(2, got);
+            Assert.Equal(new byte[] { 0, 1, 2, 0 }, destination);
+            Assert.Equal(2, stream.Position);
+        }
+
+        [Fact]
+        public void Read_WithAWindowPastTheDestination_ThrowsArgumentOutOfRange()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => Wire(1, 2, 3, 4).Read(new byte[2], 1, 5));
+        }
+
+        [Fact]
+        public void Write_WithAWindowPastTheSource_ThrowsArgumentOutOfRange()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JagStream().Write(new byte[2], 1, 5));
+        }
+
+        /// <summary>
+        ///     Writing mid-stream overwrites in place and must not truncate what follows. Codecs
+        ///     backfill headers this way: write a placeholder, seek back, write the real value.
+        ///     A write that reset Length to Position would discard everything after the patch.
+        /// </summary>
+        [Fact]
+        public void Write_AtANonZeroPosition_OverwritesInPlaceWithoutTruncating()
+        {
+            var stream = Wire(1, 2, 3, 4, 5);
+            stream.Seek(1);
+
+            stream.WriteShort(unchecked((short) 0xAABB));
+
+            Assert.Equal(5, stream.Length);
+            Assert.Equal(new byte[] { 1, 0xAA, 0xBB, 4, 5 }, stream.ToArray());
+        }
+
+        [Fact]
+        public void WriteTo_CopiesTheValidRegionAndLeavesTheSourceUntouched()
+        {
+            var source = Wire(1, 2, 3);
+            source.Seek(3);
+            var destination = new JagStream();
+            destination.WriteByte(9);
+
+            source.WriteTo(destination);
+
+            Assert.Equal(new byte[] { 9, 1, 2, 3 }, destination.ToArray());
+            Assert.Equal(3, source.Position);
+            Assert.Equal(4, destination.Position);
+        }
+
+        /// <summary>
+        ///     WriteTo(null) raises ArgumentNullException where the static Save(null, path)
+        ///     raises NullReferenceException. Pinned as a record of that inconsistency.
+        /// </summary>
+        [Fact]
+        public void WriteTo_NullDestination_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => new JagStream().WriteTo(null));
+        }
+
+        /// <param name="value">
+        ///     0x1FF and -1 both carry bits above the byte. The int overload casts rather than
+        ///     validating, so the high bits are dropped silently.
+        /// </param>
+        [Theory]
+        [InlineData(0x00, 0x00)]
+        [InlineData(0xFF, 0xFF)]
+        [InlineData(0x1FF, 0xFF)]
+        [InlineData(-1, 0xFF)]
+        [InlineData(256, 0x00)]
+        public void WriteByte_IntOverload_TruncatesToTheLowByte(int value, byte expected)
+        {
+            var stream = new JagStream();
+
+            stream.WriteByte(value);
+
+            Assert.Equal(new[] { expected }, stream.ToArray());
+        }
+
+        #endregion
+
+        #region Byte level types
+
+        /// <param name="value">
+        ///     The full signed byte range plus both sides of zero. -128 and 127 are the extremes
+        ///     the cast has to survive without saturating.
+        /// </param>
+        [Theory]
+        [InlineData((sbyte) 0)]
+        [InlineData((sbyte) 1)]
+        [InlineData((sbyte) (-1))]
+        [InlineData((sbyte) 127)]
+        [InlineData((sbyte) (-128))]
+        public void WriteSignedByte_And_ReadSignedByte_RoundTrip(sbyte value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteSignedByte(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadSignedByte());
+        }
+
+        [Theory]
+        [InlineData(0x00)]
+        [InlineData(0x01)]
+        [InlineData(0x7F)]
+        [InlineData(0x80)]
+        [InlineData(0xFF)]
+        public void WriteByte_And_ReadUnsignedByte_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteByte((byte) value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadUnsignedByte());
+        }
+
+        /// <summary>
+        ///     One byte, two answers, and the codecs pick between them per opcode. Any opcode
+        ///     that reads the wrong one is indistinguishable from the right one until a value
+        ///     reaches 0x80, at which point the divergence is a 256-wide error.
+        /// </summary>
+        [Fact]
+        public void ReadSignedByte_And_ReadUnsignedByte_AgreeBelow0x80AndDivergeAtOrAbove()
+        {
+            Assert.Equal(127, Wire(0x7F).ReadSignedByte());
+            Assert.Equal(127, Wire(0x7F).ReadUnsignedByte());
+
+            Assert.Equal(-128, Wire(0x80).ReadSignedByte());
+            Assert.Equal(128, Wire(0x80).ReadUnsignedByte());
+
+            Assert.Equal(-1, Wire(0xFF).ReadSignedByte());
+            Assert.Equal(255, Wire(0xFF).ReadUnsignedByte());
+        }
+
+        /// <summary>
+        ///     Both peeks must leave the cursor alone, and they disagree on sign for the same
+        ///     reason the two readers do. Every smart reader and several opcode dispatchers
+        ///     branch on a peeked byte and then re-read it, so a peek that advanced would drop
+        ///     that byte from the stream entirely.
+        /// </summary>
+        [Fact]
+        public void Peek_And_PeekUnsignedByte_DoNotAdvanceAndDisagreeOnSign()
+        {
+            var stream = Wire(0x80, 0x01);
+
+            Assert.Equal(-128, stream.Peek());
+            Assert.Equal(0, stream.Position);
+            Assert.Equal(128, stream.PeekUnsignedByte());
+            Assert.Equal(0, stream.Position);
+
+            //The peeked byte is still there to be consumed
+            Assert.Equal(128, stream.ReadUnsignedByte());
+        }
+
+        [Fact]
+        public void Peek_AtEndOfStream_ThrowsWithoutMovingPosition()
+        {
+            var empty = new JagStream();
+
+            Assert.Throws<EndOfStreamException>(() => empty.Peek());
+            Assert.Throws<EndOfStreamException>(() => empty.PeekUnsignedByte());
+            Assert.Equal(0, empty.Position);
+        }
+
+        [Fact]
+        public void ReadSignedByte_AtEndOfStream_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => new JagStream().ReadSignedByte());
+        }
+
+        [Fact]
+        public void ReadUnsignedByte_AtEndOfStream_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => new JagStream().ReadUnsignedByte());
+        }
+
+        #endregion
+
+        #region Short
+
+        /// <param name="value">
+        ///     0x7FFF/0x8000 is the sign boundary. A related audit found roughly 15 opcodes
+        ///     where a signed-versus-unsigned mix-up is unobservable today only because no value
+        ///     in the shipped cache reaches 0x8000, so the boundary is pinned deliberately.
+        /// </param>
+        [Theory]
+        [InlineData(0x0000)]
+        [InlineData(0x0001)]
+        [InlineData(0x7FFF)]
+        [InlineData(0x8000)]
+        [InlineData(0xFFFF)]
+        public void WriteShort_And_ReadUnsignedShort_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteShort((short) value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadUnsignedShort());
+        }
+
+        [Theory]
+        [InlineData((short) 0)]
+        [InlineData((short) 1)]
+        [InlineData((short) (-1))]
+        [InlineData((short) 32767)]
+        [InlineData((short) (-32768))]
+        public void WriteShort_And_ReadShort_RoundTripSignedValues(short value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteShort(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadShort());
+        }
+
+        /// <summary>
+        ///     The same two bytes, read two ways. Below 0x8000 the readers are
+        ///     indistinguishable, which is exactly what makes a wrong choice survive review;
+        ///     at and above it they differ by 65536.
+        /// </summary>
+        /// <param name="high">First wire byte.</param>
+        /// <param name="low">Second wire byte.</param>
+        /// <param name="signed">What ReadShort returns.</param>
+        /// <param name="unsigned">What ReadUnsignedShort returns.</param>
+        [Theory]
+        [InlineData(0x00, 0x00, 0, 0)]
+        [InlineData(0x7F, 0xFF, 32767, 32767)]
+        [InlineData(0x80, 0x00, -32768, 32768)]
+        [InlineData(0xFF, 0xFF, -1, 65535)]
+        public void ReadShort_And_ReadUnsignedShort_DivergeAtTheSignBoundary(byte high, byte low, int signed, int unsigned)
+        {
+            Assert.Equal(signed, Wire(high, low).ReadShort());
+            Assert.Equal(unsigned, Wire(high, low).ReadUnsignedShort());
+        }
+
+        [Fact]
+        public void WriteShort_IsBigEndian()
+        {
+            var stream = new JagStream();
+
+            stream.WriteShort(0x1234);
+
+            Assert.Equal(new byte[] { 0x12, 0x34 }, stream.ToArray());
+        }
+
+        [Fact]
+        public void WriteShort_IntOverload_TruncatesToTheLowTwoBytes()
+        {
+            var stream = new JagStream();
+
+            stream.WriteShort(0x12345);
+
+            Assert.Equal(new byte[] { 0x23, 0x45 }, stream.ToArray());
+        }
+
+        [Fact]
+        public void ReadUnsignedShort_WithOnlyOneByteLeft_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1).ReadUnsignedShort());
+        }
+
+        #endregion
+
+        #region Medium
+
+        [Theory]
+        [InlineData(0x000000)]
+        [InlineData(0x000001)]
+        [InlineData(0x7FFFFF)]
+        [InlineData(0x800000)]
+        [InlineData(0xFFFFFF)]
+        public void WriteMedium_And_ReadMedium_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteMedium(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadMedium());
+        }
+
+        /// <summary>
+        ///     ReadMedium has no signed counterpart: it ORs three bytes into an int and can only
+        ///     ever return 0..16777215. This is the sector-pointer and index-record encoding, so
+        ///     state it as a property of the format rather than of one call site. A caller that
+        ///     wrote -1 as a sentinel gets 16777215 back, which is a valid-looking sector number
+        ///     roughly 8 GB into the data file.
+        /// </summary>
+        [Theory]
+        [InlineData(-1, 16777215)]
+        [InlineData(-2, 16777214)]
+        [InlineData(int.MinValue, 0)]
+        public void WriteMedium_NegativeValue_ReadsBackUnsigned(int written, int readBack)
+        {
+            var stream = new JagStream();
+
+            stream.WriteMedium(written);
+            stream.Seek0();
+
+            Assert.Equal(readBack, stream.ReadMedium());
+            Assert.True(stream.Position == 3);
+        }
+
+        [Fact]
+        public void WriteMedium_IsBigEndianAndDropsTheTopByte()
+        {
+            var stream = new JagStream();
+
+            stream.WriteMedium(unchecked((int) 0xFF123456));
+
+            Assert.Equal(new byte[] { 0x12, 0x34, 0x56 }, stream.ToArray());
+        }
+
+        [Fact]
+        public void ReadMedium_WithTwoBytesLeft_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2).ReadMedium());
+        }
+
+        #endregion
+
+        #region Int and long
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(-1)]
+        [InlineData(int.MaxValue)]
+        [InlineData(int.MinValue)]
+        public void WriteInteger_And_ReadInt_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteInteger(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadInt());
+        }
+
+        [Fact]
+        public void WriteInteger_IsBigEndian()
+        {
+            var stream = new JagStream();
+
+            stream.WriteInteger(0x12345678);
+
+            Assert.Equal(new byte[] { 0x12, 0x34, 0x56, 0x78 }, stream.ToArray());
+        }
+
+        /// <summary>
+        ///     The uint overload exists so callers do not have to cast, and it must lay down the
+        ///     identical four bytes. If the two ever diverged, a CRC written through one overload
+        ///     would fail verification when read back through the other.
+        /// </summary>
+        [Theory]
+        [InlineData(0u)]
+        [InlineData(1u)]
+        [InlineData(0x7FFFFFFFu)]
+        [InlineData(0x80000000u)]
+        [InlineData(uint.MaxValue)]
+        public void WriteInteger_UnsignedOverload_EmitsTheSameBytesAsTheSignedOne(uint value)
+        {
+            var unsigned = new JagStream();
+            var signed = new JagStream();
+
+            unsigned.WriteInteger(value);
+            signed.WriteInteger(unchecked((int) value));
+
+            Assert.Equal(signed.ToArray(), unsigned.ToArray());
+
+            unsigned.Seek0();
+            Assert.Equal(unchecked((int) value), unsigned.ReadInt());
+        }
+
+        [Fact]
+        public void ReadInt_WithThreeBytesLeft_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2, 3).ReadInt());
+        }
+
+        /// <summary>
+        ///     There is no ReadLong, so WriteLong is a write-only primitive and the only way to
+        ///     verify it is against wire bytes. If a ReadLong is ever added, this is the encoding
+        ///     it has to match: eight bytes, big-endian, two's complement.
+        /// </summary>
+        /// <param name="value">
+        ///     long.MinValue and -1 are the two values where a byte-at-a-time implementation is
+        ///     most likely to get sign handling wrong.
+        /// </param>
+        [Theory]
+        [InlineData(0L, "00-00-00-00-00-00-00-00")]
+        [InlineData(1L, "00-00-00-00-00-00-00-01")]
+        [InlineData(-1L, "FF-FF-FF-FF-FF-FF-FF-FF")]
+        [InlineData(long.MaxValue, "7F-FF-FF-FF-FF-FF-FF-FF")]
+        [InlineData(long.MinValue, "80-00-00-00-00-00-00-00")]
+        public void WriteLong_HasNoReader_SoPinTheWireEncoding(long value, string expected)
+        {
+            var stream = new JagStream();
+
+            stream.WriteLong(value);
+
+            Assert.Equal(8, stream.Length);
+            Assert.Equal(expected, BitConverter.ToString(stream.ToArray()));
+        }
+
+        [Fact]
+        public void WriteLong_ReadBackAsTwoInts_RecomposesTheOriginal()
+        {
+            var stream = new JagStream();
+            stream.WriteLong(0x0123456789ABCDEFL);
+            stream.Seek0();
+
+            long high = (uint) stream.ReadInt();
+            long low = (uint) stream.ReadInt();
+
+            Assert.Equal(0x0123456789ABCDEFL, (high << 32) | low);
+        }
+
+        #endregion
+
+        #region ReadBytesAsInt
+
+        /// <param name="count">
+        ///     1 to 4 covers every width a caller can ask for without overflowing the int the
+        ///     method returns.
+        /// </param>
+        [Theory]
+        [InlineData(1, 0x12)]
+        [InlineData(2, 0x1234)]
+        [InlineData(3, 0x123456)]
+        [InlineData(4, 0x12345678)]
+        public void ReadBytesAsInt_AnyWidth_ReadsBigEndian(int count, int expected)
+        {
+            var stream = Wire(0x12, 0x34, 0x56, 0x78);
+
+            Assert.Equal(expected, stream.ReadBytesAsInt(count));
+            Assert.Equal(count, stream.Position);
+        }
+
+        /// <summary>
+        ///     At four bytes the accumulator shifts into the sign bit, so the method is unsigned
+        ///     for widths 1 to 3 and signed at 4. Any caller using it as a length or an offset
+        ///     has to know that.
+        /// </summary>
+        [Fact]
+        public void ReadBytesAsInt_FourBytesOfFF_ReturnsMinusOne()
+        {
+            Assert.Equal(-1, Wire(0xFF, 0xFF, 0xFF, 0xFF).ReadBytesAsInt(4));
+            Assert.Equal(16777215, Wire(0xFF, 0xFF, 0xFF, 0xFF).ReadBytesAsInt(3));
+        }
+
+        [Fact]
+        public void ReadBytesAsInt_ZeroWidth_ReturnsZeroAndConsumesNothing()
+        {
+            var stream = Wire(1, 2);
+
+            Assert.Equal(0, stream.ReadBytesAsInt(0));
+            Assert.Equal(0, stream.Position);
+        }
+
+        [Fact]
+        public void ReadBytesAsInt_PastTheEnd_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(1, 2).ReadBytesAsInt(4));
+        }
+
+        #endregion
+
+        #region VarInt
+
+        /// <summary>
+        ///     ReadVarInt and WriteVarInt have no callers anywhere in the repository. They are
+        ///     covered so that if a codec ever adopts them the encoding is already pinned, and
+        ///     because the MSB-first ordering here is the opposite of the LSB-first scheme most
+        ///     "varint" implementations use.
+        /// </summary>
+        /// <param name="value">
+        ///     127/128 is the one-to-two byte boundary. -1 and int.MinValue exercise the
+        ///     unsigned right shift in the writer against the sign-extending left shift in the
+        ///     reader, which is where a MIDI-style VLQ most often loses negative values.
+        /// </param>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(127)]
+        [InlineData(128)]
+        [InlineData(16383)]
+        [InlineData(16384)]
+        [InlineData(int.MaxValue)]
+        [InlineData(-1)]
+        [InlineData(int.MinValue)]
+        public void WriteVarInt_And_ReadVarInt_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteVarInt(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadVarInt());
+        }
+
+        /// <param name="value">Chosen to show the width boundaries: 1, 2 and 5 byte forms.</param>
+        [Theory]
+        [InlineData(0, "00")]
+        [InlineData(127, "7F")]
+        [InlineData(128, "81-00")]
+        [InlineData(-1, "8F-FF-FF-FF-7F")]
+        [InlineData(int.MinValue, "88-80-80-80-00")]
+        public void WriteVarInt_EmitsMsbFirstSevenBitGroupsWithAContinuationFlag(int value, string expected)
+        {
+            var stream = new JagStream();
+
+            stream.WriteVarInt(value);
+
+            Assert.Equal(expected, BitConverter.ToString(stream.ToArray()));
+        }
+
+        [Fact]
+        public void ReadVarInt_UnterminatedSequence_ThrowsEndOfStream()
+        {
+            Assert.Throws<EndOfStreamException>(() => Wire(0x80, 0x80).ReadVarInt());
+        }
+
+        /// <summary>
+        ///     ReadVarInt has no width limit. It keeps shifting left for as long as the
+        ///     continuation bit is set, so a corrupt or hostile stream can push every meaningful
+        ///     bit off the top of the accumulator and the method returns a plausible small number
+        ///     instead of rejecting the input. Six groups is enough: this wire encodes 2^35 and
+        ///     decodes to 0.
+        /// </summary>
+        [Fact]
+        public void ReadVarInt_SequenceWiderThanThirtyTwoBits_SilentlyOverflows_DocumentsKnownDefect()
+        {
+            var stream = Wire(0x81, 0x80, 0x80, 0x80, 0x80, 0x00);
+
+            Assert.Equal(0, stream.ReadVarInt());
+            Assert.Equal(6, stream.Position);
+        }
+
+        #endregion
     }
 }
