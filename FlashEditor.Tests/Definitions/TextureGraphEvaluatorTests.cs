@@ -2,6 +2,7 @@
 using FlashEditor.Utils;
 using System;
 using System.Drawing;
+using System.Reflection;
 using Xunit;
 
 namespace FlashEditor.Tests.Definitions
@@ -479,6 +480,69 @@ namespace FlashEditor.Tests.Definitions
             Assert.Equal(0, px[0, 0].G);
             Assert.Equal(0, px[0, 0].B);
             Assert.Equal(0, px[0, 0].A);
+        }
+
+        // ===================================================================
+        //  Composition clone
+        // ===================================================================
+
+        /// <summary>
+        ///     Cloning a graph must carry every field the decoder populated.
+        /// </summary>
+        /// <remarks>
+        ///     Render works on a clone, so a decoded field that the clone drops is silently
+        ///     absent at evaluation time and the node falls back to whatever its guard clause
+        ///     does. That is exactly how the type 8 transfer curve came to be built correctly
+        ///     and then never applied. Reflection rather than a field list, so a field added
+        ///     later is covered without anyone remembering to update this.
+        /// </remarks>
+        [Fact]
+        public void CloneForComposition_PreservesEveryPopulatedField()
+        {
+            var node = new TextureNode
+            {
+                Type = 8,
+                MonoOverride = true,
+                ChildIndices = new[] { 0 },
+                IntParam0 = 1, IntParam1 = 2, IntParam2 = 3, IntParam3 = 4,
+                IntParam4 = 5, IntParam5 = 6, IntParam6 = 7, IntParam7 = 8, IntParam8 = 9,
+                BlendMode = 6,
+                CurveData = new[] { 1 },
+                GradientData = new[] { new[] { 0, 0 } },
+                GradientPreset = 2,
+                GradientCount = 1,
+                SpriteId = 11,
+                SpritePixels = new[] { 0xFFFFFF },
+                SpriteWidth = 2,
+                SpriteHeight = 2,
+                ShapeIds = new[] { 1 },
+                ShortData = new[] { 1 },
+                NestedTextureId = 12,
+                Permutation = new byte[512],
+                Amplitudes = new[] { 1 },
+                Frequencies = new[] { 1 },
+                Jitter = new int[512],
+                CurveLut = new int[257],
+            };
+
+            var clone = new TextureGraph { Nodes = new[] { node }, ColourOutputIndex = 0 }
+                .CloneForComposition().Nodes[0];
+
+            const BindingFlags Scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            foreach (FieldInfo field in typeof(TextureNode).GetFields(Scope))
+            {
+                //Evaluation scratch is meant to be left behind; everything else must survive.
+                if (field.Name is "MonoCache" or "ColourCache" or "CachedRow" or "CachedIsMono"
+                    or "Width" or "Height" or "XCoord" or "YCoord"
+                    or "Children" or "GradientColourLUT")
+                    continue;
+
+                object original = field.GetValue(node);
+                object copied = field.GetValue(clone);
+                Assert.True(Equals(original, copied),
+                    $"TextureNode.{field.Name} was not carried across CloneForComposition " +
+                    $"({original ?? "null"} became {copied ?? "null"}).");
+            }
         }
     }
 }

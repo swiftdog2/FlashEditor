@@ -118,6 +118,9 @@ namespace FlashEditor.Definitions.Sprites {
 
         /// <summary>Feature-point jitter offsets for type 15, after <c>method1083</c>.</summary>
         internal int[] Jitter;
+
+        /// <summary>The 257-entry transfer curve for type 8, after <c>method1031</c>.</summary>
+        internal int[] CurveLut;
         public int[] ChildIndices;
         public TextureNode[] Children;
 
@@ -201,6 +204,7 @@ namespace FlashEditor.Definitions.Sprites {
             Amplitudes = Amplitudes,
             Frequencies = Frequencies,
             Jitter = Jitter,
+            CurveLut = CurveLut,
         };
     }
 
@@ -849,73 +853,19 @@ namespace FlashEditor.Definitions.Sprites {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
+
             int[] child = GetMono(node.Children[0], row);
-            int[] lut = BuildCurveTransferLUT(node);
-            for (int x = 0; x < w; x++) {
-                int idx = Math.Clamp(child[x] >> 4, 0, 256);
-                output[x] = lut[idx];
-            }
-        }
+            int[] lut = node.CurveLut;
 
-        private static int[] BuildCurveTransferLUT(TextureNode node) {
-            int[] lut = new int[257];
-            if (node.GradientData == null || node.GradientData.Length == 0) {
-                for (int i = 0; i <= 256; i++)
-                    lut[i] = i << 4;
-                return lut;
+            //A curve with fewer than two markers is malformed; the client throws on it. Passing
+            //the input through keeps the rest of the texture renderable.
+            if (lut == null) {
+                Array.Copy(child, output, w);
+                return;
             }
 
-            var pts = node.GradientData;
-            int mode = node.GradientPreset; // 0=linear, 1=cosine, 2=catmull-rom
-            int n = pts.Length;
-
-            for (int i = 0; i <= 256; i++) {
-                int pos = i << 4; // 0..4096
-                // Find surrounding control points
-                int seg = 0;
-                for (int j = 1; j < n; j++) {
-                    if (pts[j][0] > pos) break;
-                    seg = j;
-                }
-
-                if (n == 1) {
-                    lut[i] = pts[0][1];
-                } else if (seg >= n - 1) {
-                    lut[i] = pts[n - 1][1];
-                } else {
-                    int x0 = pts[seg][0], y0 = pts[seg][1];
-                    int x1 = pts[seg + 1][0], y1 = pts[seg + 1][1];
-                    int range = x1 - x0;
-                    if (range <= 0) {
-                        lut[i] = y1;
-                    } else {
-                        double t = (pos - x0) / (double)range;
-                        switch (mode) {
-                            case 1: // cosine
-                                t = (1.0 - Math.Cos(t * Math.PI)) * 0.5;
-                                lut[i] = (int)(y0 + (y1 - y0) * t);
-                                break;
-                            case 2: // catmull-rom
-                                int ym1 = seg > 0 ? pts[seg - 1][1] : y0;
-                                int y2 = seg + 2 < n ? pts[seg + 2][1] : y1;
-                                lut[i] = CatmullRom(ym1, y0, y1, y2, t);
-                                break;
-                            default: // linear
-                                lut[i] = y0 + (int)((y1 - y0) * t);
-                                break;
-                        }
-                    }
-                }
-            }
-            return lut;
-        }
-
-        private static int CatmullRom(int p0, int p1, int p2, int p3, double t) {
-            double t2 = t * t, t3 = t2 * t;
-            return (int)(0.5 * ((2 * p1) +
-                (-p0 + p2) * t +
-                (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-                (-p0 + 3 * p1 - 3 * p2 + p3) * t3));
+            for (int x = 0; x < w; x++)
+                output[x] = lut[Math.Clamp(child[x] >> 4, 0, 256)];
         }
 
         // ===================================================================

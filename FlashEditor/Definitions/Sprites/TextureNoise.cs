@@ -100,6 +100,24 @@ namespace FlashEditor.Definitions.Sprites {
         /// </summary>
         internal static readonly int[] Smooth = BuildSmooth();
 
+        /// <summary>
+        /// <c>4096 * cos(2*pi*i/255)</c> for i in 0..255, the client's cosine table
+        /// (<c>Node_Sub31_Sub4.method1386</c>).
+        /// </summary>
+        /// <remarks>
+        /// Note the divisor is 255, not 256, so a full turn lands one step past the end of the
+        /// table - computing the cosine directly instead of reproducing the table gives slightly
+        /// different values.
+        /// </remarks>
+        internal static readonly int[] Cos = BuildCos();
+
+        private static int[] BuildCos() {
+            var table = new int[256];
+            for (int i = 0; i < 256; i++)
+                table[i] = (int)(4096.0 * Math.Cos(2.0 * Math.PI * (i / 255.0)));
+            return table;
+        }
+
         private static int[] BuildSmooth() {
             var table = new int[4096];
             for (int t = 0; t < 4096; t++) {

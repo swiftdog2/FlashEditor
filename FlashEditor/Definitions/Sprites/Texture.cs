@@ -88,6 +88,10 @@ namespace FlashEditor.Definitions.Sprites
         {
             switch (nodeType)
             {
+                //Node_Sub10_Sub13.anInt5601 = 4096. A constant node carrying no opcode is full
+                //white, not black - and it is the most common node in the cache, so defaulting
+                //it to zero turned whole graphs black.
+                case 0: node.IntParam0 = 4096; break;
                 //Node_Sub10_Sub7.anInt5574 = 6. A blend node that carries no opcode 0 still
                 //blends, and it blends in mode 6.
                 case 7: node.BlendMode = 6; break;
@@ -128,9 +132,118 @@ namespace FlashEditor.Definitions.Sprites
         {
             switch (nodeType)
             {
+                case 8: InitCurveTransfer(node); break;
                 case 15: InitWorley(node); break;
                 case 34: InitFractalNoise(node); break;
             }
+        }
+
+        /// <summary>
+        /// Builds the 257-entry transfer curve a type 8 node maps its input through, matching
+        /// <c>Node_Sub10_Sub9.method1001</c> and <c>method1031</c>.
+        /// </summary>
+        /// <remarks>
+        /// All three interpolations run in 12-bit fixed point against the client's own cosine
+        /// table, because the curve feeds a palette index and floating-point rounding shows up
+        /// as banding. The previous implementation rebuilt an approximation of this on every
+        /// scanline.
+        /// </remarks>
+        internal static void InitCurveTransfer(TextureNode node)
+        {
+            int[][] markers = node.GradientData;
+
+            //Node_Sub10_Sub9.method1001: an absent curve is the identity ramp.
+            if (markers == null || markers.Length == 0)
+                markers = new[] { new[] { 0, 0 }, new[] { 4096, 4096 } };
+
+            //The client throws here. A malformed graph should cost one texture rather than the
+            //whole tab, so this leaves the curve null and the evaluator passes its input through.
+            if (markers.Length < 2)
+                return;
+
+            int mode = node.GradientPreset;
+            int count = markers.Length;
+
+            //method1034, only built for the cubic. Both are reflections, and only the y matters.
+            //The trailing one reflects m[n-2] through m[n-1]'s side, which reads backwards but
+            //is what the client computes.
+            int virtualBeforeY = 0, virtualAfterY = 0;
+            if (mode == 2)
+            {
+                virtualBeforeY = 2 * markers[0][1] - markers[1][1];
+                virtualAfterY = 2 * markers[count - 2][1] - markers[count - 1][1];
+            }
+
+            var lut = new int[257];
+            for (int i = 0; i <= 256; i++)
+            {
+                int pos = i << 4;
+
+                //The search stops at count - 1, so a position past the last marker keeps the
+                //final segment and the interpolation runs on with t above 4096 - the client
+                //extrapolates here rather than clamping.
+                int k = 1;
+                while (k < count - 1 && pos >= markers[k][0])
+                    k++;
+
+                int[] lo = markers[k - 1];
+                int[] hi = markers[k];
+
+                int span = hi[0] - lo[0];
+                //Two markers at the same position would divide by zero in the client.
+                int t = span != 0 ? ((pos - lo[0]) << 12) / span : 0;
+
+                int value;
+                switch (mode)
+                {
+                    case 1: // cosine
+                    {
+                        int s = (4096 - TextureNoise.Cos[(t & 0x1fe0) >> 5]) >> 1;
+                        value = (hi[1] * s + (4096 - s) * lo[1]) >> 12;
+                        break;
+                    }
+                    case 2: // cubic
+                    {
+                        int p0 = CurveY(markers, virtualBeforeY, virtualAfterY, k - 2);
+                        int p1 = lo[1];
+                        int p2 = hi[1];
+                        int p3 = CurveY(markers, virtualBeforeY, virtualAfterY, k + 1);
+
+                        //Paul Bourke's cubic: the knot tangent is p2 - p0, not the half-scaled
+                        //Catmull-Rom tangent. Both pass through p1 and p2, so the difference is
+                        //invisible at the knots and wrong everywhere between them.
+                        int a = p3 - p2 - p0 + p1;
+                        int b = p0 - p1 - a;
+                        int c = p2 - p0;
+
+                        int tSq = t * t >> 12;
+                        value = p1 + (tSq * b >> 12) + ((a * t >> 12) * tSq >> 12) + (c * t >> 12);
+                        break;
+                    }
+                    default: // linear
+                        value = (hi[1] * t + (4096 - t) * lo[1]) >> 12;
+                        break;
+                }
+
+                if (value <= -32768) value = -32767;
+                else if (value >= 32768) value = 32767;
+                lut[i] = (short)value;
+            }
+
+            node.CurveLut = lut;
+        }
+
+        /// <summary>
+        /// The curve y at <paramref name="index"/>, substituting the reflected virtual markers
+        /// off either end. Matches <c>Node_Sub10_Sub9.method1035</c>.
+        /// </summary>
+        private static int CurveY(int[][] markers, int beforeY, int afterY, int index)
+        {
+            if (index < 0)
+                return beforeY;
+            if (index >= markers.Length)
+                return afterY;
+            return markers[index][1];
         }
 
         private static void InitWorley(TextureNode node)
@@ -296,7 +409,9 @@ namespace FlashEditor.Definitions.Sprites
             switch (nodeType)
             {
                 case 0: // Constant (Sub13)
-                    if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte() << 4; return true; }
+                    //(b << 12) / 255, not b << 4: the client's scale reaches a full 4096 at 255
+                    //rather than stopping at 4080.
+                    if (opcode == 0) { node.IntParam0 = (buf.ReadUnsignedByte() << 12) / 255; return true; }
                     return false;
 
                 case 1: // ConstantColour (Sub22) — 3-byte medium
