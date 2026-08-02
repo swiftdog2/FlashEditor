@@ -1,4 +1,4 @@
-using FlashEditor;
+﻿using FlashEditor;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -446,10 +446,12 @@ namespace FlashEditor.Definitions.Sprites {
 
                     if (rendered != null) {
                         Debug($"Tex {def.id}: graph render OK in {graphSw.ElapsedMilliseconds}ms — {rendered.Width}x{rendered.Height}", LOG_DETAIL.ADVANCED);
-                        if (def.field1835 != 0) {
-                            Debug($"Tex {def.id}: applying tint 0x{def.field1835:X6}", LOG_DETAIL.ADVANCED);
-                            ApplyTint(rendered, def.field1835);
-                        }
+                        //field1835 is not a tint over the generated pixels. The client passes it
+                        //to the renderer as material state (RenderType_Sub1:4441) and never
+                        //multiplies the graph output by it - doing so here was scaling every
+                        //texture towards black by whatever that field happened to hold. It stays
+                        //a legitimate stand-in colour when there is nothing to render at all,
+                        //which is where GLTextureCache still uses it.
                         def.thumb = rendered;
                         System.Threading.Interlocked.Increment(ref _diagGraphOk);
                         return;
@@ -502,11 +504,42 @@ namespace FlashEditor.Definitions.Sprites {
             }
 
             if (!hasGraph && !hasSprites) {
-                Debug($"Tex {def.id}: NO DATA — no graph and no sprite IDs", LOG_DETAIL.ADVANCED);
+                Debug($"Tex {def.id}: no graph and no sprite IDs — using its representative colour", LOG_DETAIL.ADVANCED);
                 System.Threading.Interlocked.Increment(ref _diagNoData);
             } else {
-                Debug($"Tex {def.id}: EXHAUSTED all paths — no thumb produced", LOG_DETAIL.BASIC);
+                Debug($"Tex {def.id}: EXHAUSTED all paths — falling back to its representative colour", LOG_DETAIL.BASIC);
             }
+
+            def.thumb = SolidThumb(RepresentativeRgb(def));
+        }
+
+        /// <summary>
+        /// The colour the client draws for a texture it cannot generate.
+        /// </summary>
+        /// <remarks>
+        /// This is not a placeholder. The materials index declares 1,408 textures while the
+        /// texture index only holds 946 graphs, so every id from 946 up has no procedural
+        /// content at all - <c>Class260.method8</c> returns false for them and the client uses
+        /// <see cref="TextureDefinition.field1831"/> instead. Rendering that colour is therefore
+        /// the correct result for those textures rather than a stand-in for a failure.
+        /// </remarks>
+        internal static int RepresentativeRgb(TextureDefinition def) {
+            int hsl = def.field1831 & 0xFFFF;
+
+            //Class345.method3825 at neutral brightness: the lightness is clamped into [2, 126]
+            //and the hue and saturation bits pass through untouched.
+            int lightness = hsl & 0x7F;
+            if (lightness < 2) lightness = 2;
+            else if (lightness > 126) lightness = 126;
+
+            return ModelDefinition.RawHslToRgb((hsl & 0xFF80) | lightness);
+        }
+
+        private static Bitmap SolidThumb(int rgb) {
+            var bmp = new Bitmap(128, 128);
+            using (var g = Graphics.FromImage(bmp))
+                g.Clear(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
+            return bmp;
         }
 
         /// <summary>Prints a diagnostic summary of texture rendering results.</summary>
@@ -521,34 +554,6 @@ namespace FlashEditor.Definitions.Sprites {
             Debug($"  Total attempted: {total}", LOG_DETAIL.BASIC);
             Debug($"===========================", LOG_DETAIL.BASIC);
             _diagSpriteOk = _diagSpriteFail = _diagGraphOk = _diagGraphFail = _diagNoData = 0;
-        }
-
-        /// <summary>
-        /// Multiplies every pixel in <paramref name="bmp"/> by the RGB tint
-        /// encoded in <paramref name="tintRgb"/> (0x00RRGGBB).
-        /// </summary>
-        private static void ApplyTint(Bitmap bmp, int tintRgb) {
-            int tR = (tintRgb >> 16) & 0xFF;
-            int tG = (tintRgb >> 8) & 0xFF;
-            int tB = tintRgb & 0xFF;
-            if (tR == 0 && tG == 0 && tB == 0) return; // 0 = no tint
-
-            var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-            var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
-            int byteCount = data.Stride * data.Height;
-            byte[] px = new byte[byteCount];
-            Marshal.Copy(data.Scan0, px, 0, byteCount);
-
-            for (int i = 0; i < byteCount; i += 4) {
-                // Format32bppArgb is BGRA in memory
-                px[i]     = (byte)(px[i]     * tB / 255); // B
-                px[i + 1] = (byte)(px[i + 1] * tG / 255); // G
-                px[i + 2] = (byte)(px[i + 2] * tR / 255); // R
-                // alpha (px[i+3]) unchanged
-            }
-
-            Marshal.Copy(px, 0, data.Scan0, byteCount);
-            bmp.UnlockBits(data);
         }
 
         internal static Image GetThumbnailForTexture(string key) {

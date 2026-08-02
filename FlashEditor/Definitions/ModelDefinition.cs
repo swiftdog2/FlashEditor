@@ -1541,6 +1541,19 @@ namespace FlashEditor.Definitions {
         public static int HslToRgb(int hsl) => _hsl2Rgb[hsl & 0xFFFF];
 
         /// <summary>
+        /// Converts a raw 16-bit HSL colour as stored in the cache straight to 24-bit RGB.
+        /// </summary>
+        /// <remarks>
+        /// The two-step the client always performs together: <c>Class111_Sub2.method2117</c>
+        /// redistributes saturation against lightness before the palette lookup, so indexing the
+        /// palette with the raw value gives a visibly different colour. Callers outside the model
+        /// decoder want this rather than <see cref="HslToRgb"/>.
+        /// </remarks>
+        /// <param name="rawHsl">The packed HSL as read from the cache.</param>
+        /// <returns>24-bit RGB.</returns>
+        public static int RawHslToRgb(int rawHsl) => HslToRgb(RepackHsl(rawHsl));
+
+        /// <summary>
         /// Builds the HSV→RGB lookup table matching Hydra's <c>Class122.method2199()</c>.
         /// Packed format: <c>(hue6 &lt;&lt; 10) | (sat3 &lt;&lt; 7) | value7</c>.
         /// Uses HSV sector decomposition (not HSL) so high-value colours stay saturated.

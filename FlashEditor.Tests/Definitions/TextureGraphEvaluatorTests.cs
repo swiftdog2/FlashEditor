@@ -1,4 +1,4 @@
-using FlashEditor.Definitions.Sprites;
+﻿using FlashEditor.Definitions.Sprites;
 using FlashEditor.Utils;
 using System;
 using System.Drawing;
@@ -176,8 +176,11 @@ namespace FlashEditor.Tests.Definitions
         /// handled at model level instead, but the graph's own alpha channel is discarded.
         /// </summary>
         [Fact]
-        public void Render_AlphaIsAlwaysOpaque_EvenWithAnAlphaOutputNode_DocumentsKnownDefect()
+        public void Render_AlphaOutputNode_IsNotSampled_MatchingMethod1631()
         {
+            // Not a defect: Render follows the client's method1631, which derives alpha from
+            // the colour and never reads the alpha output node. Sampling it is method1633,
+            // a separate entry point used for GL uploads.
             var graph = Graph(0, ConstantColour(White), Constant(0));
             graph.AlphaOutputIndex = 1;   // a constant-zero node: would be fully transparent if honoured
 
@@ -228,39 +231,33 @@ namespace FlashEditor.Tests.Definitions
             {
                 Type = 7,
                 BlendMode = mode,
-                IntParam0 = 4096,          // full factor: output is the raw blend result
                 Children = new[] { a, b }
             };
             return Graph(0, blend, a, b);
         }
 
+        // a = 4080 (white), b = 0 (black). Modes 6 to 12 changed when the table was
+        // replaced with the client's - the previous set had min/max/difference sitting on
+        // ids 6/7/8, three places below where Node_Sub10_Sub7 puts them.
         [Theory]
-        [InlineData(0, 0)]      // b
-        [InlineData(1, 255)]    // a + b
-        [InlineData(2, 255)]    // a - b
-        [InlineData(3, 0)]      // a * b
-        [InlineData(4, 255)]    // a / b, b == 0 short-circuits to FP_MAX
+        [InlineData(0, 0)]      // unknown mode yields b
+        [InlineData(1, 255)]    // add
+        [InlineData(2, 255)]    // subtract
+        [InlineData(3, 0)]      // multiply
+        [InlineData(4, 255)]    // divide, b == 0 short-circuits to one
         [InlineData(5, 255)]    // screen
-        [InlineData(6, 0)]      // min
-        [InlineData(7, 255)]    // max
-        [InlineData(8, 255)]    // |a - b|
-        [InlineData(9, 255)]    // hard light on a
-        [InlineData(10, 0)]     // hard light on b
-        [InlineData(12, 0)]     // unknown mode falls back to b
-        [InlineData(99, 0)]     // ditto
+        [InlineData(6, 0)]      // hard light, b below half takes the multiply arm
+        [InlineData(7, 0)]      // colour dodge: b / (1 - a)
+        [InlineData(8, 0)]      // colour burn: 1 - (1 - b) / a, negative here
+        [InlineData(9, 0)]      // darken
+        [InlineData(10, 255)]   // lighten
+        [InlineData(11, 255)]   // difference
+        [InlineData(12, 255)]   // vivid add
+        [InlineData(99, 0)]     // unknown mode yields b
         public void Render_BlendMode_WhiteOverBlack_ProducesExpectedChannel(int mode, byte expected)
         {
             var px = Render(BlendGraph(mode, White, Black));
             Assert.Equal(expected, px[0, 0].R);
-        }
-
-        [Fact]
-        public void Render_BlendMode11_Composite_LandsJustBelowFullScale()
-        {
-            // Mode 11 is the only mode whose white-over-black result is not an exact
-            // endpoint (4064 of 4080), so it is asserted as a range rather than a constant.
-            var px = Render(BlendGraph(11, White, Black));
-            Assert.InRange(px[0, 0].R, 250, 255);
         }
 
         [Fact]
@@ -271,13 +268,15 @@ namespace FlashEditor.Tests.Definitions
         }
 
         [Fact]
-        public void Render_BlendFactorZero_YieldsTheFirstChildUnchanged()
+        public void Render_BlendWithNoModeOpcode_UsesHardLight()
         {
+            // Node_Sub10_Sub7.anInt5574 initialises to 6, so a blend node that carries no
+            // mode opcode still blends. The decoder seeds it; a hand-built node states it.
             var a = ConstantColour(White);
-            var b = ConstantColour(Black);
-            var blend = new TextureNode { Type = 7, BlendMode = 6, IntParam0 = 0, Children = new[] { a, b } };
+            var b = ConstantColour(White);
+            var blend = new TextureNode { Type = 7, BlendMode = 6, Children = new[] { a, b } };
 
-            // output = va + Mul12(blended - va, 0) == va
+            // b is above half, so hard light takes the screen arm and stays at full scale.
             var px = Render(Graph(0, blend, a, b));
             Assert.Equal(255, px[0, 0].R);
         }
@@ -329,7 +328,6 @@ namespace FlashEditor.Tests.Definitions
         [Theory]
         [InlineData(21)]   // Emboss
         [InlineData(25)]   // Curve remap
-        [InlineData(30)]   // Edge detect
         [InlineData(33)]   // Offset / scroll
         public void Render_ColourTypesWithoutColourImplementation_PassChildThrough_DocumentsKnownDefect(int type)
         {
@@ -419,7 +417,8 @@ namespace FlashEditor.Tests.Definitions
                 for (int y = 0; y < Size; y++)
                 {
                     Assert.InRange(px[x, y].R, 0, 255);
-                    Assert.Equal(255, px[x, y].A);
+                    bool black = px[x, y].R == 0 && px[x, y].G == 0 && px[x, y].B == 0;
+                    Assert.Equal(black ? 0 : 255, px[x, y].A);
                 }
         }
 
@@ -474,11 +473,12 @@ namespace FlashEditor.Tests.Definitions
 
             var px = Render(Single(node));
 
-            // Alpha zero zeroes all three channels, but the bitmap alpha stays opaque.
+            // Alpha zero zeroes all three channels, and method1631 leaves a pure-black
+            // pixel transparent rather than opaque.
             Assert.Equal(0, px[0, 0].R);
             Assert.Equal(0, px[0, 0].G);
             Assert.Equal(0, px[0, 0].B);
-            Assert.Equal(255, px[0, 0].A);
+            Assert.Equal(0, px[0, 0].A);
         }
     }
 }

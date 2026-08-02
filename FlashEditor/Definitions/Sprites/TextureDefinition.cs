@@ -20,6 +20,16 @@ namespace FlashEditor.Definitions.Sprites {
         public sbyte field1830;      // signed byte
         public sbyte field1820;      // signed byte
         public sbyte field1816;      // signed byte
+        /// <summary>
+        /// The texture's representative colour, packed as a raw 16-bit RS HSL.
+        /// </summary>
+        /// <remarks>
+        /// Not a speed or timing value, whatever the field tables say. The client feeds it to
+        /// <c>Class345.method3825</c>, whose body is the standard HSL light-shade
+        /// (<c>(hsl &amp; 0xff80) + clamped lightness</c>), and then to the palette lookup - see
+        /// <c>Node_Sub16:79</c> and <c>Class278:731</c>. It is what the client draws wherever a
+        /// texture cannot be generated, which in this cache is every texture id at or above 946.
+        /// </remarks>
         public int field1831;        // unsigned short (stored as short in client)
         public sbyte field1823;      // signed byte
         public sbyte field1837;      // signed byte

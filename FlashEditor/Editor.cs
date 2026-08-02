@@ -1561,15 +1561,16 @@ namespace FlashEditor {
                         listThumb = (Bitmap)CreateThumbnail(tex.thumb);
                         withSprite++;
                     } else {
-                        // Fall back to colour swatch from field1835 (tint colour)
+                        // Only reachable when EnsureRendered could not run at all, since it now
+                        // always falls back to the material's own colour. The id is drawn on
+                        // top because reaching here does mean something went wrong.
                         var bmp = new Bitmap(100, 100);
                         using (var g = Graphics.FromImage(bmp))
                         {
-                            int rgb = tex.field1835;
+                            int rgb = TextureManager.RepresentativeRgb(tex);
                             int r = (rgb >> 16) & 0xFF;
                             int gv = (rgb >> 8) & 0xFF;
                             int b = rgb & 0xFF;
-                            if (r == 0 && gv == 0 && b == 0) { r = 119; gv = 119; b = 119; }
                             Color c = Color.FromArgb(255, r, gv, b);
                             g.Clear(c);
                             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };

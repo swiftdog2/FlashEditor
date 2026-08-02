@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -17,6 +17,65 @@ namespace FlashEditor.Definitions.Sprites {
         public int ColourOutputIndex;
         public int AlphaOutputIndex;
         public int BrightnessOutputIndex;
+
+        /// <summary>
+        /// A copy that can be evaluated independently of this one.
+        /// </summary>
+        /// <remarks>
+        /// See <see cref="TextureNode.CloneConfiguration"/>: evaluation is destructive to the
+        /// nodes, so a graph reached through composition has to be cloned before it is rendered.
+        /// </remarks>
+        internal TextureGraph CloneForComposition() {
+            if (Nodes == null)
+                return null;
+
+            var copies = new TextureNode[Nodes.Length];
+            for (int i = 0; i < Nodes.Length; i++)
+                copies[i] = Nodes[i]?.CloneConfiguration();
+
+            //Rewire children against the copies. A decoded graph carries child indices; a graph
+            //assembled in code may only have the references, so those are matched by identity
+            //against the source array.
+            for (int i = 0; i < copies.Length; i++) {
+                TextureNode copy = copies[i];
+                TextureNode original = Nodes[i];
+                if (copy == null)
+                    continue;
+
+                if (copy.ChildIndices != null) {
+                    copy.Children = new TextureNode[copy.ChildIndices.Length];
+                    for (int c = 0; c < copy.ChildIndices.Length; c++) {
+                        int idx = copy.ChildIndices[c];
+                        if (idx >= 0 && idx < copies.Length)
+                            copy.Children[c] = copies[idx];
+                    }
+                } else if (original.Children != null) {
+                    copy.Children = new TextureNode[original.Children.Length];
+                    for (int c = 0; c < original.Children.Length; c++)
+                        copy.Children[c] = MatchByIdentity(original.Children[c], copies);
+                }
+            }
+
+            return new TextureGraph {
+                Nodes = copies,
+                ColourOutputIndex = ColourOutputIndex,
+                AlphaOutputIndex = AlphaOutputIndex,
+                BrightnessOutputIndex = BrightnessOutputIndex,
+            };
+        }
+
+        /// <summary>
+        /// The copy standing in for <paramref name="child"/>, or the child itself when it is not
+        /// one of this graph's nodes.
+        /// </summary>
+        private TextureNode MatchByIdentity(TextureNode child, TextureNode[] copies) {
+            if (child == null)
+                return null;
+            for (int i = 0; i < Nodes.Length; i++)
+                if (ReferenceEquals(Nodes[i], child))
+                    return copies[i];
+            return child;
+        }
     }
 
     /// <summary>
@@ -24,7 +83,41 @@ namespace FlashEditor.Definitions.Sprites {
     /// </summary>
     public class TextureNode {
         public int Type;
-        public bool IsMonochrome;
+
+        /// <summary>
+        /// Set only when the graph data overrides whether this node emits one channel or three.
+        /// </summary>
+        /// <remarks>
+        /// Ten node types carry an opcode that overwrites the client's <c>aBoolean3861</c>, so
+        /// the channel count is a property of the node rather than of its type. Left null the
+        /// node uses its type's default, which is what a hand-built node wants.
+        /// </remarks>
+        public bool? MonoOverride;
+
+        /// <summary>Shape ids from a type 29 shape list.</summary>
+        public int[] ShapeIds;
+
+        /// <summary>
+        /// Texture id a type 36 node composes, or -1. These nodes are not generators at all -
+        /// they render another whole texture and sample it, which is how textures in this cache
+        /// are built out of one another.
+        /// </summary>
+        public int NestedTextureId = -1;
+
+        /// <summary>Signed shorts trailing a type 34 opcode 2 - explicit per-octave amplitudes.</summary>
+        public int[] ShortData;
+
+        /// <summary>Seeded permutation table for the noise generators (types 15 and 34).</summary>
+        internal byte[] Permutation;
+
+        /// <summary>Per-octave amplitudes for type 34, after <c>method1108</c>.</summary>
+        internal int[] Amplitudes;
+
+        /// <summary>Per-octave frequencies for type 34, after <c>method1108</c>.</summary>
+        internal int[] Frequencies;
+
+        /// <summary>Feature-point jitter offsets for type 15, after <c>method1083</c>.</summary>
+        internal int[] Jitter;
         public int[] ChildIndices;
         public TextureNode[] Children;
 
@@ -73,6 +166,42 @@ namespace FlashEditor.Definitions.Sprites {
             ColourCache = null;
             CachedRow = -1;
         }
+
+        /// <summary>
+        /// Copies the decoded configuration, leaving the evaluation scratch behind.
+        /// </summary>
+        /// <remarks>
+        /// Evaluation writes its row caches into the node, so a graph cannot be evaluated by two
+        /// threads at once. Composition makes that reachable - the editor renders textures on 20
+        /// threads and any two of them may reference the same texture - so a composed graph is
+        /// cloned rather than shared. The read-only tables are aliased, not copied.
+        /// </remarks>
+        internal TextureNode CloneConfiguration() => new TextureNode {
+            Type = Type,
+            MonoOverride = MonoOverride,
+            ChildIndices = ChildIndices,
+            IntParam0 = IntParam0, IntParam1 = IntParam1, IntParam2 = IntParam2,
+            IntParam3 = IntParam3, IntParam4 = IntParam4, IntParam5 = IntParam5,
+            IntParam6 = IntParam6, IntParam7 = IntParam7, IntParam8 = IntParam8,
+            BlendMode = BlendMode,
+            CurveData = CurveData,
+            GradientData = GradientData,
+            GradientPreset = GradientPreset,
+            GradientCount = GradientCount,
+            SpriteId = SpriteId,
+            //Normally null at clone time, since Render loads sprites after allocating. Carried
+            //across so a node that was handed its pixels directly keeps them.
+            SpritePixels = SpritePixels,
+            SpriteWidth = SpriteWidth,
+            SpriteHeight = SpriteHeight,
+            ShapeIds = ShapeIds,
+            ShortData = ShortData,
+            NestedTextureId = NestedTextureId,
+            Permutation = Permutation,
+            Amplitudes = Amplitudes,
+            Frequencies = Frequencies,
+            Jitter = Jitter,
+        };
     }
 
     /// <summary>
@@ -83,11 +212,43 @@ namespace FlashEditor.Definitions.Sprites {
         private const int FP_ONE = 4096;
         private const int FP_MAX = 4080; // 255/256 * 4096
 
+        /// <summary>
+        /// Texture ids currently being rendered on this thread. A type 36 node can reference a
+        /// texture that references it back, so composition has to refuse to re-enter.
+        /// </summary>
+        [ThreadStatic]
+        private static HashSet<int> _renderStack;
+
         public static Bitmap Render(TextureGraph graph, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
-            if (graph == null || graph.Nodes == null || graph.Nodes.Length == 0) {
+            int[] pixels = RenderArgb(graph, width, height, cache, transpose, textureDefId);
+            if (pixels == null)
+                return null;
+
+            var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            var data = bmp.LockBits(new Rectangle(0, 0, width, height),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+            bmp.UnlockBits(data);
+            Debug($"[GraphEval] tex {textureDefId}: COMPLETE — returning {bmp.Width}x{bmp.Height} bitmap", LOG_DETAIL.ADVANCED);
+            return bmp;
+        }
+
+        /// <summary>
+        /// Evaluates a graph to a packed ARGB buffer. Type 36 composition needs pixels rather
+        /// than a <see cref="Bitmap"/>, so the bitmap wrapper sits on top of this rather than
+        /// the other way round.
+        /// </summary>
+        internal static int[] RenderArgb(TextureGraph source, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
+            if (source == null || source.Nodes == null || source.Nodes.Length == 0) {
                 Debug($"[GraphEval] tex {textureDefId}: null/empty graph", LOG_DETAIL.ADVANCED);
                 return null;
             }
+
+            //Evaluation caches each row into the nodes, so it works on a copy. The editor
+            //renders on 20 threads and composition lets two of them reach the same graph, and
+            //the caller has no way to know that happened - so the safety belongs here rather
+            //than in a rule about who may call this.
+            TextureGraph graph = source.CloneForComposition();
 
             Debug($"[GraphEval] tex {textureDefId}: BEGIN — {graph.Nodes.Length} nodes, {width}x{height}, " +
                   $"colourOut={graph.ColourOutputIndex}, alphaOut={graph.AlphaOutputIndex}, transpose={transpose}", LOG_DETAIL.ADVANCED);
@@ -111,6 +272,10 @@ namespace FlashEditor.Definitions.Sprites {
                 var node = graph.Nodes[ni];
                 if (node == null) continue;
                 node.Allocate(width, height, xCoord, yCoord);
+                if (node.Type == 36 && node.NestedTextureId >= 0) {
+                    LoadNestedTextureForNode(node, cache, textureDefId);
+                    continue;
+                }
                 if ((node.Type == 18 || node.Type == 39) && node.SpriteId >= 0) {
                     Debug($"[GraphEval] tex {textureDefId}: node[{ni}] type={node.Type} loading sprite {node.SpriteId}", LOG_DETAIL.ADVANCED);
                     LoadSpriteForNode(node, cache, textureDefId);
@@ -137,11 +302,10 @@ namespace FlashEditor.Definitions.Sprites {
             var colourNode = graph.Nodes[colourIdx];
             bool outputIsMono = IsMonochrome(colourNode);
 
-            // Alpha output node — DISABLED.  Many textures store a sentinel
-            // value (often 0) for the alpha index that points to a constant-0
-            // node, producing fully transparent textures.  Model-level FaceAlpha
-            // already handles per-face transparency correctly, so we render all
-            // graph textures as fully opaque.
+            //Deliberately not sampling the alpha output node. This mirrors the client's
+            //Node_Sub46_Sub19.method1631, the path behind method9 - the one a composed texture
+            //is rendered through - which derives alpha from the colour alone. Sampling the
+            //alpha node is method1633, a separate entry point for GL uploads.
             TextureNode alphaNode = null;
 
             for (int y = 0; y < height; y++) {
@@ -151,13 +315,11 @@ namespace FlashEditor.Definitions.Sprites {
                     int[] mono = GetMono(colourNode, y);
                     for (int x = 0; x < width; x++) {
                         int v = gammaLUT[Clamp12(mono[x]) >> 4];
-                        int alpha;
-                        if (alphaMono != null) {
-                            alpha = Math.Clamp(alphaMono[x] >> 4, 0, 255);
-                            if (v == 0) alpha = 0;
-                        } else {
-                            alpha = 0xFF;
-                        }
+                        //method1631 leaves a pure-black pixel fully transparent and makes every
+                        //other pixel opaque.
+                        int alpha = alphaMono != null
+                            ? (v == 0 ? 0 : Math.Clamp(alphaMono[x] >> 4, 0, 255))
+                            : (v == 0 ? 0 : 0xFF);
                         int idx = transpose ? x * width + y : y * width + x;
                         pixels[idx] = (alpha << 24) | (v << 16) | (v << 8) | v;
                     }
@@ -167,13 +329,9 @@ namespace FlashEditor.Definitions.Sprites {
                         int r = gammaLUT[Clamp12(rgb[0][x]) >> 4];
                         int g = gammaLUT[Clamp12(rgb[1][x]) >> 4];
                         int b = gammaLUT[Clamp12(rgb[2][x]) >> 4];
-                        int alpha;
-                        if (alphaMono != null) {
-                            alpha = Math.Clamp(alphaMono[x] >> 4, 0, 255);
-                            if (r == 0 && g == 0 && b == 0) alpha = 0;
-                        } else {
-                            alpha = 0xFF;
-                        }
+                        bool black = r == 0 && g == 0 && b == 0;
+                        int alpha = black ? 0
+                            : alphaMono != null ? Math.Clamp(alphaMono[x] >> 4, 0, 255) : 0xFF;
                         int idx = transpose ? x * width + y : y * width + x;
                         pixels[idx] = (alpha << 24) | (r << 16) | (g << 8) | b;
                     }
@@ -195,14 +353,46 @@ namespace FlashEditor.Definitions.Sprites {
             if (nonBlack == 0)
                 Debug($"[GraphEval] tex {textureDefId}: WARNING — all sampled pixels are black!", LOG_DETAIL.BASIC);
 
-            // Build bitmap using LockBits for safe pixel copy
-            var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-            var data = bmp.LockBits(new Rectangle(0, 0, width, height),
-                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-            Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
-            bmp.UnlockBits(data);
-            Debug($"[GraphEval] tex {textureDefId}: COMPLETE — returning {bmp.Width}x{bmp.Height} bitmap", LOG_DETAIL.ADVANCED);
-            return bmp;
+            return pixels;
+        }
+
+        /// <summary>
+        /// Renders the texture a type 36 node composes and hands the pixels to the node, which
+        /// then samples them exactly as a sprite node samples a sprite.
+        /// </summary>
+        /// <remarks>
+        /// The client picks the nested render size off the referenced texture's own mipmap flag
+        /// (<c>Node_Sub10_Sub25.method998</c>), not off the size of the texture being built.
+        /// </remarks>
+        private static void LoadNestedTextureForNode(TextureNode node, RSCache cache, int textureDefId) {
+            int nestedId = node.NestedTextureId;
+
+            _renderStack ??= new HashSet<int>();
+            if (_renderStack.Count >= 6 || !_renderStack.Add(nestedId)) {
+                Debug($"[GraphEval] tex {textureDefId}: node composes texture {nestedId} - refusing to recurse", LOG_DETAIL.ADVANCED);
+                return;
+            }
+
+            try {
+                if (!TextureManager.Textures.TryGetValue(nestedId, out TextureDefinition nested) || nested?.graph == null) {
+                    Debug($"[GraphEval] tex {textureDefId}: composed texture {nestedId} has no graph", LOG_DETAIL.ADVANCED);
+                    return;
+                }
+
+                int size = nested.field1822 ? 64 : 128;
+                int[] argb = RenderArgb(nested.graph, size, size, cache, nested.field1824, nestedId);
+                if (argb == null)
+                    return;
+
+                node.SpritePixels = argb;
+                node.SpriteWidth = size;
+                node.SpriteHeight = size;
+                Debug($"[GraphEval] tex {textureDefId}: composed texture {nestedId} at {size}x{size}", LOG_DETAIL.ADVANCED);
+            } catch (Exception ex) {
+                Debug($"[GraphEval] tex {textureDefId}: composing texture {nestedId} FAILED — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+            } finally {
+                _renderStack.Remove(nestedId);
+            }
         }
 
         // Sprite ID override table for texture IDs 939-945
@@ -258,18 +448,14 @@ namespace FlashEditor.Definitions.Sprites {
             }
         }
 
-        private static bool IsMonochrome(TextureNode node) {
-            switch (node.Type) {
-                // Colour nodes (super(n, false) in Hydra)
-                case 1: case 5: case 6: case 7: case 9: case 10: case 11:
-                case 17: case 18: case 19: case 20: case 21: case 22: case 23:
-                case 25: case 30: case 33: case 36: case 39:
-                    return false;
-                // Everything else is mono
-                default:
-                    return true;
-            }
-        }
+        /// <summary>
+        /// Whether a node emits a single channel. This is a per-node property, not a property
+        /// of the node type: types 5, 6, 7, 9, 19, 21, 22, 23, 29 and 30 all carry an opcode
+        /// that overwrites it, so reading it back off a type table renders those nodes on the
+        /// wrong number of channels.
+        /// </summary>
+        private static bool IsMonochrome(TextureNode node) =>
+            node.MonoOverride ?? Texture.DefaultIsMonochrome(node.Type);
 
         // Get mono output from a node, with auto-conversion from colour if needed
         private static int[] GetMono(TextureNode node, int row) {
@@ -349,7 +535,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 12: EvalNoise(node, output, w, row); break;
                 case 13: EvalVoronoi(node, output, w, row); break;
                 case 14: EvalSineWave(node, output, w, row); break;
-                case 15: EvalPerlin(node, output, w, row); break;
+                case 15: EvalWorley(node, output, w, row); break;
                 case 16: EvalThreshold(node, output, w, row); break;
                 case 17: EvalBlur(node, output, w, row); break;
                 case 19: EvalPolarDistortionMono(node, output, w, row); break;
@@ -362,13 +548,12 @@ namespace FlashEditor.Definitions.Sprites {
                 case 27: EvalLines(node, output, w, row); break;
                 case 28: EvalMandelbrot(node, output, w, row); break;
                 case 29: EvalFactory(node, output, w); break;
-                case 30: EvalEdgeDetect(node, output, w, row); break;
+                case 30: EvalRangeRemapMono(node, output, w, row); break;
                 case 31: EvalSquare(node, output, w, row); break;
                 case 32: EvalPolarWarp(node, output, w, row); break;
                 case 33: EvalOffset(node, output, w, row); break;
-                case 34: EvalCurveRemap2(node, output, w, row); break;
+                case 34: EvalFractalNoise(node, output, w, row); break;
                 case 35: EvalBumpMap(node, output, w, row); break;
-                case 36: EvalCheckerboard(node, output, w, row); break;
                 case 37: EvalAbsMirror(node, output, w, row); break;
                 case 38: EvalTileWrap(node, output, w, row); break;
                 default:
@@ -396,6 +581,9 @@ namespace FlashEditor.Definitions.Sprites {
                 case 17: EvalHSLAdjust17(node, output, w, row); break;
                 case 18: // falls through to 39
                 case 39: EvalSpriteSource(node, output, w, row); break;
+                //A composed texture is sampled the same way a sprite is; only the source of
+                //the pixels differs.
+                case 36: EvalSpriteSource(node, output, w, row); break;
                 case 19: EvalPolarDistortionColour(node, output, w, row); break;
                 case 20: EvalTileColour(node, output, w, row); break;
                 case 21: goto default; // Emboss — no colour variant
@@ -403,7 +591,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 23: EvalFlipVColour(node, output, w, row); break;
                 case 24: EvalMergeRGB(node, output, w, row); break;
                 case 25: goto default; // CurveRemap — no colour variant
-                case 30: goto default; // EdgeDetect — no colour variant
+                case 30: EvalRangeRemapColour(node, output, w, row); break;
                 case 33: goto default; // Offset — no colour variant
                 default:
                     // Colour-capable node without dedicated colour eval —
@@ -578,7 +766,9 @@ namespace FlashEditor.Definitions.Sprites {
             }
             int[] child = GetMono(node.Children[0], row);
             int lo = node.IntParam0; // default 0
-            int hi = node.IntParam1 == 0 ? FP_ONE : node.IntParam1; // default 4096
+            //The 4096 default is seeded at decode time, so an explicit upper bound of zero
+            //clamps to zero rather than being mistaken for "unset".
+            int hi = node.IntParam1;
             for (int x = 0; x < w; x++) {
                 int v = child[x];
                 output[x] = v < lo ? lo : v > hi ? hi : v;
@@ -594,7 +784,7 @@ namespace FlashEditor.Definitions.Sprites {
             }
             int[][] child = GetColour(node.Children[0], row);
             int lo = node.IntParam0;
-            int hi = node.IntParam1 == 0 ? FP_ONE : node.IntParam1;
+            int hi = node.IntParam1;
             for (int ch = 0; ch < 3; ch++)
                 for (int x = 0; x < w; x++) {
                     int v = child[ch][x];
@@ -614,36 +804,39 @@ namespace FlashEditor.Definitions.Sprites {
             }
             int[][] a = GetColour(node.Children[0], row);
             int[][] b = GetColour(node.Children[1], row);
-            int factor = node.IntParam0;
             int mode = node.BlendMode;
 
-            for (int ch = 0; ch < 3; ch++) {
-                for (int x = 0; x < w; x++) {
-                    int va = a[ch][x], vb = b[ch][x];
-                    int blended = BlendOp(va, vb, mode);
-                    output[ch][x] = va + Mul12(blended - va, factor);
-                }
-            }
+            //The client writes the blend straight out. There is no blend amount to interpolate
+            //against - the value that used to be read as one was the mode itself.
+            for (int ch = 0; ch < 3; ch++)
+                for (int x = 0; x < w; x++)
+                    output[ch][x] = BlendOp(a[ch][x], b[ch][x], mode);
         }
 
+        /// <summary>
+        /// The twelve blend operations of Node_Sub10_Sub7, in the client's numbering. Modes 6
+        /// through 12 previously mapped to entirely different operations, and mode 6 is the one
+        /// a blend node with no mode opcode falls back to.
+        /// </summary>
         private static int BlendOp(int a, int b, int mode) {
             switch (mode) {
-                case 0: return b;
-                case 1: return a + b;
-                case 2: return a - b;
-                case 3: return Mul12(a, b);
-                case 4: return b == 0 ? FP_MAX : (a << 12) / b;
-                case 5: return a + b - Mul12(a, b);
-                case 6: return Math.Min(a, b);
-                case 7: return Math.Max(a, b);
-                case 8: return Math.Abs(a - b);
-                case 9:
-                    return a < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
-                case 10:
-                    return b < 2048 ? Mul12(2 * a, b) : FP_MAX - Mul12(2 * (FP_MAX - a), FP_MAX - b);
-                case 11:
-                    int t = Mul12(a, b);
-                    return t + Mul12(a, FP_MAX - Mul12(FP_MAX - a, FP_MAX - b) - t);
+                case 1: return a + b;                                     // add
+                case 2: return a - b;                                     // subtract
+                case 3: return (b * a) >> 12;                             // multiply
+                case 4: return b != 0 ? (a << 12) / b : FP_ONE;           // divide
+                case 5: return FP_ONE - (((FP_ONE - a) * (FP_ONE - b)) >> 12); // screen
+                case 6:                                                   // hard light
+                    return b >= 2048
+                        ? FP_ONE - (((FP_ONE - a) * (FP_ONE - b)) >> 11)
+                        : (b * a) >> 11;
+                case 7:                                                   // colour dodge
+                    return a == FP_ONE ? FP_ONE : (b << 12) / (FP_ONE - a);
+                case 8:                                                   // colour burn
+                    return a == 0 ? 0 : FP_ONE - (((FP_ONE - b) << 12) / a);
+                case 9: return Math.Min(a, b);                            // darken
+                case 10: return Math.Max(a, b);                           // lighten
+                case 11: return Math.Abs(a - b);                          // difference
+                case 12: return a + b - ((a * b) >> 11);                  // vivid add
                 default: return b;
             }
         }
@@ -980,13 +1173,13 @@ namespace FlashEditor.Definitions.Sprites {
                     new[] { 3411, 4096, 0, 4096 },
                     new[] { 4096, 0, 0, 4096 }
                 };
-                case 4: return new[] { // Cyan-Yellow-Red
+                case 6: return new[] { // Green-yellow-red (client preset 6)
                     new[] { 2048, 0, 4096, 0 },
                     new[] { 2867, 4096, 4096, 0 },
                     new[] { 3276, 4096, 4096, 0 },
                     new[] { 4096, 4096, 0, 0 }
                 };
-                case 5: return new[] { // Fire/Lava
+                case 4: return new[] { // Black-blue-cyan-white (client preset 4)
                     new[] { 0, 0, 0, 0 },
                     new[] { 1843, 0, 0, 1493 },
                     new[] { 2457, 0, 0, 2939 },
@@ -994,7 +1187,7 @@ namespace FlashEditor.Definitions.Sprites {
                     new[] { 3481, 546, 3084, 4031 },
                     new[] { 4096, 4096, 4096, 4096 }
                 };
-                case 6: return new[] { // Earth tones (16 stops)
+                case 5: return new[] { // Earth tones, 16 stops (client preset 5)
                     new[] { 0, 80, 192, 321 },
                     new[] { 155, 321, 449, 562 },
                     new[] { 389, 578, 690, 803 },
@@ -1645,25 +1838,41 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 30: Edge Detect (Sobel)
+        //  TYPE 30: Range remap (levels)
         // ===================================================================
-        private static void EvalEdgeDetect(TextureNode node, int[] output, int w, int row) {
+        /// <summary>
+        /// Rescales its input into the band [<c>IntParam0</c>, <c>IntParam1</c>].
+        /// </summary>
+        /// <remarks>
+        /// This was implemented as a Sobel edge detector, which is not what
+        /// <c>Node_Sub10_Sub10</c> does - it is the single expression
+        /// <c>low + (input * (high - low) &gt;&gt; 12)</c>. The bounds default to 1024 and 3072,
+        /// so a node that carries neither opcode still narrows its input rather than zeroing it.
+        /// </remarks>
+        private static void EvalRangeRemapMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
-                Array.Fill(output, 0, 0, w);
+                Array.Fill(output, node.IntParam0, 0, w);
                 return;
             }
-            int[] cur = GetMono(node.Children[0], row);
-            int[] above = GetMono(node.Children[0], Math.Max(0, row - 1));
-            int[] below = GetMono(node.Children[0], Math.Min(node.Height - 1, row + 1));
+            int low = node.IntParam0;
+            int span = node.IntParam1 - low;
+            int[] child = GetMono(node.Children[0], row);
+            for (int x = 0; x < w; x++)
+                output[x] = low + ((child[x] * span) >> 12);
+        }
 
-            int strength = Math.Max(1, node.IntParam0);
-            for (int x = 0; x < w; x++) {
-                int xl = Math.Max(0, x - 1), xr = Math.Min(w - 1, x + 1);
-                int gx = -above[xl] + above[xr] - 2 * cur[xl] + 2 * cur[xr] - below[xl] + below[xr];
-                int gy = -above[xl] - 2 * above[x] - above[xr] + below[xl] + 2 * below[x] + below[xr];
-                int mag = (int)Math.Sqrt(gx * gx + gy * gy) * strength >> 12;
-                output[x] = Clamp12(mag);
+        private static void EvalRangeRemapColour(TextureNode node, int[][] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
+                for (int ch = 0; ch < 3; ch++)
+                    Array.Fill(output[ch], node.IntParam0, 0, w);
+                return;
             }
+            int low = node.IntParam0;
+            int span = node.IntParam1 - low;
+            int[][] child = GetColour(node.Children[0], row);
+            for (int ch = 0; ch < 3; ch++)
+                for (int x = 0; x < w; x++)
+                    output[ch][x] = low + ((child[ch][x] * span) >> 12);
         }
 
         // ===================================================================
@@ -1772,12 +1981,187 @@ namespace FlashEditor.Definitions.Sprites {
         // ===================================================================
         //  TYPE 36: Checkerboard
         // ===================================================================
-        private static void EvalCheckerboard(TextureNode node, int[] output, int w, int row) {
-            int freq = Math.Max(1, node.IntParam0);
-            int yp = (node.YCoord[row] * freq) >> 12;
+        //Type 36 used to be evaluated here as a checkerboard generator. It is a nested texture
+        //reference - see LoadNestedTextureForNode - and the invented checkerboard was what most
+        //of the textures tab was actually showing.
+
+        // ===================================================================
+        //  TYPE 15: Worley (cellular) noise
+        // ===================================================================
+        /// <summary>
+        /// Cellular noise: the distance from each pixel to the nearest jittered feature points
+        /// on a coarse grid.
+        /// </summary>
+        /// <remarks>
+        /// This node was implemented as Perlin gradient noise, which is a different algorithm
+        /// producing a different picture. <c>Node_Sub10_Sub26</c> scatters one feature point per
+        /// cell, keeps the four smallest distances over the 3x3 neighbourhood, and by default
+        /// outputs the second minus the first - the classic cell-border look.
+        /// </remarks>
+        private static void EvalWorley(TextureNode node, int[] output, int w, int row) {
+            byte[] perm = node.Permutation;
+            int[] jitter = node.Jitter;
+            if (perm == null || jitter == null) {
+                Array.Fill(output, 0, 0, w);
+                return;
+            }
+
+            int freqX = Math.Max(1, node.IntParam0);
+            int freqY = Math.Max(1, node.IntParam1);
+            int mode = node.IntParam4;
+            int metric = node.IntParam5;
+
+            int sy = 2048 + freqY * node.YCoord[row];
+            int cyBase = sy >> 12;
+
             for (int x = 0; x < w; x++) {
-                int xp = (node.XCoord[x] * freq) >> 12;
-                output[x] = ((xp + yp) & 1) == 0 ? FP_MAX : 0;
+                int d1 = int.MaxValue, d2 = int.MaxValue, d3 = int.MaxValue, d4 = int.MaxValue;
+                int sx = 2048 + freqX * node.XCoord[x];
+                int cxBase = sx >> 12;
+
+                for (int cy = cyBase - 1; cy <= cyBase + 1; cy++) {
+                    int wrappedY = cy >= freqY ? cy - freqY : cy;
+                    int py = perm[0xff & wrappedY] & 0xff;
+
+                    for (int cx = cxBase - 1; cx <= cxBase + 1; cx++) {
+                        int wrappedX = cx >= freqX ? cx - freqX : cx;
+                        int k = 2 * (perm[0xff & (wrappedX + py)] & 0xff);
+                        int dx = sx - (cx << 12) - jitter[k];
+                        int dy = sy - (cy << 12) - jitter[k + 1];
+                        int dist = WorleyDistance(dx, dy, metric);
+
+                        //Keep the four smallest distances, in order.
+                        if (dist < d1) { d4 = d3; d3 = d2; d2 = d1; d1 = dist; }
+                        else if (dist < d2) { d4 = d3; d3 = d2; d2 = dist; }
+                        else if (dist >= d3) { if (dist < d4) d4 = dist; }
+                        else { d4 = d3; d3 = dist; }
+                    }
+                }
+
+                switch (mode) {
+                    case 0: output[x] = d1; break;
+                    case 1: output[x] = d2; break;
+                    case 2: output[x] = d2 - d1; break;
+                    case 3: output[x] = d3; break;
+                    case 4: output[x] = d4; break;
+                    default: break; // client leaves the row buffer untouched
+                }
+            }
+        }
+
+        private static int WorleyDistance(int dx, int dy, int metric) {
+            switch (metric) {
+                case 1: return (dx * dx + dy * dy) >> 12;                        // squared euclidean
+                case 2: return Math.Abs(dx) + Math.Abs(dy);                      // manhattan
+                case 3: return Math.Max(Math.Abs(dx), Math.Abs(dy));             // chebyshev
+                case 4: {                                                        // minkowski p=1/2
+                    double t = 4096.0 * Math.Sqrt(Math.Abs(dx) / 4096.0)
+                             + 4096.0 * Math.Sqrt(Math.Abs(dy) / 4096.0);
+                    return (int)(t * t) >> 12;
+                }
+                case 5:
+                    return (int)(4096.0 * Math.Pow((dx * (double)dx + dy * (double)dy) / 16777216.0, 0.25));
+                default:
+                    return (int)(4096.0 * Math.Sqrt((dx * (double)dx + dy * (double)dy) / 16777216.0));
+            }
+        }
+
+        // ===================================================================
+        //  TYPE 34: Fractal Perlin noise
+        // ===================================================================
+        /// <summary>
+        /// Sums octaves of 2D Perlin gradient noise, optionally recentring the signed result on
+        /// mid-grey.
+        /// </summary>
+        /// <remarks>
+        /// This is the node that used to emit a plain left-to-right ramp, because it was written
+        /// against a <c>CurveData</c> field nothing ever assigns. It has no inputs and is one of
+        /// the most common leaves in the cache, so almost every graph built on it was flat.
+        /// </remarks>
+        private static void EvalFractalNoise(TextureNode node, int[] output, int w, int row) {
+            byte[] perm = node.Permutation;
+            int[] amp = node.Amplitudes;
+            int[] freq = node.Frequencies;
+            if (perm == null || amp == null || freq == null) {
+                Array.Fill(output, 2048, 0, w);
+                return;
+            }
+
+            bool recentre = node.IntParam0 == 1;
+            int octaves = Math.Min(node.IntParam1, Math.Min(amp.Length, freq.Length));
+            int scaleX = node.IntParam3;
+            int scaleY = node.IntParam4;
+            int yFixed = scaleY * node.YCoord[row];
+
+            bool wrote = false;
+            for (int oct = 0; oct < octaves; oct++) {
+                int amplitude = amp[oct];
+                if (amplitude <= 8 && amplitude >= -8)
+                    continue;
+
+                int f = freq[oct] << 12;
+                int xLimit = (f * scaleX) >> 12;
+                int yLimit = (f * scaleY) >> 12;
+                int yf = (f * yFixed) >> 12;
+                int y0 = yf >> 12;
+                int y1 = y0 + 1;
+                if (y1 >= yLimit) y1 = 0;
+                yf &= 0xfff;
+
+                int permY0 = perm[y0 & 0xff] & 0xff;
+                int permY1 = perm[y1 & 0xff] & 0xff;
+                int smoothY = TextureNoise.Smooth[yf];
+                bool last = recentre && oct == octaves - 1;
+
+                for (int x = 0; x < w; x++) {
+                    int xf = ((node.XCoord[x] * scaleX) * f) >> 12;
+                    int v = PerlinCell(perm, smoothY, xLimit, xf, permY1, permY0, yf);
+                    v = (v * amplitude) >> 12;
+                    if (!wrote) output[x] = v;
+                    else output[x] += v;
+                    if (last) output[x] = 2048 + (output[x] >> 1);
+                }
+                wrote = true;
+            }
+
+            if (!wrote)
+                Array.Fill(output, recentre ? 2048 : 0, 0, w);
+        }
+
+        /// <summary>
+        /// One octave of 2D Perlin gradient noise - four corner gradients bilinearly blended
+        /// through the smootherstep curve.
+        /// </summary>
+        private static int PerlinCell(byte[] perm, int smoothY, int xLimit, int xf, int permY1, int permY0, int yFrac) {
+            int x0 = xf >> 12;
+            int x1 = x0 + 1;
+            if (x1 >= xLimit) x1 = 0;
+            x0 &= 0xff;
+            x1 &= 0xff;
+            xf &= 0xfff;
+
+            int xf1 = xf - 4096;
+            int yf1 = yFrac - 4096;
+            int smoothX = TextureNoise.Smooth[xf];
+
+            int v00 = Gradient(perm[x0 + permY0] & 3, xf, yFrac);
+            int v10 = Gradient(perm[x1 + permY0] & 3, xf1, yFrac);
+            int lower = v00 + ((smoothX * (v10 - v00)) >> 12);
+
+            int v01 = Gradient(perm[x0 + permY1] & 3, xf, yf1);
+            int v11 = Gradient(perm[x1 + permY1] & 3, xf1, yf1);
+            int upper = v01 + (((v11 - v01) * smoothX) >> 12);
+
+            return lower + ((smoothY * (upper - lower)) >> 12);
+        }
+
+        /// <summary>The four diagonal gradient directions the client selects between.</summary>
+        private static int Gradient(int selector, int dx, int dy) {
+            switch (selector) {
+                case 0: return dx + dy;
+                case 1: return dy - dx;
+                case 2: return dx - dy;
+                default: return -dy - dx;
             }
         }
 

@@ -55,15 +55,14 @@ namespace FlashEditor
                 return handle;
             }
 
-            // Fall back to solid-colour 1x1 texture from the tint value.
-            // field1835 == 0 means "no tint" — use white so the greyscale
-            // vertex lighting passes through at the correct brightness.
+            // Fall back to a solid 1x1 texture in the material's own colour, which is what the
+            // client does for a texture it cannot generate. field1835 was used here before, but
+            // that is renderer state rather than a colour and is zero for most of the cache.
             {
-                int rgb = def.field1835;
+                int rgb = TextureManager.RepresentativeRgb(def);
                 int r = (rgb >> 16) & 0xFF;
                 int g = (rgb >> 8) & 0xFF;
                 int b = rgb & 0xFF;
-                if (r == 0 && g == 0 && b == 0) { r = 255; g = 255; b = 255; }
 
                 Debug($"Generating solid texture {textureId} (rgb={r},{g},{b})", LOG_DETAIL.BASIC);
 
