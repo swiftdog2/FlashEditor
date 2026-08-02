@@ -548,7 +548,13 @@ namespace FlashEditor {
         /// Special smart: single-byte-1 or unsignedShort-32769.
         /// </summary>
         public int ReadSpecialSmart() {
-            int peek = Buffer[Position] & 0xFF;
+            /* Peek through Get, as every other smart reader does. Indexing Buffer directly read
+               past Length into whatever the spare capacity still held, then chose its branch from
+               that byte and returned a plausible number with no error at all - and past capacity
+               it raised IndexOutOfRangeException, which is not the exception any sibling raises.
+               Get bounds-checks against Length and throws ArgumentOutOfRangeException, matching
+               ReadSmart and ReadUnsignedSmart. */
+            int peek = Get(Position) & 0xFF;
             return peek < 128
                 ? ReadByte() - 1
                 : ReadUnsignedShort() - 32769;
@@ -567,21 +573,28 @@ namespace FlashEditor {
                 ? stackalloc byte[size]
                 : (rent = ArrayPool<byte>.Shared.Rent(size)).AsSpan(0, size);
 
-            int got = 0;
-            for (; got < size ; got++) {
-                int b = ReadByte();
-                if (b < 0) break;
-                span[got] = (byte) b;
+            /* The return has to happen on the throwing path too. A short read is the normal way
+               a truncated stream is reported, so leaking the rental there leaks it precisely
+               when the caller is already in trouble. */
+            try {
+                int got = 0;
+                for (; got < size ; got++) {
+                    int b = ReadByte();
+                    if (b < 0) break;
+                    span[got] = (byte) b;
+                }
+                if (got != size)
+                    throw new EndOfStreamException($"Needed {size}, got {got}");
+
+                var result = new int[size];
+                for (int i = 0 ; i < size ; i++)
+                    result[i] = span[i];
+
+                return result;
             }
-            if (got != size)
-                throw new EndOfStreamException($"Needed {size}, got {got}");
-
-            var result = new int[size];
-            for (int i = 0 ; i < size ; i++)
-                result[i] = span[i];
-
-            if (rent != null) ArrayPool<byte>.Shared.Return(rent);
-            return result;
+            finally {
+                if (rent != null) ArrayPool<byte>.Shared.Return(rent);
+            }
         }
 
         /// <summary>
@@ -594,18 +607,23 @@ namespace FlashEditor {
                 ? stackalloc byte[byteCount]
                 : (rent = ArrayPool<byte>.Shared.Rent(byteCount)).AsSpan(0, byteCount);
 
-            for (int got = 0 ; got < byteCount ; got++) {
-                int b = ReadByte();
-                if (b < 0) throw new EndOfStreamException($"Wanted {byteCount} bytes, eof at {got}");
-                span[(int) got] = (byte) b;
+            //The rental has to come back on the throwing path too - see ReadUnsignedByteArray
+            try {
+                for (int got = 0 ; got < byteCount ; got++) {
+                    int b = ReadByte();
+                    if (b < 0) throw new EndOfStreamException($"Wanted {byteCount} bytes, eof at {got}");
+                    span[(int) got] = (byte) b;
+                }
+
+                var result = new int[size];
+                for (int i = 0, j = 0 ; i < size ; i++, j += 2)
+                    result[i] = (span[j] << 8) | span[j + 1];
+
+                return result;
             }
-
-            var result = new int[size];
-            for (int i = 0, j = 0 ; i < size ; i++, j += 2)
-                result[i] = (span[j] << 8) | span[j + 1];
-
-            if (rent != null) ArrayPool<byte>.Shared.Return(rent);
-            return result;
+            finally {
+                if (rent != null) ArrayPool<byte>.Shared.Return(rent);
+            }
         }
 
         #endregion
