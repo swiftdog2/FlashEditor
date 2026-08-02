@@ -792,9 +792,14 @@ namespace FlashEditor.Definitions
             /*─── ambient sounds (78 / 79) ────────────────────────────*/
             if (decoded[78] || decoded[79] || ambientSoundId != -1)
             {
-                /* Both opcodes write the same fields, and forty-odd definitions in the cache carry
-                   both, so only the one the decoder read last still has its values in the fields.
-                   The other is replayed from its own bytes by WriteRecordsInStreamOrder. */
+                /* This codec writes both opcodes into the same fields, and 81 definitions in the
+                   cache carry both, so only the one the decoder read last still has its values in
+                   the fields. The other is replayed from its own bytes by WriteRecordsInStreamOrder,
+                   which is what keeps those 81 byte-exact.
+                   The conflation is ours, not the format's: the 637 client reads 78 and 79 into
+                   two distinct fields and forwards them to the sound emitter as separate slots.
+                   So the bytes survive a round trip, but editing ambient sound on one of those 81
+                   reaches only the later opcode. See reference/hydra-637-definitions/object-opcodes.md. */
                 bool use79 = LastStreamIndexOf(79) > LastStreamIndexOf(78)
                              || (!decoded[78] && !decoded[79] && extraSounds != null);
 

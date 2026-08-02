@@ -223,5 +223,23 @@ Indexes 34 and 35 have no reference table at all in the reference cache; index 3
 that declares zero groups - a four byte format-5 stub, which is a real shape the table codec
 has to survive.
 
+## Definition opcodes: read the reference before changing a decoder
+
+`reference/hydra-637-definitions/` holds de-obfuscated opcode tables for the item, NPC and
+object decoders in the bundled 637 client, cross-referenced against this project's codecs.
+Every client claim cites a `file:line`, so any row can be checked in seconds.
+
+Consult it before altering how any definition opcode is read, and note the division of
+authority it sets out: **the 639 cache is authoritative for payload sizes** (proven by
+sweeping every definition and requiring an exact buffer consumption) and **the 637 client is
+authoritative for signedness and meaning** (which the cache cannot reveal). Neither is
+authoritative alone, and a disagreement is usually to be recorded rather than resolved - all
+three codec sweeps found opcodes this project handles that the 637 client does not, none of
+which occur in the 639 cache.
+
+The rows worth attention are `SIGNEDNESS-DIFFERS` and `SEMANTICS-DIFFER`: no test in the
+suite can detect either, and both surface as wrong values in the editor and wrong data on
+save.
+
 ## Coding Guidelines
 - Include C# XML documentation comments on public classes and members whenever the intent isn't obvious.
