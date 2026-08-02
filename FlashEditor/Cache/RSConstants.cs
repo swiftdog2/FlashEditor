@@ -111,7 +111,6 @@ namespace FlashEditor.cache {
         /*
          * General constants
          */
-        public const int CLIENT_BUILD = 639;
         public const bool ENCRYPTED_CACHE = true;
         public const int MAX_VALID_ARCHIVE_LENGTH = 1000000;
         public const string CACHE_DIRECTORY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";

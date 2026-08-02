@@ -2,6 +2,28 @@
 
 This repository contains a C# RuneScape cache editor targeting **Revision 639**. It provides a WinForms-based GUI to load, view, edit, and update JS5 cache archives. The application targets **.NET 9** and includes xUnit-based unit tests.
 
+### Which revision, and how that was established
+
+The editor decodes the **cache**, so 639 is the number that matters here. It was determined
+from the data rather than from any comment:
+
+- Reference-table versions are per-build and monotonic. The reference cache matches build
+  639's exactly on indexes 2, 3, 12, 16 and 20; it is never *below* 639 on any index, and it
+  is below build 640 on every one of those five. So the base build is 639.
+- The four indexes that sit *above* 639 - `MAPS`, `MODELS`, `NPC_DEFINITIONS` and
+  `ITEM_DEFINITIONS` - are the ones a private server customises, and every edit bumps the
+  version. The cache is therefore a 639 base with local modifications, which is also why 61
+  of its map squares are encrypted with keys that exist in no published dump.
+- XTEA keys do **not** identify a build. Builds 637, 639 and 640 all decrypt exactly the same
+  598 archives, so a successful decrypt says the key dump is compatible, not that it matches.
+
+The **client** source bundled alongside this cache (in the sibling HydraScape repository) is
+a different revision: **637**. It writes `637` as the revision field in the JS5 handshake and
+in both the lobby and game login blocks, and renders the literal string `"Build: 637"`; the
+number 639 appears nowhere in its 854 source files. Client and cache are a mismatched pair,
+which matters if you use that client as a reference for decoder behaviour - notably
+`reference/hydra-model-decoding/`, which was taken from it.
+
 ## Build Requirements
 - Visual Studio or `dotnet` with .NET 9 SDK.
 - All packages are restored via NuGet. The `packages.config` file lists dependencies such as IKVM, Newtonsoft.Json, and OpenTK.
@@ -137,45 +159,61 @@ class Container {
 4. Write updated reference table back into index 255
 5. Optionally bump idx255’s own CRC/version
 
-Index Map for Revision 639
-   | ID  | Contents                      |
-   |----|--------------------------------|
-   | 0  | Animation frames               |
-   | 1  | Animation skins                |
-   | 2  | Configs (items, objects, NPCs) |
-   | 3  | Interfaces                     |
-   | 4  | Unused                         |
-   | 5  | Maps (XTEA encrypted)          |
-   | 6  | Unused                         |
-   | 7  | 3-D models (.m meshes)         |
-   | 8  | Sprites                        |
-   | 9  | Unused                         |
-   |10  | Huffman chat table             |
-   |12  | Client scripts (CS2)           |
-   |13  | Font metrics                   |
-   |14  | Sound effects                  |
-   |16  | MIDI instrument bank           |
-   |17  | MIDI tracks                    |
-   |18  | Textures                       |
-   |19  | Enums                          |
-   |20  | Legacy loader sprites          |
-   |21  | Spot-animation definitions     |
-   |22  | World-map composites           |
-   |23  | Quick-chat phrases             |
-   |24  | Material/lighting configs      |
-   |25  | Particle configs               |
-   |26  | Default chest/key definitions  |
-   |27  | Cut-scene scripts              |
-   |28  | Billboard/UV data              |
-   |29  | Shader programs                |
-   |30  | Client preferences             |
-   |31  | GE/database tables             |
-   |32  | Clan-citadel configs           |
-   |33  | Instanced region templates     |
-   |34  | Item morph tables              |
-   |35  | Struct definitions             |
-   |36  | Extended enums                 |
-   |255 | Reference table                |
+### Index Map
+
+`RSConstants.cs` is the source of truth for these names and this table is generated from it -
+an earlier version of this table listed a different revision's layout entirely (index 16 as
+"MIDI instrument bank", 18 as "Textures", 19 as "Enums") and disagreed with the code from
+index 11 onward. If the two ever diverge again, believe `RSConstants`.
+
+The group and file counts are measured from the reference cache, and corroborate the naming:
+index 19 holds 80 groups of ~20,470 item definitions, index 18 holds 13,359 NPCs and index 16
+holds 56,199 objects, which is the right order of magnitude for this revision.
+
+   | ID  | RSConstants name       | Contents                        | Groups | Files   |
+   |-----|------------------------|---------------------------------|--------|---------|
+   | 0   | FRAMES                 | Animation frames                | 3526   | 359931  |
+   | 1   | SKINS                  | Animation skins                 | 3106   | 3106    |
+   | 2   | CONFIG                 | Configs                         | 35     | 16981   |
+   | 3   | INTERFACE_DEFINITIONS  | Interfaces                      | 1078   | 42256   |
+   | 4   | SOUND_EFFECTS          | Sound effects                   | 10237  | 10237   |
+   | 5   | MAPS                   | Maps (partly XTEA encrypted)    | 5203   | 5203    |
+   | 6   | MUSIC                  | Music                           | 963    | 963     |
+   | 7   | MODELS                 | 3-D models                      | 63614  | 63614   |
+   | 8   | SPRITES                | Sprites                         | 4593   | 4593    |
+   | 9   | TEXTURES               | Textures                        | 946    | 946     |
+   | 10  | HUFFMAN                | Huffman chat table              | 1      | 1       |
+   | 11  | MUSIC_2                | Music, second bank              | 441    | 441     |
+   | 12  | CLIENT_SCRIPTS         | Client scripts (CS2)            | 4149   | 4149    |
+   | 13  | FONTS                  | Font metrics                    | 25     | 25      |
+   | 14  | SFX2                   | Vorbis / MIDI instruments       | 3657   | 3657    |
+   | 15  | SFX3                   | Sound effects, third bank       | 176    | 176     |
+   | 16  | OBJECTS_DEFINITIONS    | Object definitions              | 224    | 56199   |
+   | 17  | CLIENTSCRIPT_SETTINGS  | Client-script settings          | 14     | 3558    |
+   | 18  | NPC_DEFINITIONS        | NPC definitions                 | 106    | 13359   |
+   | 19  | ITEM_DEFINITIONS       | Item definitions                | 80     | 20470   |
+   | 20  | ANIMATIONS             | Animation definitions           | 120    | 15260   |
+   | 21  | GRAPHICS               | Spot-animation definitions      | 12     | 2956    |
+   | 22  | SCRIPT_CONFIGS         | Varbits                         | 9      | 8785    |
+   | 23  | WORLD_MAP              | World map                       | 76     | 1043    |
+   | 24  | QUICK_CHAT_MESSAGES    | Quick-chat phrases              | 2      | 1299    |
+   | 25  | QUICK_CHAT_MENU        | Quick-chat menus                | 2      | 86      |
+   | 26  | MATERIALS              | Material / lighting configs     | 1      | 1       |
+   | 27  | CONFIG_PARTICLES       | Particle and map effects        | 2      | 421     |
+   | 28  | DEFAULTS               | Defaults                        | 2      | 2       |
+   | 29  | CONFIG_BILLBOARD       | Billboard configs               | 1      | 182     |
+   | 30  | NATIVE_LIBRARIES       | Native libraries                | 36     | 36      |
+   | 31  | GRAPHICS_SHADERS       | Shader programs                 | 2      | 14      |
+   | 32  | LOADING_SPRITES        | Loading sprites (JPEG)          | 26     | 26      |
+   | 33  | GAME_TIPS              | Loading-screen tips             | 2      | 343     |
+   | 34  | LOADING_SPRITES_RAW    | Loading sprites (Jagex format)  | -      | -       |
+   | 35  | THEORA_AKA_CUTSCENES   | Cut-scenes                      | -      | -       |
+   | 36  | VORBIS                 | Vorbis audio                    | 0      | 0       |
+   | 255 | META                   | Reference tables                | 37     | -       |
+
+Indexes 34 and 35 have no reference table at all in the reference cache; index 36 has one
+that declares zero groups - a four byte format-5 stub, which is a real shape the table codec
+has to survive.
 
 ## Coding Guidelines
 - Include C# XML documentation comments on public classes and members whenever the intent isn't obvious.
