@@ -51,6 +51,17 @@ namespace FlashEditor.cache {
             VORBIS = 36,
             META_INDEX = 255;
 
+        /*
+         * Groups within the CONFIG index (2). These are groups, not indexes: an earlier spec
+         * recorded floor overlays as "index 4" and underlays as "index 3", which are unrelated
+         * archives. Verified against Class153.java:201,241 and Class32.java:79,129, both of which
+         * operate on client.BIT_CONFIG = index 2.
+         */
+        public const int FLOOR_UNDERLAY_GROUP = 1,
+            FLOOR_OVERLAY_GROUP = 4,
+            MAP_SCENE_GROUP = 34,
+            MAP_ELEMENT_GROUP = 36;
+
         public static string[] indexNames = new [] {"FRAMES",
             "SKINS",
             "CONFIG",

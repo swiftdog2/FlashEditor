@@ -614,6 +614,58 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        ///     Decodes a floor underlay definition from the config index.
+        /// </summary>
+        /// <remarks>
+        ///     JS5 index 2, group <see cref="RSConstants.FLOOR_UNDERLAY_GROUP"/>. The definition id
+        ///     is the file id. The prior spec placed these in index 3, which is a different archive
+        ///     entirely.
+        /// </remarks>
+        /// <param name="definitionId">The underlay id, 0..158 in the shipped cache.</param>
+        /// <returns>The decoded definition.</returns>
+        public FloorUnderlayDefinition GetFloorUnderlay(int definitionId) {
+            JagStream data = ReadFile(RSConstants.CONFIG, RSConstants.FLOOR_UNDERLAY_GROUP, definitionId);
+            return new FloorUnderlayDefinition { Id = definitionId }.Decode(data);
+        }
+
+        /// <summary>
+        ///     Decodes a floor overlay definition from the config index.
+        /// </summary>
+        /// <remarks>
+        ///     JS5 index 2, group <see cref="RSConstants.FLOOR_OVERLAY_GROUP"/>. The prior spec
+        ///     placed these in index 4, which is a different archive entirely.
+        /// </remarks>
+        /// <param name="definitionId">The overlay id, 0..234 in the shipped cache.</param>
+        /// <returns>The decoded definition.</returns>
+        public FloorOverlayDefinition GetFloorOverlay(int definitionId) {
+            JagStream data = ReadFile(RSConstants.CONFIG, RSConstants.FLOOR_OVERLAY_GROUP, definitionId);
+            return new FloorOverlayDefinition { Id = definitionId }.Decode(data);
+        }
+
+        /// <summary>
+        ///     Returns a file's bytes, as stored, for callers that want to decode it themselves.
+        /// </summary>
+        /// <param name="indexId">The index the archive belongs to.</param>
+        /// <param name="archiveId">The archive id within the index.</param>
+        /// <param name="fileId">The file id within the archive.</param>
+        /// <returns>A copy of the file payload.</returns>
+        public byte[] ReadFileBytes(int indexId, int archiveId, int fileId) {
+            JagStream data = ReadFile(indexId, archiveId, fileId);
+            return data?.ToArray() ?? Array.Empty<byte>();
+        }
+
+        /// <summary>
+        ///     The file ids present in a config group, ascending.
+        /// </summary>
+        /// <param name="groupId">The group within the config index.</param>
+        /// <returns>The file ids, or an empty array when the group is absent.</returns>
+        public int[] GetConfigFileIds(int groupId) {
+            RSReferenceTable table = GetReferenceTable(RSConstants.CONFIG);
+            RSArchiveEntry entry = table?.GetArchiveEntry(groupId);
+            return entry == null ? System.Array.Empty<int>() : entry.GetValidFileIds();
+        }
+
+        /// <summary>
         /// Decodes and returns an object (loc) definition from the config index.
         /// </summary>
         /// <param name="archiveId">The archive containing the object file</param>
