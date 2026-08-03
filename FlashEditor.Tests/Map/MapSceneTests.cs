@@ -194,6 +194,140 @@ namespace FlashEditor.Tests.Map
         }
 
         /// <summary>
+        ///     Every vertex of a uniform scene reads that uniform height, including the shared ones.
+        /// </summary>
+        /// <remarks>
+        ///     This is the test that fails if the vertex seam is left unfixed. A square's heights
+        ///     array is sized 65x65 but its decoder only writes 0..63, so an implementation that
+        ///     resolves a shared vertex to its own square's index 64 returns zero at every multiple
+        ///     of 64 - 385 of the 37,249 vertices in a 3x3 scene. It also proves the outer rim does
+        ///     not leak zeros.
+        /// </remarks>
+        [Fact]
+        public void EveryVertexOfAUniformSceneReadsTheUniformHeight()
+        {
+            const int height = -320;
+            MapScene scene = ThreeByThree();
+
+            for (int dx = 0; dx < 3; dx++)
+                for (int dy = 0; dy < 3; dy++)
+                    for (int x = 0; x < 64; x++)
+                        for (int y = 0; y < 64; y++)
+                            scene.Square(dx, dy).SetTileHeight(0, x, y, height);
+
+            for (int vx = 0; vx <= scene.WidthTiles; vx++)
+                for (int vy = 0; vy <= scene.HeightTiles; vy++)
+                    Assert.Equal(height, scene.VertexHeight(0, vx, vy));
+        }
+
+        /// <summary>
+        ///     Reading heights never marks a square dirty.
+        /// </summary>
+        /// <remarks>
+        ///     The most valuable test here, because the rejected fix - copying neighbour heights
+        ///     into each square's index 64 - passes every other test in this file and fails only
+        ///     this one. <c>Region.SetTileHeight</c> sets <c>Dirty</c> outside its bounds guard, so
+        ///     stitching would dirty all nine squares; <c>RegionCodec.EncodeTerrain</c> then skips
+        ///     its verbatim fast path and the save path offers to rewrite eight untouched archives.
+        /// </remarks>
+        [Fact]
+        public void ReadingHeightsDirtiesNoSquare()
+        {
+            MapScene scene = ThreeByThree();
+
+            for (int dx = 0; dx < 3; dx++)
+                for (int dy = 0; dy < 3; dy++)
+                    scene.Square(dx, dy).ClearDirty();
+
+            for (int plane = 0; plane < 4; plane++)
+                scene.HeightGrid(plane);
+
+            for (int dx = 0; dx < 3; dx++)
+                for (int dy = 0; dy < 3; dy++)
+                    Assert.False(scene.Square(dx, dy).Dirty,
+                        $"square {dx},{dy} was dirtied by a read");
+        }
+
+        /// <summary>Editing one tile dirties that square and no other.</summary>
+        [Fact]
+        public void EditingOneTileDirtiesOnlyItsOwnSquare()
+        {
+            MapScene scene = ThreeByThree();
+
+            for (int dx = 0; dx < 3; dx++)
+                for (int dy = 0; dy < 3; dy++)
+                    scene.Square(dx, dy).ClearDirty();
+
+            scene.Square(1, 1).SetTileHeight(0, 10, 10, -640);
+
+            for (int dx = 0; dx < 3; dx++)
+                for (int dy = 0; dy < 3; dy++)
+                    Assert.Equal(dx == 1 && dy == 1, scene.Square(dx, dy).Dirty);
+        }
+
+        [Fact]
+        public void HeightGridIsOneLargerThanTheTileGrid()
+        {
+            int[,] grid = ThreeByThree().HeightGrid(0);
+
+            Assert.Equal(193, grid.GetLength(0));
+            Assert.Equal(193, grid.GetLength(1));
+        }
+
+        /// <summary>
+        ///     Absent squares flatten to the nearest loaded ground rather than to zero.
+        /// </summary>
+        /// <remarks>
+        ///     Heights are negative and zero is sea level, so a zero-filled hole is higher than the
+        ///     land beside it. Left as zero, every coastline would grow a wall.
+        /// </remarks>
+        [Fact]
+        public void AbsentSquaresFlattenToTheNearestLoadedNeighbour()
+        {
+            const int height = -320;
+
+            var squares = new MapRegion[3, 3];
+            squares[1, 1] = new MapRegion(MapSquareNames.RegionId(50, 50));
+            for (int x = 0; x < 64; x++)
+                for (int y = 0; y < 64; y++)
+                    squares[1, 1].SetTileHeight(0, x, y, height);
+
+            MapScene scene = MapScene.FromSquares(49, 49, squares);
+
+            for (int vx = 0; vx <= scene.WidthTiles; vx++)
+                for (int vy = 0; vy <= scene.HeightTiles; vy++)
+                    Assert.Equal(height, scene.VertexHeight(0, vx, vy));
+        }
+
+        /// <summary>A plane a square does not carry clamps rather than throwing.</summary>
+        /// <remarks>
+        ///     Underwater squares decode a single plane, so this arm is reachable with real data.
+        /// </remarks>
+        [Fact]
+        public void APlaneASquareDoesNotCarryClampsRatherThanThrowing()
+        {
+            var single = new MapRegion(MapSquareNames.RegionId(50, 50));
+            single.LoadTerrain(new JagStream(SinglePlaneTerrain()), 1);
+
+            var squares = new MapRegion[1, 1];
+            squares[0, 0] = single;
+            MapScene scene = MapScene.FromSquares(50, 50, squares);
+
+            Assert.Equal(1, single.PlaneCount);
+            Assert.Equal(0, scene.VertexHeight(2, 10, 10));
+            Assert.Equal(0, scene.VertexHeight(3, 64, 64));
+        }
+
+        /// <summary>A one-plane terrain file: every tile ends immediately with no stored height.</summary>
+        private static byte[] SinglePlaneTerrain()
+        {
+            var stream = new JagStream();
+            for (int i = 0; i < 64 * 64; i++)
+                stream.WriteByte(0);
+            return stream.Flip().ToArray();
+        }
+
+        /// <summary>
         ///     The tab panel builds and unbinds without a cache present.
         /// </summary>
         /// <remarks>

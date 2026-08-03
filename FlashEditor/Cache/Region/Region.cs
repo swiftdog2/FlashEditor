@@ -41,8 +41,12 @@ namespace FlashEditor.Cache.Region {
         private readonly int baseX;
         private readonly int baseY;
 
-        //Heights are a VERTEX grid, one larger on each axis than the tile grid: the renderer
-        //reads vertex x+1 and y+1 when building a tile quad (Class305.java:127).
+        //Heights are a VERTEX grid, one larger on each axis than the tile grid, because a tile quad
+        //is bounded by vertices (x,y), (x+1,y), (x+1,y+1) and (x,y+1) (Class305.java:127).
+        //
+        //Indices 64 are never written by the decoder and must never be read: a square does not own
+        //its own +1 vertex, its neighbour does. MapScene.VertexHeight resolves that ownership. The
+        //extra slot is kept only so the array shape matches the format it came from.
         private int[,,] tileHeights = new int[0, 0, 0];
         private byte[,,] renderRules = new byte[0, 0, 0];
         private int[,,] overlayIds = new int[0, 0, 0];

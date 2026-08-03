@@ -37,6 +37,9 @@ namespace FlashEditor.Map {
         private readonly Button redoButton = new Button { Text = "Redo", Width = 60, Enabled = false };
         private readonly Button saveButton = new Button { Text = "Save cache", Width = 90, Enabled = false };
         private readonly WorldNavigatorControl navigator = new WorldNavigatorControl { Dock = DockStyle.Fill };
+        private readonly TrackBar reliefBar = new TrackBar {
+            Minimum = 0, Maximum = 100, Value = 65, TickStyle = TickStyle.None, Width = 190
+        };
 
         private readonly MapEditHistory history = new MapEditHistory();
 
@@ -73,6 +76,7 @@ namespace FlashEditor.Map {
             ("Walls", MapLayers.Walls),
             ("Ground decoration", MapLayers.GroundDecoration),
             ("Map scene icons", MapLayers.MapSceneIcons),
+            ("Relief shading", MapLayers.Hillshade),
             ("Game objects", MapLayers.GameObjects),
             ("Tile flags", MapLayers.TileFlags),
             ("Grid", MapLayers.Grid)
@@ -98,6 +102,13 @@ namespace FlashEditor.Map {
             };
 
             saveButton.Click += (_, _) => SaveEdits();
+
+            reliefBar.Scroll += (_, _) => {
+                if (rasteriser == null)
+                    return;
+                rasteriser.HillshadeStrength = reliefBar.Value / 100f;
+                viewer.Rerender();
+            };
 
             navigator.RegionPicked += (_, region) => {
                 if (!navigator.Exists(region.X, region.Y)) {
@@ -293,7 +304,18 @@ namespace FlashEditor.Map {
             nav.Controls.Add(planeBox);
 
             var layersGroup = new GroupBox { Text = "Layers", Dock = DockStyle.Fill };
-            layersGroup.Controls.Add(layerList);
+
+            var layersBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            layersBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layersBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+
+            var reliefRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+            reliefRow.Controls.Add(new Label { Text = "Relief", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
+            reliefRow.Controls.Add(reliefBar);
+
+            layersBody.Controls.Add(layerList, 0, 0);
+            layersBody.Controls.Add(reliefRow, 0, 1);
+            layersGroup.Controls.Add(layersBody);
 
             var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
             tools.Controls.Add(toolBox);
@@ -439,6 +461,13 @@ namespace FlashEditor.Map {
                           $"  shape {scene.OverlayShape(hit.Plane, hit.SceneX, hit.SceneY)}" +
                           $"  rot {scene.OverlayRotation(hit.Plane, hit.SceneX, hit.SceneY)}");
             sb.AppendLine($"flags     0x{scene.TileFlags(hit.Plane, hit.SceneX, hit.SceneY):X2}");
+
+            //The tile's four corner vertices. On a square boundary these come from the neighbouring
+            //square, so they are also the quickest way to see the vertex resolution working.
+            sb.AppendLine($"corners   sw {scene.VertexHeight(hit.Plane, hit.SceneX, hit.SceneY)}" +
+                          $"  se {scene.VertexHeight(hit.Plane, hit.SceneX + 1, hit.SceneY)}" +
+                          $"  nw {scene.VertexHeight(hit.Plane, hit.SceneX, hit.SceneY + 1)}" +
+                          $"  ne {scene.VertexHeight(hit.Plane, hit.SceneX + 1, hit.SceneY + 1)}");
 
             int shown = 0;
             foreach (Location loc in square.GetLocations()) {

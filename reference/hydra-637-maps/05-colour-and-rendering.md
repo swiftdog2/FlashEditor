@@ -158,8 +158,52 @@ Per-vertex central-difference normals. The GPU paths (`s_Sub1`, `s_Sub2`) build 
 `(-200, -240, -200)`. The software path (`s_Sub3`) does the same in fixed point but with a
 demonstrably wrong length constant.
 
-A 2D editor does not need this. A flat unlit render is clearer for editing, and the client's own
-lighting is not something you want baked into data you are about to write back.
+### Do not port this, but do take the stencil
+
+**Revised.** This section previously said flatly that a 2D editor does not need lighting. That was
+right about the client's lighting and wrong about relief: once the height tools existed, a flat
+render made them invisible, because nothing in the picture responded to a height edit.
+
+The split actually taken is **gradient stencil yes, palette lighting no**.
+
+Reasons not to port the lighting, in order of weight:
+
+1. **The client's own 2D top-down view does not use it.** The world map (`Class278`) is flat and
+   unlit, running every tile through the same lightness modulator at a hardcoded constant of `96`.
+   It never reads a height or a normal. That is the strongest precedent available.
+2. **The three paths disagree.** Software modulates the packed HSL lightness by `light/128` clamped
+   to `[2, 126]`; the GPU paths multiply linear RGB by roughly 0.86 to 1.39; a third mode relights
+   per frame in the shader. There is no single behaviour to be faithful to.
+3. **The software path is broken at this tile size.** `s_Sub3.java:66` computes the normal length
+   with `512 * S` where the GPU paths use `4 * S * S`. Those agree only when `S == 128`. At the real
+   512 the denominator is a factor of 4 too small, so flat and gently sloping ground saturates at
+   lightness 126 and clips - the software renderer shows *less* relief than a naive implementation.
+4. **The dynamic range is small and the light is nearly vertical.** `(-200, -240, -200)` gives a
+   multiplier spanning about 1.6:1, which reads top-down as a subtle wash.
+5. **Faithful means porting a lot.** The 65536-entry palette including its per-session random gamma,
+   the object-shadow deposit and its 5-tap blur, and the environment-record light override from the
+   `m` file's extras tail.
+
+What **is** worth taking is the central-difference stencil at `s_Sub1.java:262-270`, which is a
+correct textbook surface normal and costs one square root per sample:
+
+```
+dhx = H[x+1][y] - H[x-1][y]
+dhy = H[x][y+1] - H[x][y-1]
+N   = normalize(dhx, -2 * 512, dhy)
+```
+
+`FlashEditor/Map/Hillshade.cs` uses that stencil with a conventional cartographic light at azimuth
+315 / altitude 45, composited as a multiply over the finished tile colour rather than into HSL.
+Three things that implementation had to get right and a naive one will not:
+
+- **Evaluate at the tile centre.** The client's stencil is vertex-centred; a tile-filling renderer
+  needs the tile's own four corners, or the shade lands half a tile off its terrain.
+- **Derive the ambient term from the altitude.** Flat ground has `dot == sin(altitude)`, not zero, so
+  a fixed ambient plus a clamp to 1 dims the entire map instead of leaving flat ground alone.
+- **The two sign conventions cancel.** Heights are negative-up *and* a normal negates the gradient,
+  so the raw stored values already give the correct positive-up normal. Collapsing the two negations
+  makes the code look like it has a missing minus sign, and "fixing" it inverts every hill.
 
 ## 6. The minimap is not what you want to copy
 

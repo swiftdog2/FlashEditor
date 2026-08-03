@@ -42,6 +42,9 @@ namespace FlashEditor.Map {
         /// <summary>Bank, altar, staircase and furnace icons.</summary>
         MapSceneIcons = 128,
 
+        /// <summary>Relief shading derived from the terrain heights.</summary>
+        Hillshade = 256,
+
         /// <summary>Everything that reads as terrain.</summary>
         Terrain = Underlay | Overlay,
 
@@ -54,7 +57,7 @@ namespace FlashEditor.Map {
         ///     mapscene icons only - and at a dense square it puts a box around every tree and fence
         ///     post, which buries the terrain underneath.
         /// </remarks>
-        Default = Underlay | Overlay | Walls | GroundDecoration | MapSceneIcons | Grid
+        Default = Underlay | Overlay | Walls | GroundDecoration | MapSceneIcons | Hillshade | Grid
     }
 
     /// <summary>
@@ -62,9 +65,12 @@ namespace FlashEditor.Map {
     /// </summary>
     /// <remarks>
     ///     This is deliberately not a port of the client's minimap. That rasteriser orthographically
-    ///     re-projects the built 3D ground mesh, which would mean porting geometry, normals and
-    ///     lighting to obtain a picture that is worse for editing than a flat one. What is taken
-    ///     from it is the tile colour model, the shape masks and the 4-pixels-per-tile convention.
+    ///     re-projects the built 3D ground mesh, which would mean porting geometry and its whole
+    ///     lighting model to obtain a picture that is worse for editing than a flat one. What is
+    ///     taken from the client is the tile colour model, the shape masks, the 4-pixels-per-tile
+    ///     convention, and the central-difference gradient stencil that <see cref="Hillshade"/> uses
+    ///     for relief. What is not taken is the palette lighting itself: the client's own 2D view,
+    ///     the world map, is flat and unlit, and its three 3D paths disagree with each other.
     ///
     ///     See <c>reference/hydra-637-maps/05-colour-and-rendering.md</c>.
     /// </remarks>
@@ -79,6 +85,23 @@ namespace FlashEditor.Map {
 
         /// <summary>Screen pixels per map tile. The client's minimap uses 4.</summary>
         public int TilePixels { get; set; } = 8;
+
+        /// <summary>
+        ///     How strongly relief shading modulates the terrain colour, 0 to 1.
+        /// </summary>
+        /// <remarks>
+        ///     Zero is a bit-exact identity rather than an approximation, so the slider's left stop
+        ///     gives back exactly the picture that existed before relief shading. The default is
+        ///     high enough to read a single storable step of slope and low enough that the darkest
+        ///     a tile can go is about 72% of its authored colour.
+        /// </remarks>
+        public float HillshadeStrength { get; set; } = 0.65f;
+
+        /// <summary>Relief light azimuth, in degrees clockwise from north.</summary>
+        public double HillshadeAzimuth { get; set; } = Map.Hillshade.DefaultAzimuthDegrees;
+
+        /// <summary>Relief light altitude, in degrees above the horizon.</summary>
+        public double HillshadeAltitude { get; set; } = Map.Hillshade.DefaultAltitudeDegrees;
 
         /// <summary>Colour drawn where a tile has neither underlay nor overlay.</summary>
         public Color VoidColour { get; set; } = Color.FromArgb(255, 12, 12, 16);
@@ -157,8 +180,18 @@ namespace FlashEditor.Map {
                 ? UnderlayBlender.Blend(scene.UnderlayGrid(plane), ResolveUnderlay)
                 : null;
 
+            /* Built once for the whole scene rather than per tile: a tile's gradient reads the
+               vertices it shares with its neighbours, so a per-tile build would re-resolve every
+               interior vertex four times. Skipped entirely when the layer is off or the strength is
+               zero, which is what makes turning relief off cost nothing. */
+            float[,] relief = (layers & MapLayers.Hillshade) != 0 && HillshadeStrength > 0f
+                ? Map.Hillshade.Build(scene.HeightGrid(plane), HillshadeAzimuth, HillshadeAltitude, HillshadeStrength)
+                : null;
+
             for (int x = 0; x < scene.WidthTiles; x++) {
                 for (int y = 0; y < scene.HeightTiles; y++) {
+                    float shade = relief == null ? 1f : relief[x, y];
+
                     int overlayId = scene.OverlayId(plane, x, y);
                     FloorOverlayDefinition overlay = overlayId > 0 ? ResolveOverlay(overlayId - 1) : null;
 
@@ -179,13 +212,13 @@ namespace FlashEditor.Map {
                     if (blended != null && !overlayCoversTile) {
                         int hsl = blended[x, y];
                         if (hsl != 0)
-                            FillRect(g, tile, MapPalette.ToRgb(hsl));
+                            FillRect(g, tile, Shade(MapPalette.ToRgb(hsl), shade));
                     }
 
                     if (overlay == null || (layers & MapLayers.Overlay) == 0 || overlayHsl == MapPalette.NoColour)
                         continue;
 
-                    int rgb = MapPalette.ToRgb(overlayHsl);
+                    int rgb = Shade(MapPalette.ToRgb(overlayHsl), shade);
                     foreach (float[] triangle in TileShapes.OverlayTriangles(shape, scene.OverlayRotation(plane, x, y)))
                         FillTriangle(g, tile, triangle, rgb);
                 }
@@ -404,6 +437,39 @@ namespace FlashEditor.Map {
             float top = (scene.HeightTiles - 1 - sceneY) * TilePixels;
             return new RectangleF(sceneX * TilePixels, top, TilePixels, TilePixels);
         }
+
+        /// <summary>
+        ///     Multiplies a 24-bit RGB by a relief brightness factor.
+        /// </summary>
+        /// <remarks>
+        ///     A display-space multiply, deliberately not a linear-light one. The map palette is
+        ///     already gamma-encoded, so this is not physically correct lighting; it is what a
+        ///     cartographic hillshade and an image editor's multiply blend both do, and it is
+        ///     exactly hue-preserving, since scaling all three channels by the same factor leaves
+        ///     their ratios alone.
+        ///
+        ///     Not done by modulating the packed HSL lightness, which is the client's software path.
+        ///     That field is 7 bits, so a thirty percent modulation bands visibly across a gentle
+        ///     slope; the palette's saturation ladder is keyed to lightness, so changing one changes
+        ///     the other; and that path carries the client's own defect at s_Sub3.java:66.
+        ///
+        ///     The per-channel clamp is load-bearing rather than defensive: a factor above 1 on a
+        ///     channel already at 255 gives 510, and 510 shifted left 16 corrupts the channel above.
+        /// </remarks>
+        /// <param name="rgb">A 24-bit RGB value.</param>
+        /// <param name="shade">The brightness factor. 1 is neutral.</param>
+        /// <returns>The modulated RGB.</returns>
+        private static int Shade(int rgb, float shade) {
+            if (shade == 1f)
+                return rgb;
+
+            return Channel(rgb, 16, shade) << 16
+                 | Channel(rgb, 8, shade) << 8
+                 | Channel(rgb, 0, shade);
+        }
+
+        private static int Channel(int rgb, int shift, float shade) =>
+            Math.Clamp((int) (((rgb >> shift) & 0xFF) * shade + 0.5f), 0, 255);
 
         private static void FillRect(Graphics g, RectangleF rect, int rgb) {
             using (var brush = new SolidBrush(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF)))
