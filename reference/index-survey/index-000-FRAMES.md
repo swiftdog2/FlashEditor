@@ -1,7 +1,7 @@
 # Index 0 - FRAMES
 
 **Format:** fully-understood  
-**Capability:** none  
+**Capability:** complete  
 **Effort:** medium
 
 ## What it is

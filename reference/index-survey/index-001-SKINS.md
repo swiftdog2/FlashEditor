@@ -1,7 +1,7 @@
 # Index 1 - SKINS - animation skeletons (frame bases / "framemaps")
 
 **Format:** fully-understood  
-**Capability:** none  
+**Capability:** complete  
 **Effort:** small
 
 ## What it is

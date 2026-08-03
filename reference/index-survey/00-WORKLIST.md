@@ -196,3 +196,26 @@ Indexes unlikely to survive a single implementation pass, and why.
 **Cross-cutting risk: GUI scale.** Twenty-five new tabs into one switch statement and a positional index array is the single most likely source of a wrong-index-loaded bug. Section 4.1 exists to remove that risk before it materialises, and should be done before the second new tab, not the tenth.
 
 **Cross-cutting risk: sweep serialisation.** Per CLAUDE.md, never run more than one cache-backed suite at a time and never run full sweeps in parallel agents. As each new index adds a whole-index sweep, the merge-gate run gets heavier, and index 7's is the heaviest by a wide margin. Parallelise the editing across worktrees; serialise the sweeping against the merged tree.
+---
+
+## Progress log
+
+Appended as indexes land, so the ordered worklist above stays the plan and this stays the record.
+
+| Index | State | Proof |
+|---|---|---|
+| 0 FRAMES | complete | 359,931 of 359,931 frame files re-encode byte-identically across all 3526 groups; exact consumption on every one. Animation tab resolves each pose through its skeleton. |
+| 1 SKINS | complete | 3106 of 3106 skeletons re-encode byte-identically. Census pinned: 173,749 bones, 936,887 labels, no transform type 6, flags only {0,1}, masks only 0xFFFF. |
+
+### Corrections to this document, found by building against it
+
+- The index-0 empty-frame count was 1568. It is **1573**, settled by a sweep that decodes no
+  frames at all. Corrected in `index-000-FRAMES.md`.
+- "Single-file group" reads as "file 0" and is wrong once: group 757's sole file is id **40**.
+  Frame arrays are sized by capacity and indexed by id, so holes are legal.
+- Section 4.3's note that only indexes 4 and 12 hold groups absent from their reference table
+  missed two. It is 3, 4, 12 and 32, pinned by `RealCacheEnumerationTests`.
+- Transform type 6 exists nowhere in this cache, so index 1's remap trap is latent rather than
+  live and no sweep can see it. It is pinned by a synthetic test instead. Expect more of this
+  shape: a normalisation the client performs on load is invisible to a byte-identity sweep
+  whenever the input that triggers it does not occur.
