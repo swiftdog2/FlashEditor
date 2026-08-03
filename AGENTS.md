@@ -76,6 +76,34 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
   - `fileCount` (u16)
   - Delta-encoded `fileIds` array
 
+#### Nothing in this cache sets the sizes flag, and nothing in it is format 7
+
+Measured over all 35 reference tables in idx255 by
+`FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`:
+
+| Flag or field | Where it is set |
+|---|---|
+| identifiers `0x01` | indexes 3, 5, 6, 8, 10, 12, 13, 23, 30, 31, 32, 33 |
+| whirlpool `0x02` | index 30 alone |
+| **sizes `0x04`** | **nowhere** |
+| entry hash `0x08` | nowhere |
+| format `7` | nowhere - every table is format 6 bar index 36, a four byte format-5 stub |
+
+The `groupSizes` rules above and the `groupFlags` byte with them are therefore correct and
+unreachable: no shipped table puts either to the test, so no byte-identity sweep defends them and
+a passing sweep is not evidence they are right. Keep both implemented - a decoder that drops
+either mis-parses the first table that does set them, from that field onward. The operational
+consequence is that the XTEA bit is stated nowhere on disk in this cache, which is what forces the
+read path to infer encryption and the write path to refuse to guess.
+
+Index 2 carries no name hashes either, so a config group is addressable only by id.
+
+Four tables carry a tail the format does not account for: index 9 has 3784 trailing zero bytes, 26
+has 4, 27 has 1684 and 29 has 728 - four bytes per **file** in every case, not per group (27's 421
+files sit in 2 groups, 29's 182 in 1). It sits where the per-file identifier block would, with the
+identifiers flag clear, so nothing reads it. The other 31 tables consume to the byte, so a parser
+must tolerate trailing bytes rather than assert exact consumption.
+
 ### Index Entry (.idx#)
 - 6 bytes per group
 - Bytes `0–2` → compressed length
@@ -229,14 +257,17 @@ actually changed, resolves the XTEA key, and updates the CRC and reference-table
 
 ### Index Map
 
-`RSConstants.cs` is the source of truth for these names and this table is generated from it -
-an earlier version of this table listed a different revision's layout entirely (index 16 as
-"MIDI instrument bank", 18 as "Textures", 19 as "Enums") and disagreed with the code from
-index 11 onward. If the two ever diverge again, believe `RSConstants`.
+**The cache and the client are the source of truth here, not `RSConstants.cs`.** This table used
+to say the opposite. It was written when the only known failure was a table listing a different
+revision's layout (index 16 as "MIDI instrument bank", 18 as "Textures", 19 as "Enums"), so
+"believe `RSConstants`" was the fix. That advice is now wrong: a sweep of every index against the
+637 client found **five constant names that misdescribe what the index holds**, flagged in the
+Contents column below. Believe what the client does with an index and what the index actually
+contains; treat the constant name as a claim.
 
-The group and file counts are measured from the reference cache, and corroborate the naming:
-index 19 holds 80 groups of ~20,470 item definitions, index 18 holds 13,359 NPCs and index 16
-holds 56,199 objects, which is the right order of magnitude for this revision.
+The group and file counts are measured from the reference cache, and corroborate the naming where
+it is right: index 19 holds 80 groups of ~20,470 item definitions, index 18 holds 13,359 NPCs and
+index 16 holds 56,199 objects, which is the right order of magnitude for this revision.
 
    | ID  | RSConstants name       | Contents                        | Groups | Files   |
    |-----|------------------------|---------------------------------|--------|---------|
@@ -254,34 +285,71 @@ holds 56,199 objects, which is the right order of magnitude for this revision.
    | 11  | MUSIC_2                | Music, second bank              | 441    | 441     |
    | 12  | CLIENT_SCRIPTS         | Client scripts (CS2)            | 4149   | 4149    |
    | 13  | FONTS                  | Font metrics                    | 25     | 25      |
-   | 14  | SFX2                   | Vorbis / MIDI instruments       | 3657   | 3657    |
-   | 15  | SFX3                   | Sound effects, third bank       | 176    | 176     |
+   | 14  | SFX2                   | Vorbis samples, g0 = codebooks  | 3657   | 3657    |
+   | 15  | SFX3                   | **MIDI patch bank, NAME WRONG** | 176    | 176     |
    | 16  | OBJECTS_DEFINITIONS    | Object definitions              | 224    | 56199   |
-   | 17  | CLIENTSCRIPT_SETTINGS  | Client-script settings          | 14     | 3558    |
+   | 17  | CLIENTSCRIPT_SETTINGS  | **Enum table, NAME WRONG**      | 14     | 3558    |
    | 18  | NPC_DEFINITIONS        | NPC definitions                 | 106    | 13359   |
    | 19  | ITEM_DEFINITIONS       | Item definitions                | 80     | 20470   |
    | 20  | ANIMATIONS             | Animation definitions           | 120    | 15260   |
    | 21  | GRAPHICS               | Spot-animation definitions      | 12     | 2956    |
    | 22  | SCRIPT_CONFIGS         | Varbits                         | 9      | 8785    |
    | 23  | WORLD_MAP              | World map                       | 76     | 1043    |
-   | 24  | QUICK_CHAT_MESSAGES    | Quick-chat phrases              | 2      | 1299    |
-   | 25  | QUICK_CHAT_MENU        | Quick-chat menus                | 2      | 86      |
+   | 24  | QUICK_CHAT_MESSAGES    | **Quick-chat bank, NAME WRONG** | 2      | 1299    |
+   | 25  | QUICK_CHAT_MENU        | **Quick-chat bank, NAME WRONG** | 2      | 86      |
    | 26  | MATERIALS              | Material / lighting configs     | 1      | 1       |
-   | 27  | CONFIG_PARTICLES       | Particle and map effects        | 2      | 421     |
-   | 28  | DEFAULTS               | Defaults                        | 2      | 2       |
+   | 27  | CONFIG_PARTICLES       | Particle emitters and effectors | 2      | 421     |
+   | 28  | DEFAULTS               | Default sprite ids and colours  | 2      | 2       |
    | 29  | CONFIG_BILLBOARD       | Billboard configs               | 1      | 182     |
    | 30  | NATIVE_LIBRARIES       | Native libraries                | 36     | 36      |
    | 31  | GRAPHICS_SHADERS       | Shader programs                 | 2      | 14      |
    | 32  | LOADING_SPRITES        | Loading sprites (JPEG)          | 26     | 26      |
    | 33  | GAME_TIPS              | Loading-screen tips             | 2      | 343     |
    | 34  | LOADING_SPRITES_RAW    | Loading sprites (Jagex format)  | -      | -       |
-   | 35  | THEORA_AKA_CUTSCENES   | Cut-scenes                      | -      | -       |
-   | 36  | VORBIS                 | Vorbis audio                    | 0      | 0       |
+   | 35  | THEORA_AKA_CUTSCENES   | **Nothing, NAME WRONG**         | -      | -       |
+   | 36  | VORBIS                 | **Theora video, NAME WRONG**    | 0      | 0       |
    | 255 | META                   | Reference tables                | 37     | -       |
 
 Indexes 34 and 35 have no reference table at all in the reference cache; index 36 has one
 that declares zero groups - a four byte format-5 stub, which is a real shape the table codec
 has to survive.
+
+#### The five wrong names, and the audio family in particular
+
+Established by sweeping every index in the reference cache and matching it against what the 637
+client does with that index.
+
+- **15 is the MIDI instrument/patch bank**, not a third sound bank: 176 groups of ~290 bytes, each
+  a sparse 256-entry table. `Particle_Sub3_Sub5_Sub2.java:99-100` passes it alongside 14 and 4, and
+  `Class355.method3875` maps a MIDI program to samples drawn from those two.
+- **17 is the enum table.** The client's own field is `enumFileStore` (`Node_Sub10_Sub24.java:9`).
+  14 groups x 256 files. **Group 5 is the music track name list**, group 2 the skill names.
+- **35 is referenced nowhere by the client** - absent from the `openFileStore` sequence at
+  `InterfaceSettings.java:157-188`, which covers 0-34 and 36 and skips it, leaving
+  `aFileStoreArray844[35]` permanently null.
+- **36 is Ogg/Theora video**, the only index opened with `fileType = 2`; `Class237` is an Ogg
+  container. Empty here. **So 14 and 36 are effectively swapped relative to their names.**
+- **24 and 25 are both complete quick-chat banks.** Menu versus message is **group 0 versus group 1
+  within each**, not a split across the two indexes; the client picks 25 over 24 on `id >= 0x8000`.
+  Adopting the current names would encode a false model of the format.
+
+Two things about the audio family that are easy to get wrong:
+
+- **6 is music and 11 is jingles**, same packed format, both starting `0x17` and both decoded by
+  `Node_Sub7.method985`. 6 is 963 groups at ~40 KB median and **carries name hashes**; 11 is 441
+  groups at ~1.6 KB median and **carries none at all** (table flags `0x00`), so no jingle can ever
+  be named from the cache.
+- **On index 14, group 0 is the Vorbis setup header and codebooks**, structurally unlike groups
+  1..3656, which each open with a 17-byte header (sample rate 22050, sample count, loop start, loop
+  end, flag). Decoding group 0 as a sample is a category error; the client reads it separately at
+  `Node_Sub13.method1133`.
+
+#### Group and file names hash with Java `String.hashCode`
+
+`h * 31 + c` over the lowercased name. Proven independently of any decoder: index 31 holds exactly
+two groups whose identifiers are 3301 and 3220, which are `"gl"` and `"dx"` - the OpenGL and Direct3D
+shader sets, corroborated by their payloads starting `!!ARBvp1.0` and a D3D `CTAB` block. That one
+fact is what makes name recovery possible on every index that sets the identifiers flag.
 
 ## Definition opcodes: read the reference before changing a decoder
 

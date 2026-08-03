@@ -110,6 +110,15 @@ namespace FlashEditor.Definitions.Sprites
                 //rather than be substituted when the field reads zero, or a node that genuinely
                 //encodes an upper bound of zero gets the opposite of what it asked for.
                 case 6: node.IntParam1 = 4096; break;
+                //Node_Sub10_Sub14: tolerance anInt5604 = 409, and the three per-channel scales
+                //anInt5611/anInt5607/anInt5605 all start at 4096. Zero-initialised they would
+                //multiply every keyed pixel to black, which is the opposite of the identity the
+                //client starts from. The one type 25 node in this cache carries all four
+                //opcodes, so this only matters for a node the editor builds by hand.
+                case 25:
+                    node.IntParam0 = 409;
+                    node.IntParam1 = node.IntParam2 = node.IntParam3 = 4096;
+                    break;
                 //Node_Sub10_Sub26: 5/5 cells, seed 0, jitter 2048, output mode 2, metric 1.
                 case 15:
                     node.IntParam0 = node.IntParam1 = 5;
@@ -571,7 +580,10 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte(); return true; }
                     return false;
 
-                case 25: // CurveRemap (Sub14)
+                case 25: // ColourKeyScale (Sub14)
+                    //0 is the match tolerance, then the blue, green and red scales in that
+                    //order - Node_Sub10_Sub14.method991 assigns anInt5611, anInt5607 and
+                    //anInt5605, and method997 reads them back as B, G and R.
                     if (opcode <= 3) { SetIntParam(node, opcode, buf.ReadUnsignedShort()); return true; }
                     if (opcode == 4) { node.IntParam4 = buf.ReadMedium(); return true; }
                     return false;

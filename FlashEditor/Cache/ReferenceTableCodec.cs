@@ -205,9 +205,11 @@ namespace FlashEditor.cache
                 stream.WriteInteger(kvp.Value.GetCrc());
             }
 
-            //Write back the hash that was read off the wire. CalculateHash() digests the
-            //entry's own stream, which the codec never populates, so calling it here
-            //would replace every shipped hash with the digest of zero bytes.
+            //Write back the hash that was read off the wire, never a recomputed one. An archive
+            //entry carries no payload of its own for a digest to run over - the codec never gives
+            //it one - so anything computed here would replace every shipped hash with the digest
+            //of zero bytes. RSArchiveEntry once carried a CalculateHash() that did exactly that,
+            //against an always-empty stream; it was removed rather than left as a trap.
             if (table.entryHashes)
             {
                 foreach (KeyValuePair<int, RSArchiveEntry> kvp in table.GetArchiveEntries())

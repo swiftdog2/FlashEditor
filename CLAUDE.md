@@ -48,6 +48,19 @@ FLASHEDITOR_TEST_CACHE=C:\Users\Cristian.Rosu\source\repos\Personal\FlashEditor\
 FLASHEDITOR_TEST_CACHE_FULL=1     # sweep every archive rather than a per-index sample
 ```
 
+**`FULL=1` is a merge gate, not an inner-loop gate.** One full sweep is 10 to 15 minutes and
+saturates every core: it decodes and re-encodes every archive, and xunit parallelises collections
+across all of them by default. Iterate against the sampled suite, and run the full sweep once, at
+the point the work is accepted. Running it per change buys the same information repeatedly.
+
+**Never run more than one cache-backed suite at a time, and never run the full sweep in parallel
+agents.** Each worktree carries its own checkout, `obj/`, `bin/`, test host and MSBuild nodes, and
+every one of them memory-maps the same `main_file_cache.dat2`. Four concurrent full sweeps once
+made the development machine unusable and had to be killed. Decode buffers are not pooled either -
+`MemoryUtils` (`Rent`/`Return`, `LargeObjectThreshold`) is dead code, so every archive decode
+allocates fresh and the large ones land on the LOH. **Parallelise the editing, serialise the
+sweeping**: fan work out across worktrees, then run one sweep against the merged tree.
+
 One thing you cannot infer: `RealCacheLocator` walks **up** the directory tree looking for
 `cache/`, so **unsetting the variable does not test the no-cache path** - point it at a directory
 that is not a cache.
@@ -89,6 +102,32 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 
   The pattern generalises to any index not yet done. Assume non-canonical until a byte-identity
   sweep says otherwise.
+- **Half the reference-table format is dead in this cache, and the decoder still has to carry it.**
+  Measured over all 35 tables in idx255 by
+  `FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`: sizes `0x04`
+  (`ReferenceTableCodec.cs:98`) and entry hash `0x08` (`:72`) are set on **no table at all**;
+  identifiers `0x01` on indexes 3, 5, 6, 8, 10, 12, 13, 23, 30, 31, 32 and 33; whirlpool `0x02` on
+  index 30 alone; no table sets a fifth bit. Index 2 has no name hashes, so a config group is
+  addressable only by id - the name lookup the map path uses on index 5 has nothing to read there.
+  Every table is format 6 bar index 36, a four-byte format-5 stub declaring zero groups, so the
+  format-7 per-archive flags byte (`:112`) - the only in-table statement that an archive is XTEA
+  encrypted - **exists nowhere on disk here**. That is why the read path infers encryption and the
+  write path refuses to guess it. Keep all four branches implemented anyway: the first table that
+  does set one is mis-parsed from that field onward, and no sweep would catch it, because no
+  shipped table exercises the branch. idx255 declares 37 records; slots 34 and 35 hold nothing.
+- **Four indexes carry trailing bytes past the end of the table: four zero bytes per file.** Index
+  9 has 3784 over 946 files in 946 groups, 26 has 4 over 1 file in 1 group, 27 has 1684 over 421
+  files in only **2** groups, and 29 has 728 over 182 files in **1** group. Per *file* - 27 and 29
+  are the only two that tell the readings apart, and a per-group parser sized from them would skip
+  8 and 4 bytes and leave 1676 and 724 in the stream. This note read "per child", which is exact by
+  `AGENTS.md:57` and reads as "per group" to everyone else; say file. The block sits where the
+  per-file identifier block would (`ReferenceTableCodec.cs:141`) with the identifiers flag clear,
+  so nothing reads it; that is the shape, not proven provenance. The other 31 tables consume to the
+  byte, indexes 2 and 5 among them, so a parser must tolerate the tail rather than assert exact
+  consumption. Pinned by
+  `RealCacheReferenceTableShapeTests.ReferenceTableTrailingBytes_AreFourZeroBytesPerFileOnFourIndexes`,
+  which requires three figures to agree on the offset: a field-by-field length from the format,
+  where `Decode` leaves the stream, and what `Encode` writes.
 - **Saving stages; it does not touch the disk.** `RSCache.WriteFile` and everything above it write
   into an in-memory overlay. Nothing reaches the filesystem until `RSCache.WriteCache`, which
   promotes the dat2 and every index file together so a cache is never half-updated. Both it and
@@ -133,6 +172,61 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   render-path defect passes every test in the suite. Faces the client refuses to draw were being
   drawn for as long as the viewer has existed and the sweeps never saw it. Check render changes
   by eye; model 15748 carries a render-type-2 face and is a fast case to load.
+- **A near-total aggregate match is not evidence that a join is correct.** The track-name join keyed
+  the index-17 enum by index-6 group id, and every aggregate agreed: 958 of 970 keys landed on a
+  real group, 958 of 963 groups got a name. It was wrong - the enum is in alphabetical order, so
+  its key is the music player's list position. The one row checkable on its own falsified it: group
+  0's identifier is `hash("scape main")`, and the enum holds "Scape Main" at key 150. Prefer a
+  self-proving join at lower coverage; hashing the display names instead names 598 of 963 and every
+  name it yields is verifiable. **Coverage is not correctness, and a plausible mapping is the
+  easiest thing in this cache to confirm by accident.**
+- **An orphaned method's own comment about which opcode it handles is unreliable.** Two evaluators
+  in `TextureGraphEvaluator` were headed "TYPE 15: Perlin Noise" and "TYPE 34"; type 15 is cellular
+  noise, already correctly dispatched to `EvalWorley`, and 34 is fractal noise, already on
+  `EvalFractalNoise`. Both comments would have sent you to fix the wrong arm. Settle a dead
+  method's identity from the dispatch and the client, never from its own header.
+- **A dead-code verdict can name a transitively-dead cluster whose members are not independently
+  deletable.** Four of the five `MapSquareNames` members flagged unreferenced have live callers in
+  `Region.cs`; they read as dead only because those callers are. Deleting them does not compile.
+  Two related shapes to expect: xunit test-class constructors always read as dead, because
+  `IClassFixture` builds them by reflection; and deleting a method routinely orphans a private
+  field into a fresh CS0414, which forces the edit wider than it was scoped.
+- **Warning counts here need their method stated or they mean nothing.** `dotnet build -v:n` prints
+  every warning twice, once inline and once in the summary, so a naive count doubles it. And
+  `CS8618` fires once per uninitialised field while reporting the *constructor's* `file:line:col`
+  every time - `NPCDefinition.cs(325,16)` alone emits it 15 times - so deduplicating by
+  file+line+code **under**counts: 214 unique locations against 261 real diagnostics. Quote the
+  summary block, and say which build produced it.
+
+## Stubs and dead ends that look like work
+
+Each of these looks like a gap worth closing and is something else. Knowing which saves a wasted
+investigation.
+
+- **`RSConstants` is already fully adopted.** The production project has **zero** bare integer
+  index literals - every index-position argument already names a constant. So an unreferenced index
+  constant does **not** mean someone used a magic number; it means the editor has no feature for
+  that index yet. 27 of them have no adoption site anywhere. They are documentation of the index
+  map and should stay as such. The only two literals worth swapping are in the test project:
+  `RealCacheLocator.cs:27` hardcodes `"main_file_cache.idx255"`, and `RSCacheXteaWriteFileTests.cs:93`
+  hardcodes `"main_file_cache.idx6"` where it means `MAPS_INDEX + 1`.
+- **`MemoryUtils` is dead, and adopting it is not a mechanical edit.** `RSArchive.Decode` is where
+  pooling belongs and is the highest-value site in the codebase: it already reuses one 4 KB buffer
+  and falls back to `new byte[chunkSize]` for anything larger, which fires once per chunk per file -
+  roughly 96,000 LOH allocations in a full sweep. Two things make a naive swap dangerous.
+  `ArrayPool.Rent` **over-serves**, so every site must slice `AsSpan(0, length)` or it writes the
+  wrong byte count and corrupts the archive; and `Return` does **not** clear, so a short read leaks
+  the previous file's bytes into the next. Both need `try`/`finally`. Worth doing with a before and
+  after allocation measurement, not as a tidy-up.
+- **`AnalyseCache` (`Editor.cs:1064`) is a stub.** It loads the input cache into a local, never
+  reads the output path at all, and unconditionally returns 0 - so "no differences found" is what
+  it always reports, whatever the two caches hold.
+- **The three `C:/Users/CJ/` paths are three different directories, not one repeated.**
+  `CACHE_DIRECTORY` is the cache being read, `CACHE_OUTPUT_DIRECTORY` is where edits and item
+  exports are written, `CACHE_ORIGINAL_COPY` is a pristine copy to revert to. Compare-to-output
+  needs the first two to differ to mean anything, and the two reload buttons
+  (`Editor.cs:1102,1107`) select between the last two. Repointing them at one path breaks the
+  compare feature rather than fixing anything.
 
 ## Claims not yet verified in this repo
 
@@ -144,12 +238,6 @@ measurement here confirms it.
   inflate successfully over their own ciphertext into a few bytes of garbage. If true, detect on
   the gzip magic at `stored[9..12] == 1F 8B 08` instead. This is the inverse of the failure
   `AGENTS.md` already covers, where a key that does not fit means "not encrypted".
-- **Reference-table flag bit 2 (sizes) is set nowhere in this cache**, and index 2 carries no name
-  hashes at all. `AGENTS.md` documents the sizes block in operational detail as though it were
-  live, so if this holds, that section describes a shape the 639 data never takes.
-- **Indexes 9, 26, 27 and 29 carry an extra all-zero `i32` per child past the documented end of
-  the table**, so a generic parser must tolerate trailing bytes rather than assert exact
-  consumption. Index 5 and index 2 do consume exactly.
 
 ## Where to look
 

@@ -70,7 +70,9 @@ namespace FlashEditor {
             RSConstants.INTERFACE_DEFINITIONS_INDEX,
             RSConstants.MODELS_INDEX,
             RSConstants.TEXTURES,
-            RSConstants.MAPS_INDEX
+            RSConstants.MAPS_INDEX,
+            //The Tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
+            RSConstants.MUSIC_INDEX
         };
 
         bool[] loaded = new bool[editorTypes.Length];
@@ -477,6 +479,14 @@ namespace FlashEditor {
             if (type == RSConstants.MAPS_INDEX) {
                 loaded[editorIndex] = true;
                 MapEditorPanel.Bind(cache, GetCacheDir());
+                return;
+            }
+
+            //The tracks tab spans two indexes and owns its own worker, so it binds rather than
+            //being driven from the switch below, which is keyed on a single index
+            if (type == RSConstants.MUSIC_INDEX) {
+                loaded[editorIndex] = true;
+                TrackEditorPanel.Bind(cache);
                 return;
             }
 

@@ -64,17 +64,5 @@ namespace FlashEditor.Cache.Region {
 
         /// <summary>The attribute byte this location encodes to.</summary>
         public int PackedAttributes => (Shape << 2) | Orientation;
-
-        /// <summary>Gets the object id for this location.</summary>
-        public int GetId() => Id;
-
-        /// <summary>Gets the shape code stored in the map.</summary>
-        public int GetLocationType() => Shape;
-
-        /// <summary>Gets the orientation (rotation) of this location.</summary>
-        public int GetOrientation() => Orientation;
-
-        /// <summary>Gets the absolute position of this location.</summary>
-        public Position GetPosition() => Position;
     }
 }

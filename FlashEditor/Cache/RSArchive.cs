@@ -2,6 +2,7 @@
 using FlashEditor.Utils;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using static FlashEditor.Utils.DebugUtil;
 
@@ -33,7 +34,7 @@ namespace FlashEditor.cache
         ///     archive.
         ///     </para>
         /// </remarks>
-        private int[][] chunkSizes;
+        private int[][]? chunkSizes;
 
         /// <summary>
         /// Create a new Archive
@@ -192,17 +193,22 @@ namespace FlashEditor.cache
         /// A flipped <see cref="JagStream"/> positioned at the start of the
         /// freshly encoded archive.
         /// </returns>
-        public virtual JagStream Encode()
+        public JagStream Encode()
         {
             var stream = new JagStream();
 
             int fileCount = files.Count;
-            bool multiChunk = fileCount > 1 && chunks > 1 && ChunkSizesMatchFiles();
+
+            /* The retained split, or null when there is none to honour - a single file, a single
+               chunk, or a split that no longer adds up. Held as a local rather than re-testing
+               the field, so that the table the payload loop slices by is provably the same one
+               ChunkSizesMatchFiles vetted, and so the trailer below describes what was written. */
+            int[][]? split = fileCount > 1 && chunks > 1 && ChunkSizesMatchFiles() ? chunkSizes : null;
 
             //------------------------------------------------------------------
             // 1)  Write raw payloads
             //------------------------------------------------------------------
-            if (multiChunk)
+            if (split != null)
             {
                 //Chunk-major, exactly as Decode reads it back: chunk 0 of every file, then
                 //chunk 1 of every file, and so on.
@@ -216,7 +222,7 @@ namespace FlashEditor.cache
                 {
                     for (int index = 0; index < fileCount; index++)
                     {
-                        int length = chunkSizes[chunk][index];
+                        int length = split[chunk][index];
                         stream.Write(payloads[index], offsets[index], length);
                         offsets[index] += length;
                     }
@@ -243,14 +249,14 @@ namespace FlashEditor.cache
             {
                 //Sizes are delta-encoded across the files *within* a chunk, and the running
                 //total restarts on each chunk - see the cumulativeChunkSize reset in Decode.
-                int chunkCount = multiChunk ? chunks : 1;
+                int chunkCount = split != null ? chunks : 1;
                 for (int chunk = 0; chunk < chunkCount; ++chunk)
                 {
                     int prev = 0;
                     int index = 0;
                     foreach (var kvp in files)                        // sorted by key
                     {
-                        int chunkSize = multiChunk ? chunkSizes[chunk][index] : (int)kvp.Value.Length;
+                        int chunkSize = split != null ? split[chunk][index] : (int)kvp.Value.Length;
                         stream.WriteInteger(chunkSize - prev);          // Δ vs previous file
                         prev = chunkSize;
                         index++;
@@ -263,14 +269,6 @@ namespace FlashEditor.cache
             return stream.Flip();             // ready for reading
         }
 
-        /// <summary>
-        ///     Whether the retained chunk split still describes the files currently held.
-        /// </summary>
-        /// <remarks>
-        ///     Editing a file changes its length, at which point the split it was decoded with no
-        ///     longer adds up. <see cref="PutFile"/> drops the split for that reason; this is the
-        ///     belt-and-braces check that the shape matches before it is trusted.
-        /// </remarks>
         /// <summary>
         ///     Redistributes one file's bytes across the chunks it already occupies, so a length
         ///     change does not force the whole group back to a single chunk.
@@ -329,6 +327,20 @@ namespace FlashEditor.cache
             return true;
         }
 
+        /// <summary>
+        ///     Whether the retained chunk split still describes the files currently held.
+        /// </summary>
+        /// <remarks>
+        ///     Editing a file changes its length, at which point the split it was decoded with no
+        ///     longer adds up. <see cref="PutFile"/> drops the split for that reason; this is the
+        ///     belt-and-braces check that the shape matches before it is trusted.
+        ///     <para>
+        ///     A <c>true</c> answer is what makes <see cref="chunkSizes"/> safe to index, so it is
+        ///     declared as such: the split is nullable because <see cref="PutFile"/> genuinely
+        ///     clears it, and every read of it in this class is downstream of this check.
+        ///     </para>
+        /// </remarks>
+        [MemberNotNullWhen(true, nameof(chunkSizes))]
         private bool ChunkSizesMatchFiles()
         {
             if (chunkSizes == null || chunkSizes.Length != chunks)
@@ -358,7 +370,7 @@ namespace FlashEditor.cache
         /// </summary>
         /// <param name="fileId">The file id</param>
         /// <returns></returns>
-        public virtual JagStream GetFile(int fileId)
+        public JagStream GetFile(int fileId)
         {
             return files[fileId];
         }
@@ -416,27 +428,31 @@ namespace FlashEditor.cache
         ///     </para>
         /// </remarks>
         /// <param name="fileId">The file id to write.</param>
-        /// <param name="data">The file payload.</param>
+        /// <param name="data">
+        ///     The file payload, and genuinely required rather than merely undocumented. The
+        ///     <c>data != null</c> test this method used to open with was never a guard: on a null
+        ///     it cleared the split, stored the null in the map anyway, and then threw
+        ///     <see cref="NullReferenceException"/> reading the length for the trace below. A null
+        ///     has therefore always been fatal, so it is annotated as such rather than reinstated.
+        ///     The only change is that it now fails before mutating the archive instead of after.
+        /// </param>
         public void PutFile(int fileId, JagStream data)
         {
-            JagStream previous = null;
-            bool replacing = data != null
-                && files.TryGetValue(fileId, out previous)
-                && previous != null;
+            /* A same-length replacement needs nothing: the split is a per-file byte budget,
+               so the new bytes are sliced by the same lengths. A different length can still
+               keep the split by re-slicing that one file, which leaves every other file's
+               budget untouched. Only a change to the file set forces the whole group back to
+               a single chunk, because the size table is chunks x fileCount and its shape
+               moves when a file is added. */
+            bool splitStillDescribesTheArchive =
+                files.TryGetValue(fileId, out JagStream? previous)
+                && previous != null
+                && (previous.Length == data.Length || TryResliceFile(fileId, (int) data.Length));
 
-            if (!replacing || previous.Length != data.Length)
+            if (!splitStillDescribesTheArchive)
             {
-                /* A same-length replacement needs nothing: the split is a per-file byte budget,
-                   so the new bytes are sliced by the same lengths. A different length can still
-                   keep the split by re-slicing that one file, which leaves every other file's
-                   budget untouched. Only a change to the file set forces the whole group back to
-                   a single chunk, because the size table is chunks x fileCount and its shape
-                   moves when a file is added. */
-                if (!replacing || !TryResliceFile(fileId, (int) data.Length))
-                {
-                    chunkSizes = null;
-                    chunks = 1;
-                }
+                chunkSizes = null;
+                chunks = 1;
             }
 
             if (files.ContainsKey(fileId))

@@ -142,6 +142,7 @@ namespace FlashEditor {
             ModelProgressBar = new ProgressBar();
             TextureViewerTab = new TabPage();
             MapEditorTab = new TabPage();
+            TrackEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -249,6 +250,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(ModelViewerTab);
             EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Controls.Add(MapEditorTab);
+            EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -1309,7 +1311,17 @@ namespace FlashEditor {
             MapEditorTab.TabIndex = 8;
             MapEditorTab.Text = "Map";
             MapEditorTab.UseVisualStyleBackColor = true;
-            // 
+            //
+            // TrackEditorTab
+            //
+            TrackEditorTab.Controls.Add(TrackEditorPanel);
+            TrackEditorTab.Location = new Point(4, 37);
+            TrackEditorTab.Name = "TrackEditorTab";
+            TrackEditorTab.Size = new Size(1113, 554);
+            TrackEditorTab.TabIndex = 9;
+            TrackEditorTab.Text = "Tracks";
+            TrackEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1513,6 +1525,8 @@ namespace FlashEditor {
         private TabPage TextureViewerTab;
         private TabPage MapEditorTab;
         private FlashEditor.Map.MapEditorPanel MapEditorPanel = new FlashEditor.Map.MapEditorPanel();
+        private TabPage TrackEditorTab;
+        private FlashEditor.Definitions.Tracks.TrackEditorPanel TrackEditorPanel = new FlashEditor.Definitions.Tracks.TrackEditorPanel();
         private BrightIdeasSoftware.ObjectListView TextureListView;
         private BrightIdeasSoftware.OLVColumn TextureID;
         private BrightIdeasSoftware.OLVColumn TextureImage;

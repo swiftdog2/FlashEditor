@@ -31,6 +31,11 @@ namespace FlashEditor.Cache.Region {
         ///     The one family the client passes XTEA keys to, and the one family that is never
         ///     encrypted. Both live region-load paths null its id array before use, so it is dead
         ///     on the client side.
+        ///
+        ///     Nothing calls this yet - the editor has no NPC-spawn surface. It is kept because
+        ///     this class is the whole index-5 naming table, and a hole in the table is how the
+        ///     underscored <c>n_</c> form gets hand-rolled somewhere else and silently hashes to
+        ///     nothing.
         /// </remarks>
         public static string NpcSpawns(int regionX, int regionY) => "n" + regionX + "_" + regionY;
 

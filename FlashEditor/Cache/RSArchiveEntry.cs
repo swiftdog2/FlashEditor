@@ -1,14 +1,10 @@
 ﻿using static FlashEditor.Utils.DebugUtil;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using FlashEditor.Cache.CheckSum;
 
 namespace FlashEditor.cache {
     public class RSArchiveEntry {
-        private JagStream stream = new JagStream(); //ensure there is a default stream
         public int identifier = -1;
-        public RSIdentifiers identifiers;
         public int hash;
         public byte[] whirlpool = new byte[64];
         public int crc;
@@ -37,7 +33,20 @@ namespace FlashEditor.cache {
 
 
         private SortedDictionary<int, RSFileEntry> fileEntries = new SortedDictionary<int, RSFileEntry>();
-        private int[] validFileIds;
+
+        /// <summary>
+        ///     The file ids the reference table declared for this archive, or <c>null</c> for an
+        ///     entry that never came from one.
+        /// </summary>
+        /// <remarks>
+        ///     Nullable rather than defaulted to an empty array on purpose. An empty list is a
+        ///     legitimate decoded value - a reference table really can declare an archive with no
+        ///     files - so defaulting to <c>Array.Empty</c> would make "never decoded" read as
+        ///     "decoded as empty", which is the one thing <see cref="GetValidFileIds"/> exists to
+        ///     tell apart. Every inherited <see cref="RSFileEntry"/> leaves it null, a file entry
+        ///     having no files of its own.
+        /// </remarks>
+        private int[]? validFileIds;
 
         public int compressed;
         public int uncompressed;
@@ -49,35 +58,27 @@ namespace FlashEditor.cache {
         public RSArchiveEntry() {
         }
 
-        public RSArchiveEntry(JagStream stream) {
-            this.stream = stream;
-        }
-
-        public virtual int GetId() {
-            return id;
-        }
-
-        public virtual int GetIdentifier() {
+        public int GetIdentifier() {
             return identifier;
         }
 
-        public virtual void SetIdentifier(int identifier) {
+        public void SetIdentifier(int identifier) {
             this.identifier = identifier;
         }
 
-        public virtual int GetCrc() {
+        public int GetCrc() {
             return crc;
         }
 
-        public virtual void SetCrc(int crc) {
+        public void SetCrc(int crc) {
             this.crc = crc;
         }
 
-        public virtual byte[] GetWhirlpool() {
+        public byte[] GetWhirlpool() {
             return whirlpool;
         }
 
-        public virtual void SetWhirlpool(ReadOnlySpan<byte> whirlpool) {
+        public void SetWhirlpool(ReadOnlySpan<byte> whirlpool) {
             if(whirlpool.Length != 64) {
                 Debug("Whirlpool length is not 64 bytes");
                 throw new ArgumentException();
@@ -85,38 +86,19 @@ namespace FlashEditor.cache {
             whirlpool.CopyTo(this.whirlpool);
         }
 
-        public JagStream GetStream() {
-            return stream;
-        }
-
-        public virtual int GetVersion() {
+        public int GetVersion() {
             return version;
         }
 
-        public virtual void SetVersion(int version) {
+        public void SetVersion(int version) {
             this.version = version;
         }
 
-        public virtual int GetSize() {
-            return fileEntries.Count;
-        }
-
-        public virtual int Capacity() {
-            if(fileEntries.Count == 0)
-                return 0;
-
-            return (int) fileEntries.Keys.Last() + 1;
-        }
-
-        public virtual void PutFileEntry(int fileId, RSFileEntry entry) {
+        public void PutFileEntry(int fileId, RSFileEntry entry) {
             fileEntries.Add(fileId, entry);
         }
 
-        public virtual void RemoveFileEntry(int fileId, RSFileEntry entry) {
-            fileEntries.Remove(fileId);
-        }
-
-        public virtual SortedDictionary<int, RSFileEntry> GetFileEntries() {
+        public SortedDictionary<int, RSFileEntry> GetFileEntries() {
             return fileEntries;
         }
 
@@ -124,15 +106,6 @@ namespace FlashEditor.cache {
             this.hash = hash;
         }
 
-        // Computes a hash used for naming entries within the cache editor
-        public int CalculateHash() {
-            int h = 0;
-
-            foreach(byte b in stream.ToArray())
-                h = h * 31 + b;
-
-            return h;
-        }
         public long GetHash() {
             return hash;
         }
@@ -141,15 +114,45 @@ namespace FlashEditor.cache {
             this.validFileIds = validFileIds;
         }
 
+        /// <summary>
+        ///     The file ids the reference table declared for this archive, ascending.
+        /// </summary>
+        /// <remarks>
+        ///     This is the list <see cref="RSArchive.Decode"/> is driven by, so it has to describe
+        ///     what the stored payload was encoded against rather than what the archive happens to
+        ///     hold now.
+        ///     <para>
+        ///     An entry that never went through a reference table has no list, and every caller
+        ///     walks or measures the result immediately. Handing back a null would surface that as
+        ///     a <see cref="NullReferenceException"/> a frame or two away with nothing naming the
+        ///     entry, so the missing list is reported here instead.
+        ///     </para>
+        /// </remarks>
+        /// <returns>The declared file ids.</returns>
+        /// <exception cref="InvalidOperationException">
+        ///     The entry was never given a file id list - it did not come from a decoded
+        ///     reference table, and nothing called <see cref="SetValidFileIds"/> on it.
+        /// </exception>
         public int[] GetValidFileIds() {
-            return validFileIds;
+            return validFileIds ?? throw new InvalidOperationException(
+                "Archive entry " + id + " has no valid file id list - it was not decoded from a reference table.");
         }
 
         public void SetFileEntries(SortedDictionary<int, RSFileEntry> fileEntries) {
             this.fileEntries = fileEntries;
         }
 
-        public RSFileEntry GetFileEntry(int fileId) {
+        /// <summary>
+        ///     The metadata entry for a file, or <c>null</c> when the archive does not list it.
+        /// </summary>
+        /// <remarks>
+        ///     Absence is an ordinary answer here rather than a failure: the write path asks
+        ///     whether a file already has an entry before creating one, so the null return is the
+        ///     signal and its callers test for it.
+        /// </remarks>
+        /// <param name="fileId">The file id to look up.</param>
+        /// <returns>The entry, or <c>null</c> when the file is not listed.</returns>
+        public RSFileEntry? GetFileEntry(int fileId) {
             if(!GetFileEntries().ContainsKey(fileId))
                 return null;
             return GetFileEntries()[fileId];

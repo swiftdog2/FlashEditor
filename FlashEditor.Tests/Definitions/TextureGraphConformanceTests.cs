@@ -269,6 +269,75 @@ namespace FlashEditor.Tests.Definitions
                 $"colour ({controlMedian:F1}), so the agreement is not meaningful.");
         }
 
+        /// <summary>
+        ///     The one type 25 node in the cache must tint texture 911, not pass it through.
+        /// </summary>
+        /// <remarks>
+        ///     Type 25 is <c>Node_Sub10_Sub14</c>, a colour-key scale: where a pixel matches the
+        ///     key colour within <c>anInt5604</c> on all three channels, <c>method997</c> scales
+        ///     R, G and B by <c>anInt5605</c>, <c>anInt5607</c> and <c>anInt5611</c>. The
+        ///     evaluator had no colour arm for it and fell through to the pass-through default,
+        ///     so the scale never happened.
+        ///
+        ///     Exactly one type 25 node exists in this cache, in texture 911, and its child is a
+        ///     monochrome chain - so with the node inert the texture renders grey. The anchor is
+        ///     the cache's own declared colour for the texture, which the evaluator plays no part
+        ///     in producing: pass-through renders (82, 82, 82) against a declared (72, 63, 48),
+        ///     and the client's scale renders (77, 64, 45). Both assertions below fail on the
+        ///     pass-through, the second of them by the widest possible margin, since a grey
+        ///     render has zero chroma no matter what the threshold is.
+        /// </remarks>
+        [RealCacheFact]
+        public void ColourKeyNode_TintsTexture911TowardItsDeclaredColour()
+        {
+            DebugUtil.LOG_LEVEL = DebugUtil.LOG_DETAIL.NONE;
+
+            using var store = new RSFileStore(RealCacheLocator.Directory);
+            var cache = new RSCache(store);
+            new TextureManager(cache).Load();
+
+            //If a later cache or decoder change moves the type 25 population, the anchor below
+            //stops meaning what this test says it means - so assert the census, not just 911.
+            List<int> hosts = TextureManager.Textures.Values
+                .Where(d => d.graph?.Nodes != null && d.graph.Nodes.Any(n => n != null && n.Type == 25))
+                .Select(d => d.id)
+                .OrderBy(id => id)
+                .ToList();
+            Assert.Equal(new[] { 911 }, hosts);
+
+            TextureDefinition def = TextureManager.Textures[911];
+            TextureNode keyNode = def.graph.Nodes.Single(n => n != null && n.Type == 25);
+
+            //Tolerance, then the blue, green and red scales - the order method991 assigns them.
+            Assert.Equal(4096, keyNode.IntParam0);
+            Assert.Equal(409, keyNode.IntParam1);
+            Assert.Equal(1638, keyNode.IntParam2);
+            Assert.Equal(2867, keyNode.IntParam3);
+
+            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
+            Assert.NotNull(pixels);
+
+            long r = 0, g = 0, b = 0;
+            foreach (int p in pixels)
+            {
+                r += (p >> 16) & 0xFF;
+                g += (p >> 8) & 0xFF;
+                b += p & 0xFF;
+            }
+            int mr = (int)(r / pixels.Length), mg = (int)(g / pixels.Length), mb = (int)(b / pixels.Length);
+
+            double error = ChannelError(mr, mg, mb, TextureManager.RepresentativeRgb(def));
+            Assert.True(error < 8,
+                $"Texture 911 renders ({mr}, {mg}, {mb}), a channel error of {error:F1} against its " +
+                "declared colour. The type 25 colour-key scale is not being applied.");
+
+            int chroma = Math.Max(mr, Math.Max(mg, mb)) - Math.Min(mr, Math.Min(mg, mb));
+            Assert.True(chroma >= 20,
+                $"Texture 911 renders ({mr}, {mg}, {mb}), a chroma of {chroma}. Its colour output " +
+                "is a monochrome chain, so the only thing that can give it a colour is the type " +
+                "25 node scaling the channels apart.");
+        }
+
         private static double ChannelError(int r, int g, int b, int rgb) =>
             (Math.Abs(r - ((rgb >> 16) & 0xFF)) +
              Math.Abs(g - ((rgb >> 8) & 0xFF)) +

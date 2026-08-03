@@ -547,7 +547,9 @@ namespace FlashEditor.Definitions.Sprites {
                 case 21: EvalEmboss(node, output, w, row); break;
                 case 22: EvalInvertMono(node, output, w, row); break;
                 case 23: EvalFlipV(node, output, w, row); break;
-                case 25: EvalCurveRemap(node, output, w, row); break;
+                //Type 25 has no arm here on purpose: Node_Sub10_Sub14 is constructed
+                //super(1, false) and never overrides Node_Sub10.method990, so asking it for a
+                //monochrome row throws in the client. See EvalColourKeyScale.
                 case 26: EvalTurbulence(node, output, w, row); break;
                 case 27: EvalLines(node, output, w, row); break;
                 case 28: EvalMandelbrot(node, output, w, row); break;
@@ -594,7 +596,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 22: EvalInvertColour(node, output, w, row); break;
                 case 23: EvalFlipVColour(node, output, w, row); break;
                 case 24: EvalMergeRGB(node, output, w, row); break;
-                case 25: goto default; // CurveRemap — no colour variant
+                case 25: EvalColourKeyScale(node, output, w, row); break;
                 case 30: EvalRangeRemapColour(node, output, w, row); break;
                 case 33: goto default; // Offset — no colour variant
                 default:
@@ -1321,28 +1323,12 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 15: Perlin Noise
+        //  Perlin gradient noise - support for type 26 only
         // ===================================================================
-        private static void EvalPerlin(TextureNode node, int[] output, int w, int row) {
-            int octaves = Math.Max(1, Math.Min(8, node.IntParam0));
-            int freq = Math.Max(1, node.IntParam1);
-            int seed = node.IntParam2;
-
-            for (int x = 0; x < w; x++) {
-                double nx = node.XCoord[x] * freq / (double)FP_ONE;
-                double ny = node.YCoord[row] * freq / (double)FP_ONE;
-                double val = 0, amp = 1.0, maxAmp = 0;
-                double f = 1.0;
-                for (int o = 0; o < octaves; o++) {
-                    val += PerlinSample(nx * f + seed, ny * f + seed) * amp;
-                    maxAmp += amp;
-                    amp *= 0.5;
-                    f *= 2.0;
-                }
-                val = val / maxAmp * 0.5 + 0.5;
-                output[x] = Clamp12((int)(val * FP_MAX));
-            }
-        }
+        //A fractal Perlin generator used to stand in for type 15 here. Type 15 is
+        //Node_Sub10_Sub26, cellular noise, and it is now ported as EvalWorley; the Perlin
+        //generator went with it. What survives is the single-octave sampler below, which
+        //EvalTurbulence uses to displace its coordinates.
 
         private static double PerlinSample(double x, double y) {
             int xi = (int)Math.Floor(x), yi = (int)Math.Floor(y);
@@ -1659,41 +1645,66 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 25: Curve Remap
+        //  TYPE 25: Colour key scale
         // ===================================================================
-        private static void EvalCurveRemap(TextureNode node, int[] output, int w, int row) {
-            if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
-                Array.Fill(output, 2040, 0, w);
-                return;
-            }
-            int[] child = GetMono(node.Children[0], row);
-            if (node.CurveData != null && node.CurveData.Length == 256) {
-                for (int x = 0; x < w; x++) {
-                    int idx = Clamp12(child[x]) >> 4;
-                    output[x] = node.CurveData[idx];
-                }
-            } else {
-                Array.Copy(child, output, w);
-            }
-        }
-
-        private static void EvalCurveRemapColour(TextureNode node, int[][] output, int w, int row) {
+        /// <summary>
+        /// Scales the three channels of any pixel that matches a key colour, and passes every
+        /// other pixel through untouched.
+        /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub14.method997</c>. The match is per channel against
+        /// <c>anIntArray5609</c> with a single shared tolerance <c>anInt5604</c>; a pixel only
+        /// counts as keyed when all three channels are inside it, and the moment one channel
+        /// falls outside the client copies the remaining channels through verbatim.
+        ///
+        /// This node was implemented as a 256-entry curve remap, which is a different operation
+        /// and one the decoder never fed - nothing populates <c>CurveData</c> for a type 25 node -
+        /// so it degenerated into a pass-through. It was also not dispatched on the colour path
+        /// at all, and the client has no monochrome variant of this node
+        /// (<c>Node_Sub10_Sub14</c> declares <c>super(1, false)</c> and leaves
+        /// <c>Node_Sub10.method990</c> to throw), so the colour path is the only one that ever
+        /// runs. The single type 25 node in this cache lives in texture 911 and scales a grey
+        /// input by 2867/1638/409 over 4096, which is what makes that texture brown.
+        /// </remarks>
+        private static void EvalColourKeyScale(TextureNode node, int[][] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
                 Array.Fill(output[0], 2040, 0, w);
                 Array.Fill(output[1], 2040, 0, w);
                 Array.Fill(output[2], 2040, 0, w);
                 return;
             }
+
             int[][] child = GetColour(node.Children[0], row);
-            if (node.CurveData != null && node.CurveData.Length == 256) {
-                for (int ch = 0; ch < 3; ch++)
-                    for (int x = 0; x < w; x++) {
-                        int idx = Clamp12(child[ch][x]) >> 4;
-                        output[ch][x] = node.CurveData[idx];
-                    }
-            } else {
-                for (int ch = 0; ch < 3; ch++)
-                    Array.Copy(child[ch], output[ch], w);
+            int tolerance = node.IntParam0;
+            int scaleB = node.IntParam1, scaleG = node.IntParam2, scaleR = node.IntParam3;
+
+            //Opcode 4 packs the key colour as a 24-bit medium, unpacked into 12-bit channels the
+            //same way Node_Sub10_Sub33:454-456 unpacks a gradient marker.
+            int key = node.IntParam4;
+            int keyR = (key >> 12) & 4080, keyG = (key >> 4) & 4080, keyB = (key << 4) & 4080;
+
+            int[] inR = child[0], inG = child[1], inB = child[2];
+            int[] outR = output[0], outG = output[1], outB = output[2];
+
+            for (int x = 0; x < w; x++) {
+                int r = inR[x];
+                if (Math.Abs(r - keyR) > tolerance) {
+                    outR[x] = r; outG[x] = inG[x]; outB[x] = inB[x];
+                    continue;
+                }
+                int g = inG[x];
+                if (Math.Abs(g - keyG) > tolerance) {
+                    outR[x] = r; outG[x] = g; outB[x] = inB[x];
+                    continue;
+                }
+                int b = inB[x];
+                if (Math.Abs(b - keyB) > tolerance) {
+                    outR[x] = r; outG[x] = g; outB[x] = b;
+                    continue;
+                }
+                outR[x] = (r * scaleR) >> 12;
+                outG[x] = (g * scaleG) >> 12;
+                outB[x] = (b * scaleB) >> 12;
             }
         }
 
@@ -1880,25 +1891,6 @@ namespace FlashEditor.Definitions.Sprites {
             for (int x = 0; x < w; x++) {
                 int sx = ((x - offX) % w + w) % w;
                 output[x] = child[sx];
-            }
-        }
-
-        // ===================================================================
-        //  TYPE 34: Curve Remap 2
-        // ===================================================================
-        private static void EvalCurveRemap2(TextureNode node, int[] output, int w, int row) {
-            // Uses CurveData if available, otherwise identity
-            if (node.CurveData != null && node.CurveData.Length > 0) {
-                int len = node.CurveData.Length;
-                for (int x = 0; x < w; x++) {
-                    int idx = (node.XCoord[x] * len) >> 12;
-                    if (idx < 0) idx = 0;
-                    if (idx >= len) idx = len - 1;
-                    output[x] = node.CurveData[idx];
-                }
-            } else {
-                for (int x = 0; x < w; x++)
-                    output[x] = node.XCoord[x];
             }
         }
 

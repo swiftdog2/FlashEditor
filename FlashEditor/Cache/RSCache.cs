@@ -2,6 +2,7 @@
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Tracks;
 using FlashEditor.Utils;
 using ICSharpCode.SharpZipLib.Checksum;
 using System;
@@ -739,6 +740,37 @@ namespace FlashEditor.cache {
         public MapSceneIconDefinition GetMapSceneIcon(int definitionId) {
             JagStream data = ReadFile(RSConstants.CONFIG, RSConstants.MAP_SCENE_GROUP, definitionId);
             return new MapSceneIconDefinition { Id = definitionId }.Decode(data);
+        }
+
+        /// <summary>
+        ///     Decodes a music track into a standard MIDI file.
+        /// </summary>
+        /// <remarks>
+        ///     Index 6 holds the music and index 11 the jingles. The client opens both and hands
+        ///     either to the same decoder, so the index is a parameter rather than a constant
+        ///     (InterfaceSettings.java:164,168 and Node_Sub7.method985).
+        ///
+        ///     Every group in both indexes holds exactly one file, so the file id comes from the
+        ///     reference table rather than being assumed to be zero.
+        /// </remarks>
+        /// <param name="indexId">The index the group belongs to, 6 or 11.</param>
+        /// <param name="groupId">The group id, which is also the track id.</param>
+        /// <returns>The decoded track.</returns>
+        /// <exception cref="FileNotFoundException">The group is absent or holds no file.</exception>
+        public Track GetTrack(int indexId, int groupId) {
+            RSArchiveEntry entry = GetReferenceTable(indexId).GetArchiveEntry(groupId);
+            if (entry == null)
+                throw new FileNotFoundException("No track group " + groupId + " in index " + indexId);
+
+            int[] fileIds = entry.GetValidFileIds();
+            if (fileIds.Length == 0)
+                throw new FileNotFoundException("Track group " + groupId + " in index " + indexId + " holds no file");
+
+            JagStream data = ReadFile(indexId, groupId, fileIds[0]);
+            if (data == null)
+                throw new FileNotFoundException("Track group " + groupId + " in index " + indexId + " could not be read");
+
+            return new Track { Id = groupId, IndexId = indexId, NameHash = entry.GetIdentifier() }.Decode(data);
         }
 
         /// <summary>

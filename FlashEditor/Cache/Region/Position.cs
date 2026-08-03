@@ -1,120 +1,77 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace FlashEditor.Cache.Region {
     /// <summary>
-    ///     Represents a coordinate within a map region and provides
-    ///     convenience methods for converting between absolute and
-    ///     local coordinates.
+    ///     An absolute world coordinate, and the conversions to the region and packed
+    ///     forms the cache addresses things by.
     /// </summary>
+    /// <remarks>
+    ///     This deliberately carries no viewport state. The class used to hold a
+    ///     <c>mapSize</c> (the client's 104/120/136/168 tile render window) alongside
+    ///     local-coordinate and chunk accessors that subtracted a half-window from the
+    ///     absolute coordinate. Nothing in the editor ever read them - the editor works in
+    ///     whole map squares, and <see cref="Location"/> stores the square-local
+    ///     coordinates verbatim because they cannot be recomputed from an absolute
+    ///     coordinate alone. Window-relative coordinates belong to whatever is drawing,
+    ///     not to the coordinate itself.
+    /// </remarks>
     public class Position {
-        enum RegionSize {
-            DEFAULT = 104,
-            LARGE = 120,
-            XLARGE = 136,
-            XXLARGE = 168
-        }
-
-        private int mapSize;
         private int x;
         private int y;
         private int height;
 
-        public Position(int x, int y, int height) : this(x, y, height, (int) RegionSize.DEFAULT) { }
-
-        public Position(int x, int y, int height, int mapSize) {
+        /// <summary>Creates an absolute world position.</summary>
+        /// <param name="x">Absolute world X.</param>
+        /// <param name="y">Absolute world Y.</param>
+        /// <param name="height">Plane, 0..3.</param>
+        public Position(int x, int y, int height) {
             this.x = x;
             this.y = y;
             this.height = height;
-
-            //This assigned `size`, leaving `mapSize` at 0. Every method that consults mapSize -
-            //GetLocalX, GetLocalY and both overloads - therefore subtracted a half-window of 0,
-            //and GetMapSize always returned 0. `size` was read by nothing.
-            this.mapSize = mapSize;
         }
 
-        public Position(int localX, int localY, int height, int regionId, int mapSize) : this(localX + (((regionId >> 8) & 0xFF) << 6), localY + ((regionId & 0xff) << 6), height, mapSize) { }
-
-        public int GetXInRegion() {
-            return x & 0x3F;
-        }
-
-        public int GetYInRegion() {
-            return y & 0x3F;
-        }
-
-        public int GetLocalX() {
-            return x - 8 * (GetChunkX() - (mapSize >> 4));
-        }
-
-        public int GetLocalY() {
-            return y - 8 * (GetChunkY() - (mapSize >> 4));
-        }
-
-        public int GetLocalX(Position pos) {
-            return x - 8 * (pos.GetChunkX() - (mapSize >> 4));
-        }
-
-        public int GetLocalY(Position pos) {
-            return y - 8 * (pos.GetChunkY() - (mapSize >> 4));
-        }
-
-        public int GetChunkX() {
-            return (x >> 3);
-        }
-
-        public int GetChunkY() {
-            return (y >> 3);
-        }
-
+        /// <summary>The map square X, 64 tiles per square.</summary>
         public int GetRegionX() {
             return (x >> 6);
         }
 
+        /// <summary>The map square Y, 64 tiles per square.</summary>
         public int GetRegionY() {
             return (y >> 6);
         }
 
+        /// <summary>
+        ///     The packed region id, the form index 5 group names are built from.
+        /// </summary>
+        /// <remarks>Same packing as <see cref="MapSquareNames.RegionId"/>.</remarks>
         public int GetRegionID() {
             return ((GetRegionX() << 8) + GetRegionY());
         }
 
+        /// <summary>Absolute world X.</summary>
         public int GetX() {
             return x;
         }
 
+        /// <summary>Absolute world Y.</summary>
         public int GetY() {
             return y;
         }
 
+        /// <summary>Plane, 0..3.</summary>
         public int GetHeight() {
             return height;
         }
 
-        public int GetMapSize() {
-            return mapSize;
-        }
-
-        public int ToRegionPacked() {
-            return GetRegionY() + (GetRegionX() << 8) + (height << 16);
-        }
-
+        /// <summary>
+        ///     The coordinate packed into a single word, 14 bits per axis and the plane
+        ///     in the top nibble.
+        /// </summary>
         public int ToPositionPacked() {
             return y + (x << 14) + (height << 28);
         }
 
-        public Position ToAbsolute() {
-            int xOff = x % 8;
-            int yOff = y % 8;
-            return new Position(x - xOff, y - yOff, height);
-        }
-
+        /// <inheritdoc/>
         public override string ToString() {
             return "X: " + GetX() + ", Y: " + GetY() + ", Height: " + GetHeight();
         }
     }
 }
-

@@ -1,0 +1,371 @@
+using BrightIdeasSoftware;
+using FlashEditor.cache;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+using static FlashEditor.Utils.DebugUtil;
+
+namespace FlashEditor.Definitions.Tracks {
+    /// <summary>
+    ///     The Tracks tab: every packed music track in the cache, its decoded MIDI statistics, and
+    ///     an export.
+    /// </summary>
+    /// <remarks>
+    ///     Built in code rather than through the designer, following <c>MapEditorPanel</c>, so the
+    ///     tab drops into a page with one line and does not add to the shared
+    ///     <c>Editor.Designer.cs</c>. Loading follows the item, NPC and object tabs instead: a
+    ///     <see cref="BackgroundWorker"/> decodes everything with a progress bar, because decoding
+    ///     1404 tracks takes a few seconds and the definition tabs already established what that
+    ///     should look like.
+    ///
+    ///     Read only. Nothing here writes to the cache, and <see cref="Track"/> has no encoder, so
+    ///     there is no repack path and no byte-identity sweep to go with one.
+    /// </remarks>
+    public sealed class TrackEditorPanel : UserControl {
+        /// <summary>
+        ///     The indexes listed, in order.
+        /// </summary>
+        /// <remarks>
+        ///     Both hold the same packed format and the client hands both to the same decoder
+        ///     (InterfaceSettings.java:164,168 into <c>Node_Sub7.method985</c>), so listing only one
+        ///     of them would hide half the tracks in the cache. The Index column tells them apart.
+        /// </remarks>
+        private static readonly (int IndexId, string Label)[] TrackIndexes = {
+            (RSConstants.MUSIC_INDEX, "Music"),
+            (RSConstants.MUSIC_2, "Jingles")
+        };
+
+        private readonly FastObjectListView list = new FastObjectListView {
+            Dock = DockStyle.Fill,
+            Font = new Font("Consolas", 9F),
+            FullRowSelect = true,
+            GridLines = true,
+            ShowGroups = false,
+            UseFiltering = true,
+            View = View.Details
+        };
+
+        private readonly TextBox details = new TextBox {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            Font = new Font("Consolas", 9F)
+        };
+
+        /* The form sets Consolas 12pt on the tab control and every child inherits it, which is
+           half again the size these fixed-height strips were drawn for - the button clipped its
+           own caption to "Export MIDT" and the status label lost its descenders. Each control that
+           constrains its height states the font it is sized for rather than inheriting one. */
+        private readonly Button exportButton = new Button {
+            Text = "Export MIDI...",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Font = new Font("Consolas", 9F),
+            Enabled = false
+        };
+
+        private readonly ProgressBar progress = new ProgressBar { Dock = DockStyle.Bottom, Height = 20 };
+
+        private readonly Label status = new Label {
+            Dock = DockStyle.Bottom,
+            Height = 24,
+            Font = new Font("Consolas", 9F),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        /* The bound cache is the panel's whole identity: it decides whether a rebind is a no-op,
+           and a worker compares against it to find out whether its result is still wanted. There
+           is deliberately no handle on the worker itself - nothing cancels one, so holding it
+           would only invite code that thinks it can. */
+        private RSCache? cache;
+
+        /// <summary>Creates the panel.</summary>
+        public TrackEditorPanel() {
+            Dock = DockStyle.Fill;
+            BuildLayout();
+
+            list.SelectedIndexChanged += (_, _) => ShowDetails(list.SelectedObject as Track);
+            exportButton.Click += (_, _) => ExportSelected();
+        }
+
+        /// <summary>
+        ///     Points the panel at a cache and starts decoding, or clears it when given none.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Editor.LoadEditorTab</c> calls this on every visit to the tab, not just the first
+        ///     - the map tab is bound the same way and the <c>loaded</c> flags are checked after
+        ///     both. Decoding 1404 tracks takes seconds, so re-binding the cache already on display
+        ///     has to be a no-op rather than a second sweep that also throws away the selection.
+        ///     Identity is the right test because opening a cache builds a new
+        ///     <see cref="RSCache"/>, which is exactly when the list is stale.
+        /// </remarks>
+        /// <param name="newCache">The open cache, or null.</param>
+        public void Bind(RSCache? newCache) {
+            if (ReferenceEquals(newCache, cache))
+                return;
+
+            cache = newCache;
+            list.ClearObjects();
+            details.Clear();
+            exportButton.Enabled = false;
+
+            if (cache == null) {
+                status.Text = "No cache loaded";
+                progress.Value = 0;
+                return;
+            }
+
+            //A worker from the previous cache is left to finish; RunWorkerCompleted below refuses
+            //to publish a result that a later Bind has already superseded
+            StartLoad();
+        }
+
+        private void BuildLayout() {
+            list.AllColumns.Add(Column("Index", "IndexId", 70));
+            list.AllColumns.Add(Column("ID", "Id", 60));
+            list.AllColumns.Add(Column("Name", "Name", 190));
+            list.AllColumns.Add(Column("Name hash", "NameHash", 110));
+            list.AllColumns.Add(Column("Packed", "PackedLength", 90));
+            list.AllColumns.Add(Column("MIDI", "MidiLength", 90));
+            list.AllColumns.Add(Column("Tracks", "TrackCount", 70));
+            list.AllColumns.Add(Column("Division", "Division", 80));
+            list.AllColumns.Add(Column("Tempo", "TempoEvents", 70));
+            list.AllColumns.Add(Column("Notes", "NoteOnEvents", 80));
+            list.AllColumns.Add(Column("Controls", "ControllerEvents", 90));
+
+            foreach (OLVColumn column in list.AllColumns)
+                list.Columns.Add(column);
+
+            var split = new SplitContainer {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                FixedPanel = FixedPanel.Panel2
+            };
+
+            var side = new Panel { Dock = DockStyle.Fill };
+            var detailGroup = new GroupBox { Text = "Track", Dock = DockStyle.Fill };
+            detailGroup.Controls.Add(details);
+            side.Controls.Add(detailGroup);
+            side.Controls.Add(exportButton);
+
+            split.Panel1.Controls.Add(list);
+            split.Panel2.Controls.Add(side);
+
+            Controls.Add(split);
+            Controls.Add(status);
+            Controls.Add(progress);
+
+            //SplitterDistance is silently clamped until the control has a size
+            split.HandleCreated += (_, _) => split.SplitterDistance = Math.Max(200, split.Width - 340);
+
+            status.Text = "No cache loaded";
+        }
+
+        private static OLVColumn Column(string text, string aspect, int width) {
+            return new OLVColumn(text, aspect) { Width = width, Groupable = false };
+        }
+
+        private void StartLoad() {
+            progress.Value = 0;
+            status.Text = "Loading tracks";
+
+            //Bind assigns the field before calling here, and never with null
+            RSCache open = cache!;
+            var worker = new BackgroundWorker { WorkerReportsProgress = true };
+
+            worker.ProgressChanged += (_, e) => {
+                //A superseded worker keeps running to completion; its progress is not this list's
+                if (!ReferenceEquals(cache, open))
+                    return;
+                progress.Value = Math.Clamp(e.ProgressPercentage, 0, 100);
+                status.Text = e.UserState?.ToString() ?? status.Text;
+            };
+
+            worker.DoWork += (_, e) => e.Result = DecodeAll(open, worker);
+
+            worker.RunWorkerCompleted += (_, e) => {
+                //Another cache was bound while this ran, so its tracks are no longer what is shown
+                if (!ReferenceEquals(cache, open))
+                    return;
+
+                if (e.Error != null) {
+                    status.Text = "Failed to load tracks: " + e.Error.Message;
+                    Debug("Track load failed: " + e.Error);
+                    return;
+                }
+
+                //DoWork always assigns Result, and the error path returned above
+                var tracks = (List<Track>) e.Result!;
+                list.SetObjects(tracks);
+                progress.Value = 100;
+                status.Text = $"{tracks.Count} tracks";
+            };
+
+            worker.RunWorkerAsync();
+        }
+
+        /// <summary>Decodes every track in every listed index, skipping the ones that will not read.</summary>
+        /// <remarks>
+        ///     Takes the cache rather than reading the field, so a rebind part way through cannot
+        ///     make a single sweep read half of one cache and half of another.
+        /// </remarks>
+        private static List<Track> DecodeAll(RSCache open, BackgroundWorker worker) {
+            var tracks = new List<Track>();
+            var groups = new List<(int IndexId, int GroupId)>();
+            Dictionary<int, string> names = TrackNames.Load(open);
+
+            foreach ((int indexId, string _) in TrackIndexes) {
+                RSReferenceTable table;
+                try {
+                    table = open.GetReferenceTable(indexId);
+                }
+                catch (Exception ex) {
+                    //An index the cache does not carry is not a defect, it is a different revision
+                    Debug($"No reference table for track index {indexId}: {ex.Message}");
+                    continue;
+                }
+
+                foreach (int groupId in table.GetArchiveEntries().Keys)
+                    groups.Add((indexId, groupId));
+            }
+
+            int done = 0;
+            int percentile = Math.Max(1, groups.Count / 100);
+
+            foreach ((int indexId, int groupId) in groups) {
+                try {
+                    Track track = open.GetTrack(indexId, groupId);
+
+                    /* Named through the group's own name hash, so a name can only ever be attached
+                       to a group whose stored hash it reproduces - see TrackNames. Index 11 carries
+                       no identifiers, so every jingle arrives here with -1 and stays unnamed. */
+                    if (track.NameHash != -1 && names.TryGetValue(track.NameHash, out string? name))
+                        track.Name = name;
+
+                    tracks.Add(track);
+                }
+                catch (Exception ex) {
+                    Debug($"Track {groupId} in index {indexId} failed to decode: {ex.Message}");
+                }
+
+                done++;
+                if (done % percentile == 0 || done == groups.Count)
+                    worker.ReportProgress(done * 100 / groups.Count, $"Decoded {done}/{groups.Count} tracks");
+            }
+
+            return tracks;
+        }
+
+        private void ShowDetails(Track? track) {
+            exportButton.Enabled = list.SelectedObjects.Count > 0;
+
+            if (track == null) {
+                details.Clear();
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"{LabelFor(track.IndexId)} track {track.Id}");
+            sb.AppendLine($"Name       {(track.Name.Length == 0 ? "unnamed" : track.Name)}");
+            sb.AppendLine($"Index      {track.IndexId}");
+            sb.AppendLine($"Name hash  {(track.NameHash == -1 ? "none" : track.NameHash.ToString())}");
+            sb.AppendLine();
+            sb.AppendLine($"Packed     {track.PackedLength:N0} bytes");
+            sb.AppendLine($"MIDI       {track.MidiLength:N0} bytes");
+            sb.AppendLine($"Format     {(track.TrackCount > 1 ? 1 : 0)}");
+            sb.AppendLine($"Tracks     {track.TrackCount}");
+            sb.AppendLine($"Division   {track.Division} ticks per quarter note");
+            sb.AppendLine();
+            sb.AppendLine("Events");
+            sb.AppendLine($"  Tempo             {track.TempoEvents:N0}");
+            sb.AppendLine($"  Note on           {track.NoteOnEvents:N0}");
+            sb.AppendLine($"  Note off          {track.NoteOffEvents:N0}");
+            sb.AppendLine($"  Controller        {track.ControllerEvents:N0}");
+            sb.AppendLine($"  Pitch wheel       {track.PitchWheelEvents:N0}");
+            sb.AppendLine($"  Channel pressure  {track.ChannelAfterTouchEvents:N0}");
+            sb.AppendLine($"  Key pressure      {track.KeyAfterTouchEvents:N0}");
+            sb.AppendLine($"  Program change    {track.ProgramChangeEvents:N0}");
+
+            if (track.RepairedMetaStatusBytes > 0) {
+                sb.AppendLine();
+                sb.AppendLine($"Wrote {track.RepairedMetaStatusBytes} meta status byte(s) the 637 client");
+                sb.AppendLine("omits. Without them the file is not playable outside the");
+                sb.AppendLine("client - see the CLIENT BUG note on Track.Decode.");
+            }
+
+            details.Text = sb.ToString();
+        }
+
+        private static string LabelFor(int indexId) {
+            foreach ((int id, string label) in TrackIndexes)
+                if (id == indexId)
+                    return label;
+            return "Index " + indexId;
+        }
+
+        private void ExportSelected() {
+            var selected = new List<(string FileName, byte[] Midi)>();
+            foreach (object row in list.SelectedObjects) {
+                if (row is not Track track)
+                    continue;
+                byte[]? midi = track.Midi;
+                if (midi != null)
+                    selected.Add((FileNameFor(track), midi));
+            }
+
+            if (selected.Count == 0)
+                return;
+
+            try {
+                if (selected.Count == 1) {
+                    using var save = new SaveFileDialog {
+                        Filter = "MIDI file (*.mid)|*.mid",
+                        FileName = selected[0].FileName
+                    };
+                    if (save.ShowDialog(this) != DialogResult.OK)
+                        return;
+
+                    File.WriteAllBytes(save.FileName, selected[0].Midi);
+                    status.Text = "Exported " + Path.GetFileName(save.FileName);
+                    return;
+                }
+
+                using var browse = new FolderBrowserDialog();
+                if (browse.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                foreach ((string fileName, byte[] midi) in selected)
+                    File.WriteAllBytes(Path.Combine(browse.SelectedPath, fileName), midi);
+
+                status.Text = $"Exported {selected.Count} tracks to {browse.SelectedPath}";
+            }
+            catch (IOException ex) {
+                status.Text = "Export failed: " + ex.Message;
+                Debug("Track export failed: " + ex);
+            }
+            catch (UnauthorizedAccessException ex) {
+                status.Text = "Export failed: " + ex.Message;
+                Debug("Track export failed: " + ex);
+            }
+        }
+
+        /// <summary>Builds an export file name that is unique and says what the track is.</summary>
+        /// <remarks>
+        ///     The index has to be in the name because group ids restart at zero in each of the two
+        ///     indexes, so exporting a selection spanning both would otherwise collide.
+        /// </remarks>
+        private static string FileNameFor(Track track) {
+            string name = track.Name;
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                name = name.Replace(invalid, '_');
+
+            return name.Length == 0
+                ? $"track_{track.IndexId}_{track.Id}.mid"
+                : $"track_{track.IndexId}_{track.Id}_{name}.mid";
+        }
+    }
+}

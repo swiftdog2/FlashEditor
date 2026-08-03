@@ -300,6 +300,45 @@ namespace FlashEditor.Tests.Definitions
         }
 
         // ===================================================================
+        //  Type 25: colour key scale
+        // ===================================================================
+
+        /// <summary>
+        /// A pixel outside the key tolerance on any one channel must come through untouched.
+        /// </summary>
+        /// <remarks>
+        /// The pass-through arm is the half of <c>Node_Sub10_Sub14.method997</c> that texture
+        /// 911 never exercises - its tolerance is 4096, so every pixel is keyed - which leaves
+        /// the branch with no cover from the cache sweep. The assertion is identity rather than
+        /// a restatement of the arithmetic, so it cannot pin an invented formula: the client
+        /// copies the input channels across verbatim and so must this.
+        /// </remarks>
+        [Fact]
+        public void Render_ColourKeyScale_LeavesPixelsOutsideTheToleranceAlone()
+        {
+            //Key black with a tolerance of 1, against a mid-grey input: no channel is within
+            //reach of the key, so all three scales are ignored.
+            var child = ConstantColour(0x808080);
+            var keyed = new TextureNode
+            {
+                Type = 25,
+                IntParam0 = 1,        // tolerance
+                IntParam1 = 0,        // blue scale - would blank the channel if applied
+                IntParam2 = 0,        // green scale
+                IntParam3 = 0,        // red scale
+                IntParam4 = 0x000000, // key colour
+                Children = new[] { child }
+            };
+
+            Color actual = Render(Graph(0, keyed, child))[0, 0];
+            Color untouched = Render(Single(ConstantColour(0x808080)))[0, 0];
+
+            Assert.Equal(untouched.R, actual.R);
+            Assert.Equal(untouched.G, actual.G);
+            Assert.Equal(untouched.B, actual.B);
+        }
+
+        // ===================================================================
         //  Known evaluator defects
         // ===================================================================
 
@@ -322,13 +361,16 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
-        /// DEFECT: types 21, 25, 30 and 33 are classified as colour nodes but have no colour
+        /// DEFECT: types 21, 30 and 33 are classified as colour nodes but have no colour
         /// implementation, so EvalColour routes them to the passthrough default. Their own
         /// operation is silently discarded and the child's colour is copied through unchanged.
+        ///
+        /// Type 25 used to be in this list and is not any more: it is Node_Sub10_Sub14, a
+        /// colour-key scale, and it now has a colour arm. See
+        /// <c>ColourKeyNode_TintsTexture911TowardItsDeclaredColour</c>.
         /// </summary>
         [Theory]
         [InlineData(21)]   // Emboss
-        [InlineData(25)]   // Curve remap
         [InlineData(33)]   // Offset / scroll
         public void Render_ColourTypesWithoutColourImplementation_PassChildThrough_DocumentsKnownDefect(int type)
         {
