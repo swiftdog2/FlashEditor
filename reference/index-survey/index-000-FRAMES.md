@@ -45,11 +45,12 @@ That is byte identity of the CONTAINER and the group PAYLOAD. Not one byte insid
 MEASURED THIS SESSION over every group in the cache, by walking the sector chains, the containers and the archive trailers directly (scratchpad script, read-only, cache untouched):
 
 - Reference table (idx255 group 0): format 6, version 699, flags 0, 3526 groups, ids 0..3525, 359,931 files, consumed 762,182 of 762,182 bytes - no trailing tail, no name hashes, so a group is addressable by id ONLY.
-- 3517 multi-file groups, every one of them exactly 3 chunks. 9 single-file groups (22, 605, 757, 1836, 2374, 2435, 2633, 3047, 3290).
+- 3517 multi-file groups, every one of them exactly 3 chunks. 9 single-file groups (22, 605, 757, 1836, 2374, 2435, 2633, 3047, 3290). **Group 757's one file is id 40, not 0** - the other eight are id 0. That is trap 7 below in its cheapest form, and it is worth stating on this line because "single file" reads as "file 0" and a reader who assumes it gets a `FileNotFoundException` on exactly one of the nine.
 - Chunk 0 is exactly 4 bytes for all 359,922 files in multi-file groups - it IS the frame header. Chunk 1's length equals transformCount for all 359,922, zero exceptions - it IS the flag block. Chunk 2 is the value stream.
 - Header byte 0 is 1 for all 359,931 files, single-file groups included.
 - All 3526 groups reference exactly ONE base id across all their files. Max base id 3105 = index 1's highest group (3106 groups).
-- All 359,931 files parse with exact consumption: 358,363 with transforms land precisely on the end of the value stream, 1,568 are empty frames (transformCount 0, four bytes total). Zero overruns, zero leftovers. The format is completely accounted for.
+- All 359,931 files parse with exact consumption: 358,358 with transforms land precisely on the end of the value stream, 1,573 are empty frames (transformCount 0, four bytes total). Zero overruns, zero leftovers. The format is completely accounted for.
+  - CORRECTED 2026-08-04. This line read 358,363 / 1,568. It was wrong by five, and the wrong figure went straight into `RealCacheFrameTests` as an assertion and failed there. Two independent measurements give 1,573: the production codec over every file, and a sweep that decodes no frame at all and counts files whose archive size table totals four bytes. Both numbers describe the same population, because a frame with no transforms has no flag block and no value stream.
 - 20,142,030 signed-smart values read: 8,270,387 one-byte and 11,871,643 two-byte.
 
 TRAPS:

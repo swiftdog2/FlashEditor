@@ -4,6 +4,16 @@ using Xunit;
 
 namespace FlashEditor.Tests.Definitions
 {
+    /// <summary>
+    ///     Columnar (index 26) texture metadata codec tests.
+    /// </summary>
+    /// <remarks>
+    ///     In the "RealCache" collection despite needing no cache: every test here calls
+    ///     <c>TextureManager.Clear</c>, which disposes every definition in a static dictionary that
+    ///     <c>TextureGraphConformanceTests</c> and <c>RealCacheMapIconTests</c> are reading. Sharing
+    ///     one collection is what stops xunit running them at the same time.
+    /// </remarks>
+    [Collection("RealCache")]
     public class TextureDefinitionTests
     {
         /// <summary>

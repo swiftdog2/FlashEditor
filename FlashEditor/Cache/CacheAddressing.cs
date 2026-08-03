@@ -246,6 +246,13 @@ namespace FlashEditor.cache {
                     addressing = Paged(7);
                     return true;
 
+                //65,536 frames to a group. Index 20 stores a packed frame id and Class97.java:130-131
+                //splits it: method2624(2, i_1_ >> 16) picks the frame set and i_1_ &= 0xffff the frame
+                //within it. Index 0 has no name hashes, so that packed id is the only way in.
+                case RSConstants.FRAMES_INDEX:
+                    addressing = Paged(16);
+                    return true;
+
                 //1024 varbits to a group: Class198.java:92-93 fetches with Class234.java:31
                 //(id >>> 10) and Class32.java:61 (id & 0x3ff).
                 case RSConstants.SCRIPT_CONFIGS:
@@ -282,6 +289,12 @@ namespace FlashEditor.cache {
                 //index 4 and index 12 declare exactly one file per group, and index 6/11 groups
                 //hold exactly one file each (the id of which is read off the reference table, not
                 //assumed to be 0 - see FileOf).
+                //
+                //Index 1 is the case the client states outright: JS5Archive.method2733
+                //(JS5Archive.java:591-611) returns getChildFromFolder(id, 0) when the group holds
+                //exactly one file and throws otherwise, and Node_Sub46_Sub16.java:161 is the only
+                //caller. All 3106 groups in this cache are single-file.
+                case RSConstants.SKINS:
                 case RSConstants.SOUND_EFFECTS:
                 case RSConstants.MUSIC_INDEX:
                 case RSConstants.MUSIC_2:

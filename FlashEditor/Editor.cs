@@ -421,6 +421,11 @@ namespace FlashEditor {
         }
 
         private void Editor_Load(object sender, EventArgs e) {
+            //Here rather than in the constructor: the form's font scaling runs during layout, before
+            //Load, and it would multiply anything set earlier by the same ratio that shrank the
+            //designer's literals in the first place.
+            SizeProgressBars();
+
             if (!string.Equals(Properties.Settings.Default.cacheDir, string.Empty, StringComparison.Ordinal))
                 LoadCache(Properties.Settings.Default.cacheDir);
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
@@ -511,6 +516,24 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        ///     Gives the editor-controls progress bars a height their own font can fill.
+        /// </summary>
+        /// <remarks>
+        ///     A <see cref="ProgressBar"/> cannot auto-size, so it is the one control in those strips
+        ///     whose height has to be stated at all. Derived from the font rather than written into
+        ///     the designer because the form is <c>AutoScaleMode.Font</c> against
+        ///     <c>AutoScaleDimensions(9, 20)</c> and its own font measures about two thirds of that:
+        ///     every literal size in the designer is multiplied down at runtime while the fonts stated
+        ///     on the controls are not, which is what left the buttons shorter than their captions and
+        ///     the status labels wider than the box around them. <c>DefinitionListPanel</c> sizes its
+        ///     bar the same way and for the same reason.
+        /// </remarks>
+        private void SizeProgressBars() {
+            foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar })
+                bar.Height = Math.Max(10, bar.Font.Height);
+        }
+
+        /// <summary>
         ///     States which cache index each tab edits, and how the self-contained ones are bound.
         /// </summary>
         /// <remarks>
@@ -539,6 +562,12 @@ namespace FlashEditor {
             //The tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
             Register(TrackEditorTab, RSConstants.MUSIC_INDEX,
                 openCache => TrackEditorPanel.Bind(openCache));
+            /* Indexes 0 and 1 share one tab because neither can be read without the other: a frame
+               addresses its bones positionally and the bone's transform type is what decides how the
+               frame's numbers are read. Index 0 is what identifies the tab, since a row is a frame
+               set and index 1 is joined onto it. */
+            Register(AnimationEditorTab, RSConstants.FRAMES_INDEX,
+                openCache => AnimationPanel.Bind(openCache));
 
             /* Every page in the strip has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -1657,6 +1686,10 @@ namespace FlashEditor {
             //group read there is guarded, so the worst case is a discarded result - which it was
             //going to be anyway, since unbinding supersedes it.
             InterfaceListPanel.Bind(null);
+
+            //Same again: the animation tab's frame-set sweep reads every group in index 0, so a
+            //reload started from another tab would leave it decoding out of a disposed file store.
+            AnimationPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {

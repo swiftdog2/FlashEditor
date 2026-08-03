@@ -63,6 +63,7 @@ namespace FlashEditor {
             button4 = new Button();
             ItemEditorTab = new TabPage();
             groupBox4 = new GroupBox();
+            ItemControlsLayout = new TableLayoutPanel();
             ItemLoadingLabel = new Label();
             ItemProgressBar = new ProgressBar();
             ExportItemDatBtn = new Button();
@@ -119,6 +120,7 @@ namespace FlashEditor {
             npcModelIdsColumn = new OLVColumn();
             ObjectEditorTab = new TabPage();
             groupBox5 = new GroupBox();
+            ObjectControlsLayout = new TableLayoutPanel();
             ObjectLoadingLabel = new Label();
             ObjectProgressBar = new ProgressBar();
             button7 = new Button();
@@ -146,6 +148,7 @@ namespace FlashEditor {
             TextureLoadingLabel = new Label();
             MapEditorTab = new TabPage();
             TrackEditorTab = new TabPage();
+            AnimationEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -163,6 +166,7 @@ namespace FlashEditor {
             groupBox1.SuspendLayout();
             ItemEditorTab.SuspendLayout();
             groupBox4.SuspendLayout();
+            ItemControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ItemListView).BeginInit();
             SpriteEditorTab.SuspendLayout();
             groupBox3.SuspendLayout();
@@ -173,6 +177,7 @@ namespace FlashEditor {
             ((System.ComponentModel.ISupportInitialize) NPCListView).BeginInit();
             ObjectEditorTab.SuspendLayout();
             groupBox5.SuspendLayout();
+            ObjectControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) GameObjectListView).BeginInit();
             ModelViewerTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) splitContainer1).BeginInit();
@@ -255,6 +260,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Controls.Add(MapEditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
+            EditorTabControl.Controls.Add(AnimationEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -516,10 +522,7 @@ namespace FlashEditor {
             // 
             groupBox4.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox4.BackColor = Color.White;
-            groupBox4.Controls.Add(ItemLoadingLabel);
-            groupBox4.Controls.Add(ItemProgressBar);
-            groupBox4.Controls.Add(ExportItemDatBtn);
-            groupBox4.Controls.Add(button9);
+            groupBox4.Controls.Add(ItemControlsLayout);
             groupBox4.Font = new Font("Consolas", 12.25F);
             groupBox4.Location = new Point(860, 6);
             groupBox4.Name = "groupBox4";
@@ -527,50 +530,78 @@ namespace FlashEditor {
             groupBox4.TabIndex = 11;
             groupBox4.TabStop = false;
             groupBox4.Text = "Editor Controls";
-            // 
+            //
+            // ItemControlsLayout
+            //
+            // Every control in this strip used to state its own Location and Size, and the form is
+            // AutoScaleMode.Font against AutoScaleDimensions(9, 20) while its own font measures about
+            // two thirds of that - so each literal was multiplied down at runtime while the fonts
+            // stated on the controls were not. The buttons ended up shorter than the text they hold
+            // and the status label wider than the box around it. Nothing here states a pixel: the
+            // rows measure their contents, the spacer row takes the slack, and the whole strip is
+            // correct at any font or DPI rather than at the one it was drawn on.
+            ItemControlsLayout.ColumnCount = 1;
+            ItemControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            ItemControlsLayout.Controls.Add(button9, 0, 0);
+            ItemControlsLayout.Controls.Add(ExportItemDatBtn, 0, 1);
+            ItemControlsLayout.Controls.Add(ItemLoadingLabel, 0, 3);
+            ItemControlsLayout.Controls.Add(ItemProgressBar, 0, 4);
+            ItemControlsLayout.Dock = DockStyle.Fill;
+            ItemControlsLayout.Name = "ItemControlsLayout";
+            ItemControlsLayout.RowCount = 5;
+            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ItemControlsLayout.TabIndex = 0;
+            //
             // ItemLoadingLabel
-            // 
-            ItemLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            // AutoSize with the cell width to measure against, so a status line longer than the strip
+            // wraps onto a second line instead of losing its last characters off the edge.
             ItemLoadingLabel.AutoSize = true;
             ItemLoadingLabel.BackColor = Color.Transparent;
+            ItemLoadingLabel.Dock = DockStyle.Fill;
             ItemLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ItemLoadingLabel.Location = new Point(6, 452);
             ItemLoadingLabel.Name = "ItemLoadingLabel";
-            ItemLoadingLabel.Size = new Size(181, 28);
             ItemLoadingLabel.TabIndex = 12;
             ItemLoadingLabel.Text = "Loading Items";
             ItemLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            // 
+            //
             // ItemProgressBar
-            // 
-            ItemProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            // Anchored to both sides rather than docked, so it stretches across the cell and keeps the
+            // height SizeProgressBars derives from its font. A ProgressBar cannot measure itself, so
+            // it is the one control in this strip whose height has to be stated at all.
+            ItemProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
             ItemProgressBar.ForeColor = Color.DarkRed;
-            ItemProgressBar.Location = new Point(4, 474);
             ItemProgressBar.Name = "ItemProgressBar";
-            ItemProgressBar.Size = new Size(240, 62);
             ItemProgressBar.TabIndex = 8;
-            // 
+            //
             // ExportItemDatBtn
-            // 
+            //
+            ExportItemDatBtn.AutoSize = true;
+            ExportItemDatBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ExportItemDatBtn.BackColor = Color.White;
-            ExportItemDatBtn.Location = new Point(6, 70);
+            ExportItemDatBtn.Dock = DockStyle.Fill;
             ExportItemDatBtn.Name = "ExportItemDatBtn";
-            ExportItemDatBtn.Size = new Size(228, 35);
             ExportItemDatBtn.TabIndex = 1;
             ExportItemDatBtn.Text = "Export Selected (.dat)";
             ExportItemDatBtn.UseVisualStyleBackColor = false;
             ExportItemDatBtn.Click += ExportItemDatBtn_Click;
-            // 
+            //
             // button9
-            // 
+            //
+            button9.AutoSize = true;
+            button9.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button9.BackColor = Color.White;
-            button9.Location = new Point(6, 29);
+            button9.Dock = DockStyle.Fill;
             button9.Name = "button9";
-            button9.Size = new Size(228, 35);
             button9.TabIndex = 0;
             button9.Text = "Import Item";
             button9.UseVisualStyleBackColor = false;
-            // 
+            //
             // ItemListView
             // 
             ItemListView.AllColumns.Add(ItemID);
@@ -1070,10 +1101,7 @@ namespace FlashEditor {
             // 
             groupBox5.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox5.BackColor = Color.White;
-            groupBox5.Controls.Add(ObjectLoadingLabel);
-            groupBox5.Controls.Add(ObjectProgressBar);
-            groupBox5.Controls.Add(button7);
-            groupBox5.Controls.Add(button8);
+            groupBox5.Controls.Add(ObjectControlsLayout);
             groupBox5.Font = new Font("Consolas", 12.25F);
             groupBox5.Location = new Point(857, 3);
             groupBox5.Name = "groupBox5";
@@ -1081,49 +1109,66 @@ namespace FlashEditor {
             groupBox5.TabIndex = 19;
             groupBox5.TabStop = false;
             groupBox5.Text = "Editor Controls";
-            // 
+            //
+            // ObjectControlsLayout
+            //
+            // Same rebuild as ItemControlsLayout, and for the same defect - see the note there.
+            ObjectControlsLayout.ColumnCount = 1;
+            ObjectControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            ObjectControlsLayout.Controls.Add(button8, 0, 0);
+            ObjectControlsLayout.Controls.Add(button7, 0, 1);
+            ObjectControlsLayout.Controls.Add(ObjectLoadingLabel, 0, 3);
+            ObjectControlsLayout.Controls.Add(ObjectProgressBar, 0, 4);
+            ObjectControlsLayout.Dock = DockStyle.Fill;
+            ObjectControlsLayout.Name = "ObjectControlsLayout";
+            ObjectControlsLayout.RowCount = 5;
+            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ObjectControlsLayout.TabIndex = 0;
+            //
             // ObjectLoadingLabel
-            // 
-            ObjectLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
             ObjectLoadingLabel.AutoSize = true;
             ObjectLoadingLabel.BackColor = Color.Transparent;
+            ObjectLoadingLabel.Dock = DockStyle.Fill;
             ObjectLoadingLabel.Font = new Font("Consolas", 12F);
-            ObjectLoadingLabel.Location = new Point(3, 439);
             ObjectLoadingLabel.Name = "ObjectLoadingLabel";
-            ObjectLoadingLabel.Size = new Size(207, 28);
             ObjectLoadingLabel.TabIndex = 17;
             ObjectLoadingLabel.Text = "Loading Objects";
             ObjectLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            // 
+            //
             // ObjectProgressBar
-            // 
-            ObjectProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            ObjectProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
             ObjectProgressBar.ForeColor = Color.DarkRed;
-            ObjectProgressBar.Location = new Point(0, 461);
             ObjectProgressBar.Name = "ObjectProgressBar";
-            ObjectProgressBar.Size = new Size(240, 62);
             ObjectProgressBar.TabIndex = 8;
-            // 
+            //
             // button7
-            // 
+            //
+            button7.AutoSize = true;
+            button7.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button7.BackColor = Color.White;
-            button7.Location = new Point(6, 70);
+            button7.Dock = DockStyle.Fill;
             button7.Name = "button7";
-            button7.Size = new Size(231, 35);
             button7.TabIndex = 1;
             button7.Text = "Export Selected (.dat)";
             button7.UseVisualStyleBackColor = false;
-            // 
+            //
             // button8
-            // 
+            //
+            button8.AutoSize = true;
+            button8.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button8.BackColor = Color.White;
-            button8.Location = new Point(6, 29);
+            button8.Dock = DockStyle.Fill;
             button8.Name = "button8";
-            button8.Size = new Size(231, 35);
             button8.TabIndex = 0;
             button8.Text = "Import Object";
             button8.UseVisualStyleBackColor = false;
-            // 
+            //
             // GameObjectListView
             // 
             GameObjectListView.AllColumns.Add(objectIdColumn);
@@ -1370,6 +1415,16 @@ namespace FlashEditor {
             TrackEditorTab.Text = "Tracks";
             TrackEditorTab.UseVisualStyleBackColor = true;
             //
+            // AnimationEditorTab
+            //
+            AnimationEditorTab.Controls.Add(AnimationPanel);
+            AnimationEditorTab.Location = new Point(4, 37);
+            AnimationEditorTab.Name = "AnimationEditorTab";
+            AnimationEditorTab.Size = new Size(1113, 554);
+            AnimationEditorTab.TabIndex = 10;
+            AnimationEditorTab.Text = "Animation";
+            AnimationEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1429,8 +1484,9 @@ namespace FlashEditor {
             ((System.ComponentModel.ISupportInitialize) ContainerListView).EndInit();
             groupBox1.ResumeLayout(false);
             ItemEditorTab.ResumeLayout(false);
+            ItemControlsLayout.ResumeLayout(false);
+            ItemControlsLayout.PerformLayout();
             groupBox4.ResumeLayout(false);
-            groupBox4.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) ItemListView).EndInit();
             SpriteEditorTab.ResumeLayout(false);
             groupBox3.ResumeLayout(false);
@@ -1442,8 +1498,9 @@ namespace FlashEditor {
             groupBox6.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) NPCListView).EndInit();
             ObjectEditorTab.ResumeLayout(false);
+            ObjectControlsLayout.ResumeLayout(false);
+            ObjectControlsLayout.PerformLayout();
             groupBox5.ResumeLayout(false);
-            groupBox5.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) GameObjectListView).EndInit();
             ModelViewerTab.ResumeLayout(false);
             splitContainer1.Panel1.ResumeLayout(false);
@@ -1486,6 +1543,9 @@ namespace FlashEditor {
         private System.Windows.Forms.Label SpriteLoadingLabel;
         private System.Windows.Forms.ProgressBar SpriteProgressBar;
         private System.Windows.Forms.GroupBox groupBox4;
+        //The Items and Objects control strips lay out through these rather than through absolute
+        //positions, so nothing in them carries a pixel size for the form's font scaling to shrink.
+        private System.Windows.Forms.TableLayoutPanel ItemControlsLayout;
         private System.Windows.Forms.ProgressBar ItemProgressBar;
         private System.Windows.Forms.Button ExportItemDatBtn;
         private System.Windows.Forms.Button button9;
@@ -1558,6 +1618,7 @@ namespace FlashEditor {
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.NumericUpDown numericUpDown1;
         private System.Windows.Forms.GroupBox groupBox5;
+        private System.Windows.Forms.TableLayoutPanel ObjectControlsLayout;
         private System.Windows.Forms.Label ObjectLoadingLabel;
         private System.Windows.Forms.ProgressBar ObjectProgressBar;
         private System.Windows.Forms.Button button7;
@@ -1577,6 +1638,10 @@ namespace FlashEditor {
         private FlashEditor.Map.MapEditorPanel MapEditorPanel = new FlashEditor.Map.MapEditorPanel();
         private TabPage TrackEditorTab;
         private FlashEditor.Definitions.Tracks.TrackEditorPanel TrackEditorPanel = new FlashEditor.Definitions.Tracks.TrackEditorPanel();
+        //Indexes 0 and 1 in one tab. The panel owns a DefinitionListPanel for the frame sets and the
+        //two detail grids beside it, so the form only has to hand it the cache.
+        private TabPage AnimationEditorTab;
+        private FlashEditor.Definitions.Editing.AnimationEditorPanel AnimationPanel = new FlashEditor.Definitions.Editing.AnimationEditorPanel();
         //The reusable definition list. Which index it shows is decided by the descriptor the form
         //binds, not by this field, so the next index editor reuses the type rather than the panel.
         private FlashEditor.Definitions.Editing.DefinitionListPanel InterfaceListPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();

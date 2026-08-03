@@ -22,7 +22,16 @@ namespace FlashEditor.Tests.Definitions
     ///
     ///     Three separate decoder defects were live when these tests were written, and all
     ///     three show up here as a consumption failure.
+    ///
+    ///     In the "RealCache" collection because <c>TextureManager.Textures</c> is a static
+    ///     dictionary and <c>Clear</c> disposes every definition in it. Two other classes call
+    ///     <c>Clear</c> - <c>TextureDefinitionTests</c> and <c>RealCacheMapIconTests</c> - so left in
+    ///     their own collections xunit runs them concurrently and one of them disposes this sweep's
+    ///     definitions mid-render. That surfaced as 884 of 1408 textures reporting no bitmap, in a
+    ///     test that passes in isolation. The collection is the serialisation, and all three classes
+    ///     must name the same one for it to hold.
     /// </remarks>
+    [Collection("RealCache")]
     public class TextureGraphConformanceTests
     {
         /// <summary>

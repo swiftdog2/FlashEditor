@@ -206,6 +206,8 @@ namespace FlashEditor.Tests.Cache.RealCache
 
         private int? _groupId;
         private bool _skipEmptyRecords;
+        private bool _everyGroup;
+        private bool _opcodeTerminated = true;
 
         /// <summary>Binds a codec to an index of the open cache.</summary>
         /// <param name="cache">The shared open cache.</param>
@@ -252,6 +254,48 @@ namespace FlashEditor.Tests.Cache.RealCache
         public DefinitionSweep<T> SkippingEmptyRecords()
         {
             _skipEmptyRecords = true;
+            return this;
+        }
+
+        /// <summary>
+        ///     Reads every group of the index whatever the full-sweep switch says.
+        /// </summary>
+        /// <remarks>
+        ///     The 250-group sample exists because several indexes are enormous to decode. For an
+        ///     index that is not, sampling buys nothing and costs the claim: "every skeleton in the
+        ///     cache re-encodes to its stored bytes" is not a statement a run over 250 of 3106 groups
+        ///     can make, and a count assertion against a measured total cannot be written at all.
+        ///     <para>
+        ///     Only for an index whose whole payload is small - index 1's 3106 groups hold under two
+        ///     megabytes between them. Do not reach for it on index 7.
+        ///     </para>
+        /// </remarks>
+        /// <returns>This sweep, for chaining.</returns>
+        public DefinitionSweep<T> AcrossEveryGroup()
+        {
+            _everyGroup = true;
+            return this;
+        }
+
+        /// <summary>
+        ///     Drops the assertions that only make sense for an opcode stream.
+        /// </summary>
+        /// <remarks>
+        ///     Two of them: that the record's last byte is the opcode 0 terminator, and the
+        ///     opcode-boundary trace printed for a failure. Neither is true of a record whose layout
+        ///     is driven by a leading count - index 1's last byte is a label id, which is a 0 only by
+        ///     coincidence - so leaving them on would fail every record for the wrong reason and then
+        ///     explain it in a vocabulary the format does not have.
+        ///     <para>
+        ///     Exact consumption still applies, and on a counted format it is the whole statement:
+        ///     the padded decode has to land on the original length, which is exactly what a
+        ///     mis-sized field breaks.
+        ///     </para>
+        /// </remarks>
+        /// <returns>This sweep, for chaining.</returns>
+        public DefinitionSweep<T> NotOpcodeTerminated()
+        {
+            _opcodeTerminated = false;
             return this;
         }
 
@@ -324,6 +368,11 @@ namespace FlashEditor.Tests.Cache.RealCache
         ///     must end on the opcode 0 terminator, so a record truncated inside an element count
         ///     cannot pass by stopping where the buffer happens to end.
         ///     </para>
+        ///     <para>
+        ///     The terminator is the only one of the three that assumes an opcode stream, and
+        ///     <see cref="NotOpcodeTerminated"/> switches it off for the counted formats. The other
+        ///     two hold for any layout.
+        ///     </para>
         /// </remarks>
         /// <returns>What the sweep measured.</returns>
         public DefinitionSweepResult AssertExactConsumption()
@@ -380,7 +429,7 @@ namespace FlashEditor.Tests.Cache.RealCache
                     continue;
                 }
 
-                if (record.Bytes.Length == 0 || record.Bytes[record.Bytes.Length - 1] != 0)
+                if (_opcodeTerminated && (record.Bytes.Length == 0 || record.Bytes[record.Bytes.Length - 1] != 0))
                 {
                     scope.Failures.Add(Describe(record,
                         $"consumed all {record.Bytes.Length} bytes but does not end with the opcode 0 " +
@@ -756,6 +805,9 @@ namespace FlashEditor.Tests.Cache.RealCache
             if (_groupId.HasValue)
                 return new int[] { _groupId.Value };
 
+            if (_everyGroup)
+                return new List<int>(table.GetArchiveEntries().Keys);
+
             return _cache.ArchivesToExamine(table);
         }
 
@@ -797,16 +849,25 @@ namespace FlashEditor.Tests.Cache.RealCache
             int total = _cache.Table(_indexId).GetArchiveCount();
             if (scope.Groups >= total)
             {
-                _output.WriteLine($"every one of index {_indexId}'s {total} groups was read" +
-                                  (_cache.FullSweep
-                                      ? ""
-                                      : " - it holds fewer than the " +
-                                        $"{RealCacheFixture.SampleArchivesPerIndex}-group sample cap"));
+                _output.WriteLine($"every one of index {_indexId}'s {total} groups was read" + Why());
                 return;
             }
 
             _output.WriteLine($"sampled {scope.Groups} of index {_indexId}'s {total} groups; set " +
                               $"{RealCacheLocator.FullSweepVariable}=1 to read every one");
+        }
+
+        /// <summary>
+        ///     Why a run covered the whole index, so "every group" is never read as a lucky sample.
+        /// </summary>
+        /// <returns>The reason, or an empty string when the full-sweep switch is what did it.</returns>
+        private string Why()
+        {
+            if (_everyGroup)
+                return " - this sweep reads them all whatever the full-sweep switch says";
+            if (_cache.FullSweep)
+                return "";
+            return $" - it holds fewer than the {RealCacheFixture.SampleArchivesPerIndex}-group sample cap";
         }
 
         /// <summary>Prefixes a failure line with the address the record was read from.</summary>
@@ -827,7 +888,7 @@ namespace FlashEditor.Tests.Cache.RealCache
         /// <returns>A trailing detail block to append to the failure line.</returns>
         private string Diagnose(DefinitionRecord record, ref int diagnosed)
         {
-            if (diagnosed >= MaxDiagnosedFailures)
+            if (!_opcodeTerminated || diagnosed >= MaxDiagnosedFailures)
                 return "";
             diagnosed++;
 
@@ -858,7 +919,7 @@ namespace FlashEditor.Tests.Cache.RealCache
         private string CompareTraces(DefinitionRecord record, byte[] reencoded, int at,
             SortedDictionary<int, int> coveringOpcodes, ref int diagnosed)
         {
-            if (diagnosed >= MaxDiagnosedFailures)
+            if (!_opcodeTerminated || diagnosed >= MaxDiagnosedFailures)
                 return "";
             diagnosed++;
 
