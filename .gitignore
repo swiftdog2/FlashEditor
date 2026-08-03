@@ -360,3 +360,6 @@ dotnet-install.sh
 # OpenRS2 download name is silently ignored and every encrypted square then reports a
 # missing key, which looks exactly like the keys being wrong.
 /OpenRS2/
+
+# Screenshots produced by tools/Capture-EditorTab.ps1 for GUI verification.
+/tools/shots/
