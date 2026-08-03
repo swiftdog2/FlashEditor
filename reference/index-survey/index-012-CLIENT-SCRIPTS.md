@@ -71,3 +71,13 @@ TRAPS, in the order they will bite.
 7. **No decode-time dependency on any other index.** Scripts reference enums (17), interfaces (3), items (19) and so on by numeric operand, but nothing is needed to decode or re-encode a script. A *disassembler* that resolves those operands to names would depend on those indexes; the codec does not.
 
 8. **The effort is lopsided.** Decode + encode + the byte-identity sweep is small-to-medium and fully specified by `Class22.java` - I effectively wrote it in PowerShell to produce the numbers above. The "GUI editing" half of `complete` is where the large effort lives: 582 distinct opcodes are in use across three separate client dispatchers, and an opcode table is the only thing that makes a script tab more useful than a hex editor. If the goal is to stop index 12 being a blind spot cheaply, ship decode + encode + the sweep first and grade it `read-write-no-tests` -> then `read-only`+sweep, rather than waiting on the disassembler.
+
+## External reference
+
+**RuneStar** (GitHub) carries clientscript opcode definitions and decompilation work for the
+RuneScape client script format. The codec here is small and fully specified from the 637 client;
+what RuneStar is worth consulting for is the part that makes a *tab* useful rather than a hex
+dump, namely naming the opcodes and reconstructing control flow. Check its coverage for build
+639 specifically before relying on it - the project is oriented at later revisions, and an
+opcode table from the wrong build is the kind of plausible-looking mapping this cache confirms
+by accident.
