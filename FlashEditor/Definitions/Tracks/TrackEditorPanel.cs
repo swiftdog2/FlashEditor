@@ -290,12 +290,12 @@ namespace FlashEditor.Definitions.Tracks {
             sb.AppendLine($"  Key pressure      {track.KeyAfterTouchEvents:N0}");
             sb.AppendLine($"  Program change    {track.ProgramChangeEvents:N0}");
 
-            if (track.RepairedMetaStatusBytes > 0) {
-                sb.AppendLine();
-                sb.AppendLine($"Wrote {track.RepairedMetaStatusBytes} meta status byte(s) the 637 client");
-                sb.AppendLine("omits. Without them the file is not playable outside the");
-                sb.AppendLine("client - see the CLIENT BUG note on Track.Decode.");
-            }
+            /* Track.RepairedMetaStatusBytes is deliberately not shown. Every line above describes
+               the music; that one describes this decoder, and the export is already correct either
+               way - the byte is written unconditionally so the file plays outside the client. There
+               is no reading of the number that leads to a user action, and the earlier wording read
+               as a warning about the very defect it had repaired. It stays a decoder property,
+               documented on Track.Decode and pinned by RealCacheTrackTests. */
 
             details.Text = sb.ToString();
         }
