@@ -1,0 +1,43 @@
+# Index 26 - MATERIALS
+
+**Format:** fully-understood  
+**Capability:** read-only  
+**Effort:** small
+
+## What it is
+
+One group (0), one file (0), one 33,794-byte blob - the whole index. It is the per-texture material/render-state table the client wraps in Class260. Client authority: `InterfaceSettings.java:182` opens index 26 as `Class64_Sub20.aJS5Archive_3695`; `InterfaceSettings.java:244` feeds it to `new Class260(idx26, idx9, idx8)`; `Class260.java:106` reads `getChildFromFolder(0, 0)` (group 0, file 0 - signature at `reference/hydra-model-decoding/JS5Archive.java:203`) and `:107-208` parses it. The payload is COLUMN-major, not record-major: a u16 count, then a 1408-byte existence column, then 19 fixed-width columns in a fixed order (`Class260.java:114-208`), one entry per present texture. A "record" is one texture id's material state - 23 bytes, scattered across those 19 columns, materialised as one `Class238` (`Class238.java:101-123`). It is genuinely material state, not a name: the renderers consume the fields directly (`RenderType_Sub1.java:4427-4441`, `Class319.java:95-111`, `Class364.java:96-112`, `Renderable_Sub1.java:170-194`, `Node_Sub16.java:78-79`). MEASURED FROM THIS CACHE (I decoded it read-only): idx26 is 6 bytes = 1 group; group 0 stored length 33,801 at sector 3106; container compression byte 0 (UNCOMPRESSED), compressedSize 33,794, 2-byte version trailer; payload count = 1408; all 1408 existence bytes are 1 (dense, no null slots); 2 + 1408 + 1408*23 = 33,794 = payload length exactly, so the field widths are proven by exact consumption.
+
+## Current capability
+
+DECODE: yes, and it runs against the real cache. `TextureManager.LoadFromMaterialsIndex` (`FlashEditor/Definitions/Sprites/TextureManager.cs:56-75`) pulls `RSConstants.MATERIALS` (`FlashEditor/Cache/RSConstants.cs:41`) group 0 and calls `TextureManager.DecodeColumnar` (`:145-254`), whose 19 passes match `Class260.java:114-208` field for field and in order, including the two inverted booleans (`Class260.java:116` `(b ^ 0xffffffff) == -1` i.e. b==0, mirrored at `TextureManager.cs:158`). Results land in `TextureDefinition` (`FlashEditor/Definitions/Sprites/TextureDefinition.cs:12-53`). LIVE CONSUMERS: `GLTextureCache.cs:36-37` constructs a `TextureManager` and calls `Load()` on every cache open; `MapRasteriser.cs:818` reads `field1831` per terrain texture; `Editor.cs:404` and `Editor.cs:795-845` drive the Textures tab. GUI: `Editor.Designer.cs:1299-1312` has a "Textures" tab, but it is a tile view with an image column and an id column only (`Editor.Designer.cs:1374`), it is bound to the index-9 tab case (`Editor.cs:795 case RSConstants.TEXTURES`), and NONE of the 19 material fields is displayed or editable. ENCODE: code exists (`TextureManager.EncodeColumnar` `:260-270`, `EncodeFromFields` `:275-391`) but is DEAD - a repo-wide grep finds callers only in `FlashEditor.Tests/Definitions/TextureDefinitionTests.cs`. The three `cache.WriteFile` call sites in the app are indexes 19, 16 and 18 (`Editor.cs:944,966,986`) plus index 5 (`MapSquareLoader.cs:176,184`); index 26 has none. TESTS: `FlashEditor.Tests/Definitions/TextureDefinitionTests.cs` builds its own synthetic columnar bytes and round-trips them through our own codec - exactly the pattern `CLAUDE.md` says proves nothing. No test reads index 26 from the real cache, and no byte-identity sweep exists.
+
+## Gaps
+
+- A byte-identity sweep over the real index-26 blob: read group 0 file 0, DecodeColumnar, EncodeFromFields, assert the 33,794 bytes come back identical. This is a [RealCacheFact] with RealCacheFixture and one group, so it is the cheapest sweep in the repo - and the container is compression type 0, so unlike GZip archives the whole stored container re-encodes byte-identically too (AGENTS.md:135-140, 4480/4480 uncompressed).
+- A dirty flag on TextureDefinition / TextureManager. EncodeColumnar (TextureManager.cs:262-267) returns RawIndexData verbatim whenever it is non-null, and RawIndexData is only ever nulled by Clear() (:36), so every field edit is silently discarded. Already logged as STATE_OF_THE_EDITOR.md:136 and P2 item 10 at :596.
+- A write path at all: nothing calls EncodeColumnar, and nothing calls cache.WriteFile(RSConstants.MATERIALS, 0, 0, ...). Wiring it is one call, but it must respect the 'a save that changes nothing must write nothing' rule in CLAUDE.md.
+- A GUI surface for the 19 fields. The existing Textures tab is a thumbnail grid with no property editor. A materials tab following the existing pattern (Editor.Designer.cs:1299-1312 for the tab, the ObjectListView + column pattern used by the item/NPC/object tabs) would need an editable grid of the 19 columns, plus a save button routed through the write path above.
+- A round-trip test against CAPTURED real bytes, not synthetic ones. TextureDefinitionTests only round-trips bytes it generated itself with the same field order it decodes with, so a transposed pair of columns would pass.
+
+## Notes and traps
+
+TRAPS AND FACTS THE IMPLEMENTER NEEDS (all measured by me from this cache, per-column distinct-value profile over all 1408 records):
+
+1. field1835 is ZERO in all 1408 records. Not 'mostly zero' - all of them. It is renderer state the client passes through at `RenderType_Sub1.java:4441`, never a colour. A previous version of this project multiplied graph output by it and scaled every texture towards black (the fix is recorded in the comment at `TextureManager.cs:454-459`). Do not surface it as a tint in a GUI, and do not treat a zero as 'unset'.
+
+2. field1831 signedness diverges deliberately. `Class260.java:151` casts to `short`; we store it as an unsigned int (`TextureDefinition.cs:33`). 513 distinct values, min 3, max 65087 - so many records read NEGATIVE in the client and positive here. Harmless for bytes (the encoder writes the low 16 bits) and for colour (`TextureManager.RepresentativeRgb` at `:534` masks `& 0xFFFF`), but a grid must not 'correct' it by writing a signed value. This is a SIGNEDNESS-DIFFERS row of the kind AGENTS.md warns no test can catch.
+
+3. NO non-canonical encoding in this cache, and I checked rather than assumed. Existence column: 1408 x byte 1, no zeros, no other values. Every boolean column is strictly {0,1}: f1825 {0:987,1:421}, f1822 {0:808,1:600}, f1833 {0:1407,1:1}, f1827 {0:1361,1:47}, f1824 {0:1390,1:18}, f1826 {0:226,1:1182}, f1819 {0:250,1:1158}, f1817 {0:1283,1:125}. So EncodeFromFields should already be byte-exact here. But the decoder collapses 'byte == 1' to a bool and the encoder writes 1/0, so any future cache storing 2 for a boolean would round-trip wrong - CLAUDE.md's 'record the encoding you saw' still applies as a latent risk, just not a live one.
+
+4. Non-boolean column shapes, for a sane GUI: f1820 {0,1,2,4,5,6,7,8}; f1832 is 2 for 1402 records and 0 for 6 (client tests `!= 0` / `> 0`, `Class319.java:100`, `Class48_Sub1_Sub1.java:168`); f1818 is {0:951, 1:54, 2:403} and the client branches hard on `== 2` (`Renderable_Sub1.java:170,450`, `oa.java:872`); f1829/f1830/f1823/f1837/f1816 span the full byte range and the client masks them `& 0xff` in places (`Node_Sub30.java:468,492`) while reading them signed - so keep them sbyte and mask at the use site, as we already do.
+
+5. Cross-index dependency, NOT a bug: index 26 declares 1408 textures, index 9 holds only 946 graphs. Ids 946..1407 have no procedural content at all - `Class260.method8` (`Class260.java:301-310`) returns false and the client falls back to field1831. `TextureManager.cs:523-543` already documents and implements this. Any 'missing texture' count in the 400s is expected, not a decode failure.
+
+6. Client bug, do not copy: `Class260.method11` (`Class260.java:239-240`) clamps with `if (i > aClass238Array3252.length) i = length - 1`, off by one - id 1408 passes the guard and throws. The catch block even prints an error (`:245`).
+
+7. Reference-table shape: index 26's table carries 4 trailing zero bytes past the end of the format (one file), pinned by `FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs:248` and described at `AGENTS.md:101-105`. It sets no identifiers flag, so group 0 is addressable by id only - no name lookup. No XTEA anywhere on this index.
+
+8. Statics are shared mutable state. `TextureManager.Textures` and `TextureManager.RawIndexData` are static (`TextureManager.cs:19,26`) and shared by GLTextureCache, MapRasteriser and the Editor tab. Any test must `TextureManager.Clear()` first, and a second cache open mutates the same dictionary. A parallel real-cache sweep over this index will collide with itself.
+
+9. `TextureLoader.cs` is an empty placeholder class (`FlashEditor/Definitions/Sprites/TextureLoader.cs:6-7`) - not a gap, just dead.

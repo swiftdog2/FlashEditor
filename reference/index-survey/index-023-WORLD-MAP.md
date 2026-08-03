@@ -1,0 +1,59 @@
+# Index 23 - WORLD_MAP
+
+**Format:** fully-understood  
+**Capability:** none  
+**Effort:** large
+
+## What it is
+
+The world-map (overview map) data set: 76 named groups holding 1043 files, in three record families. Measured directly from this cache by parsing idx255 record 23 (format 6, version 359, flags 0x01 = identifiers only, consumed 7482/7482 bytes exactly). Group ids are sparse: 0-44 then 64-94; 45-63 do not exist. Every group carries a name hash, and all 76 resolve to a real name via Java String.hashCode over the LOWERCASED name.
+
+(1) One "details" group (group id 1 here, NOT 0 - it must be resolved by name hash). It holds 39 files, one per world-map area. Client decode is Class48_Sub1.java:48-67, assigned into Node_Sub46_Sub10.java:470-494. Record layout, exactly: NUL-terminated string internalName; NUL-terminated string displayName; int32 packedOrigin; int32 tintColour; u8 enabled; u8 zoom; u8 (read and DISCARDED by the constructor - the 8th parameter i_66_ is never stored); u8 zoneCount; then zoneCount x 17-byte zone records of {u8 plane, u16 srcMinX, u16 srcMinY, u16 srcMaxX, u16 srcMaxY, u16 dstMinX, u16 dstMinY, u16 dstMaxX, u16 dstMaxY}. The file id IS the area id (Class278.java:176 keys the area cache on it). Field meanings settled from use, not names: packedOrigin is x = >>14 & 0x3fff, y = & 0x3fff (Class247.java:4856-4857); tintColour is an RGB, -1 meaning none (Class278.java:300-301 does ~0xffffff | value); zoom is a preset compared against 37/50/75/100/200 (Class339.java:70-75). Real values in this cache: internal names ardougne_underground, zanaris, main ("RuneScape Surface"), ft3_zanaris_HQ etc.; zoom {100:15, 75:8, 200:13, 50:2, 255:1}; enabled {1:38, 0:1}; tint {0:38, -1:1}; the discarded byte is 0 in all 39; zone planes 0-3.
+
+(2) 39 "area" groups, each named exactly after an area internal name, each holding ONE file whose file-name hash is hash("area") = 3002509 (the client fetches it as group=<areaName>, file="area", Class278.java:508-509). Note the file ID is 4 in 32 of them and 0 in the other 7 - so the id is not fixed and the file must be found by name hash. This is the overview raster: u8 underlayPaletteCount + that many u8 floor-underlay ids; u8 overlayPaletteCount + that many u8 floor-overlay ids; then blocks until end of buffer. Block type 0 = {u8 blockX, u8 blockY} followed by 64x64 tiles; any other type = {u8 blockX, u8 blockY, u8 zoneX, u8 zoneY} followed by 8x8 tiles. Tile encoding is Class278.java:196-274 (method3300): a flag byte, bit 0 clear = terrain (6-bit palette code, 62 = blank, 63 = literal u8 follows; bit 1 set means overlay and appends a signed shape byte); bit 0 set = decoration, ((f>>1)&3)+1 levels, bit 3 adds two u8, bit 4 adds a u8 count of {u16 elementId, s8} pairs. Total 6,034,508 bytes across the 39 files; "main" alone is 4,704,356 bytes covering 571 map squares.
+
+(3) 36 "<areaName>_staticelements" groups, 965 files, every one exactly 7 bytes: int32 packedPosition (plane = >>28 & 0x3, x = >>14 & 0x3fff, y = & 0x3fff - Class278.java:473-474), u16 mapElementId, u8 membersOnly. Decoded at Class52.java:73-105; the client drops records with membersOnly == 1 on a free world. Three areas (null, spirit_plane, ft3_zanaris_hq) have no staticelements group at all, which the client tolerates (Class181.java:86-100 falls back to an empty Class370).
+
+I verified all three formats against the real 639 data: 39/39 details files, 39/39 area files and 965/965 staticelements files consume to the exact byte with zero surplus and zero underrun.
+
+## Current capability
+
+Nothing decodes or displays index 23 content. The only production reference to it is the constant declaration itself: `WORLD_MAP = 23` at C:\Users\CJ\Desktop\FlashEditor\FlashEditor\Cache\RSConstants.cs:38 and the display name at :88. Grepping the whole of FlashEditor\ and FlashEditor.Tests\ for WORLD_MAP returns those two lines and one AGENTS.md row - no third site. There is no definition class, no decoder, no encoder, no GUI tab, and no test that reads an index-23 payload. `WorldMapViewControl` (FlashEditor\Map\WorldMapViewControl.cs:28) is a red herring: it is the index-5 terrain viewer being rewritten into a whole-world view, and it never touches index 23.
+
+What DOES already work for index 23 is the generic container/group plumbing, and it is proven by byte-identity. `RealCacheFixture` enumerates every idx255 record into `TableIndexes` (FlashEditor.Tests\Cache\RealCache\RealCacheFixture.cs:54-64), so index 23 is inside every conformance sweep: the reference table re-encodes to the captured bytes (RealCacheConformanceTests.cs:58), archive CRCs match the stored containers (:118), containers preserve payload and header across a re-encode (:168), the group file-split re-encodes to the captured payload (:217), and the idx records re-encode (:479). Index 23 has 76 groups, under the 250-group sampling threshold at RealCacheFixture.cs:122-125, so all 76 are covered even on a sampled run. Additionally RealCacheReferenceTableShapeTests.cs:107 pins index 23 as one of the twelve tables that set the identifiers flag.
+
+So: the editor can open, decompress, split, re-encode and rewrite any index-23 group byte-for-byte, and understands nothing whatsoever about what is inside one.
+
+## Gaps
+
+- A `WorldMapAreaDefinition` class with Decode/Encode for the `details` record (two NUL-terminated strings, two int32, three u8, u8 zone count, N x 17-byte zone records). It must keep the third u8 verbatim - the client reads it and throws it away, so a decoder that models only what the client stores will re-encode it wrong.
+- A `WorldMapOverlay`/`WorldMapAreaRaster` class with Decode/Encode for the `area` file: the two u8 palettes, then the block loop, then the tile encoding of Class278.java:196-274. This is the bulk of the work - 6.03 MB of tile stream across 39 files, and the encoder has to reproduce the exact flag-byte choice the packer made (see traps).
+- A `WorldMapElement` class with Decode/Encode for the 7-byte staticelements record. Trivial - fixed length, no opcodes.
+- Name-hash addressing on index 23. The read path needs group lookup by `hash(name.ToLower())` and file lookup by the same, because the `details` group is id 1 and the `area` file is id 4 in 32 groups and id 0 in the other 7. Nothing in FlashEditor does name-hash lookup today; AGENTS.md documents the hash but no code implements group-by-name.
+- A codec test against captured bytes for each of the three record types, in the style of FlashEditor.Tests\Cache\RealCacheObjectDefinitionTests.cs (AssertConsumedExactlyAndReEncoded).
+- A full-index byte-identity sweep: decode and re-encode all 39 details files, all 39 area files and all 965 staticelements files and assert the bytes are unchanged. That is 1043 files, the entire index, and it is cheap - index 23 is only ~12 MB decompressed.
+- A GUI tab following the Editor.Designer.cs pattern (a TreeListView with View = View.Details plus a render surface, as at Editor.Designer.cs:1152/1268), with a per-area overview raster. Rendering it needs floor underlay/overlay colours - already available from the index-2 map path (FlashEditor\Map\MapPalette.cs, UnderlayColour.cs) - and map-element sprites, which are NOT available: RSConstants.MAP_ELEMENT_GROUP = 36 (RSConstants.cs:63) has no decoder or adoption site anywhere, so the u16 elementId in both the area decoration tiles and the staticelements records currently resolves to nothing.
+
+## Notes and traps
+
+TRAPS, in the order they will bite:
+
+1. GROUP IDS ARE SPARSE AND NAMES ARE THE ONLY STABLE HANDLE. Ids run 0-44 then 64-94; 45-63 do not exist. The idx23 file is 95 slots (570 bytes) but the table declares 76 groups. A loop over 0..count-1 is wrong. Worse, the `details` group is id 1, not 0 - the client never assumes an id, it calls `requestFile("details")` (Class278.java:171). File ids are sparse too: group 40 (tutorial3_3_staticelements) holds ids [0,1,3,4,5] with a hole at 2, and group 38 holds [0,2].
+
+2. THE NAME HASH IS OVER THE LOWERCASED NAME, AND THIS INDEX PROVES IT. 75 of 76 groups resolve on the raw string because they are already lowercase. The 76th, group 44, does not: the details record spells the area `ft3_zanaris_HQ`, hash -361688576, which matches no group. `hash("ft3_zanaris_hq")` = -361687552, which is exactly group 44's stored identifier. So index 23 is the cheapest available self-proving test of the lowercasing rule AGENTS.md asserts - use it as one.
+
+3. THE ZOOM BYTE IS ALIASED, EXACTLY LIKE THE TERRAIN HEIGHT BYTE CLAUDE.md WARNS ABOUT. Node_Sub46_Sub10.java:483-485 maps a stored 255 to 0. The `null` / "Loading..." area stores 255. Decoding to the value alone loses the choice and re-encodes it as 0 - a one-byte diff in a file nobody edited. Keep the raw byte.
+
+4. THE DETAILS RECORD HAS A BYTE THE CLIENT READS AND DISCARDS. Class48_Sub1.java:52-55 passes eight values to a constructor that stores seven; the eighth u8 has no field. It is 0 in all 39 records here, so a decoder that drops it will pass a round trip against itself and still be wrong the moment it is not 0. Record it verbatim. This is the same class of defect CLAUDE.md flags under "Round-tripping this encoder against this decoder proves nothing".
+
+5. THE AREA TILE ENCODING IS ALMOST CERTAINLY NON-CANONICAL. A terrain tile can carry its palette index either as the 6-bit inline code or as code 63 plus a literal u8 - two byte sequences, same decoded value, and the packer chose per tile. Likewise `62` means "blank", but a blank tile could equally be expressed as a palette entry. Do not recompute the flag byte from the decoded value; store the flag byte as read and emit it back. Assume non-canonical until the sweep says otherwise, per CLAUDE.md.
+
+6. NO XTEA, NO SURPRISES ON COMPRESSION, BUT MIND BZIP2. I decrypted nothing and decompressed all 76 groups successfully with no keys, so index 23 is entirely plaintext. Compression across the 76 groups: 38 BZip2, 21 GZip, 17 uncompressed; every one carries a 2-byte version trailer. The GZip half can never re-encode byte-identically (AGENTS.md: 0 of 96,183), so a byte-identity sweep here MUST compare the decompressed payload, never the stored container. BZip2 is unusually heavily represented on this index - it is the dominant compression, unlike most of the cache - so an index-23 sweep will exercise the BZip2 path harder than anything else in the suite (1724 of 1743 BZip2 containers round-trip; the 19 that do not may well be here).
+
+7. DEPENDENCY ON INDEX 2 THAT IS NOT YET BUILT. The area palettes are floor underlay and overlay ids (index 2 groups 1 and 4) - already decoded by the project, so that half is free. The u16 element ids in the decoration tiles and in every staticelements record point at index 2 group 36, `MAP_ELEMENT_GROUP`, and there is no decoder for it (RSConstants.cs:63 is an unadopted constant). Without it a world-map tab can draw terrain but every icon is a bare number.
+
+8. 637 vs 639: no evidence of drift. Every field the 637 client reads is present and every one of the 1043 files consumes to the exact byte under the 637 read order, so the client is a safe reference here. There is no opcode chain in this index at all - all three record types are fixed-shape - so the "opcode 131" class of 639-only divergence cannot arise.
+
+9. ONE CLIENT ODDITY, NOT A BUG. Class181.java:86-100 checks `method2728(name + "_staticelements")` before `method2741`, and falls back to an empty element list. That is correct behaviour, not a defect - three areas genuinely have no staticelements group. Do not "fix" it by requiring one.
+
+Scripts used to establish all of the above (read-only, scratchpad, nothing in the repo was touched): C:\Users\CJ\AppData\Local\Temp\claude\C--Users-CJ-Desktop-FlashEditor\f188415d-792b-47d7-bdca-e00fd5387036\scratchpad\idx23.py, idx23b.py, idx23c.py, idx23d.py, idx23e.py.
