@@ -229,9 +229,21 @@ namespace FlashEditor.cache {
         ///     staged writes further on and stays as the zeros the caller's buffer already holds.
         ///     Caller holds the gate.
         /// </summary>
+        /// <exception cref="InvalidOperationException">
+        ///     The map is closed for replacement, which <see cref="CloseMap"/> already documents as
+        ///     a window in which reads throw. It used to return instead, leaving the caller's
+        ///     zeroed buffer in place - and a zeroed sector decodes as a plausible empty chain
+        ///     rather than as an error, so a background decode running across a save silently
+        ///     produced blank map squares that were then cached as if they were real.
+        /// </exception>
         private void ReadSource(long position, byte[] destination, int offset, int count) {
-            if(_accessor == null || position >= _sourceLength)
+            if(position >= _sourceLength)
                 return;
+
+            //An empty source cannot reach here: it has _sourceLength 0, so the test above returned.
+            if(_accessor == null)
+                throw new InvalidOperationException(
+                    "The cache data file is closed for replacement; the read at " + position + " cannot be served.");
 
             int available = (int) Math.Min(count, _sourceLength - position);
             if(available > 0)

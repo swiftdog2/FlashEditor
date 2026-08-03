@@ -15,9 +15,25 @@ using static FlashEditor.Utils.DebugUtil;
 namespace FlashEditor.cache {
     public class RSCache {
         /// <summary>
-        /// Lock protecting <see cref="containers"/> from concurrent access
-        /// (e.g. Parallel.ForEach in texture loading).
+        ///     Serialises every read and write that goes through this cache.
         /// </summary>
+        /// <remarks>
+        ///     Not merely a guard over <see cref="containers"/>. A container hands out one shared
+        ///     <c>JagStream</c> with a single read position and is released with
+        ///     <c>ReleaseData</c> the moment a caller has taken its file, so two threads inside
+        ///     <see cref="ReadFile"/> or <see cref="GetSprite"/> on the same container corrupt each
+        ///     other's decode and one can null the stream the other is mid-way through.
+        ///
+        ///     There are now three concurrent callers by design - the map render thread, the
+        ///     texture worker's <c>Parallel.ForEach</c>, and the UI thread - so the whole read is
+        ///     taken under this rather than just the container lookup. It is also held across
+        ///     <see cref="WriteCache"/>, because <c>RSFileStore.SaveTo</c> unmaps the dat2, moves
+        ///     it and remaps it: a decode running through that window reads a closed accessor.
+        ///
+        ///     A Monitor, so the nesting (<c>ReadFile</c> into <c>GetReferenceTable</c> into
+        ///     <c>GetContainer</c>) is reentrant. Nothing taken inside it ever waits on another
+        ///     lock, so it cannot take part in a cycle.
+        /// </remarks>
         private readonly object _containerLock = new object();
 
         /// <summary>
@@ -81,7 +97,13 @@ namespace FlashEditor.cache {
         /// <param name="cacheDir">Destination directory, which may be the one the cache was opened from.</param>
         internal void WriteCache(string cacheDir) {
             Debug("Writing cache to " + cacheDir);
-            store.SaveTo(cacheDir);
+
+            //Under the same lock every read takes. SaveTo closes the memory map, moves the dat2
+            //and every index file over the originals, then remaps - and the map render thread
+            //runs for the whole life of the Map tab, so a decode overlapping that window is the
+            //normal case rather than a rare one.
+            lock (_containerLock)
+                store.SaveTo(cacheDir);
         }
 
         /// <summary>Whether any edit is staged and not yet saved.</summary>
@@ -100,6 +122,14 @@ namespace FlashEditor.cache {
         /// <param name="fileId">The file id within the archive</param>
         /// <param name="data">The encoded file data</param>
         public void WriteFile(int indexId, int archiveId, int fileId, JagStream data) {
+            //Serialised against every read: this mutates the container, its archive and the
+            //reference table entry in place, and a background decode holding the same container
+            //would otherwise see it change underneath itself.
+            lock (_containerLock)
+                WriteFileLocked(indexId, archiveId, fileId, data);
+        }
+
+        private void WriteFileLocked(int indexId, int archiveId, int fileId, JagStream data) {
             if (indexId == RSConstants.META_INDEX)
                 throw new IOException("Reference tables can only be modified with the low level FileStore API!");
 
@@ -442,14 +472,16 @@ namespace FlashEditor.cache {
         /// <param name="archiveId">The archive id within the index</param>
         /// <param name="container">The container to store</param>
         public void UpdateRSContainer(int indexId, int archiveId, RSContainer container) {
-            if (!containers.ContainsKey(indexId))
-                containers.Add(indexId, new SortedDictionary<int, RSContainer>());
+            lock (_containerLock) {
+                if (!containers.ContainsKey(indexId))
+                    containers.Add(indexId, new SortedDictionary<int, RSContainer>());
 
-            //Return the container if already cached
-            if (containers[indexId].ContainsKey(archiveId))
-                containers[indexId][archiveId] = container;
-            else
-                containers[indexId].Add(archiveId, container);
+                //Return the container if already cached
+                if (containers[indexId].ContainsKey(archiveId))
+                    containers[indexId][archiveId] = container;
+                else
+                    containers[indexId].Add(archiveId, container);
+            }
         }
 
         /// <summary>
@@ -460,7 +492,9 @@ namespace FlashEditor.cache {
         public void UpdateReferenceTable(int indexId, RSReferenceTable refTable) {
             if (indexId < 0 || indexId > referenceTables.Length)
                 throw new IndexOutOfRangeException("Invalid index when updating reference table cache");
-            referenceTables[indexId] = refTable;
+
+            lock (_containerLock)
+                referenceTables[indexId] = refTable;
         }
 
         /// <summary>
@@ -565,22 +599,26 @@ namespace FlashEditor.cache {
             if (indexId < 0 || indexId >= store.GetIndexCount())
                 throw new FileNotFoundException("\tERROR - Reference table " + indexId + " out of bounds");
 
-            if (referenceTables[indexId] == null) {
-                RSContainer container = GetContainer(RSConstants.META_INDEX, indexId);
+            //The decode reads the container's shared stream, so it has to be inside the lock and
+            //not merely the container lookup that feeds it.
+            lock (_containerLock) {
+                if (referenceTables[indexId] == null) {
+                    RSContainer container = GetContainer(RSConstants.META_INDEX, indexId);
 
-                if (container == null)
-                    throw new FileNotFoundException("\tERROR - Reference table container " + indexId + " is null");
+                    if (container == null)
+                        throw new FileNotFoundException("\tERROR - Reference table container " + indexId + " is null");
 
-                //Decode the reference table from the container stream and cache it
-                JagStream containerStream = container.GetStream();
-                RSReferenceTable refTable = ReferenceTableCodec.Decode(containerStream);
-                refTable.SetIndexId(indexId); //For the UI
-                referenceTables[indexId] = refTable;
-                Debug("...Decoded reference table " + indexId, LOG_DETAIL.ADVANCED);
-                Debug("", LOG_DETAIL.ADVANCED);
+                    //Decode the reference table from the container stream and cache it
+                    JagStream containerStream = container.GetStream();
+                    RSReferenceTable refTable = ReferenceTableCodec.Decode(containerStream);
+                    refTable.SetIndexId(indexId); //For the UI
+                    referenceTables[indexId] = refTable;
+                    Debug("...Decoded reference table " + indexId, LOG_DETAIL.ADVANCED);
+                    Debug("", LOG_DETAIL.ADVANCED);
+                }
+
+                return referenceTables[indexId];
             }
-
-            return referenceTables[indexId];
         }
 
         /// <summary>
@@ -591,6 +629,15 @@ namespace FlashEditor.cache {
         /// <param name="fileId">The file id within the archive</param>
         /// <returns>The file data within the archive</returns>
         internal JagStream ReadFile(int indexId, int archiveId, int fileId) {
+            //The whole read is one critical section, not just the container lookup. GetArchive
+            //decodes from the container's shared stream and ReleaseData drops that stream as soon
+            //as the file has been taken, so a second thread part way through the same container
+            //reads from a moved position or from nothing at all.
+            lock (_containerLock)
+                return ReadFileLocked(indexId, archiveId, fileId);
+        }
+
+        private JagStream ReadFileLocked(int indexId, int archiveId, int fileId) {
             //Check if the file is valid
             RSArchiveEntry entry = GetReferenceTable(indexId).GetArchiveEntry(archiveId);
 
@@ -687,15 +734,21 @@ namespace FlashEditor.cache {
         /// <returns>The decoded <see cref="SpriteDefinition"/></returns>
         public SpriteDefinition GetSprite(int containerId) {
             Debug($"GetSprite: {containerId}", LOG_DETAIL.ADVANCED);
-            //Get the sprite for the given archive
-            RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
-            if (container == null || container.GetStream() == null)
-                throw new FileNotFoundException($"Sprite container {containerId} not found or has no data");
-            Debug($"Container index {container.GetIndexId()} id {container.GetId()} length {container.GetStream().Length}", LOG_DETAIL.INSANE);
-            Debug($"Decoding sprite container {containerId}", LOG_DETAIL.ADVANCED);
-            SpriteDefinition sprite = SpriteDefinition.DecodeFromStream(container.GetStream());
-            container.ReleaseData();
-            return sprite;
+
+            //Decode and release together under the lock. Both the map render thread (map scene
+            //icons) and the texture worker call this, and the release nulls the very stream the
+            //other one is decoding from.
+            lock (_containerLock) {
+                //Get the sprite for the given archive
+                RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
+                if (container == null || container.GetStream() == null)
+                    throw new FileNotFoundException($"Sprite container {containerId} not found or has no data");
+                Debug($"Container index {container.GetIndexId()} id {container.GetId()} length {container.GetStream().Length}", LOG_DETAIL.INSANE);
+                Debug($"Decoding sprite container {containerId}", LOG_DETAIL.ADVANCED);
+                SpriteDefinition sprite = SpriteDefinition.DecodeFromStream(container.GetStream());
+                container.ReleaseData();
+                return sprite;
+            }
         }
 
         /// <summary>
