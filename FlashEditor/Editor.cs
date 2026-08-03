@@ -387,19 +387,25 @@ namespace FlashEditor {
             GameObjectListView.AlwaysGroupByColumn = objectIdColumn;
             ModelListView.AlwaysGroupByColumn = ModelID;
 
+            //ObjectListView invokes this on the UI thread while it builds and paints rows, so it
+            //is the safety net for any row the texture worker did not supply a bitmap for, not
+            //the normal path.
             TextureImage.ImageGetter = rowObject => {
-                // a) figure out a unique key for this row
+                //The texture id is the ImageList key the worker writes under
                 string key = ((TextureDefinition) rowObject).id.ToString();
 
-                // b) if it’s not already in the list, load & add it
                 if (!TextureListView.LargeImageList!.Images.ContainsKey(key)) { //Assigned _textureImageList in the constructor and never reassigned
-                    // load from DB (or cache) and force it to 100×100
+                    //Routed through CreateThumbnail rather than new Bitmap(raw, size) so this
+                    //produces the same image the worker does. The two disagreed: the worker
+                    //composites onto black at HighQualityBicubic while this composited onto a
+                    //transparent 32bppArgb surface at the default interpolation, and since the
+                    //graph evaluator writes alpha 0 for black pixels the backgrounds differed
+                    //visibly on exactly the rows that came through here.
                     Image raw = TextureManager.GetThumbnailForTexture(key);
-                    var thumb = new Bitmap(raw, new Size(100, 100));
-                    TextureListView.LargeImageList.Images.Add(key, thumb);
+                    TextureListView.LargeImageList.Images.Add(key, CreateThumbnail(raw));
                 }
 
-                // c) return the key so OLV will pull thumb from your LargeImageList
+                //Returning the key lets ObjectListView pull the bitmap out of LargeImageList
                 return key;
             };
         }
@@ -474,8 +480,15 @@ namespace FlashEditor {
                 return;
             }
 
+            //Already loaded, no need to reload
+            if (loaded[editorIndex] && type != RSConstants.META_INDEX)
+                return;
+
             //The map tab loads squares on demand from its own UI rather than populating a list
-            //view up front, so it wants binding, not the background-worker path below.
+            //view up front, so it wants binding, not the background-worker path below. Below the
+            //loaded guard like every other tab: rebinding discards the undo history and every
+            //unsaved map edit with it, so a tab revisit has to be a no-op. Bind is idempotent as
+            //well, because loaded[] is reset wholesale whenever a cache is opened.
             if (type == RSConstants.MAPS_INDEX) {
                 loaded[editorIndex] = true;
                 MapEditorPanel.Bind(cache, GetCacheDir());
@@ -489,10 +502,6 @@ namespace FlashEditor {
                 TrackEditorPanel.Bind(cache);
                 return;
             }
-
-            //Already loaded, no need to reload
-            if (loaded[editorIndex] && type != RSConstants.META_INDEX)
-                return;
 
             /*
              * Once we've loaded the tab, there's no need to reload it every time
@@ -787,11 +796,60 @@ namespace FlashEditor {
                     bgw.RunWorkerAsync();
                     break;
 
-                case RSConstants.TEXTURES:
-                    // Textures already loaded by GLTextureCache during cache open.
-                    // Just populate the ListView from the existing static dict.
-                    LoadTextures(TextureManager.Textures.Values);
-                    break;
+                case RSConstants.TEXTURES: {
+                        //This case used to call LoadTextures inline and leave the worker created
+                        //above orphaned, so the whole 1408-definition render sweep ran on the UI
+                        //thread before the message loop could pump - which is what made the tab
+                        //look frozen. Snapshot on the UI thread, then do everything on the worker.
+                        //TextureManager.Textures is a static dictionary shared with GLTextureCache
+                        //and the map path, so it is copied rather than enumerated off-thread.
+                        List<TextureDefinition> snapshot = TextureManager.Textures.Values.ToList();
+
+                        //Dropping the previous cache's rows first. The list view now stays live and
+                        //paintable for the whole load, and its ImageGetter would otherwise be asked
+                        //for tiles for textures that no longer exist.
+                        TextureListView.ClearObjects();
+
+                        TextureProgressBar.Value = 0;
+                        TextureLoadingLabel.Text = $"Rendering {snapshot.Count} textures";
+
+                        bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                            TextureProgressBar.Value = Math.Clamp(e.ProgressPercentage, 0, 100);
+                            TextureLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
+                        });
+
+                        bgw.DoWork += (object? s, DoWorkEventArgs args) => {
+                            args.Result = RenderTextureThumbnails(bgw, snapshot, args);
+                        };
+
+                        bgw.RunWorkerCompleted += (_, e) => {
+                            //Reading e.Result throws when the worker cancelled or faulted, so both
+                            //are checked first. LoadEditorTab marks the tab loaded before any work
+                            //starts, so a fault has to clear that flag or the tab stays empty for
+                            //the rest of the session with no way to retry.
+                            if (e.Cancelled) {
+                                loaded[editorIndex] = false;
+                                TextureLoadingLabel.Text = "Texture load cancelled";
+                                return;
+                            }
+
+                            if (e.Error != null) {
+                                loaded[editorIndex] = false;
+                                TextureLoadingLabel.Text = "Texture load failed";
+                                Debug($"LoadTextures failed: {e.Error.GetType().Name}: {e.Error.Message}", LOG_DETAIL.BASIC);
+                                return;
+                            }
+
+                            ApplyTextureThumbnails((TextureThumbnailBatch) e.Result!);
+                        };
+
+                        bgw.Disposed += delegate {
+                            workers.Remove(bgw);
+                        };
+
+                        bgw.RunWorkerAsync();
+                        break;
+                    }
 
                 case RSConstants.MODELS_INDEX: {
                         ProgressBar bar = ModelProgressBar;
@@ -1007,7 +1065,12 @@ namespace FlashEditor {
                 return true;
 
             try {
-                cache.WriteCache(directory);
+                //Through the map panel's store lock, which is the lock its render thread decodes
+                //under. Writing replaces the dat2 and every index file on disk, and the render
+                //thread runs for the whole life of the Map tab - a decode overlapping the
+                //replacement used to read a closed memory map. MapEditorPanel.SaveEdits already
+                //takes this gate for its own save; this is the same operation from the File menu.
+                MapEditorPanel.RunExclusive(() => cache.WriteCache(directory));
                 Debug("Saved cache to " + directory);
                 return true;
             }
@@ -1473,6 +1536,12 @@ namespace FlashEditor {
         }
 
         private void DisposeOldResources() {
+            //First, and unconditionally. Unbinding joins the map's render thread, which is the one
+            //thing still reading through cache.store on a background thread. LoadEditorTab only
+            //rebinds the tab that happens to be selected, so a reload started from any other tab
+            //would otherwise leave that thread decoding out of a disposed file store.
+            MapEditorPanel.Bind(null);
+
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {
                     if(obj is SpriteDefinition sprite)
@@ -1504,7 +1573,16 @@ namespace FlashEditor {
             MessageBox.Show("Dummy action executed.");
         }
 
-        private static Image CreateThumbnail(Image img, int width = 100, int height = 100) {
+        /// <summary>
+        /// Builds the 100x100 tile bitmap the texture list shows for one texture.
+        /// </summary>
+        /// <remarks>
+        /// Every path that fills a tile has to come through here. The graph evaluator writes
+        /// alpha 0 for a black pixel, so drawing onto a cleared-to-black surface rather than onto
+        /// a transparent one is a visible difference, and two paths that disagree about it show
+        /// up as a handful of tiles with the wrong background.
+        /// </remarks>
+        private static Bitmap CreateThumbnail(Image img, int width = 100, int height = 100) {
             var bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp)) {
                 g.Clear(Color.Black);
@@ -1516,95 +1594,170 @@ namespace FlashEditor {
             return bmp;
         }
 
-        private void LoadTextures(IEnumerable<TextureDefinition> textures)
-        {
-            var textureList = new List<TextureDefinition>(textures);
-            Debug($"LoadTextures: {textureList.Count} definitions to process", LOG_DETAIL.BASIC);
+        /// <summary>
+        /// The 100x100 tile drawn for a texture that produced no image at all.
+        /// </summary>
+        /// <remarks>
+        /// This replaced a branch that drew the texture id over the colour and then bicubic
+        /// resampled the result from 100x100 to 100x100, which cost a font measurement and a
+        /// resample to arrive at the same flat colour. It is also all but unreachable, because
+        /// <see cref="TextureManager.EnsureRendered"/> already falls back to this colour on every
+        /// exit - and it read <c>Control.Font</c>, which the worker thread must not touch.
+        /// </remarks>
+        private static Bitmap SolidTextureThumbnail(int rgb) {
+            var bmp = new Bitmap(100, 100, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(bmp))
+                g.Clear(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
+            return bmp;
+        }
 
-            // Phase 1: Render all texture graphs in parallel (CPU-bound work)
-            int rendered = 0;
-            Debug($"LoadTextures: rendering graphs with 20 threads...", LOG_DETAIL.BASIC);
-            int timedOut = 0;
-            var sw2 = System.Diagnostics.Stopwatch.StartNew();
-            System.Threading.Tasks.Parallel.ForEach(textureList,
-                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 20 },
-                tex => {
-                    try {
-                        var texSw = System.Diagnostics.Stopwatch.StartNew();
-                        var task = System.Threading.Tasks.Task.Run(() => TextureManager.EnsureRendered(tex));
-                        if (!task.Wait(15000)) {
-                            System.Threading.Interlocked.Increment(ref timedOut);
-                            Debug($"Texture {tex.id} timed out (15s) — graph={tex.graph != null}, sprites={tex.spriteFileIds?.Length ?? 0}", LOG_DETAIL.BASIC);
-                        } else {
-                            texSw.Stop();
-                            if (texSw.ElapsedMilliseconds > 1000)
-                                Debug($"Texture {tex.id} slow render: {texSw.ElapsedMilliseconds}ms, thumb={tex.thumb != null}", LOG_DETAIL.BASIC);
-                        }
-                    } catch (AggregateException aex) {
-                        var inner = aex.Flatten().InnerException;
-                        Debug($"Error rendering texture {tex.id}: {inner?.GetType().Name}: {inner?.Message}", LOG_DETAIL.BASIC);
-                        Debug($"  Stack: {inner?.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}", LOG_DETAIL.BASIC);
-                    } catch (Exception ex) {
-                        Debug($"Error rendering texture {tex.id}: {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
-                    }
-                    int count = System.Threading.Interlocked.Increment(ref rendered);
-                    if (count % 100 == 0 || count == textureList.Count)
-                        Debug($"LoadTextures: rendered {count}/{textureList.Count}", LOG_DETAIL.BASIC);
-                });
-            sw2.Stop();
-            Debug($"LoadTextures: Phase 1 complete in {sw2.ElapsedMilliseconds}ms, {timedOut} timed out", LOG_DETAIL.BASIC);
+        /// <summary>
+        /// Renders every texture graph and builds its list thumbnail, entirely off the UI thread.
+        /// </summary>
+        /// <remarks>
+        /// Nothing here may touch a control or the ImageList: an ImageList realises a native
+        /// handle on first use and is not thread safe, and the list view is a control. Creating
+        /// the bitmaps here is safe because each one is unattached and owned by this thread until
+        /// <see cref="ApplyTextureThumbnails"/> hands it over.
+        /// </remarks>
+        /// <param name="bgw">The worker driving this pass, used for progress and cancellation.</param>
+        /// <param name="textures">A snapshot taken on the UI thread, so the static dictionary is never enumerated off-thread.</param>
+        /// <param name="args">The <see cref="DoWorkEventArgs"/> to flag when cancellation wins the race.</param>
+        private static TextureThumbnailBatch RenderTextureThumbnails(BackgroundWorker bgw, List<TextureDefinition> textures, DoWorkEventArgs args) {
+            var batch = new TextureThumbnailBatch(textures);
 
-            Debug($"LoadTextures: graph rendering complete, building UI...", LOG_DETAIL.BASIC);
+            int total = textures.Count;
+            if (total == 0)
+                return batch;
 
-            // Phase 2: Build UI image list (must be sequential — WinForms ImageList)
-            int errors = 0;
-            int withSprite = 0;
-            int withoutSprite = 0;
+            int percentile = Math.Max(1, total / 100);
+            int done = 0;
+            int failed = 0;
 
-            foreach (var tex in textureList)
-            {
-                try
-                {
-                    Bitmap listThumb;
-                    if (tex.thumb != null) {
-                        // Use real sprite/rendered thumbnail
-                        listThumb = (Bitmap)CreateThumbnail(tex.thumb);
-                        withSprite++;
-                    } else {
-                        // Only reachable when EnsureRendered could not run at all, since it now
-                        // always falls back to the material's own colour. The id is drawn on
-                        // top because reaching here does mean something went wrong.
-                        var bmp = new Bitmap(100, 100);
-                        using (var g = Graphics.FromImage(bmp))
-                        {
-                            int rgb = TextureManager.RepresentativeRgb(tex);
-                            int r = (rgb >> 16) & 0xFF;
-                            int gv = (rgb >> 8) & 0xFF;
-                            int b = rgb & 0xFF;
-                            Color c = Color.FromArgb(255, r, gv, b);
-                            g.Clear(c);
-                            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                            g.DrawString(tex.id.ToString(), Font, Brushes.White, new RectangleF(0, 0, 100, 100), sf);
-                        }
-                        listThumb = (Bitmap)CreateThumbnail(bmp);
-                        withoutSprite++;
-                    }
+            Debug($"LoadTextures: rendering {total} texture graphs across {Environment.ProcessorCount} threads", LOG_DETAIL.BASIC);
+            Stopwatch sw = Stopwatch.StartNew();
 
-                    // Only add to the image list — don't overwrite tex.thumb
-                    // so GLTextureCache can use the full-resolution sprite/render
-                    if (!_textureImageList.Images.ContainsKey(tex.id.ToString()))
-                        _textureImageList.Images.Add(tex.id.ToString(), listThumb);
+            //Environment.ProcessorCount rather than the previous 20: 20 was picked for a body that
+            //blocked half its threads, and once the body no longer blocks, oversubscribing purely
+            //CPU-bound work only costs context switches.
+            var options = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+
+            System.Threading.Tasks.Parallel.ForEach(textures, options, (tex, state) => {
+                if (bgw.CancellationPending) {
+                    state.Stop();
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    Debug($"Error processing texture {tex.id}: {ex.Message}", LOG_DETAIL.BASIC);
-                    errors++;
+
+                try {
+                    //Called directly rather than through Task.Run with a 15 second Wait.
+                    //Parallel.ForEach already runs this body on a pool thread, so that shape
+                    //needed two pool threads per texture and blocked one of them in Wait. Against
+                    //a pool that starts at ProcessorCount and injects further threads slowly, the
+                    //renders queued behind the blocked waiters could not start, so "timed out" was
+                    //a starvation report rather than a slow texture. Wait also cancelled nothing:
+                    //a timed-out render kept its thread and could still assign def.thumb after the
+                    //loop had moved on.
+                    TextureManager.EnsureRendered(tex);
+                } catch (Exception ex) {
+                    System.Threading.Interlocked.Increment(ref failed);
+                    Debug($"Error rendering texture {tex.id}: {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                }
+
+                //Reported on 1% boundaries only. ReportProgress is safe from several threads, but
+                //one post per texture from N threads floods the message pump and makes the UI less
+                //responsive, which is the opposite of the point.
+                int count = System.Threading.Interlocked.Increment(ref done);
+                if (count % percentile == 0 || count == total)
+                    bgw.ReportProgress(count * 100 / total, $"Rendering {count}/{total} ({count * 100 / total}%)");
+            });
+
+            sw.Stop();
+            Debug($"LoadTextures: rendered {done}/{total} in {sw.ElapsedMilliseconds}ms, {failed} errors", LOG_DETAIL.BASIC);
+
+            if (bgw.CancellationPending) {
+                args.Cancel = true;
+                return batch;
+            }
+
+            //Thumbnail construction also belongs here. GDI+ bitmap creation and drawing are safe
+            //off the UI thread for an unattached bitmap with a single owner, and doing all 1408 of
+            //them on the UI thread was the second half of the freeze.
+            bgw.ReportProgress(100, $"Building {total} thumbnails");
+
+            int solidFallbacks = 0;
+            foreach (var tex in textures) {
+                try {
+                    //EnsureRendered leaves a thumb behind on every exit, so a null one means it
+                    //could not run at all rather than that the texture has nothing to draw.
+                    Bitmap? source = tex.thumb;
+                    if (source != null) {
+                        batch.Thumbnails.Add((tex.id, CreateThumbnail(source)));
+                    } else {
+                        batch.Thumbnails.Add((tex.id, SolidTextureThumbnail(TextureManager.RepresentativeRgb(tex))));
+                        solidFallbacks++;
+                    }
+                } catch (Exception ex) {
+                    //Skipped rather than substituted: the deferred ImageGetter fills any key the
+                    //batch does not carry, so a texture is never left without a tile.
+                    Debug($"Error building thumbnail for texture {tex.id}: {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
                 }
             }
 
-            Debug($"LoadTextures complete: {textureList.Count} textures, {withSprite} with sprites, {withoutSprite} without, {errors} errors", LOG_DETAIL.BASIC);
+            Debug($"LoadTextures: {batch.Thumbnails.Count} thumbnails built, {solidFallbacks} from the material colour", LOG_DETAIL.BASIC);
+            return batch;
+        }
+
+        /// <summary>
+        /// Publishes what the texture worker produced: the tile bitmaps first, then the rows.
+        /// </summary>
+        /// <remarks>
+        /// Split out from the render pass because both halves of this are UI-thread only. The
+        /// other tabs call <c>SetObjects</c> from inside <c>DoWork</c>, which is cross-thread
+        /// control access and works by luck; the models tab does it in <c>RunWorkerCompleted</c>
+        /// and is the shape copied here.
+        /// </remarks>
+        private void ApplyTextureThumbnails(TextureThumbnailBatch batch) {
+            TextureListView.BeginUpdate();
+            try {
+                foreach ((int id, Bitmap thumbnail) in batch.Thumbnails) {
+                    string key = id.ToString();
+
+                    //Only added to the image list. tex.thumb keeps the full-resolution render so
+                    //GLTextureCache can still upload it to the model viewer.
+                    if (!_textureImageList.Images.ContainsKey(key))
+                        _textureImageList.Images.Add(key, thumbnail);
+                    else
+                        thumbnail.Dispose(); //Never handed over, so this one is ours to release
+                }
+
+                TextureListView.SetObjects(batch.Definitions);
+            } finally {
+                TextureListView.EndUpdate();
+            }
+
+            TextureProgressBar.Value = 100;
+            TextureLoadingLabel.Text = $"Textures loaded ({batch.Definitions.Count})";
             TextureManager.PrintDiagnostics();
-            TextureListView.SetObjects(textureList);
+        }
+
+        /// <summary>
+        /// What the texture worker hands back to the UI thread.
+        /// </summary>
+        /// <remarks>
+        /// The rows and their bitmaps travel together so the completion handler cannot bind one
+        /// without inserting the other, which would leave rows drawing whatever the ImageList
+        /// happened to already hold under those keys.
+        /// </remarks>
+        private sealed class TextureThumbnailBatch {
+            internal TextureThumbnailBatch(List<TextureDefinition> definitions) {
+                Definitions = definitions;
+            }
+
+            /// <summary>The rows to bind, in the order the list view should show them.</summary>
+            internal List<TextureDefinition> Definitions { get; }
+
+            /// <summary>Each texture id paired with the bitmap the ImageList should key under it.</summary>
+            internal List<(int Id, Bitmap Thumbnail)> Thumbnails { get; } = new();
         }
     }
 }

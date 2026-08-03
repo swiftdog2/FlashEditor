@@ -12,10 +12,19 @@ namespace FlashEditor
     /// <summary>
     /// Creates OpenGL texture objects from cache texture definitions and memoises them.
     /// With the Hydra columnar format, texture metadata (Class238) doesn't contain
-    /// direct sprite references — those live in the per-texture operation graphs
+    /// direct sprite references - those live in the per-texture operation graphs
     /// (index 9). For now, textures are rendered as solid colours derived from
     /// field1835 (which encodes an RGB tint).
     /// </summary>
+    /// <remarks>
+    /// The constructor runs <see cref="TextureManager.Load"/>, which decodes the index-26
+    /// columnar block and all 946 index-9 graphs on whatever thread opens the cache - the UI
+    /// thread, on every cache open, whether or not the Textures tab is ever visited. It
+    /// evaluates no graphs and decodes no sprites, so it is far cheaper than the render sweep,
+    /// but it is still synchronous work on the wrong thread. Lifting it out so both the
+    /// Textures worker and <see cref="GetTexture"/> trigger it on demand touches the map and
+    /// model render paths and belongs in its own change.
+    /// </remarks>
     public sealed class GLTextureCache
     {
         private readonly RSCache _cache;

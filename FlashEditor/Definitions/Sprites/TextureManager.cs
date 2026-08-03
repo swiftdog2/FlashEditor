@@ -414,10 +414,12 @@ namespace FlashEditor.Definitions.Sprites {
 
             bool hasGraph = def.graph != null;
             bool hasSprites = def.spriteFileIds != null && def.spriteFileIds.Length > 0;
-            // hasGraph is the null check; the compiler cannot see through the bool.
-            int nodeCount = hasGraph ? (def.graph!.Nodes?.Length ?? 0) : 0;
-            Debug($"Tex {def.id}: BEGIN — graph={hasGraph} (nodes={nodeCount}), sprites={hasSprites} ({def.spriteFileIds?.Length ?? 0} ids), " +
-                  $"tint=0x{def.field1835:X6}, transpose={def.field1824}", LOG_DETAIL.ADVANCED);
+            if (LOG_LEVEL >= LOG_DETAIL.ADVANCED) {
+                // hasGraph is the null check; the compiler cannot see through the bool.
+                int nodeCount = hasGraph ? (def.graph!.Nodes?.Length ?? 0) : 0;
+                Debug($"Tex {def.id}: BEGIN - graph={hasGraph} (nodes={nodeCount}), sprites={hasSprites} ({def.spriteFileIds?.Length ?? 0} ids), " +
+                      $"tint=0x{def.field1835:X6}, transpose={def.field1824}", LOG_DETAIL.ADVANCED);
+            }
 
             // Try graph rendering first — this evaluates the full procedural
             // texture pipeline and produces the most accurate result.
@@ -427,8 +429,11 @@ namespace FlashEditor.Definitions.Sprites {
                     Debug($"Tex {def.id}: graph render starting — colourOut={def.graph!.ColourOutputIndex}, " +
                           $"alphaOut={def.graph.AlphaOutputIndex}, brightnessOut={def.graph.BrightnessOutputIndex}", LOG_DETAIL.ADVANCED);
 
-                    // Log node types in the graph for diagnosis
-                    if (def.graph.Nodes != null) {
+                    // Log node types in the graph for diagnosis.
+                    // Gated on the level rather than left to Debug to discard: Debug takes an
+                    // already-formatted string, so the dictionary, the LINQ and the string.Join
+                    // all run per texture whatever the level is, and the default level is BASIC.
+                    if (LOG_LEVEL >= LOG_DETAIL.ADVANCED && def.graph.Nodes != null) {
                         var nodeTypes = new System.Collections.Generic.Dictionary<int, int>();
                         int spriteNodes = 0;
                         foreach (var n in def.graph.Nodes) {
@@ -468,7 +473,9 @@ namespace FlashEditor.Definitions.Sprites {
             // Fall back to loading a sprite thumbnail directly from the cache.
             // Try ALL referenced sprite IDs, not just the first one.
             if (hasSprites) {
-                Debug($"Tex {def.id}: sprite fallback — trying IDs: [{string.Join(", ", def.spriteFileIds!)}]", LOG_DETAIL.ADVANCED);
+                //string.Join runs regardless of level once it is an argument, so it is gated
+                if (LOG_LEVEL >= LOG_DETAIL.ADVANCED)
+                    Debug($"Tex {def.id}: sprite fallback - trying IDs: [{string.Join(", ", def.spriteFileIds!)}]", LOG_DETAIL.ADVANCED);
                 for (int si = 0; si < def.spriteFileIds!.Length; si++) {
                     int spriteId = def.spriteFileIds[si];
                     try {

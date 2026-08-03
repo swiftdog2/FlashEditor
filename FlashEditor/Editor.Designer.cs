@@ -141,6 +141,9 @@ namespace FlashEditor {
             ModelLoadingLabel = new Label();
             ModelProgressBar = new ProgressBar();
             TextureViewerTab = new TabPage();
+            TextureStatusPanel = new Panel();
+            TextureProgressBar = new ProgressBar();
+            TextureLoadingLabel = new Label();
             MapEditorTab = new TabPage();
             TrackEditorTab = new TabPage();
             TextureListView = new ObjectListView();
@@ -178,6 +181,7 @@ namespace FlashEditor {
             splitContainer1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
             TextureViewerTab.SuspendLayout();
+            TextureStatusPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) TextureListView).BeginInit();
             ((System.ComponentModel.ISupportInitialize) eventLog1).BeginInit();
             SuspendLayout();
@@ -1293,15 +1297,58 @@ namespace FlashEditor {
             ModelProgressBar.TabIndex = 13;
             // 
             // TextureViewerTab
-            // 
+            //
+            // Docking is resolved from the end of the Controls collection backwards, so the
+            // bottom strip has to be added after the Fill'd list view or the list view claims
+            // the whole tab and the progress bar never gets any height. Same ordering as
+            // Controls.Add(EditorTabControl) followed by Controls.Add(menuStrip1) on the form.
             TextureViewerTab.Controls.Add(TextureListView);
+            TextureViewerTab.Controls.Add(TextureStatusPanel);
             TextureViewerTab.Location = new Point(4, 37);
             TextureViewerTab.Name = "TextureViewerTab";
             TextureViewerTab.Size = new Size(1113, 554);
             TextureViewerTab.TabIndex = 7;
             TextureViewerTab.Text = "Textures";
             TextureViewerTab.UseVisualStyleBackColor = true;
-            // 
+            //
+            // TextureStatusPanel
+            //
+            // A docked strip rather than the absolute Location plus Anchor the other tabs use:
+            // TextureListView fills the tab in tile view, so an anchored bar would float over
+            // the tiles instead of reserving space for itself.
+            TextureStatusPanel.Controls.Add(TextureProgressBar);
+            TextureStatusPanel.Controls.Add(TextureLoadingLabel);
+            TextureStatusPanel.Dock = DockStyle.Bottom;
+            TextureStatusPanel.Location = new Point(0, 520);
+            TextureStatusPanel.Name = "TextureStatusPanel";
+            TextureStatusPanel.Size = new Size(1113, 34);
+            TextureStatusPanel.TabIndex = 1;
+            //
+            // TextureProgressBar
+            //
+            TextureProgressBar.Dock = DockStyle.Fill;
+            TextureProgressBar.ForeColor = Color.DarkRed;
+            TextureProgressBar.Location = new Point(0, 0);
+            TextureProgressBar.Name = "TextureProgressBar";
+            TextureProgressBar.Size = new Size(783, 34);
+            TextureProgressBar.TabIndex = 0;
+            //
+            // TextureLoadingLabel
+            //
+            // Fixed width rather than AutoSize: the text carries a changing count, and an
+            // auto-sized label docked Right would resize the progress bar on every report.
+            // Label.AutoSize defaults to true, so it has to be turned off for Size to hold.
+            TextureLoadingLabel.AutoSize = false;
+            TextureLoadingLabel.BackColor = Color.Transparent;
+            TextureLoadingLabel.Dock = DockStyle.Right;
+            TextureLoadingLabel.Font = new Font("Consolas", 12F);
+            TextureLoadingLabel.Location = new Point(783, 0);
+            TextureLoadingLabel.Name = "TextureLoadingLabel";
+            TextureLoadingLabel.Size = new Size(330, 34);
+            TextureLoadingLabel.TabIndex = 1;
+            TextureLoadingLabel.Text = "Loading Textures";
+            TextureLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
+            //
             // MapEditorTab
             // 
             MapEditorTab.Controls.Add(MapEditorPanel);
@@ -1405,6 +1452,8 @@ namespace FlashEditor {
             splitContainer1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) ModelListView).EndInit();
             TextureViewerTab.ResumeLayout(false);
+            TextureStatusPanel.ResumeLayout(false);
+            TextureStatusPanel.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) TextureListView).EndInit();
             ((System.ComponentModel.ISupportInitialize) eventLog1).EndInit();
             ResumeLayout(false);
@@ -1528,6 +1577,11 @@ namespace FlashEditor {
         private TabPage TrackEditorTab;
         private FlashEditor.Definitions.Tracks.TrackEditorPanel TrackEditorPanel = new FlashEditor.Definitions.Tracks.TrackEditorPanel();
         private BrightIdeasSoftware.ObjectListView TextureListView;
+        //InitializeComponent assigns all three; the null-forgiving initialiser is only there so
+        //they do not each add a fresh CS8618 to the build the way the older designer fields do.
+        private Panel TextureStatusPanel = null!;
+        private ProgressBar TextureProgressBar = null!;
+        private Label TextureLoadingLabel = null!;
         private BrightIdeasSoftware.OLVColumn TextureID;
         private BrightIdeasSoftware.OLVColumn TextureImage;
         private SplitContainer splitContainer1;
