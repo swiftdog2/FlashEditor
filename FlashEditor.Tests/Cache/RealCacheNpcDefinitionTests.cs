@@ -1,8 +1,6 @@
 using FlashEditor.cache;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -32,9 +30,6 @@ namespace FlashEditor.Tests.Cache
         private readonly RealCacheFixture _cache;
         private readonly ITestOutputHelper _output;
 
-        /// <summary>Failures listed before the report is truncated.</summary>
-        private const int MaxReportedFailures = 10;
-
         /// <summary>
         ///     Sentinel bytes appended past the end of a definition so an over-read is visible.
         /// </summary>
@@ -58,63 +53,38 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     The NPC index bound to the production codec, for the shared byte-identity harness.
+        /// </summary>
+        /// <remarks>
+        ///     The id comes from <see cref="CacheAddressing"/>, which puts 128 NPC ids in a group
+        ///     rather than 256: the client shifts by 7 (<c>Class301.java:207-208</c>) and the cache
+        ///     agrees, holding 13,359 definitions in 106 groups. Nothing in the sweep turns on it -
+        ///     the id only labels a failure and is not encoded - but a report that named the wrong
+        ///     NPC would send the reader to the wrong record.
+        /// </remarks>
+        /// <returns>A sweep over every NPC definition the cache declares.</returns>
+        private DefinitionSweep<NPCDefinition> Sweep()
+        {
+            return new DefinitionSweep<NPCDefinition>(_cache, _output, RSConstants.NPC_DEFINITIONS_INDEX,
+                new DefinitionCodec<NPCDefinition>("NPC",
+                    (id, stream) =>
+                    {
+                        var definition = new NPCDefinition(stream);
+                        definition.SetId(id);
+                        return definition;
+                    },
+                    definition => definition.Encode(),
+                    definition => DefinitionCodec.FromHitMap(definition.decoded)));
+        }
+
+        /// <summary>
         ///     Decodes every NPC definition and requires each one to land exactly on the end of
         ///     its own buffer - no bytes left over, none read past the end.
         /// </summary>
         [RealCacheFact]
         public void AllNpcDefinitions_Decode_AndConsumeTheirBufferExactly()
         {
-            var failures = new List<string>();
-            int decoded = 0;
-            long bytes = 0;
-
-            foreach ((int npcId, byte[] data) in Definitions())
-            {
-                decoded++;
-                bytes += data.Length;
-
-                //The genuine bytes first: this is the "decodes without throwing" assertion.
-                try
-                {
-                    NPCDefinition unused = new NPCDefinition(new JagStream(data));
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"npc {npcId} ({data.Length} bytes): decode threw {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                //Then the padded copy, which is what actually pins the opcode payload sizes.
-                long consumed;
-                try
-                {
-                    var padded = new JagStream(Pad(data));
-                    NPCDefinition unused = new NPCDefinition(padded);
-                    consumed = padded.Position;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"npc {npcId} ({data.Length} bytes): decode ran past the end - " +
-                                 $"{ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                if (consumed != data.Length)
-                {
-                    failures.Add($"npc {npcId}: consumed {consumed} of {data.Length} bytes " +
-                                 $"({consumed - data.Length:+#;-#;0})");
-                }
-            }
-
-            _output.WriteLine($"{decoded} NPC definitions decoded, {bytes} bytes consumed exactly");
-            if (!_cache.FullSweep)
-            {
-                _output.WriteLine($"sampled up to {RealCacheFixture.SampleArchivesPerIndex} archives; " +
-                                  $"set {RealCacheLocator.FullSweepVariable}=1 to decode every definition");
-            }
-
-            Assert.True(decoded > 0, "no NPC definition was decoded, so nothing was checked");
-            AssertNoFailures(failures, "NPC definitions did not consume their buffer exactly");
+            Sweep().AssertExactConsumption();
         }
 
         /// <summary>
@@ -140,81 +110,9 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllNpcDefinitions_ReEncode_WithoutLossThroughTheirOwnDecoder()
         {
-            var failures = new List<string>();
-            int encoded = 0;
-            int byteIdentical = 0;
-
-            foreach ((int npcId, byte[] data) in Definitions())
-            {
-                NPCDefinition definition;
-                try
-                {
-                    definition = new NPCDefinition(new JagStream(data));
-                }
-                catch (Exception)
-                {
-                    //Already reported by the decode test; nothing to add here.
-                    continue;
-                }
-
-                byte[] first;
-                try
-                {
-                    first = definition.Encode().ToArray();
-                    encoded++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"npc {npcId}: encode threw {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                if (first.Length == data.Length && first.AsSpan().SequenceEqual(data))
-                    byteIdentical++;
-
-                //The encoder's own output must be a well-formed opcode stream, or the editor
-                //writes a cache it cannot read back.
-                long consumed;
-                byte[] second;
-                try
-                {
-                    var padded = new JagStream(Pad(first));
-                    NPCDefinition reread = new NPCDefinition(padded);
-                    consumed = padded.Position;
-                    second = reread.Encode().ToArray();
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"npc {npcId}: re-decoding the encoded stream threw " +
-                                 $"{ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                if (consumed != first.Length)
-                {
-                    failures.Add($"npc {npcId}: the encoded stream is {first.Length} bytes but " +
-                                 $"re-decoding consumed {consumed}");
-                    continue;
-                }
-
-                if (!second.AsSpan().SequenceEqual(first))
-                {
-                    failures.Add($"npc {npcId}: encode is not stable - {first.Length} bytes " +
-                                 $"became {second.Length} on the second pass");
-                }
-            }
-
-            _output.WriteLine($"{encoded} NPC definitions re-encoded, {byteIdentical} byte-identical to the cache");
             _output.WriteLine("byte-identity itself is asserted by " +
                               nameof(AllNpcDefinitions_ReEncodeToTheCapturedBytes));
-            if (!_cache.FullSweep)
-            {
-                _output.WriteLine($"sampled up to {RealCacheFixture.SampleArchivesPerIndex} archives; " +
-                                  $"set {RealCacheLocator.FullSweepVariable}=1 to encode every definition");
-            }
-
-            Assert.True(encoded > 0, "no NPC definition was encoded, so nothing was checked");
-            AssertNoFailures(failures, "NPC definitions did not survive a re-encode");
+            Sweep().AssertEncodeIsAFixedPointOfDecode();
         }
 
         /// <summary>
@@ -239,69 +137,7 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllNpcDefinitions_ReEncodeToTheCapturedBytes()
         {
-            var failures = new List<string>();
-            var opcodesInFailures = new SortedDictionary<int, int>();
-            int identical = 0;
-            int reordered = 0;
-
-            foreach ((int npcId, byte[] data) in Definitions())
-            {
-                NPCDefinition definition;
-                byte[] reencoded;
-
-                try
-                {
-                    definition = new NPCDefinition(new JagStream(data));
-                    definition.SetId(npcId);
-                    reencoded = definition.Encode().ToArray();
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"npc {npcId}: re-encode threw {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                if (reencoded.AsSpan().SequenceEqual(data))
-                {
-                    identical++;
-                    continue;
-                }
-
-                //Same multiset of bytes means the content survived and only the layout moved,
-                //which points at the opcode order rather than at a mis-encoded payload.
-                byte[] storedSorted = (byte[])data.Clone();
-                byte[] reencodedSorted = (byte[])reencoded.Clone();
-                Array.Sort(storedSorted);
-                Array.Sort(reencodedSorted);
-                bool sameBytes = storedSorted.AsSpan().SequenceEqual(reencodedSorted);
-                if (sameBytes)
-                    reordered++;
-
-                int at = FirstDifference(data, reencoded);
-                failures.Add($"npc {npcId}: re-encoded {reencoded.Length} bytes from a stored " +
-                             $"{data.Length}, first difference at {at} " +
-                             $"({ByteAt(data, at)} became {ByteAt(reencoded, at)}), " +
-                             $"{(sameBytes ? "same bytes in a different order" : "different content")}; " +
-                             $"opcodes {Opcodes(definition)}");
-                Tally(opcodesInFailures, definition);
-            }
-
-            _output.WriteLine($"{identical} NPC definitions re-encoded to byte-identical output");
-            if (reordered > 0)
-            {
-                _output.WriteLine($"{reordered} more carried the same bytes in a different order, " +
-                                  "so the encoder is no longer replaying the stored opcode order");
-            }
-            if (opcodesInFailures.Count > 0)
-                _output.WriteLine("opcodes seen in failing definitions: " + Histogram(opcodesInFailures));
-            if (!_cache.FullSweep)
-            {
-                _output.WriteLine($"sampled up to {RealCacheFixture.SampleArchivesPerIndex} archives; " +
-                                  $"set {RealCacheLocator.FullSweepVariable}=1 to encode every definition");
-            }
-
-            Assert.True(identical > 0, "no NPC definition was re-encoded, so nothing was checked");
-            AssertNoFailures(failures, "NPC definitions did not re-encode to their stored bytes");
+            Sweep().AssertReEncodesToCapturedBytes();
         }
 
         // ===================================================================
@@ -827,82 +663,6 @@ namespace FlashEditor.Tests.Cache
             Assert.NotEqual(data.Length, reader.Position);
         }
 
-        /// <summary>
-        ///     Walks the NPC index, yielding every definition's raw bytes with its NPC id.
-        /// </summary>
-        /// <remarks>
-        ///     Reads through the fixture rather than <see cref="RSCache.GetNPCDefinition"/>
-        ///     because that path memoises every container it touches, which is fine for the one
-        ///     definition an editor pane shows and ruinous across the whole index.
-        /// </remarks>
-        /// <returns>Each NPC id paired with the file bytes backing it.</returns>
-        private IEnumerable<(int npcId, byte[] data)> Definitions()
-        {
-            RSReferenceTable table = _cache.Table(RSConstants.NPC_DEFINITIONS_INDEX);
-
-            foreach (int archiveId in _cache.ArchivesToExamine(table))
-            {
-                byte[] stored = _cache.RawContainer(RSConstants.NPC_DEFINITIONS_INDEX, archiveId);
-                if (stored == null)
-                    continue;
-
-                int[] fileIds = table.GetArchiveEntry(archiveId).GetValidFileIds();
-                if (fileIds.Length == 0)
-                    continue;
-
-                RSContainer container =
-                    _cache.TryDecodeContainer(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, stored);
-                if (container == null)
-                    continue;
-
-                RSArchive archive = RSArchive.Decode(container.GetStream(), fileIds);
-
-                //NPC ids are packed 256 to an archive, the same mapping GetNPCDefinition uses.
-                foreach (int fileId in fileIds)
-                    yield return (archiveId * 256 + fileId, archive.GetFile(fileId).ToArray());
-            }
-        }
-
-        /// <summary>Counts how many failing definitions carried each opcode.</summary>
-        private static void Tally(SortedDictionary<int, int> counts, NPCDefinition def)
-        {
-            for (int op = 0; op < def.decoded.Length; op++)
-            {
-                if (!def.decoded[op])
-                    continue;
-                counts.TryGetValue(op, out int seen);
-                counts[op] = seen + 1;
-            }
-        }
-
-        private static string Histogram(SortedDictionary<int, int> counts)
-        {
-            return string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}"));
-        }
-
-        private static string Opcodes(NPCDefinition def)
-        {
-            var seen = new List<int>();
-            for (int op = 0; op < def.decoded.Length; op++)
-                if (def.decoded[op])
-                    seen.Add(op);
-            return "[" + string.Join(" ", seen) + "]";
-        }
-
-        private static string ByteAt(byte[] bytes, int offset)
-        {
-            return offset < bytes.Length ? $"0x{bytes[offset]:X2}" : "end of buffer";
-        }
-
-        private static int FirstDifference(byte[] expected, byte[] actual)
-        {
-            int shared = Math.Min(expected.Length, actual.Length);
-            for (int i = 0; i < shared; i++)
-                if (expected[i] != actual[i])
-                    return i;
-            return shared;
-        }
-
         private static byte[] Pad(byte[] data)
         {
             byte[] padded = new byte[data.Length + SentinelPadding];
@@ -910,18 +670,6 @@ namespace FlashEditor.Tests.Cache
             for (int i = data.Length; i < padded.Length; i++)
                 padded[i] = SentinelByte;
             return padded;
-        }
-
-        private static void AssertNoFailures(List<string> failures, string summary)
-        {
-            if (failures.Count == 0)
-                return;
-
-            string detail = string.Join(Environment.NewLine, failures.Take(MaxReportedFailures));
-            if (failures.Count > MaxReportedFailures)
-                detail += $"{Environment.NewLine}... and {failures.Count - MaxReportedFailures} more";
-
-            Assert.Fail($"{failures.Count} {summary}:{Environment.NewLine}{detail}");
         }
     }
 }

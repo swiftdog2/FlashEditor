@@ -622,6 +622,200 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        ///     The group ids an index's reference table declares, ascending.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Table-driven.</b> This is what the client can address: <c>JS5Archive</c> gates
+        ///     every read on the reference table, so a group the table does not list is unreachable
+        ///     in game whether or not its bytes are in the dat2. Groups that exist in the idx file
+        ///     and not in the table do occur here - index 4 has one and index 12 has two - and they
+        ///     are reported by <see cref="EnumerateOrphanGroups"/> rather than silently folded in,
+        ///     because a sweep that mixes the two populations cannot say which reading its count
+        ///     belongs to.
+        ///     <para>
+        ///     The declared ids are sparse on most indexes, so this is the list to walk. Never
+        ///     <c>0..Capacity</c>: index 13 declares 25 groups at ids up to 4040, and index 23
+        ///     skips 45 to 63 entirely.
+        ///     </para>
+        ///     <para>
+        ///     Snapshotted under the cache lock and returned whole, so a concurrent
+        ///     <see cref="WriteFile"/> cannot invalidate the caller's iteration part way through.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index to enumerate.</param>
+        /// <returns>The declared group ids, or an empty sequence when the index has no reference table.</returns>
+        public IEnumerable<int> EnumerateGroups(int indexId) {
+            lock (_containerLock) {
+                RSReferenceTable? table = TryGetReferenceTable(indexId);
+                return table == null ? Array.Empty<int>() : table.GetArchiveEntries().Keys.ToArray();
+            }
+        }
+
+        /// <summary>
+        ///     Every (group, file) pair an index's reference table declares, in ascending group
+        ///     then file order.
+        /// </summary>
+        /// <remarks>
+        ///     The point of this is that it does not throw. Walking <c>0..255</c> per group and
+        ///     letting <see cref="ReadFile"/> raise <see cref="FileNotFoundException"/> for the
+        ///     holes costs over a thousand exceptions on a single index-16 tab load, and groups
+        ///     really are sparse: 64 of index 16's 224 groups are short, and 63 of those have gaps
+        ///     in the middle of their id range rather than at the end.
+        ///     <para>
+        ///     Table-driven, with the same caveat and the same escape hatch as
+        ///     <see cref="EnumerateGroups"/>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index to enumerate.</param>
+        /// <returns>The declared pairs, or an empty sequence when the index has no reference table.</returns>
+        public IEnumerable<(int Group, int File)> EnumerateFiles(int indexId) {
+            (int Group, int[] Files)[] snapshot;
+
+            //Snapshot inside the lock and yield outside it. A lazy iterator holding the lock across
+            //a yield would keep it for as long as the caller takes to decode each file, which is
+            //the whole tab load; one that took no snapshot at all would throw
+            //InvalidOperationException the moment a WriteFile added an archive entry mid-walk.
+            lock (_containerLock) {
+                RSReferenceTable? table = TryGetReferenceTable(indexId);
+                if (table == null)
+                    return Array.Empty<(int Group, int File)>();
+
+                snapshot = table.GetArchiveEntries()
+                    .Select(kv => (Group: kv.Key, Files: kv.Value.GetValidFileIds()))
+                    .ToArray();
+            }
+
+            return WalkSnapshot(snapshot);
+        }
+
+        /// <summary>
+        ///     Yields the snapshot taken by <see cref="EnumerateFiles(int)"/>.
+        /// </summary>
+        /// <remarks>
+        ///     The captured arrays are the entries' own id lists rather than copies. Nothing
+        ///     mutates one in place - <c>SetValidFileIds</c> replaces the reference - and only ints
+        ///     leave this method, so no alias escapes to the caller.
+        /// </remarks>
+        private static IEnumerable<(int Group, int File)> WalkSnapshot((int Group, int[] Files)[] snapshot) {
+            foreach ((int group, int[] files) in snapshot)
+                foreach (int file in files)
+                    yield return (group, file);
+        }
+
+        /// <summary>
+        ///     The file ids a single group declares, ascending.
+        /// </summary>
+        /// <param name="indexId">The index the group belongs to.</param>
+        /// <param name="groupId">The group id.</param>
+        /// <returns>A copy of the declared file ids, or an empty array when the group is absent.</returns>
+        public int[] GetFileIds(int indexId, int groupId) {
+            lock (_containerLock) {
+                RSReferenceTable? table = TryGetReferenceTable(indexId);
+                RSArchiveEntry? entry = table?.GetArchiveEntry(groupId);
+
+                //Copied rather than handed out directly: the array returned by GetValidFileIds is
+                //the one RSArchive.Decode is driven by, and a caller that sorted or truncated it
+                //would change how the stored payload is read.
+                return entry == null ? Array.Empty<int>() : (int[]) entry.GetValidFileIds().Clone();
+            }
+        }
+
+        /// <summary>
+        ///     How many files an index's reference table declares in total.
+        /// </summary>
+        /// <remarks>
+        ///     For sizing a progress bar without walking the index twice. This is the real total,
+        ///     unlike <c>groupCount * pageSize</c>, which overstates every sparse index - index 19
+        ///     has 80 groups and 20,470 items rather than 20,480.
+        /// </remarks>
+        /// <param name="indexId">The index to measure.</param>
+        /// <returns>The declared file count, or 0 when the index has no reference table.</returns>
+        public int CountFiles(int indexId) {
+            lock (_containerLock) {
+                RSReferenceTable? table = TryGetReferenceTable(indexId);
+                if (table == null)
+                    return 0;
+
+                int total = 0;
+                foreach (KeyValuePair<int, RSArchiveEntry> kv in table.GetArchiveEntries())
+                    total += kv.Value.GetValidFileIds().Length;
+                return total;
+            }
+        }
+
+        /// <summary>
+        ///     Groups that hold a live container in the idx file but are absent from the index's
+        ///     reference table.
+        /// </summary>
+        /// <remarks>
+        ///     The idx-driven complement to <see cref="EnumerateGroups"/>, which is table-driven.
+        ///     Both readings are legitimate and they disagree: index 4's idx holds 10,238 records
+        ///     against 10,237 declared (id 4787 is the orphan), and index 12's holds 4151 against
+        ///     4149 (699 and 700). Their payloads parse cleanly; they are repack residue the client
+        ///     can never load, because it resolves every group through the table.
+        ///     <para>
+        ///     A group counts as live only if its six byte idx record names a sector inside the
+        ///     dat2, which is the same test <see cref="LoadContainer"/> applies. That excludes the
+        ///     not-present marker - a length of <c>0xFF0000</c> pointing at sector 0 - which index
+        ///     10 slot 0, index 13 slot 0 and index 31 slot 0 all carry.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index to scan.</param>
+        /// <returns>The orphaned group ids, ascending. Empty for most indexes.</returns>
+        public IReadOnlyList<int> EnumerateOrphanGroups(int indexId) {
+            lock (_containerLock) {
+                var orphans = new List<int>();
+
+                int slots;
+                try {
+                    slots = store.GetFileCount(indexId);
+                }
+                catch (FileNotFoundException) {
+                    //No idx file for this index, so there is nothing to be orphaned from.
+                    return orphans;
+                }
+
+                RSReferenceTable? table = TryGetReferenceTable(indexId);
+                RSIndex index = store.GetIndexEntry(indexId);
+                long sectorLimit = store.dataChannel.Length / RSSector.SIZE;
+
+                for (int groupId = 0 ; groupId < slots ; groupId++) {
+                    if (table != null && table.GetArchiveEntries().ContainsKey(groupId))
+                        continue;
+
+                    index.ReadContainerHeader(groupId);
+
+                    if (index.GetSize() <= 0)
+                        continue;
+                    if (index.GetSectorID() <= 0 || index.GetSectorID() >= sectorLimit)
+                        continue;
+
+                    orphans.Add(groupId);
+                }
+
+                return orphans;
+            }
+        }
+
+        /// <summary>
+        ///     The reference table for an index, or <c>null</c> when the index has none.
+        /// </summary>
+        /// <remarks>
+        ///     Indexes 34 and 35 have no idx255 record at all in this cache, so a caller sweeping
+        ///     every index would otherwise have to special-case them. An index id outside the store
+        ///     is indistinguishable from that here and also comes back null; the enumeration API is
+        ///     read-only and reports empty for both, which is the answer either way.
+        /// </remarks>
+        private RSReferenceTable? TryGetReferenceTable(int indexId) {
+            try {
+                return GetReferenceTable(indexId);
+            }
+            catch (FileNotFoundException) {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Retrieve the file from the <paramref name="indexId"/> index, file <paramref name="fileId"/> in archive <paramref name="archiveId"/>
         /// </summary>
         /// <param name="indexId">The index to search</param>
@@ -844,9 +1038,7 @@ namespace FlashEditor.cache {
         /// <param name="groupId">The group within the config index.</param>
         /// <returns>The file ids, or an empty array when the group is absent.</returns>
         public int[] GetConfigFileIds(int groupId) {
-            RSReferenceTable table = GetReferenceTable(RSConstants.CONFIG);
-            RSArchiveEntry entry = table?.GetArchiveEntry(groupId);
-            return entry == null ? System.Array.Empty<int>() : entry.GetValidFileIds();
+            return GetFileIds(RSConstants.CONFIG, groupId);
         }
 
         /// <summary>

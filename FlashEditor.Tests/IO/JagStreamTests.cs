@@ -21,9 +21,9 @@ namespace FlashEditor.Tests.IO
     /// being reintroduced.
     ///
     /// A note on the surface, because it is asymmetric and the asymmetry drives several tests
-    /// below: there is a WriteLong with no ReadLong, a WriteJagexString with no WriteString2,
-    /// and WriteUnsignedSmart is the only writer among the five smart readers. Where no
-    /// inverse exists the test asserts against hand-built wire bytes instead.
+    /// below: there is a WriteLong with no ReadLong, a ReadString2 with no WriteString2, and
+    /// ReadSignedSmart and ReadSpecialSmart still have no writers. Where no inverse exists the
+    /// test asserts against hand-built wire bytes instead.
     /// </summary>
     public class JagStreamTests : IDisposable
     {
@@ -1187,10 +1187,11 @@ namespace FlashEditor.Tests.IO
         #region VarInt
 
         /// <summary>
-        ///     ReadVarInt and WriteVarInt have no callers anywhere in the repository. They are
-        ///     covered so that if a codec ever adopts them the encoding is already pinned, and
-        ///     because the MSB-first ordering here is the opposite of the LSB-first scheme most
-        ///     "varint" implementations use.
+        ///     ReadVarInt and WriteVarInt are the MIDI delta-time codec on the track path
+        ///     (Track.cs:218 and :343). This comment used to say they had no callers at all,
+        ///     which was true when it was written and stopped being true when index 6 landed.
+        ///     The ordering is worth pinning regardless: MSB-first here, the opposite of the
+        ///     LSB-first scheme most "varint" implementations use.
         /// </summary>
         /// <param name="value">
         ///     127/128 is the one-to-two byte boundary. -1 and int.MinValue exercise the
@@ -1445,8 +1446,8 @@ namespace FlashEditor.Tests.IO
         }
 
         /// <summary>
-        ///     WriteUnsignedSmart is the only writer among the five smart readers, and it used to
-        ///     validate nothing. Below 0 it took the single-byte branch and emitted a byte with
+        ///     WriteUnsignedSmart used to validate nothing. Below 0 it took the single-byte
+        ///     branch and emitted a byte with
         ///     the high bit set, which the reader then treats as the first half of a two-byte
         ///     form; at or above 32768 the "+ 32768" wrapped the short. -1 wrote "FF", 32768
         ///     wrote "00-00" and 65535 wrote "7F-FF" - none of which encode the value asked for.
@@ -1535,6 +1536,249 @@ namespace FlashEditor.Tests.IO
         {
             Assert.Throws<EndOfStreamException>(() => Wire(0x80).ReadSmart());
             Assert.Throws<EndOfStreamException>(() => Wire(0x80).ReadUnsignedSmart());
+        }
+
+        /// <param name="value">
+        ///     The boundaries of both widths. -64 and 63 are the last values the one-byte form
+        ///     holds, -65 and 64 the first that need two, and -16384/16383 are the extremes of
+        ///     the two-byte form - which stops at -16384 rather than the -49152 a bare
+        ///     "u16 - 49152" implies, because the reader only takes that branch when the leading
+        ///     byte has its high bit set.
+        /// </param>
+        [Theory]
+        [InlineData(-16384)]
+        [InlineData(-16383)]
+        [InlineData(-65)]
+        [InlineData(-64)]
+        [InlineData(-1)]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(63)]
+        [InlineData(64)]
+        [InlineData(16383)]
+        public void WriteSmart_And_ReadSmart_RoundTrip(int value)
+        {
+            var stream = new JagStream();
+
+            stream.WriteSmart(value);
+            stream.Seek0();
+
+            Assert.Equal(value, stream.ReadSmart());
+            Assert.Equal(0, stream.Remaining());
+        }
+
+        /// <summary>
+        ///     Shortest-form is the default because it is what Jagex's encoder emitted: over all
+        ///     359,931 index-0 frame files, none of the 11,871,643 two-byte signed smarts holds a
+        ///     value the one-byte form could have carried. A writer that widened anything inside
+        ///     -64 to 63 would fail the byte-identity sweep on every one of those files.
+        /// </summary>
+        [Theory]
+        [InlineData(-16384, 2)]
+        [InlineData(-65, 2)]
+        [InlineData(-64, 1)]
+        [InlineData(0, 1)]
+        [InlineData(63, 1)]
+        [InlineData(64, 2)]
+        [InlineData(16383, 2)]
+        public void WriteSmart_ChoosesTheNarrowestFormThatHoldsTheValue(int value, int expectedLength)
+        {
+            var stream = new JagStream();
+
+            stream.WriteSmart(value);
+
+            Assert.Equal(expectedLength, stream.Length);
+        }
+
+        /// <summary>
+        ///     Against hand-built bytes rather than against our own reader, because a writer and
+        ///     reader that share a wrong bias round-trip perfectly. These are the client's:
+        ///     value + 64 in one byte, value + 0xC000 in two.
+        /// </summary>
+        [Theory]
+        [InlineData(-64, "00")]
+        [InlineData(0, "40")]
+        [InlineData(63, "7F")]
+        [InlineData(-16384, "80-00")]
+        [InlineData(-65, "BF-BF")]
+        [InlineData(64, "C0-40")]
+        [InlineData(16383, "FF-FF")]
+        public void WriteSmart_EmitsTheClientsSixtyFourAndC000Biases(int value, string expected)
+        {
+            var stream = new JagStream();
+
+            stream.WriteSmart(value);
+
+            Assert.Equal(expected, BitConverter.ToString(stream.ToArray()));
+        }
+
+        /// <param name="wire">
+        ///     Both widths, including the two-byte encodings of values the one-byte form could
+        ///     have held. Those are the only ones where the width is information the decoded
+        ///     value does not carry.
+        /// </param>
+        [Theory]
+        [InlineData(new byte[] { 0x00 }, JagStream.SmartWidth.OneByte, -64)]
+        [InlineData(new byte[] { 0x40 }, JagStream.SmartWidth.OneByte, 0)]
+        [InlineData(new byte[] { 0x7F }, JagStream.SmartWidth.OneByte, 63)]
+        [InlineData(new byte[] { 0x80, 0x00 }, JagStream.SmartWidth.TwoByte, -16384)]
+        [InlineData(new byte[] { 0xBF, 0xC0 }, JagStream.SmartWidth.TwoByte, -64)]
+        [InlineData(new byte[] { 0xC0, 0x00 }, JagStream.SmartWidth.TwoByte, 0)]
+        [InlineData(new byte[] { 0xFF, 0xFF }, JagStream.SmartWidth.TwoByte, 16383)]
+        public void ReadSmart_ReportsTheWidthItConsumed(byte[] wire, JagStream.SmartWidth expectedWidth, int expectedValue)
+        {
+            var stream = new JagStream(wire);
+
+            Assert.Equal(expectedValue, stream.ReadSmart(out var width));
+            Assert.Equal(expectedWidth, width);
+            Assert.Equal(wire.Length, stream.Position);
+        }
+
+        /// <summary>
+        ///     The contract the width overload exists for. -64 to 63 has two legal encodings, so
+        ///     a decoder that keeps only the value cannot reproduce a file that used the long
+        ///     form; recording the width and replaying it can. Three of these six wires are the
+        ///     long form of a value the short form holds, and shortest-form would rewrite all
+        ///     three.
+        /// </summary>
+        [Theory]
+        [InlineData(new byte[] { 0x00 }, -64)]
+        [InlineData(new byte[] { 0xBF, 0xC0 }, -64)]
+        [InlineData(new byte[] { 0x40 }, 0)]
+        [InlineData(new byte[] { 0xC0, 0x00 }, 0)]
+        [InlineData(new byte[] { 0x7F }, 63)]
+        [InlineData(new byte[] { 0xC0, 0x3F }, 63)]
+        public void ReadSmart_ThenWriteSmartWithTheRecordedWidth_ReproducesTheBytes(byte[] wire, int expected)
+        {
+            int value = new JagStream(wire).ReadSmart(out var width);
+            Assert.Equal(expected, value);
+
+            var replay = new JagStream();
+            replay.WriteSmart(value, width);
+
+            Assert.Equal(wire, replay.ToArray());
+        }
+
+        /// <summary>
+        ///     The half of the previous test that a shortest-form-only writer gets wrong: the
+        ///     same value, written both ways, is a different number of bytes. If these ever
+        ///     agreed the width parameter would be doing nothing.
+        /// </summary>
+        [Fact]
+        public void WriteSmart_ForcedTwoByte_WidensAValueTheShortFormWouldHaveHeld()
+        {
+            var forced = new JagStream();
+            forced.WriteSmart(0, JagStream.SmartWidth.TwoByte);
+            Assert.Equal("C0-00", BitConverter.ToString(forced.ToArray()));
+
+            var shortest = new JagStream();
+            shortest.WriteSmart(0);
+            Assert.Equal("40", BitConverter.ToString(shortest.ToArray()));
+
+            //Both decode to the value that was written, which is exactly why the format is
+            //non-canonical and why the stored width has to be carried rather than derived
+            forced.Seek0();
+            shortest.Seek0();
+            Assert.Equal(0, forced.ReadSmart());
+            Assert.Equal(0, shortest.ReadSmart());
+        }
+
+        [Theory]
+        [InlineData(-64)]
+        [InlineData(0)]
+        [InlineData(63)]
+        public void WriteSmart_ForcedOneByte_MatchesTheShortestFormInsideTheNarrowRange(int value)
+        {
+            var forced = new JagStream();
+            var shortest = new JagStream();
+
+            forced.WriteSmart(value, JagStream.SmartWidth.OneByte);
+            shortest.WriteSmart(value);
+
+            Assert.Equal(shortest.ToArray(), forced.ToArray());
+        }
+
+        /// <summary>
+        ///     A one-byte width forced onto a value that does not fit is a contradiction: the
+        ///     caller replaying a recorded width has necessarily changed the value. Widening it
+        ///     silently would lengthen the field and shift every byte after it, so it is rejected
+        ///     instead.
+        /// </summary>
+        [Theory]
+        [InlineData(-65)]
+        [InlineData(64)]
+        [InlineData(16383)]
+        public void WriteSmart_ForcedOneByteOnAWideValue_ThrowsRatherThanWidening(int value)
+        {
+            var stream = new JagStream();
+
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => stream.WriteSmart(value, JagStream.SmartWidth.OneByte));
+
+            Assert.Equal(0, stream.Length);
+        }
+
+        /// <param name="value">
+        ///     -16385 and 16384 are the first values either side of the encodable range. The two
+        ///     int extremes are there because the bias is an addition, and an unvalidated one
+        ///     wraps into a byte pair that reads back as a plausible small number.
+        /// </param>
+        [Theory]
+        [InlineData(-16385)]
+        [InlineData(16384)]
+        [InlineData(int.MinValue)]
+        [InlineData(int.MaxValue)]
+        public void WriteSmart_OutOfRangeValue_ThrowsArgumentOutOfRange(int value)
+        {
+            var stream = new JagStream();
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => stream.WriteSmart(value));
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => stream.WriteSmart(value, JagStream.SmartWidth.TwoByte));
+
+            //Nothing was written, so the stream is still where the caller left it
+            Assert.Equal(0, stream.Length);
+            Assert.Equal(0, stream.Position);
+        }
+
+        [Fact]
+        public void WriteSmart_UndefinedWidth_ThrowsArgumentOutOfRange()
+        {
+            var stream = new JagStream();
+
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => stream.WriteSmart(0, (JagStream.SmartWidth) 7));
+
+            Assert.Equal(0, stream.Length);
+        }
+
+        /// <summary>
+        ///     The mistake the signed writer exists to prevent. WriteUnsignedSmart was for a long
+        ///     time the only smart writer, and it carries the 0/32768 biases, so reaching for it
+        ///     on a ReadSmart field emits a well-formed value that is wrong by a uniform 64 or
+        ///     16384 - which nothing downstream can detect. The two writers must not agree on the
+        ///     same input.
+        /// </summary>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(63)]
+        [InlineData(1000)]
+        public void WriteSmart_And_WriteUnsignedSmart_ProduceDifferentBytesForTheSameValue(int value)
+        {
+            var signed = new JagStream();
+            var unsigned = new JagStream();
+
+            signed.WriteSmart(value);
+            unsigned.WriteUnsignedSmart(value);
+
+            Assert.NotEqual(
+                BitConverter.ToString(unsigned.ToArray()),
+                BitConverter.ToString(signed.ToArray()));
+
+            //And reading the unsigned bytes back as a signed smart returns the wrong number
+            //rather than failing, which is the whole hazard
+            unsigned.Seek0();
+            Assert.NotEqual(value, unsigned.ReadSmart());
         }
 
         #endregion

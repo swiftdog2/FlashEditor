@@ -527,20 +527,143 @@ namespace FlashEditor {
         #region “Smart” Readers
 
         /// <summary>
-        /// Signed smart: single byte 0–127 biased by −64, or unsigned short biased by −0xC000.
-        /// Range: −64 to 16383.
+        /// Which of the signed smart's two widths a value was stored in, or an instruction to
+        /// pick one.
         /// </summary>
-        public int ReadSmart() {
-            int peek = Get(Position) & 0xFF;
-            return peek < 128
-                ? ReadUnsignedByte() - 64
-                : ReadUnsignedShort() - 0xC000;
+        /// <remarks>
+        ///     The encoding is not canonical: -64 to 63 is representable in both widths, so the
+        ///     decoded value alone does not determine the bytes. A codec that must re-encode
+        ///     byte-identically records what <see cref="ReadSmart(out SmartWidth)"/> reported and
+        ///     hands it back to <see cref="WriteSmart(int, SmartWidth)"/>.
+        /// </remarks>
+        public enum SmartWidth {
+            /// <summary>Emit the narrowest form that holds the value.</summary>
+            Shortest = 0,
+
+            /// <summary>One byte, biased by 64. Only -64 to 63 fit.</summary>
+            OneByte = 1,
+
+            /// <summary>Two bytes, biased by 0xC000. -16384 to 16383 fit.</summary>
+            TwoByte = 2
         }
 
         /// <summary>
-        /// Unsigned smart (cache file): single byte 0–127 or unsigned short
-        /// with 32768 bias.
+        /// Reads the client's signed smart: one byte 0-127 biased by -64, or an unsigned short
+        /// biased by -0xC000.
         /// </summary>
+        /// <remarks>
+        ///     This is <c>RSBuffer.method1239</c> (RSBuffer.java:606-612) exactly. The branch is
+        ///     taken on the first byte's high bit, so the two-byte form can only carry
+        ///     0x8000-0xFFFF and its reachable range is -16384 to 16383 - not the -49152 that a
+        ///     bare reading of "u16 - 49152" suggests, which is why the writer rejects below
+        ///     -16384. Use <see cref="ReadSmart(out SmartWidth)"/> wherever the stored width has
+        ///     to survive a re-encode.
+        ///     <para>
+        ///     <see cref="WriteSmart(int)"/> is the inverse. <see cref="WriteUnsignedSmart"/> is
+        ///     not: it carries the 0/32768 biases and pairs with
+        ///     <see cref="ReadUnsignedSmart"/>.
+        ///     </para>
+        /// </remarks>
+        /// <returns>-16384 to 16383.</returns>
+        public int ReadSmart() => ReadSmart(out _);
+
+        /// <summary>
+        /// Reads a signed smart and reports which of its two widths was on the wire.
+        /// </summary>
+        /// <remarks>
+        ///     -64 to 63 has two legal encodings, so a decoder that keeps only the value cannot
+        ///     reproduce the bytes it read. That is the same non-canonical hazard the terrain and
+        ///     floor codecs already record per field; a byte-identity sweep is the only thing
+        ///     that can tell you whether a given index needs the width kept.
+        /// </remarks>
+        /// <param name="width">The width actually present on the wire.</param>
+        /// <returns>-16384 to 16383.</returns>
+        public int ReadSmart(out SmartWidth width) {
+            int peek = Get(Position) & 0xFF;
+            if (peek < 128) {
+                width = SmartWidth.OneByte;
+                return ReadUnsignedByte() - 64;
+            }
+
+            width = SmartWidth.TwoByte;
+            return ReadUnsignedShort() - 0xC000;
+        }
+
+        /// <summary>
+        /// Writes a signed smart in the narrowest form that holds the value. Inverse of
+        /// <see cref="ReadSmart()"/>.
+        /// </summary>
+        /// <remarks>
+        ///     Shortest-form is the right default because it is what Jagex's own encoder did.
+        ///     Measured over all 359,931 index-0 frame files: of 20,142,030 signed smarts,
+        ///     11,871,643 are two-byte and not one of those encodes a value the one-byte form
+        ///     could have held. So in this cache the encoding is canonical in practice even
+        ///     though the format permits otherwise, and shortest-form reproduces it byte for
+        ///     byte.
+        ///     <para>
+        ///     That is a measurement, not a guarantee. A caller that has recorded the stored
+        ///     width should replay it through <see cref="WriteSmart(int, SmartWidth)"/> rather
+        ///     than trust the measurement to hold for an index nobody has swept yet.
+        ///     </para>
+        /// </remarks>
+        /// <param name="value">-16384 to 16383.</param>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     The value is outside the range this encoding can represent.
+        /// </exception>
+        public void WriteSmart(int value) => WriteSmart(value, SmartWidth.Shortest);
+
+        /// <summary>
+        /// Writes a signed smart in a caller-chosen width, so a decoder that recorded the stored
+        /// width can reproduce the original bytes for a value both widths can express.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing is written when the value does not fit the requested width. Forcing
+        ///     <see cref="SmartWidth.OneByte"/> on a value outside -64 to 63 is a contradiction
+        ///     and is rejected rather than silently widened, because a caller replaying a
+        ///     recorded width has necessarily edited the value if that happens, and quietly
+        ///     changing the field's length shifts every byte after it.
+        /// </remarks>
+        /// <param name="value">-16384 to 16383, narrowing to -64 to 63 for a forced one-byte write.</param>
+        /// <param name="width">The width to emit, or <see cref="SmartWidth.Shortest"/> to choose.</param>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     The value does not fit the chosen width, or the width is not a defined member.
+        /// </exception>
+        public void WriteSmart(int value, SmartWidth width) {
+            bool twoByte = width switch {
+                SmartWidth.Shortest => value < -64 || value > 63,
+                SmartWidth.OneByte => false,
+                SmartWidth.TwoByte => true,
+                _ => throw new ArgumentOutOfRangeException(nameof(width), width,
+                    "Not a signed smart width")
+            };
+
+            if (!twoByte) {
+                if (value < -64 || value > 63)
+                    throw new ArgumentOutOfRangeException(nameof(value), value,
+                        "A one-byte signed smart must be between -64 and 63");
+
+                WriteByte((byte) (value + 64));
+                return;
+            }
+
+            if (value < -16384 || value > 16383)
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Signed smart values must be between -16384 and 16383");
+
+            /* Biasing by 0xC000 lands the whole range in 0x8000-0xFFFF, which is exactly the
+               span whose leading byte sets the high bit and so re-reads as the two-byte form. */
+            int biased = value + 0xC000;
+            WriteByte((byte) (biased >> 8));
+            WriteByte((byte) biased);
+        }
+
+        /// <summary>
+        /// Unsigned smart (cache file): single byte 0-127 or unsigned short with 32768 bias.
+        /// </summary>
+        /// <remarks>
+        ///     Not <see cref="ReadSmart()"/>, which biases by -64 and -0xC000 instead. Pairs with
+        ///     <see cref="WriteUnsignedSmart"/>.
+        /// </remarks>
         public int ReadUnsignedSmart() {
             int peek = Get(Position) & 0xFF;
             return peek < 128
@@ -549,8 +672,12 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Alias for <see cref="ReadSmart"/>: signed smart with −64 / −0xC000 bias.
+        /// Alias for <see cref="ReadSmart()"/>: signed smart with -64 / -0xC000 bias.
         /// </summary>
+        /// <remarks>
+        ///     There is no matching WriteShortSmart. <see cref="WriteSmart(int)"/> is the
+        ///     inverse of both names.
+        /// </remarks>
         public int ReadShortSmart() => ReadSmart();
 
 
@@ -607,15 +734,22 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Writes an unsigned smart: single byte for 0–127, two-byte short
-        /// (value + 32768) for 128–32767. Inverse of <see cref="ReadUnsignedSmart"/>.
+        /// Writes an unsigned smart: single byte for 0-127, two-byte short
+        /// (value + 32768) for 128-32767. Inverse of <see cref="ReadUnsignedSmart"/>.
         /// </summary>
         /// <remarks>
+        ///     <b>Not the writer for <see cref="ReadSmart()"/>.</b> That one carries the
+        ///     -64 / -0xC000 biases and is <see cref="WriteSmart(int)"/>. The two forms differ by
+        ///     a uniform 16384 on the two-byte branch and 64 on the one-byte branch, so picking
+        ///     the wrong one produces a well-formed field holding the wrong number rather than
+        ///     anything that fails loudly.
+        ///     <para>
         ///     This validated nothing. Below 0 it took the single-byte branch and emitted a byte
         ///     with the high bit set, which <see cref="ReadUnsignedSmart"/> then treats as the
         ///     first half of a two-byte form; at or above 32768 the "+ 32768" wrapped the short.
         ///     Either way the bytes written did not encode the value asked for, and everything
         ///     read after them was off by a byte with nothing to indicate it.
+        ///     </para>
         /// </remarks>
         /// <exception cref="ArgumentOutOfRangeException">
         ///     The value is outside 0 to 32767, the range this encoding can represent.
@@ -718,8 +852,23 @@ namespace FlashEditor {
         #region String Readers/Writers
 
         /// <summary>
-        /// Reads a null-terminated ASCII string (0 terminator).
+        /// Reads a null-terminated string with every byte taken at face value as a code point.
+        /// <b>This is not the cache's string encoding.</b> Use <see cref="ReadJagexString"/> for
+        /// anything read out of the cache.
         /// </summary>
+        /// <remarks>
+        ///     The cache stores strings in the client's modified cp1252, where bytes 0x80-0x9F
+        ///     name characters that are nothing like the Latin-1 code points of the same value -
+        ///     0x80 is the euro sign, not U+0080. This reader skips that remap, so it silently
+        ///     produces C1 control characters where the cache holds punctuation, and there is no
+        ///     WriteString2 to pair with it: a string read here and written back through
+        ///     <see cref="WriteJagexString"/> does not round trip.
+        ///     <para>
+        ///     It is wrong for every string-bearing index, indexes 17, 23, 24, 25 and 33
+        ///     included. It survives because a non-cache caller may legitimately want raw bytes
+        ///     out of a null-terminated field; it has no production callers today.
+        ///     </para>
+        /// </remarks>
         public string ReadString2() {
             var sb = new StringBuilder();
             int b;
@@ -731,8 +880,19 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Reads a null-terminated “Jagex string” using CP-1252+ remap.
+        /// Reads a null-terminated string in the client's modified cp1252. <b>This is the reader
+        /// for cache strings</b>, not <see cref="ReadString2"/>.
         /// </summary>
+        /// <remarks>
+        ///     Matches <c>RSBuffer.readString</c> (RSBuffer.java:878-894) including the fallback
+        ///     to '?' for the five unassigned slots in the 0x80-0x9F band. The remap table is
+        ///     carried in this class rather than taken from
+        ///     <c>Encoding.GetEncoding(1252)</c>, which is deliberate: .NET 9 ships only ASCII,
+        ///     Latin-1 and the UTF family, so code page 1252 needs the
+        ///     System.Text.Encoding.CodePages package and a CodePagesEncodingProvider
+        ///     registration. Neither exists in this solution, and the table makes both
+        ///     unnecessary here.
+        /// </remarks>
         public string ReadJagexString() {
             var sb = new StringBuilder();
             int b;
@@ -750,8 +910,15 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// Writes a 0-terminated Jagex string using modified CP-1252.
+        /// Writes a 0-terminated string in the client's modified cp1252. The only string writer,
+        /// and the inverse of <see cref="ReadJagexString"/>.
         /// </summary>
+        /// <remarks>
+        ///     Lossy in two places, and both are permanent after one save: the five unassigned
+        ///     slots in the 0x80-0x9F band decode to '?' and re-encode as 0x3F, and an embedded
+        ///     NUL is dropped rather than written, since writing it would terminate the string
+        ///     early and hand the rest of the record back as the next field.
+        /// </remarks>
         public void WriteJagexString(string s) {
             foreach (char c in s) {
                 if (c == 0) continue;

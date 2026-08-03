@@ -1,10 +1,10 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.Linq;
 using FlashEditor.cache;
 using FlashEditor.Definitions;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace FlashEditor.Tests.Cache
 {
@@ -25,89 +25,87 @@ namespace FlashEditor.Tests.Cache
     public sealed class RealCacheFloorDefinitionTests : IClassFixture<RealCacheFixture>
     {
         private readonly RealCacheFixture _fixture;
+        private readonly ITestOutputHelper _output;
 
-        public RealCacheFloorDefinitionTests(RealCacheFixture fixture)
+        /// <summary>Binds the shared open cache and the per-test output sink.</summary>
+        public RealCacheFloorDefinitionTests(RealCacheFixture fixture, ITestOutputHelper output)
         {
             _fixture = fixture;
+            _output = output;
+        }
+
+        /// <summary>
+        ///     The underlay family, which is group 1 of the config index.
+        /// </summary>
+        /// <remarks>
+        ///     Both floor families live in index 2, which holds thirty-five unrelated config
+        ///     families and so has no index-wide id split: the definition id is the file id within
+        ///     the family's group. That is <see cref="CacheAddressing.SingleGroup"/> applied to one
+        ///     group of a shared index, which is what <c>WithinGroup</c> asks the sweep for.
+        /// </remarks>
+        /// <returns>A sweep over every floor underlay.</returns>
+        private DefinitionSweep<FloorUnderlayDefinition> Underlays()
+        {
+            return new DefinitionSweep<FloorUnderlayDefinition>(_fixture, _output, RSConstants.CONFIG,
+                new DefinitionCodec<FloorUnderlayDefinition>("underlay",
+                    (id, stream) =>
+                    {
+                        var definition = new FloorUnderlayDefinition { Id = id };
+                        definition.Decode(stream);
+                        return definition;
+                    },
+                    definition => definition.Encode(),
+                    definition => definition.DecodedOpcodes.Select(entry => entry.Opcode)))
+                .WithinGroup(RSConstants.FLOOR_UNDERLAY_GROUP);
+        }
+
+        /// <summary>The overlay family, which is group 4 of the config index.</summary>
+        /// <returns>A sweep over every floor overlay.</returns>
+        private DefinitionSweep<FloorOverlayDefinition> Overlays()
+        {
+            return new DefinitionSweep<FloorOverlayDefinition>(_fixture, _output, RSConstants.CONFIG,
+                new DefinitionCodec<FloorOverlayDefinition>("overlay",
+                    (id, stream) =>
+                    {
+                        var definition = new FloorOverlayDefinition { Id = id };
+                        definition.Decode(stream);
+                        return definition;
+                    },
+                    definition => definition.Encode(),
+                    definition => definition.DecodedOpcodes.Select(entry => entry.Opcode)))
+                .WithinGroup(RSConstants.FLOOR_OVERLAY_GROUP);
         }
 
         [RealCacheFact]
         public void EveryUnderlayDecodesAndRoundTrips()
         {
-            RSCache cache = _fixture.OpenCache();
-            int[] ids = cache.GetConfigFileIds(RSConstants.FLOOR_UNDERLAY_GROUP);
+            DefinitionSweep<FloorUnderlayDefinition> sweep = Underlays();
 
-            var failures = new List<string>();
-            int withTexture = 0;
+            sweep.AssertExactConsumption();
+            DefinitionSweepResult swept = sweep.AssertReEncodesToCapturedBytes();
 
-            foreach (int id in ids)
-            {
-                try
-                {
-                    byte[] original = cache.ReadFileBytes(RSConstants.CONFIG, RSConstants.FLOOR_UNDERLAY_GROUP, id);
-                    var def = new FloorUnderlayDefinition { Id = id };
-                    var stream = new JagStream(original);
-                    def.Decode(stream);
-
-                    if (stream.Remaining() != 0)
-                        failures.Add($"underlay {id}: {stream.Remaining()} bytes left over");
-
-                    byte[] reencoded = def.Encode().ToArray();
-                    if (!ByteEqual(original, reencoded))
-                        failures.Add($"underlay {id}: round trip differs ({original.Length} -> {reencoded.Length} bytes)");
-
-                    if (def.TextureId != -1)
-                        withTexture++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"underlay {id}: {ex.Message}");
-                }
-            }
-
-            AssertNoFailures(failures);
-            Assert.Equal(159, ids.Length);
+            Assert.Equal(159, swept.Records);
         }
 
         [RealCacheFact]
         public void EveryOverlayDecodesAndRoundTrips()
         {
-            RSCache cache = _fixture.OpenCache();
-            int[] ids = cache.GetConfigFileIds(RSConstants.FLOOR_OVERLAY_GROUP);
+            DefinitionSweep<FloorOverlayDefinition> sweep = Overlays();
 
-            var failures = new List<string>();
+            sweep.AssertExactConsumption();
+            DefinitionSweepResult swept = sweep.AssertReEncodesToCapturedBytes();
+
+            Assert.Equal(235, swept.Records);
+
             int worldMapBackgrounds = 0;
             int transparent = 0;
-
-            foreach (int id in ids)
+            sweep.ForEachDecoded((record, def) =>
             {
-                try
-                {
-                    byte[] original = cache.ReadFileBytes(RSConstants.CONFIG, RSConstants.FLOOR_OVERLAY_GROUP, id);
-                    var def = new FloorOverlayDefinition { Id = id };
-                    var stream = new JagStream(original);
-                    def.Decode(stream);
-
-                    if (stream.Remaining() != 0)
-                        failures.Add($"overlay {id}: {stream.Remaining()} bytes left over");
-
-                    byte[] reencoded = def.Encode().ToArray();
-                    if (!ByteEqual(original, reencoded))
-                        failures.Add($"overlay {id}: round trip differs ({original.Length} -> {reencoded.Length} bytes)");
-
-                    if (def.IsWorldMapBackground)
-                        worldMapBackgrounds++;
-                    if (def.PrimaryRgb == FloorOverlayDefinition.TransparentRgb)
-                        transparent++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"overlay {id}: {ex.Message}");
-                }
-            }
-
-            AssertNoFailures(failures);
-            Assert.Equal(235, ids.Length);
+                if (def.IsWorldMapBackground)
+                    worldMapBackgrounds++;
+                if (def.PrimaryRgb == FloorOverlayDefinition.TransparentRgb)
+                    transparent++;
+            });
 
             //Exactly one definition claims the world-map background slot. More than one would mean
             //the last decoded wins, which would change what the world map paints.
@@ -212,31 +210,6 @@ namespace FlashEditor.Tests.Cache
 
             Assert.Equal(0x336699, round.PrimaryRgb);
             Assert.True(round.BlendWithNeighbours);
-        }
-
-        private static bool ByteEqual(byte[] a, byte[] b)
-        {
-            if (a.Length != b.Length)
-                return false;
-            for (int i = 0; i < a.Length; i++)
-                if (a[i] != b[i])
-                    return false;
-            return true;
-        }
-
-        private static void AssertNoFailures(List<string> failures)
-        {
-            if (failures.Count == 0)
-                return;
-
-            var sb = new StringBuilder();
-            sb.Append(failures.Count).Append(" floor definitions failed:");
-            for (int i = 0; i < failures.Count && i < 20; i++)
-                sb.AppendLine().Append("  ").Append(failures[i]);
-            if (failures.Count > 20)
-                sb.AppendLine().Append("  ... and ").Append(failures.Count - 20).Append(" more");
-
-            Assert.Fail(sb.ToString());
         }
     }
 }

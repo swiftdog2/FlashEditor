@@ -1,9 +1,6 @@
 using FlashEditor.cache;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -31,20 +28,35 @@ namespace FlashEditor.Tests.Cache
         private readonly RealCacheFixture _cache;
         private readonly ITestOutputHelper _output;
 
-        /// <summary>Failures listed before the report is truncated.</summary>
-        private const int MaxReportedFailures = 10;
-
-        /// <summary>
-        ///     How many failures get the quadratic opcode-boundary trace before the rest are
-        ///     merely counted, so a wholesale format mismatch does not hang the run.
-        /// </summary>
-        private const int MaxDiagnosedFailures = 20;
-
         /// <summary>Binds the shared open cache and the per-test output sink.</summary>
         public RealCacheItemDefinitionTests(RealCacheFixture cache, ITestOutputHelper output)
         {
             _cache = cache;
             _output = output;
+        }
+
+        /// <summary>
+        ///     The item index bound to the production codec, for the shared byte-identity harness.
+        /// </summary>
+        /// <remarks>
+        ///     A fresh sweep per test rather than a shared field: each enumerates the index lazily
+        ///     and holds no record beyond the one it is checking, which is what keeps a 20,470
+        ///     record index off the large object heap.
+        /// </remarks>
+        /// <returns>A sweep over every item definition the cache declares.</returns>
+        private DefinitionSweep<ItemDefinition> Sweep()
+        {
+            return new DefinitionSweep<ItemDefinition>(_cache, _output, RSConstants.ITEM_DEFINITIONS_INDEX,
+                new DefinitionCodec<ItemDefinition>("item",
+                    (id, stream) =>
+                    {
+                        var definition = new ItemDefinition();
+                        definition.Decode(stream);
+                        definition.SetId(id);
+                        return definition;
+                    },
+                    definition => definition.Encode(),
+                    definition => DefinitionCodec.FromHitMap(definition.decoded)));
         }
 
         // ===================================================================
@@ -61,74 +73,18 @@ namespace FlashEditor.Tests.Cache
         ///     that point are garbage even though nothing threw. That is the failure this whole
         ///     class exists to catch, and it is reported with the opcode trace that led to it
         ///     rather than as a bare count.
+        ///     <para>
+        ///     Landing on the end is not quite enough on its own, which is why the harness also
+        ///     decodes a padded copy and requires the last byte to be the opcode 0 terminator.
+        ///     Several opcodes read their element count with <see cref="JagStream.ReadByte"/>,
+        ///     which answers -1 at the end of the stream instead of throwing, so a record
+        ///     truncated inside one of those counts would otherwise finish exactly on the end.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void AllItemDefinitions_DecodeAndConsumeTheirBufferExactly()
         {
-            var failures = new List<string>();
-            var opcodeCounts = new SortedDictionary<int, int>();
-            int diagnosed = 0;
-            int decoded = 0;
-            int exact = 0;
-            long bytes = 0;
-
-            foreach (ItemRecord record in ItemRecords(failures))
-            {
-                var definition = new ItemDefinition();
-                var stream = new JagStream(record.Payload);
-
-                try
-                {
-                    definition.Decode(stream);
-                    decoded++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"item {record.ItemId}: decode threw {ex.GetType().Name}: {ex.Message}" +
-                                 Diagnose(record, ref diagnosed));
-                    continue;
-                }
-
-                bytes += record.Payload.Length;
-                for (int opcode = 0; opcode < definition.decoded.Length; opcode++)
-                {
-                    if (!definition.decoded[opcode])
-                        continue;
-                    opcodeCounts.TryGetValue(opcode, out int seen);
-                    opcodeCounts[opcode] = seen + 1;
-                }
-
-                if (stream.Position != stream.Length)
-                {
-                    failures.Add($"item {record.ItemId}: stopped at {stream.Position} of {stream.Length} " +
-                                 $"({stream.Length - stream.Position} bytes unread)" +
-                                 Diagnose(record, ref diagnosed));
-                    continue;
-                }
-
-                //Landing on the end is not quite enough on its own. Several opcodes read their
-                //element count with JagStream.ReadByte, which answers -1 at the end of the
-                //stream instead of throwing, so a record truncated inside one of those counts
-                //would also finish exactly on the end. Requiring the last byte to be the
-                //terminator is what rules that out.
-                if (record.Payload.Length == 0 || record.Payload[record.Payload.Length - 1] != 0)
-                {
-                    failures.Add($"item {record.ItemId}: consumed {stream.Length} bytes but the record " +
-                                 "does not end with the opcode 0 terminator" +
-                                 Diagnose(record, ref diagnosed));
-                    continue;
-                }
-
-                exact++;
-            }
-
-            _output.WriteLine($"{decoded} item definitions decoded, {bytes} bytes of payload");
-            _output.WriteLine($"{exact} of {decoded} consumed their buffer exactly");
-            _output.WriteLine("opcodes seen: " + string.Join(", ", opcodeCounts.Select(o => $"{o.Key}x{o.Value}")));
-            ReportSweepScope();
-
-            Assert.True(decoded > 0, "no item definition was decoded, so nothing was checked");
-            AssertNoFailures(failures, "item definitions did not decode cleanly to the end of their buffer");
+            Sweep().AssertExactConsumption();
         }
 
         // ===================================================================
@@ -148,55 +104,7 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllItemDefinitions_ReEncodeToTheCapturedBytes()
         {
-            var failures = new List<string>();
-            var differingOpcodes = new SortedDictionary<int, int>();
-            int diagnosed = 0;
-            int compared = 0;
-            int identical = 0;
-
-            foreach (ItemRecord record in ItemRecords(failures))
-            {
-                var definition = new ItemDefinition();
-                byte[] reencoded;
-
-                try
-                {
-                    definition.Decode(new JagStream(record.Payload));
-                    reencoded = definition.Encode().ToArray();
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"item {record.ItemId}: re-encode threw {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                compared++;
-                if (record.Payload.AsSpan().SequenceEqual(reencoded))
-                {
-                    identical++;
-                    continue;
-                }
-
-                int offset = FirstDifference(record.Payload, reencoded);
-                int opcode = OpcodeCovering(record.Payload, offset);
-                differingOpcodes.TryGetValue(opcode, out int seen);
-                differingOpcodes[opcode] = seen + 1;
-
-                failures.Add($"item {record.ItemId}: re-encoded {reencoded.Length} bytes from a captured " +
-                             $"{record.Payload.Length}, first difference at {offset} inside opcode {opcode}" +
-                             CompareTraces(record.Payload, reencoded, ref diagnosed));
-            }
-
-            _output.WriteLine($"{identical} of {compared} item definitions re-encoded byte-identically");
-            if (differingOpcodes.Count > 0)
-            {
-                _output.WriteLine("first difference fell inside these opcodes: " +
-                                  string.Join(", ", differingOpcodes.Select(o => $"{o.Key}x{o.Value}")));
-            }
-            ReportSweepScope();
-
-            Assert.True(compared > 0, "no item definition was re-encoded, so nothing was checked");
-            AssertNoFailures(failures, "item definitions did not re-encode to the captured bytes");
+            Sweep().AssertReEncodesToCapturedBytes();
         }
 
         /// <summary>
@@ -214,50 +122,7 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllItemDefinitions_EncodeIsAFixedPointOfDecode()
         {
-            var failures = new List<string>();
-            int compared = 0;
-            int stable = 0;
-
-            foreach (ItemRecord record in ItemRecords(failures))
-            {
-                byte[] first;
-                byte[] second;
-
-                try
-                {
-                    var once = new ItemDefinition();
-                    once.Decode(new JagStream(record.Payload));
-                    first = once.Encode().ToArray();
-
-                    var twice = new ItemDefinition();
-                    twice.Decode(new JagStream(first));
-                    second = twice.Encode().ToArray();
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"item {record.ItemId}: re-decoding the encoder's own output threw " +
-                                 $"{ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                compared++;
-                if (first.AsSpan().SequenceEqual(second))
-                {
-                    stable++;
-                    continue;
-                }
-
-                int offset = FirstDifference(first, second);
-                failures.Add($"item {record.ItemId}: encoder output re-encoded to {second.Length} bytes from " +
-                             $"{first.Length}, first difference at {offset} inside opcode " +
-                             $"{OpcodeCovering(first, offset)}");
-            }
-
-            _output.WriteLine($"{stable} of {compared} item definitions survived an encode-decode-encode cycle");
-            ReportSweepScope();
-
-            Assert.True(compared > 0, "no item definition was round-tripped, so nothing was checked");
-            AssertNoFailures(failures, "item definitions did not survive an encode-decode-encode cycle");
+            Sweep().AssertEncodeIsAFixedPointOfDecode();
         }
 
         // ===================================================================
@@ -507,284 +372,6 @@ namespace FlashEditor.Tests.Cache
             var reread = new ItemDefinition();
             reread.Decode(new JagStream(encoded));
             Assert.False(reread.membersOnly);
-        }
-
-        // ===================================================================
-        //  Reading the definitions out of the cache
-        // ===================================================================
-
-        /// <summary>One item definition file, with the item id it is addressed by.</summary>
-        private readonly struct ItemRecord
-        {
-            public ItemRecord(int itemId, byte[] payload)
-            {
-                ItemId = itemId;
-                Payload = payload;
-            }
-
-            /// <summary>The item id, which is how the archive and file ids are addressed.</summary>
-            public int ItemId { get; }
-
-            /// <summary>The raw definition bytes as they sit in the archive.</summary>
-            public byte[] Payload { get; }
-        }
-
-        /// <summary>
-        ///     Yields every item definition file in the config index.
-        /// </summary>
-        /// <remarks>
-        ///     Goes through the fixture rather than <see cref="RSCache.GetItemDefinition"/>
-        ///     because that path memoises every container it touches, and holding the whole item
-        ///     index in memory at once is a needless cost for a sweep that reads each archive
-        ///     once. The addressing is the same one it uses: item id is
-        ///     <c>archiveId * 256 + fileId</c>.
-        /// </remarks>
-        /// <param name="failures">Collects archives that could not be read at all.</param>
-        /// <returns>The definitions, ascending by item id.</returns>
-        private IEnumerable<ItemRecord> ItemRecords(List<string> failures)
-        {
-            RSReferenceTable table = _cache.Table(RSConstants.ITEM_DEFINITIONS_INDEX);
-
-            foreach (int archiveId in _cache.ArchivesToExamine(table))
-            {
-                byte[] stored = _cache.RawContainer(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId);
-                if (stored == null)
-                    continue;
-
-                int[] fileIds = table.GetArchiveEntry(archiveId).GetValidFileIds();
-                if (fileIds.Length == 0)
-                    continue;
-
-                RSArchive archive;
-                try
-                {
-                    RSContainer container =
-                        _cache.TryDecodeContainer(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, stored);
-                    if (container == null)
-                    {
-                        failures.Add($"item archive {archiveId}: container would not decode");
-                        continue;
-                    }
-
-                    archive = RSArchive.Decode(container.GetStream(), fileIds);
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"item archive {archiveId}: could not be read - {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                foreach (int fileId in fileIds)
-                {
-                    if (!archive.HasFile(fileId))
-                        continue;
-                    yield return new ItemRecord(archiveId * 256 + fileId, archive.GetFile(fileId).ToArray());
-                }
-            }
-        }
-
-        // ===================================================================
-        //  Diagnosis
-        // ===================================================================
-
-        /// <summary>
-        ///     Describes where a definition's opcode stream went wrong, or an empty string once
-        ///     enough failures have been described.
-        /// </summary>
-        /// <param name="record">The definition that failed.</param>
-        /// <param name="diagnosed">Running count of definitions already described.</param>
-        /// <returns>A trailing detail string to append to the failure line.</returns>
-        private static string Diagnose(ItemRecord record, ref int diagnosed)
-        {
-            if (diagnosed >= MaxDiagnosedFailures)
-                return "";
-            diagnosed++;
-
-            IReadOnlyList<int> boundaries = OpcodeBoundaries(record.Payload);
-            var trace = new List<string>();
-            for (int i = 0; i < boundaries.Count; i++)
-            {
-                int at = boundaries[i];
-                if (at >= record.Payload.Length)
-                    break;
-                trace.Add($"{record.Payload[at]}@{at}");
-            }
-
-            int lastGood = boundaries.Count == 0 ? 0 : boundaries[boundaries.Count - 1];
-            string tail = Hex(record.Payload, lastGood, 24);
-
-            return Environment.NewLine +
-                   $"    opcodes: {string.Join(" ", trace)}" + Environment.NewLine +
-                   $"    stalled at {lastGood} of {record.Payload.Length}, bytes from there: {tail}";
-        }
-
-        /// <summary>
-        ///     Lays the captured and re-encoded opcode streams side by side, or returns an empty
-        ///     string once enough failures have been described.
-        /// </summary>
-        /// <remarks>
-        ///     A length that matches while the bytes do not usually means the two streams carry
-        ///     the same opcodes in a different order, or one opcode swapped for another of the
-        ///     same width. Neither is visible from a byte offset alone.
-        /// </remarks>
-        /// <param name="captured">The bytes as the cache stores them.</param>
-        /// <param name="reencoded">The bytes the encoder produced.</param>
-        /// <param name="diagnosed">Running count of definitions already described.</param>
-        /// <returns>A trailing detail string to append to the failure line.</returns>
-        private static string CompareTraces(byte[] captured, byte[] reencoded, ref int diagnosed)
-        {
-            if (diagnosed >= MaxDiagnosedFailures)
-                return "";
-            diagnosed++;
-
-            return Environment.NewLine +
-                   $"    cache: {OpcodeTrace(captured)}" + Environment.NewLine +
-                   $"    ours : {OpcodeTrace(reencoded)}";
-        }
-
-        /// <summary>Renders a definition's opcodes as <c>opcode@offset</c> pairs.</summary>
-        /// <param name="payload">The definition bytes.</param>
-        /// <returns>The opcode sequence, in stream order.</returns>
-        private static string OpcodeTrace(byte[] payload)
-        {
-            var trace = new List<string>();
-            foreach (int boundary in OpcodeBoundaries(payload))
-            {
-                if (boundary >= payload.Length)
-                    break;
-                trace.Add($"{payload[boundary]}@{boundary}");
-            }
-            return string.Join(" ", trace);
-        }
-
-        /// <summary>
-        ///     Finds every position in a definition that the decoder reaches as an opcode
-        ///     boundary.
-        /// </summary>
-        /// <remarks>
-        ///     Truncating the buffer cannot change the path the decoder takes through it, only
-        ///     cut that path short, so decoding the first <c>p</c> bytes finishes on exactly
-        ///     <c>p</c> when <c>p</c> is a boundary the full decode also passes through: any
-        ///     shorter payload throws on the read that runs off the end, and a real terminator
-        ///     stops the decode before <c>p</c>. That builds an opcode trace out of nothing but
-        ///     the production decoder, so it cannot disagree with it the way a second
-        ///     hand-written parser would.
-        ///     <para>
-        ///     One position is reported that is not a boundary. Opcodes 40, 41, 42, 132 and 249
-        ///     read their element count with <see cref="JagStream.ReadByte"/>, which answers -1
-        ///     at the end of the stream rather than throwing, and for 249 a count of -1 simply
-        ///     yields an empty block. Cutting the buffer immediately after a 249 opcode byte
-        ///     therefore also lands on <c>p</c>. It shows up in a trace as a spurious entry right
-        ///     after opcode 249, which is the parameter count read as though it were an opcode.
-        ///     </para>
-        ///     <para>
-        ///     It costs a decode per byte, which is why only the first few failures get one.
-        ///     </para>
-        /// </remarks>
-        /// <param name="payload">The definition bytes.</param>
-        /// <returns>The reachable opcode boundaries, ascending.</returns>
-        private static IReadOnlyList<int> OpcodeBoundaries(byte[] payload)
-        {
-            var boundaries = new List<int>();
-
-            for (int prefix = 0; prefix <= payload.Length; prefix++)
-            {
-                var stream = new JagStream(payload.AsSpan(0, prefix).ToArray());
-                try
-                {
-                    new ItemDefinition().Decode(stream);
-                }
-                catch (Exception)
-                {
-                    //Ran off the end mid-payload, or met a byte that is not a known opcode.
-                    //Either way this prefix does not end on a boundary.
-                    continue;
-                }
-
-                if (stream.Position == prefix)
-                    boundaries.Add(prefix);
-            }
-
-            return boundaries;
-        }
-
-        /// <summary>
-        ///     Names the opcode whose payload spans <paramref name="offset"/>, so a byte
-        ///     difference is reported against the field it belongs to rather than as a raw
-        ///     offset.
-        /// </summary>
-        /// <param name="payload">The definition bytes.</param>
-        /// <param name="offset">The byte offset of interest.</param>
-        /// <returns>The covering opcode, or <c>-1</c> when the offset is not inside one.</returns>
-        private static int OpcodeCovering(byte[] payload, int offset)
-        {
-            if (offset < 0 || offset >= payload.Length)
-                return -1;
-
-            int covering = -1;
-            foreach (int boundary in OpcodeBoundaries(payload))
-            {
-                if (boundary > offset)
-                    break;
-                if (boundary < payload.Length)
-                    covering = payload[boundary];
-            }
-            return covering;
-        }
-
-        private static string Hex(byte[] data, int from, int count)
-        {
-            if (from >= data.Length)
-                return "(none)";
-
-            int take = Math.Min(count, data.Length - from);
-            var text = new StringBuilder();
-            for (int i = 0; i < take; i++)
-                text.Append(data[from + i].ToString("X2")).Append(' ');
-            if (take < data.Length - from)
-                text.Append("...");
-            return text.ToString().TrimEnd();
-        }
-
-        private static int FirstDifference(byte[] left, byte[] right)
-        {
-            int shared = Math.Min(left.Length, right.Length);
-            for (int i = 0; i < shared; i++)
-                if (left[i] != right[i])
-                    return i;
-            return shared;
-        }
-
-        /// <summary>
-        ///     States how much of the index was actually read, so a partial run is never mistaken
-        ///     for a sweep.
-        /// </summary>
-        /// <remarks>
-        ///     The config index holds far fewer archives than the per-index sample cap, so the
-        ///     sample and the sweep coincide here. That is worth printing rather than assuming.
-        /// </remarks>
-        private void ReportSweepScope()
-        {
-            RSReferenceTable table = _cache.Table(RSConstants.ITEM_DEFINITIONS_INDEX);
-            int total = table.GetArchiveEntries().Count;
-            int examined = _cache.ArchivesToExamine(table).Count;
-
-            _output.WriteLine(examined == total
-                ? $"every one of the {total} item archives was read"
-                : $"{examined} of {total} item archives read; set " +
-                  $"{RealCacheLocator.FullSweepVariable}=1 to read them all");
-        }
-
-        private static void AssertNoFailures(List<string> failures, string summary)
-        {
-            if (failures.Count == 0)
-                return;
-
-            string detail = string.Join(Environment.NewLine, failures.Take(MaxReportedFailures));
-            if (failures.Count > MaxReportedFailures)
-                detail += $"{Environment.NewLine}... and {failures.Count - MaxReportedFailures} more";
-
-            Assert.Fail($"{failures.Count} {summary}:{Environment.NewLine}{detail}");
         }
     }
 }

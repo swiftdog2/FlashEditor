@@ -2,8 +2,6 @@ using FlashEditor.cache;
 using FlashEditor.Definitions;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -30,14 +28,8 @@ namespace FlashEditor.Tests.Cache
     /// </remarks>
     public class RealCacheObjectDefinitionTests : IClassFixture<RealCacheFixture>
     {
-        /// <summary>Failures listed before the report is truncated.</summary>
-        private const int MaxReportedFailures = 10;
-
         private readonly RealCacheFixture _cache;
         private readonly ITestOutputHelper _output;
-
-        /// <summary>Archives the current sweep read, for the coverage line each test prints.</summary>
-        private int _examinedArchives;
 
         /// <summary>Binds the shared open cache and the per-test output sink.</summary>
         public RealCacheObjectDefinitionTests(RealCacheFixture cache, ITestOutputHelper output)
@@ -46,20 +38,31 @@ namespace FlashEditor.Tests.Cache
             _output = output;
         }
 
-        /// <summary>One object definition's id and the exact bytes the cache stores for it.</summary>
-        private readonly struct StoredDefinition
+        /// <summary>
+        ///     The object index bound to the production codec, for the shared byte-identity
+        ///     harness.
+        /// </summary>
+        /// <remarks>
+        ///     Empty files are passed over rather than reported. This index is the only one of the
+        ///     four that holds any, and a zero-byte record cannot carry a terminator and re-encodes
+        ///     to the one byte an empty definition encodes to, so scoring it would report a
+        ///     difference the cache genuinely contains. The count is printed on every run.
+        /// </remarks>
+        /// <returns>A sweep over every object definition the cache declares.</returns>
+        private DefinitionSweep<ObjectDefinition> Sweep()
         {
-            /// <summary>The object id, which is the archive and file ids folded together.</summary>
-            public int Id { get; }
-
-            /// <summary>The definition's bytes as they sit in the unpacked archive.</summary>
-            public byte[] Bytes { get; }
-
-            public StoredDefinition(int id, byte[] bytes)
-            {
-                Id = id;
-                Bytes = bytes;
-            }
+            return new DefinitionSweep<ObjectDefinition>(_cache, _output,
+                RSConstants.OBJECTS_DEFINITIONS_INDEX,
+                new DefinitionCodec<ObjectDefinition>("object",
+                    (id, stream) =>
+                    {
+                        var definition = new ObjectDefinition { id = id };
+                        definition.Decode(stream);
+                        return definition;
+                    },
+                    definition => definition.Encode(),
+                    definition => DefinitionCodec.FromHitMap(definition.decoded)))
+                .SkippingEmptyRecords();
         }
 
         // ===================================================================
@@ -79,27 +82,7 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllObjectDefinitions_DecodeWithoutThrowing()
         {
-            var failures = new List<string>();
-            int decoded = 0;
-
-            foreach (StoredDefinition stored in LoadDefinitions(failures))
-            {
-                try
-                {
-                    ObjectDefinition.DecodeFromStream(new JagStream(stored.Bytes));
-                    decoded++;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"object {stored.Id}: decode threw {ex.GetType().Name}: {ex.Message}");
-                }
-            }
-
-            _output.WriteLine($"{decoded} object definitions decoded without throwing");
-            ReportSampling();
-
-            Assert.True(decoded > 0, "no object definition was decoded, so nothing was checked");
-            AssertNoFailures(failures, "object definitions failed to decode");
+            Sweep().AssertEveryRecordDecodes();
         }
 
         // ===================================================================
@@ -115,62 +98,14 @@ namespace FlashEditor.Tests.Cache
         ///     <see cref="JagStream.ReadByte"/> returns -1 at the end of the buffer and the decode
         ///     loop treats that exactly like the opcode-0 terminator, so a definition whose parse
         ///     ran off the end would leave the position sitting on the length and look perfect.
-        ///     Decoding over the bytes plus one extra zero byte separates the two cases: a decoder
-        ///     that stops on the real terminator finishes on the original length, and one that
-        ///     overruns swallows the guard byte and finishes one past it.
+        ///     Decoding a copy padded with non-zero sentinel bytes separates the two cases: a
+        ///     decoder that stops on the real terminator finishes on the original length, and one
+        ///     that overruns advances into the padding and is reported as an overrun.
         /// </remarks>
         [RealCacheFact]
         public void AllObjectDefinitions_ConsumeTheirBufferExactly()
         {
-            var failures = new List<string>();
-            var opcodesInFailures = new SortedDictionary<int, int>();
-            var opcodesOverall = new SortedDictionary<int, int>();
-            int exact = 0;
-
-            foreach (StoredDefinition stored in LoadDefinitions(failures))
-            {
-                //One trailing zero: an overrun reads it as a terminator and lands past the real
-                //end instead of throwing somewhere unrelated, which keeps the diagnosis readable.
-                byte[] guarded = new byte[stored.Bytes.Length + 1];
-                Array.Copy(stored.Bytes, guarded, stored.Bytes.Length);
-
-                var stream = new JagStream(guarded);
-                var def = new ObjectDefinition { id = stored.Id };
-
-                try
-                {
-                    def.Decode(stream);
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"object {stored.Id}: decode threw {ex.GetType().Name} at offset " +
-                                 $"{stream.Position} of {stored.Bytes.Length}; opcodes {Opcodes(def)}");
-                    Tally(opcodesInFailures, def);
-                    continue;
-                }
-
-                Tally(opcodesOverall, def);
-
-                if (stream.Position == stored.Bytes.Length)
-                {
-                    exact++;
-                    continue;
-                }
-
-                string how = stream.Position > stored.Bytes.Length ? "overran" : "stopped short of";
-                failures.Add($"object {stored.Id}: {how} its {stored.Bytes.Length} bytes, ending at " +
-                             $"{stream.Position}; opcodes {Opcodes(def)}; tail {Tail(stored.Bytes)}");
-                Tally(opcodesInFailures, def);
-            }
-
-            _output.WriteLine($"{exact} object definitions consumed their buffer exactly");
-            _output.WriteLine("opcodes seen: " + Histogram(opcodesOverall));
-            if (opcodesInFailures.Count > 0)
-                _output.WriteLine("opcodes seen in failing definitions: " + Histogram(opcodesInFailures));
-            ReportSampling();
-
-            Assert.True(exact > 0, "no object definition was decoded, so nothing was checked");
-            AssertNoFailures(failures, "object definitions did not consume their buffer exactly");
+            Sweep().AssertExactConsumption();
         }
 
         // ===================================================================
@@ -190,64 +125,7 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void AllObjectDefinitions_ReEncodeToTheirCapturedBytes()
         {
-            var failures = new List<string>();
-            var opcodesInFailures = new SortedDictionary<int, int>();
-            int identical = 0;
-            int reordered = 0;
-
-            foreach (StoredDefinition stored in LoadDefinitions(failures))
-            {
-                ObjectDefinition def;
-                byte[] reencoded;
-
-                try
-                {
-                    def = ObjectDefinition.DecodeFromStream(new JagStream(stored.Bytes));
-                    def.id = stored.Id;
-                    reencoded = def.Encode().ToArray();
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"object {stored.Id}: re-encode threw {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                if (reencoded.SequenceEqual(stored.Bytes))
-                {
-                    identical++;
-                    continue;
-                }
-
-                byte[] storedSorted = (byte[])stored.Bytes.Clone();
-                byte[] reencodedSorted = (byte[])reencoded.Clone();
-                Array.Sort(storedSorted);
-                Array.Sort(reencodedSorted);
-                bool sameBytes = storedSorted.SequenceEqual(reencodedSorted);
-                if (sameBytes)
-                    reordered++;
-
-                int at = FirstDifference(stored.Bytes, reencoded);
-                failures.Add($"object {stored.Id}: re-encoded {reencoded.Length} bytes from a stored " +
-                             $"{stored.Bytes.Length}, first difference at {at} " +
-                             $"({ByteAt(stored.Bytes, at)} became {ByteAt(reencoded, at)}), " +
-                             $"{(sameBytes ? "same bytes in a different order" : "different content")}; " +
-                             $"opcodes {Opcodes(def)}");
-                if (!sameBytes)
-                    Tally(opcodesInFailures, def);
-            }
-
-            _output.WriteLine($"{identical} object definitions re-encoded to byte-identical output");
-            if (reordered > 0)
-            {
-                _output.WriteLine($"{reordered} more carried the same bytes in a different order, " +
-                                  "so the encoder is no longer replaying the stored opcode order");
-            }
-            if (opcodesInFailures.Count > 0)
-                _output.WriteLine("opcodes seen in failing definitions: " + Histogram(opcodesInFailures));
-            ReportSampling();
-
-            Assert.True(identical > 0, "no object definition was re-encoded, so nothing was checked");
-            AssertNoFailures(failures, "object definitions did not re-encode to their stored bytes");
+            Sweep().AssertReEncodesToCapturedBytes();
         }
 
         // ===================================================================
@@ -262,36 +140,27 @@ namespace FlashEditor.Tests.Cache
         [RealCacheFact]
         public void Walkable_IsSetByAMeasuredShareOfRealDefinitions()
         {
-            var failures = new List<string>();
-            int total = 0;
             int blocked = 0;
             int op17 = 0;
             int op18 = 0;
 
-            foreach (StoredDefinition stored in LoadDefinitions(failures))
+            DefinitionSweepResult swept = Sweep().ForEachDecoded((record, def) =>
             {
-                ObjectDefinition def = ObjectDefinition.DecodeFromStream(new JagStream(stored.Bytes));
-                total++;
-
                 if (def.decoded[17])
                     op17++;
                 if (def.decoded[18])
                     op18++;
                 if (!def.walkable)
                     blocked++;
-            }
+            });
 
-            _output.WriteLine($"{blocked} of {total} object definitions are not walkable " +
+            _output.WriteLine($"{blocked} of {swept.Passed} object definitions are not walkable " +
                               $"({op17} carry opcode 17, {op18} carry opcode 18)");
-            ReportSampling();
-
-            AssertNoFailures(failures, "object definitions could not be read");
-            Assert.True(total > 0, "no object definition was examined");
 
             //Stated as a floor rather than an exact figure so the test pins the fact that the
             //field is in real use without breaking when the cache is swapped for another build.
             Assert.True(blocked > 1000,
-                $"only {blocked} of {total} definitions block walking, which is too few for this " +
+                $"only {blocked} of {swept.Passed} definitions block walking, which is too few for this " +
                 "cache - the walk-blocking opcodes are probably being misread");
         }
 
@@ -619,161 +488,6 @@ namespace FlashEditor.Tests.Cache
             Assert.Equal(stream.Length, reader.Position);
             check(def);
             Assert.Equal(stream, def.Encode().ToArray());
-        }
-
-        // ===================================================================
-        //  Helpers
-        // ===================================================================
-
-        /// <summary>
-        ///     Reads every object definition the sweep covers straight out of the cache.
-        /// </summary>
-        /// <remarks>
-        ///     Goes through the fixture rather than <see cref="RSCache.GetObjectDefinition"/>
-        ///     because that path memoises every container it touches, which for the largest index
-        ///     in the cache means holding the whole thing in memory for the length of the run.
-        /// </remarks>
-        /// <param name="failures">Collects archives that could not be read.</param>
-        /// <returns>The stored bytes of each definition, ascending by object id.</returns>
-        private IEnumerable<StoredDefinition> LoadDefinitions(List<string> failures)
-        {
-            RSReferenceTable table = _cache.Table(RSConstants.OBJECTS_DEFINITIONS_INDEX);
-            _examinedArchives = 0;
-
-            foreach (int archiveId in _cache.ArchivesToExamine(table))
-            {
-                _examinedArchives++;
-
-                byte[] stored = _cache.RawContainer(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId);
-                if (stored == null)
-                    continue;
-
-                int[] fileIds = table.GetArchiveEntry(archiveId).GetValidFileIds();
-                if (fileIds.Length == 0)
-                    continue;
-
-                RSArchive archive;
-                try
-                {
-                    RSContainer container =
-                        _cache.TryDecodeContainer(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, stored);
-                    if (container == null)
-                    {
-                        failures.Add($"archive {archiveId}: container would not decode");
-                        continue;
-                    }
-
-                    archive = RSArchive.Decode(container.GetStream(), fileIds);
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"archive {archiveId}: could not be unpacked - {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-
-                foreach (int fileId in fileIds)
-                {
-                    byte[] bytes;
-                    try
-                    {
-                        bytes = archive.GetFile(fileId)?.ToArray();
-                    }
-                    catch (Exception ex)
-                    {
-                        failures.Add($"archive {archiveId} file {fileId}: {ex.GetType().Name}: {ex.Message}");
-                        continue;
-                    }
-
-                    if (bytes == null || bytes.Length == 0)
-                        continue;
-
-                    //The id RSCache.GetObjectDefinition assigns, so a failure names the object the
-                    //editor would name.
-                    yield return new StoredDefinition((archiveId * 256) + fileId, bytes);
-                }
-            }
-        }
-
-        private static void Tally(SortedDictionary<int, int> counts, ObjectDefinition def)
-        {
-            for (int op = 0; op < def.decoded.Length; op++)
-            {
-                if (!def.decoded[op])
-                    continue;
-                counts.TryGetValue(op, out int seen);
-                counts[op] = seen + 1;
-            }
-        }
-
-        private static string Histogram(SortedDictionary<int, int> counts)
-        {
-            return string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}"));
-        }
-
-        private static string Opcodes(ObjectDefinition def)
-        {
-            var seen = new List<int>();
-            for (int op = 0; op < def.decoded.Length; op++)
-                if (def.decoded[op])
-                    seen.Add(op);
-            return "[" + string.Join(" ", seen) + "]";
-        }
-
-        private static string Tail(byte[] bytes)
-        {
-            int from = Math.Max(0, bytes.Length - 8);
-            return BitConverter.ToString(bytes, from, bytes.Length - from);
-        }
-
-        private static string ByteAt(byte[] bytes, int offset)
-        {
-            return offset < bytes.Length ? $"0x{bytes[offset]:X2}" : "end of buffer";
-        }
-
-        private static int FirstDifference(byte[] expected, byte[] actual)
-        {
-            int shared = Math.Min(expected.Length, actual.Length);
-            for (int i = 0; i < shared; i++)
-                if (expected[i] != actual[i])
-                    return i;
-            return shared;
-        }
-
-        /// <summary>
-        ///     States how much of the index the sweep actually covered.
-        /// </summary>
-        /// <remarks>
-        ///     The object index holds fewer archives than the fixture's sample cap, so the default
-        ///     run reads every definition and the full-sweep switch changes nothing here. Saying
-        ///     so explicitly matters: "sampled" and "swept" are very different claims to make
-        ///     about a codec, and the numbers below decide which one this run earned.
-        /// </remarks>
-        private void ReportSampling()
-        {
-            int total = _cache.Table(RSConstants.OBJECTS_DEFINITIONS_INDEX).GetArchiveCount();
-
-            if (_examinedArchives >= total)
-            {
-                _output.WriteLine($"every one of the index's {total} archives was read" +
-                                  (_cache.FullSweep ? "" : $" - it holds fewer than the " +
-                                   $"{RealCacheFixture.SampleArchivesPerIndex}-archive sample cap"));
-                return;
-            }
-
-            _output.WriteLine($"sampled {_examinedArchives} of the index's {total} archives; " +
-                              $"set {RealCacheLocator.FullSweepVariable}=1 to read every one");
-        }
-
-        private static void AssertNoFailures(List<string> failures, string summary)
-        {
-            if (failures.Count == 0)
-                return;
-
-            string detail = string.Join(Environment.NewLine, failures.Take(MaxReportedFailures));
-            if (failures.Count > MaxReportedFailures)
-                detail += $"{Environment.NewLine}... and {failures.Count - MaxReportedFailures} more";
-
-            Assert.Fail($"{failures.Count} {summary}:{Environment.NewLine}{detail}");
         }
     }
 }
