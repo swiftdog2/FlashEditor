@@ -56,8 +56,14 @@ namespace FlashEditor.Map {
         ///     editor affordance rather than something the client does - its minimap draws walls and
         ///     mapscene icons only - and at a dense square it puts a box around every tree and fence
         ///     post, which buries the terrain underneath.
+        ///
+        ///     <see cref="GroundDecoration"/> is excluded on the same grounds, and the argument is
+        ///     stronger at world scale: a decoration mark is drawn inset into its own tile, so once a
+        ///     tile is a handful of pixels the mark <em>is</em> the tile, and whole cities read as a
+        ///     blue wash with no terrain visible under it. Turning it on is a per-square inspection
+        ///     tool, not a map layer.
         /// </remarks>
-        Default = Underlay | Overlay | Walls | GroundDecoration | MapSceneIcons | Hillshade | Grid
+        Default = Underlay | Overlay | Walls | MapSceneIcons | Hillshade | Grid
     }
 
     /// <summary>
@@ -74,7 +80,7 @@ namespace FlashEditor.Map {
     ///
     ///     See <c>reference/hydra-637-maps/05-colour-and-rendering.md</c>.
     /// </remarks>
-    public sealed class MapRasteriser {
+    public sealed class MapRasteriser : IDisposable {
         private readonly RSCache cache;
         private readonly Dictionary<int, UnderlayColour?> underlayCache = new Dictionary<int, UnderlayColour?>();
         private readonly Dictionary<int, FloorOverlayDefinition> overlayCache = new Dictionary<int, FloorOverlayDefinition>();
@@ -82,6 +88,19 @@ namespace FlashEditor.Map {
         private readonly Dictionary<int, int> textureColourCache = new Dictionary<int, int>();
         private readonly Dictionary<int, Bitmap> iconCache = new Dictionary<int, Bitmap>();
         private readonly Dictionary<int, bool> iconStretch = new Dictionary<int, bool>();
+        private readonly Dictionary<int, SolidBrush> brushCache = new Dictionary<int, SolidBrush>();
+
+        /// <summary>
+        ///     How far past a drawn window a square's locations are still collected.
+        /// </summary>
+        /// <remarks>
+        ///     A wall on the east edge of square N is stroked along the tile's right-hand edge, which
+        ///     is the first pixel column of square N+1, and the largest shipped object footprints run
+        ///     to a dozen tiles. Both have to reach the tile bitmap that owns their pixels or the
+        ///     tiled world loses them at every boundary. Sixteen tiles covers every footprint in the
+        ///     cache with room to spare, and the cost of over-collecting is one clipped draw call.
+        /// </remarks>
+        private const int LocationBleedTiles = 16;
 
         /// <summary>Screen pixels per map tile. The client's minimap uses 4.</summary>
         public int TilePixels { get; set; } = 8;
@@ -152,6 +171,38 @@ namespace FlashEditor.Map {
         /// <param name="layers">Which layers to include.</param>
         public void Render(MapScene scene, int plane, DirectBitmap target, MapLayers layers = MapLayers.Default) {
             if (scene == null) throw new ArgumentNullException(nameof(scene));
+
+            RenderWindow(scene, plane, new Rectangle(0, 0, scene.WidthTiles, scene.HeightTiles), target, layers);
+        }
+
+        /// <summary>
+        ///     Renders one rectangle of a scene into a bitmap sized to that rectangle.
+        /// </summary>
+        /// <remarks>
+        ///     The whole-world view rasterises one map square at a time out of a 3x3 neighbourhood,
+        ///     so this is the entry point it uses; <see cref="Render(MapScene, int, DirectBitmap, MapLayers)"/>
+        ///     is now the special case where the window is the whole scene.
+        ///
+        ///     The result must be <b>bit-identical</b> to rendering the whole scene and cropping to
+        ///     the same rectangle, which is what makes tiling seamless. Every input is therefore
+        ///     windowed rather than approximated: the underlay blend reads a neighbourhood inflated
+        ///     by <see cref="UnderlayBlender.ReachForward"/>, the height grid takes the extra vertex
+        ///     row and column the hillshade stencil needs, and the location pass collects from any
+        ///     square within <see cref="LocationBleedTiles"/> so an edge wall or an overhanging
+        ///     footprint is drawn by whichever tile owns its pixels.
+        /// </remarks>
+        /// <param name="scene">The scene to draw from.</param>
+        /// <param name="plane">The plane to draw.</param>
+        /// <param name="sceneTileWindow">The scene tile rectangle to produce.</param>
+        /// <param name="target">
+        ///     The bitmap to draw into. Must be <c>Width * TilePixels</c> by
+        ///     <c>Height * TilePixels</c> for the window.
+        /// </param>
+        /// <param name="layers">Which layers to include.</param>
+        public void RenderWindow(MapScene scene, int plane, Rectangle sceneTileWindow,
+            DirectBitmap target, MapLayers layers = MapLayers.Default) {
+
+            if (scene == null) throw new ArgumentNullException(nameof(scene));
             if (target == null) throw new ArgumentNullException(nameof(target));
 
             using (Graphics g = Graphics.FromImage(target.Bitmap)) {
@@ -163,34 +214,80 @@ namespace FlashEditor.Map {
                 g.PixelOffsetMode = PixelOffsetMode.Half;
 
                 if ((layers & MapLayers.Underlay) != 0 || (layers & MapLayers.Overlay) != 0)
-                    DrawTerrain(g, scene, plane, layers);
+                    DrawTerrain(g, scene, plane, sceneTileWindow, layers);
 
                 if ((layers & MapLayers.TileFlags) != 0)
-                    DrawTileFlags(g, scene, plane);
+                    DrawTileFlags(g, scene, plane, sceneTileWindow);
 
-                DrawLocations(g, scene, plane, layers);
+                DrawLocations(g, scene, plane, sceneTileWindow, layers);
 
                 if ((layers & MapLayers.Grid) != 0)
-                    DrawGrid(g, scene);
+                    DrawGrid(g, sceneTileWindow);
             }
         }
 
-        private void DrawTerrain(Graphics g, MapScene scene, int plane, MapLayers layers) {
+        /// <summary>
+        ///     The blend window a tile window has to read, and the origin of the blended array.
+        /// </summary>
+        /// <remarks>
+        ///     Inflating by <see cref="UnderlayBlender.ReachForward"/> on every side covers the
+        ///     window's true reach of four back and five forward. The overhang may fall outside the
+        ///     scene, which reads as id 0 and contributes nothing - exactly what the full pass does
+        ///     when it runs off the end of its own array, which is why the identity holds.
+        /// </remarks>
+        private static Rectangle BlendReadWindow(Rectangle window) =>
+            Rectangle.Inflate(window, UnderlayBlender.ReachForward, UnderlayBlender.ReachForward);
+
+        /// <summary>
+        ///     Blends the underlay for a window, returned in the window's own coordinates.
+        /// </summary>
+        /// <param name="scene">The scene.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="window">The tile window being drawn.</param>
+        /// <returns>Packed HSL indexed from the window's origin.</returns>
+        internal int[,] BlendWindow(MapScene scene, int plane, Rectangle window) {
+            Rectangle read = BlendReadWindow(window);
+            int[,] ids = scene.UnderlayGrid(plane, read);
+
+            return UnderlayBlender.Blend(ids, ResolveUnderlay,
+                new Rectangle(window.Left - read.Left, window.Top - read.Top, window.Width, window.Height));
+        }
+
+        /// <summary>
+        ///     Relief multipliers for a window, or <c>null</c> when relief is off.
+        /// </summary>
+        /// <param name="scene">The scene.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="window">The tile window being drawn.</param>
+        /// <param name="strength">Relief strength, 0 to 1. Zero returns <c>null</c>.</param>
+        /// <returns>Multipliers indexed from the window's origin, or <c>null</c>.</returns>
+        internal float[,] ReliefWindow(MapScene scene, int plane, Rectangle window, float strength) {
+            if (strength <= 0f)
+                return null;
+
+            int[,] heights = scene.HeightGrid(plane,
+                new Rectangle(window.X, window.Y, window.Width + 1, window.Height + 1));
+
+            return Map.Hillshade.Build(heights, HillshadeAzimuth, HillshadeAltitude, strength);
+        }
+
+        private void DrawTerrain(Graphics g, MapScene scene, int plane, Rectangle window, MapLayers layers) {
             int[,] blended = (layers & MapLayers.Underlay) != 0
-                ? UnderlayBlender.Blend(scene.UnderlayGrid(plane), ResolveUnderlay)
+                ? BlendWindow(scene, plane, window)
                 : null;
 
-            /* Built once for the whole scene rather than per tile: a tile's gradient reads the
+            /* Built once for the whole window rather than per tile: a tile's gradient reads the
                vertices it shares with its neighbours, so a per-tile build would re-resolve every
                interior vertex four times. Skipped entirely when the layer is off or the strength is
                zero, which is what makes turning relief off cost nothing. */
-            float[,] relief = (layers & MapLayers.Hillshade) != 0 && HillshadeStrength > 0f
-                ? Map.Hillshade.Build(scene.HeightGrid(plane), HillshadeAzimuth, HillshadeAltitude, HillshadeStrength)
+            float[,] relief = (layers & MapLayers.Hillshade) != 0
+                ? ReliefWindow(scene, plane, window, HillshadeStrength)
                 : null;
 
-            for (int x = 0; x < scene.WidthTiles; x++) {
-                for (int y = 0; y < scene.HeightTiles; y++) {
-                    float shade = relief == null ? 1f : relief[x, y];
+            for (int x = window.Left; x < window.Right; x++) {
+                for (int y = window.Top; y < window.Bottom; y++) {
+                    int lx = x - window.Left, ly = y - window.Top;
+                    float shade = relief == null ? 1f : relief[lx, ly];
 
                     int overlayId = scene.OverlayId(plane, x, y);
                     FloorOverlayDefinition overlay = overlayId > 0 ? ResolveOverlay(overlayId - 1) : null;
@@ -205,12 +302,12 @@ namespace FlashEditor.Map {
                         && overlay.PrimaryRgb == FloorOverlayDefinition.TransparentRgb)
                         continue;
 
-                    RectangleF tile = TileRect(scene, x, y);
+                    RectangleF tile = TileRect(window, x, y);
 
                     bool overlayCoversTile = overlay != null && TileShapes.IsFullOverlay(shape);
 
                     if (blended != null && !overlayCoversTile) {
-                        int hsl = blended[x, y];
+                        int hsl = blended[lx, ly];
                         if (hsl != 0)
                             FillRect(g, tile, Shade(MapPalette.ToRgb(hsl), shade));
                     }
@@ -225,16 +322,16 @@ namespace FlashEditor.Map {
             }
         }
 
-        private void DrawTileFlags(Graphics g, MapScene scene, int plane) {
+        private void DrawTileFlags(Graphics g, MapScene scene, int plane, Rectangle window) {
             using (var blocked = new SolidBrush(Color.FromArgb(70, 255, 40, 40)))
             using (var bridge = new SolidBrush(Color.FromArgb(70, 40, 160, 255))) {
-                for (int x = 0; x < scene.WidthTiles; x++) {
-                    for (int y = 0; y < scene.HeightTiles; y++) {
+                for (int x = window.Left; x < window.Right; x++) {
+                    for (int y = window.Top; y < window.Bottom; y++) {
                         int flags = scene.TileFlags(plane, x, y);
                         if (flags == 0)
                             continue;
 
-                        RectangleF tile = TileRect(scene, x, y);
+                        RectangleF tile = TileRect(window, x, y);
                         if ((flags & 0x1) != 0) g.FillRectangle(blocked, tile);
                         if ((flags & 0x2) != 0) g.FillRectangle(bridge, tile);
                     }
@@ -242,20 +339,20 @@ namespace FlashEditor.Map {
             }
         }
 
-        private void DrawLocations(Graphics g, MapScene scene, int plane, MapLayers layers) {
+        private void DrawLocations(Graphics g, MapScene scene, int plane, Rectangle window, MapLayers layers) {
             float wallWidth = Math.Max(1f, TilePixels / 4f);
 
             using (var wallPen = new Pen(WallColour, wallWidth))
             using (var objectPen = new Pen(ObjectColour, 1f))
             using (var decorationBrush = new SolidBrush(GroundDecorationColour)) {
-                foreach ((Location loc, int sceneX, int sceneY) in scene.Locations(plane)) {
-                    RectangleF tile = TileRect(scene, sceneX, sceneY);
+                foreach ((Location loc, int sceneX, int sceneY) in scene.Locations(plane, window, LocationBleedTiles)) {
+                    RectangleF tile = TileRect(window, sceneX, sceneY);
 
                     /* An object carrying a map scene icon draws the icon INSTEAD of its default
                        mark, whatever group it belongs to - the client does this for walls, wall
                        decorations and ground decorations alike (Class277.java:122, :178, :203).
                        A bank booth is a wall, and it should read as a bank rather than as a line. */
-                    if ((layers & MapLayers.MapSceneIcons) != 0 && DrawMapSceneIcon(g, scene, loc, sceneX, sceneY))
+                    if ((layers & MapLayers.MapSceneIcons) != 0 && DrawMapSceneIcon(g, window, loc, sceneX, sceneY))
                         continue;
 
                     switch (LocGroups.Of(loc.Shape)) {
@@ -274,7 +371,7 @@ namespace FlashEditor.Map {
 
                         case LocGroup.GameObject:
                             if ((layers & MapLayers.GameObjects) != 0)
-                                DrawFootprint(g, objectPen, scene, loc, sceneX, sceneY);
+                                DrawFootprint(g, objectPen, window, loc, sceneX, sceneY);
                             break;
                     }
                 }
@@ -349,8 +446,8 @@ namespace FlashEditor.Map {
                 new PointF(corner.X + size / 2, corner.Y));
         }
 
-        private void DrawFootprint(Graphics g, Pen pen, MapScene scene, Location loc, int sceneX, int sceneY) {
-            RectangleF area = FootprintRect(scene, loc, sceneX, sceneY);
+        private void DrawFootprint(Graphics g, Pen pen, Rectangle window, Location loc, int sceneX, int sceneY) {
+            RectangleF area = FootprintRect(window, loc, sceneX, sceneY);
             g.DrawRectangle(pen, area.Left, area.Top, area.Width - 1, area.Height - 1);
         }
 
@@ -364,13 +461,13 @@ namespace FlashEditor.Map {
         ///     rotation 0 and opcode 15 the Y extent, despite the client's field names saying the
         ///     reverse - see reference/hydra-637-maps/03-locs-l.md.
         /// </remarks>
-        private RectangleF FootprintRect(MapScene scene, Location loc, int sceneX, int sceneY) {
+        private RectangleF FootprintRect(Rectangle window, Location loc, int sceneX, int sceneY) {
             ObjectFootprint footprint = ResolveFootprint(loc.Id);
 
             int extentX = (loc.Orientation & 1) == 0 ? footprint.SizeX : footprint.SizeY;
             int extentY = (loc.Orientation & 1) == 0 ? footprint.SizeY : footprint.SizeX;
 
-            RectangleF origin = TileRect(scene, sceneX, sceneY);
+            RectangleF origin = TileRect(window, sceneX, sceneY);
             return new RectangleF(
                 origin.Left,
                 origin.Top - (extentY - 1) * TilePixels,
@@ -388,12 +485,12 @@ namespace FlashEditor.Map {
         ///     <c>pixelsPerTile / 4</c> (Class278.java:878), which is what happens here.
         /// </remarks>
         /// <returns><c>true</c> when an icon was drawn, so the caller skips the default mark.</returns>
-        private bool DrawMapSceneIcon(Graphics g, MapScene scene, Location loc, int sceneX, int sceneY) {
+        private bool DrawMapSceneIcon(Graphics g, Rectangle window, Location loc, int sceneX, int sceneY) {
             Bitmap icon = ResolveIcon(loc.Id);
             if (icon == null)
                 return false;
 
-            RectangleF area = FootprintRect(scene, loc, sceneX, sceneY);
+            RectangleF area = FootprintRect(window, loc, sceneX, sceneY);
 
             float width = icon.Width * TilePixels / 4f;
             float height = icon.Height * TilePixels / 4f;
@@ -409,33 +506,77 @@ namespace FlashEditor.Map {
             return true;
         }
 
-        private void DrawGrid(Graphics g, MapScene scene) {
+        /// <summary>
+        ///     Draws the square and chunk boundaries that fall inside a window.
+        /// </summary>
+        /// <remarks>
+        ///     Deliberately half-open: a boundary line is drawn by the window whose <em>low</em> edge
+        ///     it sits on and never by the window that ends there. On a tiled world the closing line
+        ///     would be painted a second time by the neighbouring tile, and both are drawn at alpha
+        ///     150, so every internal boundary would come out twice as dark as the outer ones -
+        ///     invisible on a single square and a doubled lattice across the world. The cost is that
+        ///     a whole-scene render no longer closes its far edge, which is a border nobody reads.
+        /// </remarks>
+        private void DrawGrid(Graphics g, Rectangle window) {
             using (var squarePen = new Pen(SquareGridColour, 1f))
             using (var chunkPen = new Pen(ChunkGridColour, 1f)) {
-                int width = scene.WidthTiles * TilePixels;
-                int height = scene.HeightTiles * TilePixels;
+                int width = window.Width * TilePixels;
+                int height = window.Height * TilePixels;
 
                 if (TilePixels >= 16) {
-                    for (int t = 0; t <= scene.WidthTiles; t += 8)
-                        g.DrawLine(chunkPen, t * TilePixels, 0, t * TilePixels, height);
-                    for (int t = 0; t <= scene.HeightTiles; t += 8)
-                        g.DrawLine(chunkPen, 0, t * TilePixels, width, t * TilePixels);
+                    DrawGridColumns(g, chunkPen, window, 8, height);
+                    DrawGridRows(g, chunkPen, window, 8, width);
                 }
 
-                for (int t = 0; t <= scene.WidthTiles; t += MapRegion.WIDTH)
-                    g.DrawLine(squarePen, t * TilePixels, 0, t * TilePixels, height);
-                for (int t = 0; t <= scene.HeightTiles; t += MapRegion.HEIGHT)
-                    g.DrawLine(squarePen, 0, t * TilePixels, width, t * TilePixels);
+                DrawGridColumns(g, squarePen, window, MapRegion.WIDTH, height);
+                DrawGridRows(g, squarePen, window, MapRegion.HEIGHT, width);
+            }
+        }
+
+        /// <summary>Vertical boundaries, drawn on the window's west edge but never its east one.</summary>
+        private void DrawGridColumns(Graphics g, Pen pen, Rectangle window, int step, int height) {
+            for (int t = FirstMultipleAtOrAfter(window.Left, step); t < window.Right; t += step) {
+                float x = (t - window.Left) * TilePixels;
+                g.DrawLine(pen, x, 0, x, height);
             }
         }
 
         /// <summary>
-        ///     The screen rectangle for a scene tile.
+        ///     Horizontal boundaries, drawn on the window's north edge but never its south one.
         /// </summary>
-        /// <remarks>Scene Y runs north, screen Y runs down, so the axis is flipped here.</remarks>
-        private RectangleF TileRect(MapScene scene, int sceneX, int sceneY) {
-            float top = (scene.HeightTiles - 1 - sceneY) * TilePixels;
-            return new RectangleF(sceneX * TilePixels, top, TilePixels, TilePixels);
+        /// <remarks>
+        ///     The flip is why this is the north edge rather than the south: scene row <c>t</c> is
+        ///     the <em>southern</em> boundary of tile <c>t</c>, and screen row 0 is the window's
+        ///     north edge, which is boundary <c>window.Bottom</c>. Running the loop over
+        ///     <c>(Top, Bottom]</c> rather than <c>[Top, Bottom)</c> is what keeps that the low
+        ///     screen coordinate in both axes, so adjacent tiles never double a line.
+        /// </remarks>
+        private void DrawGridRows(Graphics g, Pen pen, Rectangle window, int step, int width) {
+            for (int t = FirstMultipleAtOrAfter(window.Top + 1, step); t <= window.Bottom; t += step) {
+                float y = (window.Bottom - t) * TilePixels;
+                g.DrawLine(pen, 0, y, width, y);
+            }
+        }
+
+        /// <summary>The first multiple of <paramref name="step"/> at or after <paramref name="value"/>.</summary>
+        private static int FirstMultipleAtOrAfter(int value, int step) {
+            int remainder = value % step;
+            if (remainder == 0)
+                return value;
+            return value > 0 ? value + step - remainder : value - remainder;
+        }
+
+        /// <summary>
+        ///     The screen rectangle for a scene tile, relative to the window being drawn.
+        /// </summary>
+        /// <remarks>
+        ///     Scene Y runs north, screen Y runs down, so the axis is flipped here. For a window
+        ///     covering the whole scene this reduces exactly to the expression it replaced, which is
+        ///     what makes a windowed render bit-identical to a cropped full one.
+        /// </remarks>
+        private RectangleF TileRect(Rectangle window, int sceneX, int sceneY) {
+            float top = (window.Bottom - 1 - sceneY) * TilePixels;
+            return new RectangleF((sceneX - window.Left) * TilePixels, top, TilePixels, TilePixels);
         }
 
         /// <summary>
@@ -471,12 +612,27 @@ namespace FlashEditor.Map {
         private static int Channel(int rgb, int shift, float shade) =>
             Math.Clamp((int) (((rgb >> shift) & 0xFF) * shade + 0.5f), 0, 255);
 
-        private static void FillRect(Graphics g, RectangleF rect, int rgb) {
-            using (var brush = new SolidBrush(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF)))
-                g.FillRectangle(brush, rect);
+        /// <summary>
+        ///     An opaque brush for a 24-bit RGB, memoised for the life of the rasteriser.
+        /// </summary>
+        /// <remarks>
+        ///     One brush was allocated and finalised per tile fill, which is 4096 per square before
+        ///     overlay triangles are counted, and a whole-world sweep does that 1684 times. The
+        ///     distinct colour count is bounded by the palette rather than by the tile count, so the
+        ///     memo saturates within the first square or two.
+        /// </remarks>
+        private SolidBrush Brush(int rgb) {
+            if (brushCache.TryGetValue(rgb, out SolidBrush known))
+                return known;
+
+            var brush = new SolidBrush(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
+            brushCache[rgb] = brush;
+            return brush;
         }
 
-        private static void FillTriangle(Graphics g, RectangleF tile, float[] triangle, int rgb) {
+        private void FillRect(Graphics g, RectangleF rect, int rgb) => g.FillRectangle(Brush(rgb), rect);
+
+        private void FillTriangle(Graphics g, RectangleF tile, float[] triangle, int rgb) {
             //Triangle coordinates arrive in unit tile space with Y running north; flip to screen.
             var points = new[] {
                 new PointF(tile.Left + triangle[0] * tile.Width, tile.Bottom - triangle[1] * tile.Height),
@@ -484,11 +640,98 @@ namespace FlashEditor.Map {
                 new PointF(tile.Left + triangle[4] * tile.Width, tile.Bottom - triangle[5] * tile.Height)
             };
 
-            using (var brush = new SolidBrush(Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF)))
-                g.FillPolygon(brush, points);
+            g.FillPolygon(Brush(rgb), points);
         }
 
-        private UnderlayColour? ResolveUnderlay(int definitionId) {
+        /// <summary>
+        ///     Drops the layers that are meaningless or actively harmful at a zoom level.
+        /// </summary>
+        /// <remarks>
+        ///     A pure function of what was asked for and how big a tile is, so it needs no place in
+        ///     the tile cache key - the level is already in there.
+        ///
+        ///     Below one pixel per tile every mark the object layers draw is at least a whole tile
+        ///     wide, so leaving them on does not add detail, it replaces the terrain with a field of
+        ///     dots; and the grid at that size is a solid wash of boundary lines. At two pixels per
+        ///     tile walls and icons start to read, but a ground decoration is still a filled tile.
+        /// </remarks>
+        /// <param name="requested">What the user asked to see.</param>
+        /// <param name="level">The zoom level, as <c>log2</c> of pixels per tile.</param>
+        /// <returns>The layers actually worth drawing.</returns>
+        public static MapLayers EffectiveLayers(MapLayers requested, int level) {
+            if (level <= 0)
+                return requested & ~(MapLayers.Walls | MapLayers.GroundDecoration | MapLayers.GameObjects
+                                     | MapLayers.TileFlags | MapLayers.Grid | MapLayers.MapSceneIcons);
+
+            if (level == 1)
+                return requested & ~MapLayers.GroundDecoration;
+
+            return requested;
+        }
+
+        /// <summary>
+        ///     The single colour a tile reduces to when it is one pixel across.
+        /// </summary>
+        /// <remarks>
+        ///     Shared with <see cref="MapOverviewRasteriser"/> so the overview cannot drift away from
+        ///     the GDI+ path on colour: both resolve the overlay the same way, apply the same hole
+        ///     rule, and take the same relief multiplier. What the overview cannot do is triangulate,
+        ///     so a partial overlay is decided here instead - the underlay wins the pixel when there
+        ///     is one, because a partial overlay covers less than half the tile in every shape the
+        ///     cache uses, and the overlay takes it otherwise.
+        /// </remarks>
+        /// <param name="scene">The scene.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <param name="blended">Blended underlay, or <c>null</c> when the layer is off.</param>
+        /// <param name="blendWindow">The scene rectangle <paramref name="blended"/> covers.</param>
+        /// <param name="shade">The relief multiplier for this tile.</param>
+        /// <param name="layers">Which layers are on.</param>
+        /// <param name="isHole">Set when the tile is a suppressed hole rather than merely blank.</param>
+        /// <returns>A 24-bit RGB, or <see cref="MapPalette.NoColour"/> for nothing at all.</returns>
+        internal int TileColourOrNone(MapScene scene, int plane, int sceneX, int sceneY,
+            int[,] blended, Rectangle blendWindow, float shade, MapLayers layers, out bool isHole) {
+
+            isHole = false;
+
+            int overlayId = scene.OverlayId(plane, sceneX, sceneY);
+            FloorOverlayDefinition overlay = overlayId > 0 ? ResolveOverlay(overlayId - 1) : null;
+            int overlayHsl = overlay == null ? MapPalette.NoColour : ResolveOverlayColour(overlay);
+
+            if (overlay != null && overlayHsl == MapPalette.NoColour && overlay.SecondaryRgb == -1
+                && overlay.PrimaryRgb == FloorOverlayDefinition.TransparentRgb) {
+                isHole = true;
+                return MapPalette.NoColour;
+            }
+
+            bool overlayVisible = overlay != null && overlayHsl != MapPalette.NoColour
+                                  && (layers & MapLayers.Overlay) != 0;
+
+            int shape = overlayId > 0 ? scene.OverlayShape(plane, sceneX, sceneY) : TileShapes.ShapeFullUnderlay;
+
+            if (overlayVisible && TileShapes.IsFullOverlay(shape))
+                return Shade(MapPalette.ToRgb(overlayHsl), shade);
+
+            if (blended != null) {
+                int hsl = blended[sceneX - blendWindow.Left, sceneY - blendWindow.Top];
+                if (hsl != 0)
+                    return Shade(MapPalette.ToRgb(hsl), shade);
+            }
+
+            return overlayVisible ? Shade(MapPalette.ToRgb(overlayHsl), shade) : MapPalette.NoColour;
+        }
+
+        /// <summary>
+        ///     Resolves an underlay definition to its blend components, memoised.
+        /// </summary>
+        /// <remarks>
+        ///     Internal rather than private so <see cref="MapOverviewRasteriser"/> can blend through
+        ///     the same memo and therefore the same colours.
+        /// </remarks>
+        /// <param name="definitionId">The zero-based definition id.</param>
+        /// <returns>The components, or <c>null</c> when the definition is absent.</returns>
+        internal UnderlayColour? ResolveUnderlay(int definitionId) {
             if (underlayCache.TryGetValue(definitionId, out UnderlayColour? known))
                 return known;
 
@@ -700,6 +943,26 @@ namespace FlashEditor.Map {
         private ObjectFootprint ResolveFootprint(int objectId) {
             ObjectInfo info = ResolveObject(objectId);
             return new ObjectFootprint(info.SizeX, info.SizeY);
+        }
+
+        /// <summary>
+        ///     Releases the GDI objects the memos hold.
+        /// </summary>
+        /// <remarks>
+        ///     Safe to skip - every one of these is a finalisable GDI handle that the runtime will
+        ///     reclaim eventually - but a rasteriser accumulates a brush per distinct tile colour and
+        ///     a bitmap per map scene icon, and a session that opens several caches would hold every
+        ///     generation of them at once. <b>Do not call this while a background render is running
+        ///     against this instance</b>: dispose the render service first, which joins its thread.
+        /// </remarks>
+        public void Dispose() {
+            foreach (SolidBrush brush in brushCache.Values)
+                brush.Dispose();
+            brushCache.Clear();
+
+            foreach (Bitmap icon in iconCache.Values)
+                icon?.Dispose();
+            iconCache.Clear();
         }
 
         private readonly struct ObjectFootprint {

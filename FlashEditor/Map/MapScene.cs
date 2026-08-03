@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using FlashEditor.Cache.Region;
 
 //System.Drawing.Region arrives via the WinForms implicit usings and collides with the map type.
@@ -32,6 +33,19 @@ namespace FlashEditor.Map {
     public sealed class MapScene {
         private readonly MapRegion[,] squares;
 
+        /// <summary>
+        ///     Per-square copies of the location lists, or <c>null</c> to read them live.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="MapRegion.GetLocations"/> hands out the list it stores, so a background
+        ///     rasteriser iterating it while the UI thread applies an add or a remove throws
+        ///     <see cref="InvalidOperationException"/> partway through a square. A scene built for a
+        ///     background render therefore carries a snapshot taken under the owning store's lock.
+        ///     Nothing else needs one, and a scene built on the UI thread wants the live list so an
+        ///     edit shows up immediately.
+        /// </remarks>
+        private readonly IReadOnlyList<Location>[,] locationSnapshots;
+
         /// <summary>Region X of the south-west square.</summary>
         public int OriginRegionX { get; }
 
@@ -59,13 +73,15 @@ namespace FlashEditor.Map {
         /// <summary>Squares that exist in the cache but whose locations could not be decrypted.</summary>
         public IReadOnlyList<int> SquaresMissingKeys { get; }
 
-        private MapScene(int originRegionX, int originRegionY, MapRegion[,] squares, List<int> missingKeys) {
+        private MapScene(int originRegionX, int originRegionY, MapRegion[,] squares, List<int> missingKeys,
+            IReadOnlyList<Location>[,] locationSnapshots = null) {
             OriginRegionX = originRegionX;
             OriginRegionY = originRegionY;
             this.squares = squares;
             SquaresX = squares.GetLength(0);
             SquaresY = squares.GetLength(1);
             SquaresMissingKeys = missingKeys;
+            this.locationSnapshots = locationSnapshots;
         }
 
         /// <summary>
@@ -112,10 +128,16 @@ namespace FlashEditor.Map {
         /// <param name="originRegionX">Region X of the south-west square.</param>
         /// <param name="originRegionY">Region Y of the south-west square.</param>
         /// <param name="squares">Squares indexed <c>[dx, dy]</c> from the origin. Nulls allowed.</param>
+        /// <param name="locationSnapshots">
+        ///     Copies of each square's location list, indexed the same way, for a scene that will be
+        ///     read off the UI thread. Pass <c>null</c> - the default - to read the live lists, which
+        ///     is what an interactive caller wants so that an edit is visible immediately.
+        /// </param>
         /// <returns>The scene.</returns>
-        public static MapScene FromSquares(int originRegionX, int originRegionY, MapRegion[,] squares) {
+        public static MapScene FromSquares(int originRegionX, int originRegionY, MapRegion[,] squares,
+            IReadOnlyList<Location>[,] locationSnapshots = null) {
             if (squares == null) throw new ArgumentNullException(nameof(squares));
-            return new MapScene(originRegionX, originRegionY, squares, new List<int>());
+            return new MapScene(originRegionX, originRegionY, squares, new List<int>(), locationSnapshots);
         }
 
         /// <summary>The square covering a scene tile, or <c>null</c> when that square is absent.</summary>
@@ -147,15 +169,53 @@ namespace FlashEditor.Map {
         /// </remarks>
         /// <param name="plane">The plane.</param>
         /// <returns>Underlay ids indexed <c>[sceneX, sceneY]</c>.</returns>
-        public int[,] UnderlayGrid(int plane) {
-            int[,] grid = new int[WidthTiles, HeightTiles];
+        public int[,] UnderlayGrid(int plane) =>
+            UnderlayGrid(plane, new Rectangle(0, 0, WidthTiles, HeightTiles));
 
-            for (int sx = 0; sx < WidthTiles; sx++) {
-                for (int sy = 0; sy < HeightTiles; sy++) {
-                    MapRegion square = squares[sx / MapRegion.WIDTH, sy / MapRegion.HEIGHT];
-                    if (square == null || plane >= square.PlaneCount)
+        /// <summary>
+        ///     Flattens part of one plane's underlay ids into a grid sized to the window.
+        /// </summary>
+        /// <remarks>
+        ///     Walks square by square rather than tile by tile, so the square lookup and the two
+        ///     divisions it used to cost happen once per square instead of once per tile. Over a
+        ///     whole-world sweep that is the difference between 6.9 million divisions and 15,000.
+        ///
+        ///     A window may hang off the edge of the scene. The overhang reads as 0, which is what
+        ///     an absent square reads as anyway, so a caller can inflate a window past the scene
+        ///     bounds without a special case; the blender treats 0 as contributing nothing rather
+        ///     than as black.
+        /// </remarks>
+        /// <param name="plane">The plane.</param>
+        /// <param name="window">The scene tile rectangle to flatten.</param>
+        /// <returns>
+        ///     Underlay ids sized to <paramref name="window"/>, with <c>[0, 0]</c> holding scene tile
+        ///     <c>(window.X, window.Y)</c>.
+        /// </returns>
+        public int[,] UnderlayGrid(int plane, Rectangle window) {
+            int[,] grid = new int[Math.Max(0, window.Width), Math.Max(0, window.Height)];
+            if (window.Width <= 0 || window.Height <= 0)
+                return grid;
+
+            for (int dx = 0; dx < SquaresX; dx++) {
+                int squareX = dx * MapRegion.WIDTH;
+                int x0 = Math.Max(window.Left, squareX);
+                int x1 = Math.Min(window.Right, squareX + MapRegion.WIDTH);
+                if (x0 >= x1)
+                    continue;
+
+                for (int dy = 0; dy < SquaresY; dy++) {
+                    MapRegion square = squares[dx, dy];
+                    if (square == null || plane < 0 || plane >= square.PlaneCount)
                         continue;
-                    grid[sx, sy] = square.GetUnderlayId(plane, sx % MapRegion.WIDTH, sy % MapRegion.HEIGHT);
+
+                    int squareY = dy * MapRegion.HEIGHT;
+                    int y0 = Math.Max(window.Top, squareY);
+                    int y1 = Math.Min(window.Bottom, squareY + MapRegion.HEIGHT);
+
+                    for (int sx = x0; sx < x1; sx++)
+                        for (int sy = y0; sy < y1; sy++)
+                            grid[sx - window.Left, sy - window.Top] =
+                                square.GetUnderlayId(plane, sx - squareX, sy - squareY);
                 }
             }
 
@@ -267,41 +327,99 @@ namespace FlashEditor.Map {
         /// </remarks>
         /// <param name="plane">The plane.</param>
         /// <returns>Heights indexed <c>[vertexX, vertexY]</c>, sized one larger than the tile grid.</returns>
-        public int[,] HeightGrid(int plane) {
-            int[,] grid = new int[WidthTiles + 1, HeightTiles + 1];
+        public int[,] HeightGrid(int plane) =>
+            HeightGrid(plane, new Rectangle(0, 0, WidthTiles + 1, HeightTiles + 1));
 
-            for (int vx = 0; vx <= WidthTiles; vx++)
-                for (int vy = 0; vy <= HeightTiles; vy++)
-                    grid[vx, vy] = VertexHeight(plane, vx, vy);
+        /// <summary>
+        ///     Flattens part of one plane's heights into a vertex grid sized to the window.
+        /// </summary>
+        /// <remarks>
+        ///     A per-square render needs 65x65 vertices, not the 193x193 the whole 3x3 apron holds,
+        ///     and building the full grid to use a ninth of it is where a whole-world sweep spends
+        ///     its time. Still deliberately unmemoised, for the reason given on
+        ///     <see cref="HeightGrid(int)"/>: nothing tells this type when a height is edited.
+        ///     Windowing is the fix for the cost, and memoising is not.
+        /// </remarks>
+        /// <param name="plane">The plane.</param>
+        /// <param name="vertexWindow">
+        ///     The vertex rectangle to build. A tile window of <c>w</c> by <c>h</c> needs
+        ///     <c>w + 1</c> by <c>h + 1</c> vertices.
+        /// </param>
+        /// <returns>Heights sized to <paramref name="vertexWindow"/>.</returns>
+        public int[,] HeightGrid(int plane, Rectangle vertexWindow) {
+            int[,] grid = new int[Math.Max(0, vertexWindow.Width), Math.Max(0, vertexWindow.Height)];
+
+            for (int vx = 0; vx < vertexWindow.Width; vx++)
+                for (int vy = 0; vy < vertexWindow.Height; vy++)
+                    grid[vx, vy] = VertexHeight(plane, vertexWindow.Left + vx, vertexWindow.Top + vy);
 
             return grid;
         }
 
         /// <summary>The overlay id at a scene tile, or 0 when there is none.</summary>
-        public int OverlayId(int plane, int sceneX, int sceneY) =>
-            Sample(plane, sceneX, sceneY, (r, x, y) => r.GetOverlayId(plane, x, y));
-
-        /// <summary>The overlay shape at a scene tile.</summary>
-        public int OverlayShape(int plane, int sceneX, int sceneY) =>
-            Sample(plane, sceneX, sceneY, (r, x, y) => r.GetOverlayShape(plane, x, y));
-
-        /// <summary>The overlay rotation at a scene tile.</summary>
-        public int OverlayRotation(int plane, int sceneX, int sceneY) =>
-            Sample(plane, sceneX, sceneY, (r, x, y) => r.GetOverlayRotation(plane, x, y));
-
-        /// <summary>The underlay id at a scene tile, or 0 when there is none.</summary>
-        public int UnderlayId(int plane, int sceneX, int sceneY) =>
-            Sample(plane, sceneX, sceneY, (r, x, y) => r.GetUnderlayId(plane, x, y));
-
-        /// <summary>The tile flag byte at a scene tile.</summary>
-        public int TileFlags(int plane, int sceneX, int sceneY) =>
-            Sample(plane, sceneX, sceneY, (r, x, y) => r.GetRenderRule(plane, x, y));
-
-        private int Sample(int plane, int sceneX, int sceneY, Func<MapRegion, int, int, int> read) {
+        /// <remarks>
+        ///     The five readers below are written out rather than routed through one helper taking a
+        ///     <see cref="Func{T1, T2, T3, TResult}"/>. Each lambda captured <c>plane</c>, so every
+        ///     one of them allocated a display class and a delegate on <em>every tile read</em> -
+        ///     several million allocations over a whole-world sweep, for a one-line indirection.
+        /// </remarks>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <returns>The overlay id, one-based, or 0.</returns>
+        public int OverlayId(int plane, int sceneX, int sceneY) {
             MapRegion square = SquareAt(sceneX, sceneY);
             if (square == null || plane < 0 || plane >= square.PlaneCount)
                 return 0;
-            return read(square, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
+            return square.GetOverlayId(plane, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
+        }
+
+        /// <summary>The overlay shape at a scene tile.</summary>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <returns>The shape code, or 0.</returns>
+        public int OverlayShape(int plane, int sceneX, int sceneY) {
+            MapRegion square = SquareAt(sceneX, sceneY);
+            if (square == null || plane < 0 || plane >= square.PlaneCount)
+                return 0;
+            return square.GetOverlayShape(plane, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
+        }
+
+        /// <summary>The overlay rotation at a scene tile.</summary>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <returns>The rotation, 0..3.</returns>
+        public int OverlayRotation(int plane, int sceneX, int sceneY) {
+            MapRegion square = SquareAt(sceneX, sceneY);
+            if (square == null || plane < 0 || plane >= square.PlaneCount)
+                return 0;
+            return square.GetOverlayRotation(plane, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
+        }
+
+        /// <summary>The underlay id at a scene tile, or 0 when there is none.</summary>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <returns>The underlay id, one-based, or 0.</returns>
+        public int UnderlayId(int plane, int sceneX, int sceneY) {
+            MapRegion square = SquareAt(sceneX, sceneY);
+            if (square == null || plane < 0 || plane >= square.PlaneCount)
+                return 0;
+            return square.GetUnderlayId(plane, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
+        }
+
+        /// <summary>The tile flag byte at a scene tile.</summary>
+        /// <param name="plane">The plane.</param>
+        /// <param name="sceneX">Scene tile X.</param>
+        /// <param name="sceneY">Scene tile Y.</param>
+        /// <returns>The flag byte, or 0.</returns>
+        public int TileFlags(int plane, int sceneX, int sceneY) {
+            MapRegion square = SquareAt(sceneX, sceneY);
+            if (square == null || plane < 0 || plane >= square.PlaneCount)
+                return 0;
+            return square.GetRenderRule(plane, sceneX % MapRegion.WIDTH, sceneY % MapRegion.HEIGHT);
         }
 
         /// <summary>
@@ -309,7 +427,30 @@ namespace FlashEditor.Map {
         /// </summary>
         /// <param name="plane">The plane to collect, or -1 for all planes.</param>
         /// <returns>Locations paired with their scene coordinates.</returns>
-        public IEnumerable<(Location Loc, int SceneX, int SceneY)> Locations(int plane = -1) {
+        public IEnumerable<(Location Loc, int SceneX, int SceneY)> Locations(int plane = -1) =>
+            Locations(plane, new Rectangle(0, 0, WidthTiles, HeightTiles), 0);
+
+        /// <summary>
+        ///     Every location whose square can reach a window, with scene coordinates.
+        /// </summary>
+        /// <remarks>
+        ///     Filtered per square rather than per location, which is the only filter that pays: a
+        ///     square either can or cannot contribute, and testing 1684 squares beats testing several
+        ///     hundred thousand placements.
+        ///
+        ///     <paramref name="inflateTiles"/> is load-bearing rather than defensive. A wall on a
+        ///     square's east edge is drawn at the tile's right-hand edge, which is the first pixel
+        ///     column of the <em>next</em> square, and a multi-tile object anchored in one square can
+        ///     overhang into the next. Both have to be handed to the square that owns those pixels or
+        ///     they vanish from the tiled picture; the rasteriser clips whatever falls outside.
+        /// </remarks>
+        /// <param name="plane">The plane to collect, or -1 for all planes.</param>
+        /// <param name="window">The scene tile window being drawn.</param>
+        /// <param name="inflateTiles">How far past the window a square may still contribute.</param>
+        /// <returns>Locations paired with their scene coordinates.</returns>
+        public IEnumerable<(Location Loc, int SceneX, int SceneY)> Locations(int plane, Rectangle window, int inflateTiles) {
+            Rectangle reach = Rectangle.Inflate(window, inflateTiles, inflateTiles);
+
             for (int dx = 0; dx < SquaresX; dx++) {
                 for (int dy = 0; dy < SquaresY; dy++) {
                     MapRegion square = squares[dx, dy];
@@ -319,13 +460,22 @@ namespace FlashEditor.Map {
                     int offsetX = dx * MapRegion.WIDTH;
                     int offsetY = dy * MapRegion.HEIGHT;
 
-                    foreach (Location loc in square.GetLocations()) {
+                    if (!reach.IntersectsWith(new Rectangle(offsetX, offsetY, MapRegion.WIDTH, MapRegion.HEIGHT)))
+                        continue;
+
+                    foreach (Location loc in LocationsOf(dx, dy, square)) {
                         if (plane >= 0 && loc.Plane != plane)
                             continue;
                         yield return (loc, offsetX + loc.LocalX, offsetY + loc.LocalY);
                     }
                 }
             }
+        }
+
+        /// <summary>The locations of one square, from the snapshot when this scene carries one.</summary>
+        private IReadOnlyList<Location> LocationsOf(int dx, int dy, MapRegion square) {
+            IReadOnlyList<Location> snapshot = locationSnapshots?[dx, dy];
+            return snapshot ?? square.GetLocations();
         }
     }
 }

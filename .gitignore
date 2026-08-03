@@ -349,3 +349,14 @@ dotnet-install.sh
 # Anchored: an unanchored "cache/" also matches FlashEditor/Cache and
 # FlashEditor.Tests/Cache, since core.ignorecase is true on Windows.
 /cache/
+
+# A second revision-639 cache downloaded from the OpenRS2 archive, kept for comparison
+# against the one above: same 1684 map squares, but it stores as ciphertext the squares
+# the reference cache holds as plaintext. Roughly 360 MB across an extracted cache and
+# its zip, and its dat2 alone exceeds GitHub's 100 MB file limit.
+# Point FLASHEDITOR_TEST_CACHE at the inner "cache" directory to sweep it. Its bundled
+# key dump has to be renamed before it is seen at all - XTEAKeyTable.FindKeyFile probes
+# only for xteas.json, xtea.json, keys.json and xteakeys.json, so a file left under its
+# OpenRS2 download name is silently ignored and every encrypted square then reports a
+# missing key, which looks exactly like the keys being wrong.
+/OpenRS2/

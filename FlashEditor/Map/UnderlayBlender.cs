@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 
 namespace FlashEditor.Map {
     /// <summary>
@@ -60,42 +61,92 @@ namespace FlashEditor.Map {
         /// <returns>Packed HSL indexed <c>[x, y]</c>.</returns>
         public static int[,] Blend(int[,] underlayIds, Resolver resolve) {
             if (underlayIds == null) throw new ArgumentNullException(nameof(underlayIds));
+
+            return Blend(underlayIds, resolve,
+                new Rectangle(0, 0, underlayIds.GetLength(0), underlayIds.GetLength(1)));
+        }
+
+        /// <summary>
+        ///     Blends only part of a grid of underlay ids, bit-identically to cropping a full blend.
+        /// </summary>
+        /// <remarks>
+        ///     This is what lets a whole-world view rasterise one map square at a time. A square
+        ///     cannot be blended in isolation, but it can be blended out of a neighbourhood as long
+        ///     as the resident window at every output cell is exactly the window the full pass would
+        ///     have held. Two things make that exact rather than approximate. The sums are integer
+        ///     adds and subtracts, so no rounding accumulates; and the pass starts far enough before
+        ///     <paramref name="output"/> that the first output cell already has its
+        ///     <see cref="ReachBack"/> columns and rows resident.
+        ///
+        ///     That start offset is the whole subtlety. The full pass starts its slide at
+        ///     <c>-WindowOffset</c>, which is correct there only because rows before 0 do not exist;
+        ///     a window that starts at 64 <em>does</em> have real data behind it, so the slide has to
+        ///     begin <see cref="ReachBack"/> further back again, and the "this column is leaving"
+        ///     guard has to compare against the first column actually admitted rather than against
+        ///     zero. Get either wrong and the seam reappears as a one-tile-wide band of the wrong
+        ///     colour along every square edge.
+        /// </remarks>
+        /// <param name="underlayIds">Underlay ids indexed <c>[x, y]</c>. 0 means no underlay.</param>
+        /// <param name="resolve">Resolves an id to its components.</param>
+        /// <param name="output">
+        ///     The sub-rectangle of <paramref name="underlayIds"/> to produce. Must lie inside the
+        ///     grid; inflate the grid instead of the window when the neighbourhood is short.
+        /// </param>
+        /// <returns>
+        ///     Packed HSL indexed <c>[x, y]</c>, sized to <paramref name="output"/>, with
+        ///     <c>[0, 0]</c> holding the blend of <c>underlayIds[output.X, output.Y]</c>.
+        /// </returns>
+        public static int[,] Blend(int[,] underlayIds, Resolver resolve, Rectangle output) {
+            if (underlayIds == null) throw new ArgumentNullException(nameof(underlayIds));
             if (resolve == null) throw new ArgumentNullException(nameof(resolve));
 
             int width = underlayIds.GetLength(0);
             int height = underlayIds.GetLength(1);
 
-            int[,] blended = new int[width, height];
+            if (output.Width < 0 || output.Height < 0
+                || output.Left < 0 || output.Top < 0
+                || output.Right > width || output.Bottom > height)
+                throw new ArgumentOutOfRangeException(nameof(output),
+                    "The output window has to lie inside the id grid");
 
-            //Per-column running sums, carried as the X window slides.
+            int[,] blended = new int[output.Width, output.Height];
+            if (output.Width == 0 || output.Height == 0)
+                return blended;
+
+            //The first column and row any output cell can see, and the last row worth summing.
+            int firstColumn = Math.Max(0, output.Left - ReachBack);
+            int firstRow = Math.Max(0, output.Top - ReachBack);
+            int lastRow = Math.Min(height - 1, output.Bottom - 1 + ReachForward);
+
+            //Per-column running sums, carried as the X window slides. Indexed by absolute y.
             int[] hueSums = new int[height];
             int[] weightSums = new int[height];
             int[] saturationSums = new int[height];
             int[] lightnessSums = new int[height];
             int[] counts = new int[height];
 
-            for (int x = -WindowOffset; x < width; x++) {
-                for (int y = 0; y < height; y++) {
+            for (int x = output.Left - WindowOffset - ReachBack; x < output.Right; x++) {
+                for (int y = firstRow; y <= lastRow; y++) {
                     int entering = x + WindowOffset;
-                    if (entering < width)
+                    if (entering >= firstColumn && entering < width)
                         Accumulate(underlayIds, resolve, entering, y, +1,
                             hueSums, weightSums, saturationSums, lightnessSums, counts);
 
                     int leaving = x - WindowOffset;
-                    if (leaving >= 0)
+                    if (leaving >= firstColumn)
                         Accumulate(underlayIds, resolve, leaving, y, -1,
                             hueSums, weightSums, saturationSums, lightnessSums, counts);
                 }
 
-                if (x < 0)
+                if (x < output.Left)
                     continue;
 
                 //Second running sum, this time along Y over the per-column totals.
                 int hue = 0, weight = 0, saturation = 0, lightness = 0, count = 0;
 
-                for (int y = -WindowOffset; y < height; y++) {
+                for (int y = output.Top - WindowOffset - ReachBack; y < output.Bottom; y++) {
                     int entering = y + WindowOffset;
-                    if (entering < height) {
+                    if (entering >= firstRow && entering <= lastRow) {
                         hue += hueSums[entering];
                         weight += weightSums[entering];
                         saturation += saturationSums[entering];
@@ -104,7 +155,7 @@ namespace FlashEditor.Map {
                     }
 
                     int leaving = y - WindowOffset;
-                    if (leaving >= 0) {
+                    if (leaving >= firstRow) {
                         hue -= hueSums[leaving];
                         weight -= weightSums[leaving];
                         saturation -= saturationSums[leaving];
@@ -112,12 +163,12 @@ namespace FlashEditor.Map {
                         count -= counts[leaving];
                     }
 
-                    if (y < 0 || weight <= 0 || count <= 0)
+                    if (y < output.Top || weight <= 0 || count <= 0)
                         continue;
 
                     //Hue divides by the summed chroma weight, the others by the tile count. Using
                     //the count for hue as well washes every blend toward red.
-                    blended[x, y] = MapPalette.Pack(
+                    blended[x - output.Left, y - output.Top] = MapPalette.Pack(
                         hue * 256 / weight,
                         saturation / count,
                         lightness / count);

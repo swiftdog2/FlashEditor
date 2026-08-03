@@ -24,6 +24,15 @@ namespace FlashEditor.Map {
         private int currentRegionX = -1;
         private int currentRegionY = -1;
 
+        /// <summary>
+        ///     The main view's visible square range, in region coordinates, or empty.
+        /// </summary>
+        /// <remarks>
+        ///     Held as a field rather than a property so it does not become another designer-visible
+        ///     surface on a control that has no design-time story.
+        /// </remarks>
+        private RectangleF viewport;
+
         /// <summary>Raised when a square is clicked.</summary>
         public event EventHandler<Point> RegionPicked;
 
@@ -45,6 +54,11 @@ namespace FlashEditor.Map {
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Color MarkerColour { get; set; } = Color.FromArgb(255, 255, 96, 96);
 
+        /// <summary>Colour of the outline showing what the main view can see.</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public Color ViewportColour { get; set; } = Color.FromArgb(255, 255, 220, 120);
+
         /// <summary>Number of squares the cache holds.</summary>
         [Browsable(false)]
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -55,22 +69,56 @@ namespace FlashEditor.Map {
         /// </summary>
         /// <param name="loader">The loader to resolve names through, or <c>null</c> to clear.</param>
         public void Build(MapSquareLoader loader) {
-            present = new bool[WorldSquares, WorldSquares];
-            SquareCount = 0;
+            var scanned = new bool[WorldSquares, WorldSquares];
+            int count = 0;
 
             if (loader != null) {
                 for (int rx = 0; rx < WorldSquares; rx++) {
                     for (int ry = 0; ry < WorldSquares; ry++) {
                         if (!loader.Exists(rx, ry))
                             continue;
-                        present[rx, ry] = true;
-                        SquareCount++;
+                        scanned[rx, ry] = true;
+                        count++;
                     }
                 }
             }
 
+            Build(scanned, count);
+        }
+
+        /// <summary>
+        ///     Builds the thumbnail from a presence map somebody else has already scanned.
+        /// </summary>
+        /// <remarks>
+        ///     The scan is 65,536 string concatenations and name hashes against the index-5 reference
+        ///     table. <see cref="MapSquareStore"/> has to do it anyway to know which squares exist,
+        ///     so taking its answer here is what stops it happening twice per cache open.
+        /// </remarks>
+        /// <param name="presence">Which squares exist, indexed <c>[regionX, regionY]</c>.</param>
+        /// <param name="squareCount">How many of them there are.</param>
+        public void Build(bool[,] presence, int squareCount) {
+            present = presence ?? new bool[WorldSquares, WorldSquares];
+            SquareCount = squareCount;
+
             thumbnail?.Dispose();
             thumbnail = Paint(present);
+            Invalidate();
+        }
+
+        /// <summary>
+        ///     Shows which squares the main view is currently looking at.
+        /// </summary>
+        /// <remarks>
+        ///     At world zoom a single-square marker says nothing - it is one pixel of 65,536 and the
+        ///     view is showing hundreds of squares around it. The outlined rectangle is what actually
+        ///     answers "where am I".
+        /// </remarks>
+        /// <param name="regionRect">The visible range in region coordinates, or empty to hide it.</param>
+        public void SetViewport(RectangleF regionRect) {
+            if (regionRect == viewport)
+                return;
+
+            viewport = regionRect;
             Invalidate();
         }
 
@@ -126,10 +174,20 @@ namespace FlashEditor.Map {
             e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
             e.Graphics.DrawImage(thumbnail, area);
 
+            float scale = area.Width / (float) WorldSquares;
+
+            if (viewport.Width > 0 && viewport.Height > 0) {
+                //Region Y runs north, so the rectangle's top edge is its highest region row.
+                float top = area.Top + (WorldSquares - viewport.Bottom) * scale;
+                using (var pen = new Pen(ViewportColour, 1f))
+                    e.Graphics.DrawRectangle(pen,
+                        area.Left + viewport.Left * scale, top,
+                        Math.Max(1f, viewport.Width * scale), Math.Max(1f, viewport.Height * scale));
+            }
+
             if (currentRegionX < 0)
                 return;
 
-            float scale = area.Width / (float) WorldSquares;
             float markerX = area.Left + currentRegionX * scale;
             float markerY = area.Top + (WorldSquares - 1 - currentRegionY) * scale;
             float size = Math.Max(3f, scale);
@@ -141,8 +199,24 @@ namespace FlashEditor.Map {
         /// <inheritdoc/>
         protected override void OnMouseDown(MouseEventArgs e) {
             base.OnMouseDown(e);
+            Pick(e.Location);
+        }
 
-            Point? region = ToRegion(e.Location);
+        /// <inheritdoc/>
+        /// <remarks>
+        ///     Held-and-dragged picks as well as clicked, so the navigator can be scrubbed and the
+        ///     main view follows live. That is only worth having because panning the main view is now
+        ///     free - it repaints from cached tiles rather than decoding a scene per square.
+        /// </remarks>
+        protected override void OnMouseMove(MouseEventArgs e) {
+            base.OnMouseMove(e);
+
+            if ((e.Button & MouseButtons.Left) != 0)
+                Pick(e.Location);
+        }
+
+        private void Pick(Point location) {
+            Point? region = ToRegion(location);
             if (region != null)
                 RegionPicked?.Invoke(this, region.Value);
         }

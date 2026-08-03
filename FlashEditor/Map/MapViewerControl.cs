@@ -9,40 +9,16 @@ using FlashEditor.Cache.Util;
 using MapRegion = FlashEditor.Cache.Region.Region;
 
 namespace FlashEditor.Map {
-    /// <summary>Identifies the tile under the cursor.</summary>
-    public sealed class TileHit {
-        /// <summary>Scene tile X.</summary>
-        public int SceneX { get; init; }
-
-        /// <summary>Scene tile Y.</summary>
-        public int SceneY { get; init; }
-
-        /// <summary>Absolute world X.</summary>
-        public int WorldX { get; init; }
-
-        /// <summary>Absolute world Y.</summary>
-        public int WorldY { get; init; }
-
-        /// <summary>Region X of the square this tile belongs to.</summary>
-        public int RegionX { get; init; }
-
-        /// <summary>Region Y of the square this tile belongs to.</summary>
-        public int RegionY { get; init; }
-
-        /// <summary>Tile X within its square, 0..63.</summary>
-        public int LocalX { get; init; }
-
-        /// <summary>Tile Y within its square, 0..63.</summary>
-        public int LocalY { get; init; }
-
-        /// <summary>The plane being viewed.</summary>
-        public int Plane { get; init; }
-    }
-
     /// <summary>
-    ///     A pannable, zoomable top-down view of a <see cref="MapScene"/>.
+    ///     A pannable, zoomable top-down view of a single <see cref="MapScene"/>.
     /// </summary>
     /// <remarks>
+    ///     Superseded by <see cref="WorldMapViewControl"/>, which virtualises the whole world rather
+    ///     than blitting one pre-rendered scene, and is what the Map tab now uses. This is kept
+    ///     because it is the only view that renders a scene in one piece, which is what the windowed
+    ///     rasteriser has to agree with; deleting it would delete the reference implementation the
+    ///     seam tests compare against.
+    ///
     ///     Renders once into a <see cref="DirectBitmap"/> and blits it, rather than redrawing on
     ///     every paint. A scene is static until an edit or a layer change invalidates it, so the
     ///     expensive part - the underlay blend - should not run on a scroll.
