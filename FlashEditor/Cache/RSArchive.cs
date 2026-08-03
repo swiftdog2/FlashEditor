@@ -104,6 +104,18 @@ namespace FlashEditor.cache
                     cumulativeChunkSize += delta;
                     Debug(" " + delta, LOG_DETAIL.INSANE);
 
+                    /* A size table read at the wrong offset yields arbitrary ints, and the sum of
+                       the chunks cannot exceed the payload they are read out of. Without this the
+                       loop below reaches new byte[chunkSize] with a garbage length: on a machine
+                       with free memory that allocation SUCCEEDS, so it is not an exception anyone
+                       can catch - the process simply grows until the OS kills it. Bounding it here
+                       turns a corrupt archive into a thrown error the caller can handle. */
+                    if (cumulativeChunkSize < 0 || cumulativeChunkSize > stream.Length)
+                        throw new InvalidDataException(
+                            $"Chunk {chunk} of file {id} declares {cumulativeChunkSize} bytes, which " +
+                            $"a {stream.Length}-byte archive cannot hold. The size table was read at " +
+                            "the wrong offset, so the chunk count or the file count is wrong.");
+
                     //Store the size of this chunk
                     chunkSizes[chunk][id] = cumulativeChunkSize;
 

@@ -95,8 +95,10 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   future sweep - an `or` in the assertion is usually a hole.
 - **The byte-identity sweeps are the primary regression detector.** Every item, NPC and object
   definition, every floor underlay and overlay, and every map square must re-encode to the bytes
-  it was read from - 20,470 items, 13,359 NPCs, 56,199 objects, 159 underlays, 235 overlays and
-  1684 map squares. **If a sweep fails, you broke something - do not adjust the sweep.** Add one
+  it was read from - 20,470 items, 13,359 NPCs, 56,199 objects, 159 underlays, 235 overlays,
+  1684 map squares, 3106 skeletons, 359,931 animation frames, 10,237 sound effects, 42,256
+  interface components across 1078 interfaces, and eight index-2 families totalling 6,985 records.
+  **If a sweep fails, you broke something - do not adjust the sweep.** Add one
   for any content type you teach the editor to write, through
   `FlashEditor.Tests/Cache/RealCache/DefinitionSweep.cs` rather than by writing a fifth copy of the
   enumerate-decode-re-encode-compare loop. It enumerates from the table's declared id list, pads
@@ -180,9 +182,11 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   worker, the percent-boundary progress, the UI-thread population and the edit commit, and one
   `DefinitionListDescriptor<TRow>` states the index, the enumeration, the decode, the columns and the
   re-encode. Items, sprites, NPCs and objects still predate it and each re-implement all of that;
-  leave them until they are migrated deliberately. The Interfaces tab (index 3) is the worked
-  example, and it is a `RawFileListDescriptor` - a raw group/file/size/name-hash listing - because
-  index 3's record format is not reverse engineered and a listing is what can be shown honestly.
+  leave them until they are migrated deliberately. The worked examples are the Interfaces,
+  Animation, Sound and Config tabs, all master/detail. A detail pane is bound with a **null cache**
+  while nothing is selected, so that it keeps its column headings rather than reading as broken -
+  set `EmptyMessage` when you do that, or the pane claims no cache is loaded while the list beside
+  it is full of rows from that cache.
 
 ## Traps that have already cost real work
 
@@ -236,6 +240,16 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   the height its font needs while the row shrinks around it. That is how the map tab's 110px tool
   row drew at 76 and sliced its own button row in half, and how a 60px combo rendered as "Pl".
   Prefer `AutoSize` rows and docking. Re-tuning the number is treating the symptom.
+- **Never take a test's expected constant from a document.** `reference/index-survey/` and
+  `reference/index-architect-*.md` are good and heavily evidenced, and their counts have still been
+  wrong three times: the index-0 empty-frame count was out by five, the orphan-group note named two
+  indexes when there are four, and the damage-mark note said 27 records carry the bare substitution
+  when 26 do. In every case a test written from the document failed against a correct decoder. When
+  that happens, settle it by a **third** method that goes through neither the document nor our
+  decoder - a raw sector-chain read in a scratchpad script has done it each time - and then make
+  the assertion sharper, not looser. The damage-mark case is the lesson in miniature: the two
+  records that broke the uniform assertion were the only ones exercising the version byte, so
+  relaxing it would have deleted the only real test in the family.
 - **A downscaled screenshot is not evidence about a checkbox.** An unticked box reads as ticked
   once the image is scaled below about 0.8. Crop at native resolution before claiming a control's
   state, or settle it from the code instead, which is stronger anyway.

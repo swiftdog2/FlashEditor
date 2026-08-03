@@ -55,7 +55,11 @@ namespace FlashEditor.Definitions.Interfaces {
         private static readonly Font GridFont = new Font("Consolas", 9F);
 
         private readonly FastObjectListView interfaces = Grid();
-        private readonly DefinitionListPanel components = new DefinitionListPanel();
+        private readonly DefinitionListPanel components = new DefinitionListPanel {
+            //This pane is bound with a null cache while nothing is selected, so the panel's own
+            //default would claim no cache is loaded while the list beside it is full of rows.
+            EmptyMessage = NoSelectionText
+        };
         private readonly FastObjectListView fields = Grid();
 
         //AutoSize rather than a stated height, so the line the summary needs is the line it gets

@@ -206,6 +206,9 @@ Appended as indexes land, so the ordered worklist above stays the plan and this 
 |---|---|---|
 | 0 FRAMES | complete | 359,931 of 359,931 frame files re-encode byte-identically across all 3526 groups; exact consumption on every one. Animation tab resolves each pose through its skeleton. |
 | 1 SKINS | complete | 3106 of 3106 skeletons re-encode byte-identically. Census pinned: 173,749 bones, 936,887 labels, no transform type 6, flags only {0,1}, masks only 0xFFFF. |
+| 2 CONFIG | 11 of 35 families | Eight new families swept whole - map elements 1051, parameter types 1330, containers 609, varplayers 2002, client variables 1445, cursors 175, damage marks 28, client strings 345 - on top of the three already done. 19 of the remaining groups are empty in every file, so the real remainder is small. |
+| 3 INTERFACE_DEFINITIONS | complete | 42,256 of 42,256 components across all 1078 interfaces. Six non-canonical cases captured. The three undeclared groups recovered at their unique parsing file counts. |
+| 4 SOUND_EFFECTS | complete | 10,237 of 10,237 table-declared effects. Group 4787 is in idx4 but not the table, so a table-driven sweep correctly never sees it. |
 
 ### Corrections to this document, found by building against it
 

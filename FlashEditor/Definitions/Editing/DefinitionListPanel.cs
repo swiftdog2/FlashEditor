@@ -97,6 +97,20 @@ namespace FlashEditor.Definitions.Editing {
         public event EventHandler? SelectedRowChanged;
 
         /// <summary>
+        ///     What the status line says when the panel holds no rows.
+        /// </summary>
+        /// <remarks>
+        ///     Defaults to the literal truth for the common case, a panel with no cache behind it.
+        ///     It is settable because a detail pane is deliberately bound with a null cache to keep
+        ///     its column headings while nothing is selected, and "No cache loaded" is then false -
+        ///     the cache is open and the master list beside it is full of rows from that cache.
+        ///     A status line that contradicts what the user can see is worse than no status line.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string EmptyMessage { get; set; } = "No cache loaded";
+
+        /// <summary>
         ///     Points the panel at a cache and a descriptor, and starts loading.
         /// </summary>
         /// <remarks>
@@ -129,7 +143,7 @@ namespace FlashEditor.Definitions.Editing {
                 BuildColumns();
 
             if (cache == null || descriptor == null) {
-                status.Text = "No cache loaded";
+                status.Text = EmptyMessage;
                 progress.Value = 0;
                 return;
             }
