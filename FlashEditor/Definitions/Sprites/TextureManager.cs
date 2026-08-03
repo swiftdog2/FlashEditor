@@ -29,11 +29,21 @@ namespace FlashEditor.Definitions.Sprites {
             this.cache = cache;
         }
 
+        /// <summary>
+        /// Drops every loaded texture definition and the render memos that were keyed against them.
+        /// </summary>
+        /// <remarks>
+        /// The evaluator's composed-texture and sprite caches are keyed by id alone, so they are
+        /// only meaningful for the cache that filled them. Clearing them here rather than at the
+        /// call sites means opening a second cache cannot be served the first one's pixels -
+        /// <see cref="Load"/> runs this before it reads anything.
+        /// </remarks>
         public static void Clear() {
             foreach (var def in Textures.Values)
                 def?.Dispose();
             Textures.Clear();
             RawIndexData = null;
+            TextureGraphEvaluator.ClearCaches();
         }
 
         public void Load() {

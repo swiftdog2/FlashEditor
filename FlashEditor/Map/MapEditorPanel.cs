@@ -30,23 +30,46 @@ namespace FlashEditor.Map {
         private MapSquareStore store;
         private MapTileRenderService service;
 
+        /// <summary>
+        ///     Width of the left control column, in real pixels.
+        /// </summary>
+        /// <remarks>
+        ///     The navigator is square - <c>WorldNavigatorControl.ThumbnailArea</c> takes the smaller
+        ///     of the two sides - so the column's width, not its height, is what caps how big the
+        ///     world thumbnail can get. Giving it the stretchy row is only half of making it legible;
+        ///     the other half is this.
+        /// </remarks>
+        private const int LeftColumnWidth = 250;
+
         private readonly WorldMapViewControl view = new WorldMapViewControl { Dock = DockStyle.Fill };
-        private readonly ComboBox planeBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 60 };
-        private readonly Button fitButton = new Button { Text = "Fit world", Width = 76 };
-        private readonly Label zoomLabel = new Label { AutoSize = true, Padding = new Padding(6, 6, 0, 0) };
+        private readonly ComboBox planeBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        private readonly Button fitButton = new Button {
+            Text = "Fit world", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
+        private readonly Label zoomLabel = new Label { AutoSize = true };
         private readonly CheckedListBox layerList = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true };
         private readonly TextBox inspector = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, Font = new Font("Consolas", 9F) };
         private readonly Label status = new Label { Dock = DockStyle.Bottom, Height = 22, TextAlign = ContentAlignment.MiddleLeft };
 
-        private readonly ComboBox toolBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
-        private readonly NumericUpDown toolValue = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 1, Width = 60 };
-        private readonly Button undoButton = new Button { Text = "Undo", Width = 60, Enabled = false };
-        private readonly Button redoButton = new Button { Text = "Redo", Width = 60, Enabled = false };
-        private readonly Button saveButton = new Button { Text = "Save cache", Width = 90, Enabled = false };
+        private readonly ComboBox toolBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        private readonly NumericUpDown toolValue = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 1 };
+        private readonly Button undoButton = new Button {
+            Text = "Undo", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
+        private readonly Button redoButton = new Button {
+            Text = "Redo", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
+        private readonly Button saveButton = new Button {
+            Text = "Save cache", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
         private readonly WorldNavigatorControl navigator = new WorldNavigatorControl { Dock = DockStyle.Fill };
         private readonly TrackBar reliefBar = new TrackBar {
-            Minimum = 0, Maximum = 100, Value = 65, TickStyle = TickStyle.None, Width = 190
+            Minimum = 0, Maximum = 100, Value = 65, TickStyle = TickStyle.None
         };
+
+        //Held because ApplyMeasuredSizes has to reach back into them once the font is final.
+        private GroupBox worldGroup;
+        private TableLayoutPanel layersBody;
 
         /// <summary>
         ///     Delays the relief slider's effect until the user stops moving it.
@@ -59,7 +82,37 @@ namespace FlashEditor.Map {
         private readonly System.Windows.Forms.Timer reliefDebounce =
             new System.Windows.Forms.Timer { Interval = 150 };
 
+        /// <summary>
+        ///     Keeps the status line's render counters honest while the sweep runs.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing else moved them. <see cref="UpdateStatus"/> only ran on a pan, a zoom, a hover
+        ///     or an edit, so the figures the user read were whatever the last mouse event happened to
+        ///     leave behind - which is how a screenshot taken well into a session showed "0 of 1684
+        ///     rendered, 1683 queued" over a fully drawn world: one hover, seconds after the tab
+        ///     opened, froze the line at the state the sweep was in then.
+        ///
+        ///     Polled rather than driven from <c>MapTileRenderService.TilesReady</c>, which fires once
+        ///     per tile on the render thread. Marshalling 1684 of those to the UI thread costs more
+        ///     than the renders do, which is the same reason the view polls <c>ReadyCount</c>.
+        /// </remarks>
+        private readonly System.Windows.Forms.Timer statusTimer =
+            new System.Windows.Forms.Timer { Interval = 400 };
+
         private readonly MapEditHistory history = new MapEditHistory();
+
+        /// <summary>
+        ///     Whether the status line currently holds the live readout rather than a one-off message.
+        /// </summary>
+        /// <remarks>
+        ///     The poll must not wipe "Saved 3 square(s)" a third of a second after the save. A
+        ///     message clears this; the next hover, pan or zoom puts the live line back.
+        /// </remarks>
+        private bool statusShowsProgress;
+
+        //What the last live readout reported, so the poll can skip rebuilding an identical string.
+        private int lastRenderedSquares = -1;
+        private int lastQueuedTiles = -1;
 
         private TileHit? lastHit;
 
@@ -187,6 +240,18 @@ namespace FlashEditor.Map {
                 UpdateStatus();
             };
 
+            statusTimer.Tick += (_, _) => {
+                if (store == null || service == null || !statusShowsProgress)
+                    return;
+
+                //Rebuilt only when a figure has actually moved. The sweep publishes a square every
+                //few milliseconds at the start and then goes quiet for seconds at a time.
+                if (service.RenderedSquareCount == lastRenderedSquares && service.PendingCount == lastQueuedTiles)
+                    return;
+
+                UpdateStatus();
+            };
+
             navigator.RegionPicked += (_, region) => {
                 //Deliberately moves even to a square the cache has nothing for. In a whole-world
                 //view open water is a legitimate place to look; refusing only made sense when
@@ -194,10 +259,36 @@ namespace FlashEditor.Map {
                 view.CentreOnRegion(region.X, region.Y);
                 navigator.SetCurrent(region.X, region.Y);
 
-                status.Text = store != null && store.Exists(region.X, region.Y)
+                ShowMessage(store != null && store.Exists(region.X, region.Y)
                     ? $"m{region.X}_{region.Y}"
-                    : $"m{region.X}_{region.Y} does not exist in this cache";
+                    : $"m{region.X}_{region.Y} does not exist in this cache");
             };
+        }
+
+        /// <inheritdoc/>
+        protected override void OnHandleCreated(EventArgs e) {
+            base.OnHandleCreated(e);
+
+            //The earliest point at which the form's font auto-scaling has certainly run, which is
+            //what every measurement in here depends on.
+            ApplyMeasuredSizes();
+            statusTimer.Start();
+        }
+
+        /// <inheritdoc/>
+        protected override void OnHandleDestroyed(EventArgs e) {
+            statusTimer.Stop();
+            base.OnHandleDestroyed(e);
+        }
+
+        /// <inheritdoc/>
+        protected override void OnFontChanged(EventArgs e) {
+            base.OnFontChanged(e);
+
+            //Fires during the form's auto-scaling and again on a DPI change, both of which move
+            //every number ApplyMeasuredSizes derives.
+            if (layersBody != null)
+                ApplyMeasuredSizes();
         }
 
         private MapTool SelectedTool =>
@@ -225,7 +316,7 @@ namespace FlashEditor.Map {
                 return;
 
             if (!view.EditingEnabled) {
-                status.Text = $"Zoom in to at least {WorldMapViewControl.MinimumEditingPixelsPerTile:0} px/tile to edit";
+                ShowMessage($"Zoom in to at least {WorldMapViewControl.MinimumEditingPixelsPerTile:0} px/tile to edit");
                 return;
             }
 
@@ -253,7 +344,7 @@ namespace FlashEditor.Map {
             store.PinEdited(edit.Target);
 
             InvalidateFor(edit);
-            status.Text = edit.Description;
+            ShowMessage(edit.Description);
         }
 
         /// <summary>
@@ -409,7 +500,7 @@ namespace FlashEditor.Map {
             IReadOnlyList<(MapRegion Square, int RegionX, int RegionY)> dirty = store.DirtySquares();
 
             if (dirty.Count == 0) {
-                status.Text = "Nothing to save";
+                ShowMessage("Nothing to save");
                 return;
             }
 
@@ -434,68 +525,44 @@ namespace FlashEditor.Map {
                 });
 
                 history.Clear();
-                status.Text = $"Saved {dirty.Count} square(s) to {cacheDirectory}";
+                ShowMessage($"Saved {dirty.Count} square(s) to {cacheDirectory}");
             }
             catch (Exception ex) {
                 //A failed save leaves the staged edits in memory, so the user can retry.
-                status.Text = "Save failed: " + ex.Message;
+                ShowMessage("Save failed: " + ex.Message);
                 MessageBox.Show(ex.Message, "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
+        /// <summary>
+        ///     Builds the two-pane layout.
+        /// </summary>
+        /// <remarks>
+        ///     <b>No control in the left column carries a hardcoded pixel size any more.</b> The form
+        ///     declares <c>AutoScaleMode.Font</c> against design metrics of 9 by 20
+        ///     (<c>Editor.Designer.cs</c>), so on a machine whose font measures smaller than that,
+        ///     every literal width, height and <c>SizeType.Absolute</c> row is multiplied by the
+        ///     ratio. Measured off a screenshot of this panel it was around two thirds: the 210-pixel
+        ///     World row drew 145 tall and the 150-pixel tool combo drew 101 wide.
+        ///
+        ///     Widths shrink with it and mostly survive, but a ComboBox, a NumericUpDown and a Label
+        ///     keep whatever height their font needs, so the rows shrank out from under their
+        ///     contents. The Tool group's button row was sliced in half by the window edge, "Fit
+        ///     world" was a sliver with only the tops of its glyphs showing, and a 60-pixel Plane
+        ///     combo rendered "Pl".
+        ///
+        ///     Every row therefore measures its own content (<c>SizeType.AutoSize</c>) or is computed
+        ///     from live font metrics in <see cref="ApplyMeasuredSizes"/>, and the stretchy row goes to
+        ///     the world navigator rather than to the layer list, which needs exactly nine rows and
+        ///     was holding an empty half-column of slack.
+        /// </remarks>
         private void BuildLayout() {
             var split = new SplitContainer {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 220,
+                SplitterDistance = LeftColumnWidth,
                 FixedPanel = FixedPanel.Panel1
             };
-
-            //Left: navigation and layers.
-            var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-            left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 110));
-
-            var nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            nav.Controls.Add(new Label { Text = "Plane", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
-            nav.Controls.Add(planeBox);
-            nav.Controls.Add(fitButton);
-            nav.Controls.Add(zoomLabel);
-
-            var layersGroup = new GroupBox { Text = "Layers", Dock = DockStyle.Fill };
-
-            var layersBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-            layersBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layersBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-
-            var reliefRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            reliefRow.Controls.Add(new Label { Text = "Relief", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
-            reliefRow.Controls.Add(reliefBar);
-
-            layersBody.Controls.Add(layerList, 0, 0);
-            layersBody.Controls.Add(reliefRow, 0, 1);
-            layersGroup.Controls.Add(layersBody);
-
-            var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            tools.Controls.Add(toolBox);
-            tools.Controls.Add(new Label { Text = "Value", AutoSize = true, Padding = new Padding(0, 6, 4, 0) });
-            tools.Controls.Add(toolValue);
-            tools.Controls.Add(undoButton);
-            tools.Controls.Add(redoButton);
-            tools.Controls.Add(saveButton);
-
-            var toolsGroup = new GroupBox { Text = "Tool", Dock = DockStyle.Fill };
-            toolsGroup.Controls.Add(tools);
-
-            var worldGroup = new GroupBox { Text = "World", Dock = DockStyle.Fill };
-            worldGroup.Controls.Add(navigator);
-
-            left.Controls.Add(worldGroup, 0, 0);
-            left.Controls.Add(nav, 0, 1);
-            left.Controls.Add(layersGroup, 0, 2);
-            left.Controls.Add(toolsGroup, 0, 3);
 
             //Right: canvas above, inspector below.
             var right = new SplitContainer {
@@ -506,7 +573,7 @@ namespace FlashEditor.Map {
             right.Panel1.Controls.Add(view);
             right.Panel2.Controls.Add(inspector);
 
-            split.Panel1.Controls.Add(left);
+            split.Panel1.Controls.Add(BuildLeftColumn());
             split.Panel2.Controls.Add(right);
 
             Controls.Add(split);
@@ -516,8 +583,11 @@ namespace FlashEditor.Map {
                 planeBox.Items.Add("Plane " + p);
             planeBox.SelectedIndex = 0;
 
-            //Seeded from the same constant the renderer defaults to, so the boxes cannot disagree
-            //with what is actually drawn. Ground decoration, game objects and tile flags are off.
+            //Seeded from MapLayers.Default, which is also what WorldMapViewControl.layers starts at,
+            //so the tick boxes and the picture cannot disagree about what is on. There are only those
+            //two statements of the default, and neither may be spelled out again here: a third copy
+            //is how they would drift. On: underlay, overlay, walls, map scene icons, relief shading
+            //and grid. Off: ground decoration, game objects and tile flags.
             foreach ((string name, MapLayers layer) in LayerRows)
                 layerList.Items.Add(name, (MapLayers.Default & layer) != 0);
 
@@ -526,10 +596,250 @@ namespace FlashEditor.Map {
             toolBox.SelectedIndex = 0;
 
             //SplitterDistance has to be set after the control has a size, or it is silently clamped.
-            split.HandleCreated += (_, _) => split.SplitterDistance = 220;
+            split.HandleCreated += (_, _) => split.SplitterDistance = LeftColumnWidth;
             right.HandleCreated += (_, _) => right.SplitterDistance = Math.Max(100, right.Height - 150);
 
             status.Text = "No cache loaded";
+        }
+
+        /// <summary>
+        ///     Builds the left control column.
+        /// </summary>
+        /// <remarks>
+        ///     One Percent row and three AutoSize rows. The Percent row is the world navigator, which
+        ///     is now the primary way to move around the map and so should be the biggest thing here;
+        ///     the three below it take exactly the height their contents measure, which is what stops
+        ///     the Tool group being pushed off the bottom of the window. That is the guarantee - the
+        ///     rows can no longer be wrong about how tall their contents are, because they no longer
+        ///     hold an opinion about it.
+        ///
+        ///     <c>AutoScroll</c> is a backstop for a window so short that even the three measured rows
+        ///     do not fit, at which point <see cref="TableLayoutPanel"/> starts shrinking them again.
+        ///     It costs nothing when it does not engage. It is only safe to ask for because nothing in
+        ///     the column derives its height from its width any more - there is not a wrapping
+        ///     <see cref="FlowLayoutPanel"/> left below this point - so a scrollbar appearing cannot
+        ///     change the height that decided whether to show it.
+        /// </remarks>
+        /// <returns>The column.</returns>
+        private TableLayoutPanel BuildLeftColumn() {
+            var column = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                AutoScroll = true
+            };
+
+            column.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            column.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            worldGroup = new GroupBox { Text = "World", Dock = DockStyle.Fill };
+            worldGroup.Controls.Add(navigator);
+
+            column.Controls.Add(worldGroup, 0, 0);
+            column.Controls.Add(BuildViewRow(), 0, 1);
+            column.Controls.Add(BuildLayersGroup(), 0, 2);
+            column.Controls.Add(BuildToolGroup(), 0, 3);
+
+            return column;
+        }
+
+        /// <summary>
+        ///     The plane selector, "Fit world" and the zoom readout.
+        /// </summary>
+        /// <remarks>
+        ///     The combo sits in the one Percent column and is anchored to both its edges, so it is
+        ///     whatever is left after the label and the button rather than a fixed 60 pixels that font
+        ///     scaling cut to 40 and rendered as "Pl". The button measures its own text for the same
+        ///     reason. The zoom readout is on its own row because those three already fill the width.
+        /// </remarks>
+        /// <returns>The row.</returns>
+        private TableLayoutPanel BuildViewRow() {
+            var row = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 2
+            };
+
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            //An anchor with no Top and no Bottom is what centres a control vertically in its cell,
+            //which is why none of the labels here needs the six-pixel top padding the old flow layout
+            //used to line them up against the combo by hand.
+            planeBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            fitButton.Anchor = AnchorStyles.Left;
+            zoomLabel.Anchor = AnchorStyles.Left;
+
+            row.Controls.Add(new Label { Text = "Plane", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            row.Controls.Add(planeBox, 1, 0);
+            row.Controls.Add(fitButton, 2, 0);
+            row.Controls.Add(zoomLabel, 0, 1);
+            row.SetColumnSpan(zoomLabel, 3);
+
+            return row;
+        }
+
+        /// <summary>
+        ///     The layer tick boxes and the relief slider.
+        /// </summary>
+        /// <remarks>
+        ///     The list's row is the one <c>Absolute</c> height left in the panel, and
+        ///     <see cref="ApplyMeasuredSizes"/> computes it from the list's own item height rather than
+        ///     a literal. Nine layers never becomes ten by accident, and sizing it to its content is
+        ///     what frees the gap that used to sit between "Grid" and the relief slider.
+        /// </remarks>
+        /// <returns>The group box.</returns>
+        private GroupBox BuildLayersGroup() {
+            var group = new GroupBox {
+                Text = "Layers",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink
+            };
+
+            layersBody = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 1,
+                RowCount = 2
+            };
+
+            layersBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            //Filled in by ApplyMeasuredSizes; zero here so a missed call shows as a collapsed list
+            //rather than as a plausible-looking wrong height.
+            layersBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+            layersBody.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var reliefRow = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = Padding.Empty
+            };
+
+            reliefRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            reliefRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            reliefRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            //A horizontal TrackBar keeps its own height whatever is asked of it, so only the width is
+            //stretched here and the row measures the height the control insists on.
+            reliefBar.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+
+            reliefRow.Controls.Add(new Label { Text = "Relief", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            reliefRow.Controls.Add(reliefBar, 1, 0);
+
+            layersBody.Controls.Add(layerList, 0, 0);
+            layersBody.Controls.Add(reliefRow, 0, 1);
+            group.Controls.Add(layersBody);
+
+            return group;
+        }
+
+        /// <summary>
+        ///     The tool selector, its value, and undo, redo and save.
+        /// </summary>
+        /// <remarks>
+        ///     A grid rather than a wrapping flow. The flow put all six controls on one line and
+        ///     relied on the group being 110 pixels tall for the wrap to fit, which font scaling cut
+        ///     to about 76 and the window edge then sliced the button row in half. Two half-width
+        ///     columns give undo and redo a row of their own with no wrapping to get wrong, and the
+        ///     row heights come from the controls.
+        /// </remarks>
+        /// <returns>The group box.</returns>
+        private GroupBox BuildToolGroup() {
+            var group = new GroupBox {
+                Text = "Tool",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink
+            };
+
+            var body = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 2,
+                RowCount = 4
+            };
+
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            for (int row = 0; row < body.RowCount; row++)
+                body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            toolBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            toolValue.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+
+            //Left-anchored rather than stretched: they measure their own text, and stretching an
+            //AutoSize control across a cell is the one combination TableLayoutPanel resolves by
+            //guessing.
+            undoButton.Anchor = AnchorStyles.Left;
+            redoButton.Anchor = AnchorStyles.Left;
+            saveButton.Anchor = AnchorStyles.Left;
+
+            body.Controls.Add(toolBox, 0, 0);
+            body.SetColumnSpan(toolBox, 2);
+
+            body.Controls.Add(new Label { Text = "Value", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
+            body.Controls.Add(toolValue, 1, 1);
+
+            body.Controls.Add(undoButton, 0, 2);
+            body.Controls.Add(redoButton, 1, 2);
+
+            body.Controls.Add(saveButton, 0, 3);
+            body.SetColumnSpan(saveButton, 2);
+
+            group.Controls.Add(body);
+
+            return group;
+        }
+
+        /// <summary>
+        ///     Sets the sizes that only the running machine's font can decide.
+        /// </summary>
+        /// <remarks>
+        ///     Called on handle creation and on any later font change. Handle creation is the first
+        ///     point at which the form's font auto-scaling has certainly run and
+        ///     <see cref="Control.Font"/> is final; measuring earlier - in the constructor, where the
+        ///     old literals were - gives design-time numbers that are then scaled again and end up
+        ///     about a third too small.
+        /// </remarks>
+        private void ApplyMeasuredSizes() {
+            //Off, so the list holds the exact height set rather than snapping to a whole item count
+            //and leaving the arithmetic below unable to predict what it will do.
+            layerList.IntegralHeight = false;
+
+            //Four terms, and dropping any one of them puts a scrollbar over nine visible items: the
+            //rows at the list's own item height, the 3D border on the top and bottom edges, the
+            //margin the cell takes off a docked child before it gets any of the row at all, and two
+            //pixels of slack. The margin and the border are read live rather than assumed, because
+            //font scaling moves both.
+            layersBody.RowStyles[0].Height =
+                layerList.ItemHeight * LayerRows.Length
+                + 2 * SystemInformation.Border3DSize.Height
+                + layerList.Margin.Vertical
+                + 2;
+
+            //Docked to the bottom with a literal height, which scaling cut below the text it carries -
+            //the descenders on "plane" and "px/tile" were being clipped by the window edge.
+            status.Height = Font.Height + 8;
+
+            //A floor for the navigator, which otherwise has a Percent row and nothing to stop it
+            //collapsing on a short window. Nine text lines is roughly the thumbnail's old size, so
+            //this is the point below which the column starts scrolling instead of shrinking it.
+            worldGroup.MinimumSize = new Size(0, Font.Height * 9);
         }
 
         /// <summary>
@@ -573,7 +883,7 @@ namespace FlashEditor.Map {
             if (cache == null) {
                 loader = null;
                 navigator.Build(null);
-                status.Text = "No cache loaded";
+                ShowMessage("No cache loaded");
                 saveButton.Enabled = false;
                 return;
             }
@@ -614,9 +924,9 @@ namespace FlashEditor.Map {
             if (store == null)
                 return;
 
-            status.Text = store.Exists(rx, ry)
+            ShowMessage(store.Exists(rx, ry)
                 ? $"m{rx}_{ry}"
-                : $"m{rx}_{ry} does not exist in this cache";
+                : $"m{rx}_{ry} does not exist in this cache");
         }
 
         private MapLayers CheckedLayers() {
@@ -763,13 +1073,18 @@ namespace FlashEditor.Map {
         ///     Every figure here has to be lock-free and allocation-free. This runs on every pan,
         ///     zoom and hover, so anything that takes the store's lock stalls the drag behind
         ///     whatever square the render thread is decoding, and steals the lock back from it
-        ///     sixty times a second while it does.
+        ///     sixty times a second while it does. The two render counters take the service's own
+        ///     gate and the tile cache's, which are short and touch no I/O; that is what makes them
+        ///     safe for <see cref="statusTimer"/> to poll as well.
         /// </remarks>
         private void UpdateStatus() {
             zoomLabel.Text = $"{view.Camera.PixelsPerTile:0.###} px/tile";
 
             if (store == null || service == null) {
                 status.Text = cache == null ? "No cache loaded" : "No map index";
+                statusShowsProgress = true;
+                lastRenderedSquares = -1;
+                lastQueuedTiles = -1;
                 return;
             }
 
@@ -780,9 +1095,60 @@ namespace FlashEditor.Map {
                 ? "keys ok"
                 : $"{missing} square(s) missing XTEA keys - objects hidden";
 
+            //Read once and remembered, so the poll can compare against exactly what is on screen.
+            lastRenderedSquares = service.RenderedSquareCount;
+            lastQueuedTiles = service.PendingCount;
+
             status.Text = $"plane {view.Plane}   {view.Camera.PixelsPerTile:0.###} px/tile   {where}   " +
-                          $"{service.RenderedSquareCount} of {store.SquareCount} rendered, {service.PendingCount} queued   " +
+                          SweepProgress() + "   " +
                           (view.EditingEnabled ? "" : "zoom in to edit   ") + keys;
+
+            statusShowsProgress = true;
+        }
+
+        /// <summary>
+        ///     What the render sweep has finished, phrased so it cannot contradict the picture.
+        /// </summary>
+        /// <remarks>
+        ///     The old wording was "N of 1684 rendered", which reads as "how much of the map is drawn"
+        ///     and was seen saying 0 over a fully drawn world. Two separate things were wrong with it.
+        ///
+        ///     It was stale - nothing refreshed the line between mouse events, which
+        ///     <see cref="statusTimer"/> now fixes. And it never counted what it appeared to:
+        ///     <c>MapTileRenderService.RenderedSquareCount</c> is how many squares hold an
+        ///     <em>overview</em> tile, the permanent level-0-and-below band, while everything drawn
+        ///     from two pixels per tile upward comes from detail tiles that are rendered on demand and
+        ///     counted nowhere. So the noun is now "overview", the queue is counted in tiles rather
+        ///     than squares because at a detail zoom that is what is in it, and once the sweep is done
+        ///     the line says where the rest of the picture comes from instead of repeating a total
+        ///     that will never move again.
+        /// </remarks>
+        /// <returns>The progress clause.</returns>
+        private string SweepProgress() {
+            int total = store.SquareCount;
+
+            if (lastRenderedSquares >= total && lastQueuedTiles == 0)
+                return view.Camera.Level >= MapTileCache.FirstDetailLevel
+                    ? $"overview complete, all {total} squares - tile detail is drawn as you pan"
+                    : $"overview complete, all {total} squares";
+
+            return lastQueuedTiles > 0
+                ? $"overview {lastRenderedSquares} of {total} squares, {lastQueuedTiles} tile(s) queued"
+                : $"overview {lastRenderedSquares} of {total} squares";
+        }
+
+        /// <summary>
+        ///     Puts a one-off message on the status line, and stops the poll overwriting it.
+        /// </summary>
+        /// <remarks>
+        ///     The poll refreshes the counters several times a second while the sweep runs, which
+        ///     would wipe "Saved 3 square(s)" before anyone could read it. The next hover, pan, zoom
+        ///     or edit restores the live line.
+        /// </remarks>
+        /// <param name="text">What to say.</param>
+        private void ShowMessage(string text) {
+            status.Text = text;
+            statusShowsProgress = false;
         }
 
         /// <summary>
@@ -812,6 +1178,9 @@ namespace FlashEditor.Map {
             if (disposing) {
                 reliefDebounce.Stop();
                 reliefDebounce.Dispose();
+
+                statusTimer.Stop();
+                statusTimer.Dispose();
 
                 //Order matters: the render thread is the only other user of the store and the
                 //rasteriser, so it has to be joined before either is torn down.

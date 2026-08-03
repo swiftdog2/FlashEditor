@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Threading;
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.cache.util;
@@ -143,6 +145,20 @@ namespace FlashEditor.Definitions.Sprites {
         internal int CachedRow = -1;
         internal bool CachedIsMono;
 
+        /// <summary>
+        /// True while this node's row evaluator is on the stack, so a graph whose child indices
+        /// form a cycle is detected instead of recursed into.
+        /// </summary>
+        /// <remarks>
+        /// Child indices are raw bytes with no ordering constraint, so a hand-edited or corrupt
+        /// graph can name itself or one of its own ancestors. A DAG can never re-enter a node
+        /// that is already being evaluated, whatever row is being asked for, so this flag is an
+        /// exact cycle test rather than a heuristic. It has to exist because the failure mode is
+        /// a <c>StackOverflowException</c>, which .NET does not let anyone catch - it would take
+        /// the whole editor down rather than costing the one texture.
+        /// </remarks>
+        internal bool Evaluating;
+
         // Dimensions set during allocation
         internal int Width, Height;
         internal int[] XCoord, YCoord;
@@ -162,12 +178,14 @@ namespace FlashEditor.Definitions.Sprites {
             ColourCache[1] = new int[w];
             ColourCache[2] = new int[w];
             CachedRow = -1;
+            Evaluating = false;
         }
 
         public void Release() {
             MonoCache = null;
             ColourCache = null;
             CachedRow = -1;
+            Evaluating = false;
         }
 
         /// <summary>
@@ -223,6 +241,140 @@ namespace FlashEditor.Definitions.Sprites {
         [ThreadStatic]
         private static HashSet<int> _renderStack;
 
+        /// <summary>
+        /// How many times composition has refused to recurse on this thread.
+        /// </summary>
+        /// <remarks>
+        /// A render that hit the cycle guard or the depth ceiling produced a result that depends
+        /// on what was already on the render stack, so it is not a property of the texture and
+        /// must not be memoised. Comparing this counter either side of a nested render is what
+        /// tells the two cases apart.
+        /// </remarks>
+        [ThreadStatic]
+        private static int _compositionRefusals;
+
+        /// <summary>
+        /// Depth of the <see cref="RenderArgb"/> call chain on this thread. Zero means the next
+        /// call is a top-level texture and owns the time budget for everything it composes.
+        /// </summary>
+        [ThreadStatic]
+        private static int _renderNesting;
+
+        /// <summary>Wall-clock tick at which the current top-level render gives up.</summary>
+        [ThreadStatic]
+        private static long _renderDeadline;
+
+        /// <summary>Call counter behind <see cref="ThrowIfBudgetExpired"/>'s sampling.</summary>
+        [ThreadStatic]
+        private static int _budgetSampleCounter;
+
+        /// <summary>
+        /// Wall-clock ceiling on one top-level texture render, shared with everything it composes.
+        /// </summary>
+        /// <remarks>
+        /// This restores the bound that the old <c>Task.Run</c> plus <c>task.Wait(15000)</c> shape
+        /// carried. That shape cost a blocked pool thread per texture and could not actually stop
+        /// the render it gave up on; this one costs nothing and unwinds the evaluator, but it is a
+        /// safety net rather than a semantic rule - a node whose radius or iteration count is
+        /// pathological is bounded by nothing else. It is deliberately far above what any texture
+        /// in this cache needs, so a slower machine cannot render a texture differently from a
+        /// faster one. Settable so a test can pin the abort path without waiting for it.
+        /// </remarks>
+        internal static int RenderBudgetMilliseconds = 15_000;
+
+        /// <summary>
+        /// Thrown out of the evaluator when a render overruns <see cref="RenderBudgetMilliseconds"/>.
+        /// </summary>
+        /// <remarks>
+        /// Private so it cannot be caught by anything but <see cref="RenderArgb"/>, which turns it
+        /// back into the null every caller already handles.
+        /// </remarks>
+        private sealed class TextureRenderBudgetException : Exception {
+        }
+
+        /// <summary>
+        /// Aborts the render once the budget is gone, sampled rather than checked every call.
+        /// </summary>
+        /// <remarks>
+        /// The evaluator reaches this millions of times on a blur-heavy graph, so the clock is
+        /// only read on one call in 4096. The counter is per thread and is never reset - it only
+        /// has to spread the samples out, not count anything.
+        /// </remarks>
+        private static void ThrowIfBudgetExpired() {
+            if ((++_budgetSampleCounter & 0xFFF) != 0)
+                return;
+            if (Environment.TickCount64 > _renderDeadline)
+                throw new TextureRenderBudgetException();
+        }
+
+        /// <summary>
+        /// Pixels of textures reached through a type 36 node, keyed by texture id and render size.
+        /// </summary>
+        /// <remarks>
+        /// This is the only unbounded multiplier in the pipeline. A type 36 node renders another
+        /// whole texture, sprite loads and all, and the graphs in this cache are built out of one
+        /// another, so a commonly composed base texture was re-rendered once per referencing
+        /// texture and once per referencing path up to six levels deep. The size is part of the
+        /// key even though it is derived from the composed texture's own <c>field1822</c>: keying
+        /// on the id alone would hand back the wrong pixel count the day a caller renders at
+        /// another size, and that is a corruption rather than a miss.
+        ///
+        /// The arrays are shared between threads and between nodes, and are only ever read -
+        /// <c>EvalSpriteSource</c> samples <see cref="TextureNode.SpritePixels"/> and nothing
+        /// writes through it.
+        /// </remarks>
+        private static readonly ConcurrentDictionary<long, int[]> _compositionCache = new();
+
+        /// <summary>
+        /// Decoded sprite pixels, keyed by the sprite id actually fetched, override applied.
+        /// </summary>
+        /// <remarks>
+        /// <c>RSCache.GetSprite</c> calls <c>ReleaseData</c>, which nulls the container's stream,
+        /// so the next request for the same sprite re-reads the dat2 and re-inflates it - and it
+        /// does all of that inside the cache's container lock, so every texture thread that wants
+        /// a sprite queues behind every other one. Failures are cached too, as an entry with null
+        /// pixels: a sprite that is missing stays missing, and re-deciding that 1,408 times costs
+        /// exactly as much as deciding it the first time.
+        /// </remarks>
+        private static readonly ConcurrentDictionary<int, CachedSprite> _spriteCache = new();
+
+        /// <summary>A decoded sprite frame, or the record of one that could not be decoded.</summary>
+        private sealed class CachedSprite {
+            internal CachedSprite(int[]? pixels, int width, int height) {
+                Pixels = pixels;
+                Width = width;
+                Height = height;
+            }
+
+            /// <summary>Frame 0's ARGB pixels, or null when the sprite could not be loaded.</summary>
+            internal readonly int[]? Pixels;
+            internal readonly int Width;
+            internal readonly int Height;
+        }
+
+        //Both caches are capped rather than evicted. A cap is enough because the population is
+        //fixed - 946 graphs and the sprites they name - and an LRU would spend more on bookkeeping
+        //than the misses past the cap cost. Past the cap the render still completes, just at the
+        //old price.
+        private const long CacheByteLimit = 64L * 1024 * 1024;
+        private static long _compositionCacheBytes;
+        private static long _spriteCacheBytes;
+
+        /// <summary>
+        /// Drops the composed-texture and sprite memo caches.
+        /// </summary>
+        /// <remarks>
+        /// Both are keyed by id alone, so they are only valid for one loaded cache. Called from
+        /// <see cref="TextureManager.Clear"/>, which every <see cref="TextureManager.Load"/> runs
+        /// first, so opening a different cache cannot be served stale pixels from the old one.
+        /// </remarks>
+        internal static void ClearCaches() {
+            _compositionCache.Clear();
+            _spriteCache.Clear();
+            Interlocked.Exchange(ref _compositionCacheBytes, 0);
+            Interlocked.Exchange(ref _spriteCacheBytes, 0);
+        }
+
         public static Bitmap Render(TextureGraph graph, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
             int[] pixels = RenderArgb(graph, width, height, cache, transpose, textureDefId);
             if (pixels == null)
@@ -248,6 +400,32 @@ namespace FlashEditor.Definitions.Sprites {
                 return null;
             }
 
+            //The budget belongs to the outermost render and covers everything it composes, so a
+            //graph cannot buy itself another 15 seconds per type 36 node. Nesting is tracked
+            //rather than inferred from the render stack, because the top-level texture id is
+            //never pushed onto it.
+            bool outermost = _renderNesting == 0;
+            if (outermost)
+                _renderDeadline = Environment.TickCount64 + RenderBudgetMilliseconds;
+            _renderNesting++;
+
+            try {
+                return RenderArgbCore(source, width, height, cache, transpose, textureDefId);
+            } catch (TextureRenderBudgetException) when (outermost) {
+                //Filtered on the outermost frame so an overrun unwinds the whole composition tree
+                //in one throw. Caught at every level it would instead return null to a caller that
+                //then grinds through its own rows before noticing the same expired deadline.
+                Debug($"[GraphEval] tex {textureDefId}: abandoned after {RenderBudgetMilliseconds}ms", LOG_DETAIL.BASIC);
+                return null;
+            } finally {
+                _renderNesting--;
+            }
+        }
+
+        /// <summary>
+        /// The evaluation itself, run inside the caller's time budget.
+        /// </summary>
+        private static int[] RenderArgbCore(TextureGraph source, int width, int height, RSCache cache, bool transpose, int textureDefId) {
             //Evaluation caches each row into the nodes, so it works on a copy. The editor
             //renders on 20 threads and composition lets two of them reach the same graph, and
             //the caller has no way to know that happened - so the safety belongs here rather
@@ -313,6 +491,12 @@ namespace FlashEditor.Definitions.Sprites {
             TextureNode alphaNode = null;
 
             for (int y = 0; y < height; y++) {
+                //Checked here as well as inside the row evaluators, because a single node can
+                //spend an unbounded amount of time in one row without calling either of them -
+                //a type 17 blur reads its radius as an unsigned short.
+                if (Environment.TickCount64 > _renderDeadline)
+                    throw new TextureRenderBudgetException();
+
                 int[] alphaMono = alphaNode != null ? GetMono(alphaNode, y) : null;
 
                 if (outputIsMono) {
@@ -367,15 +551,14 @@ namespace FlashEditor.Definitions.Sprites {
         /// <remarks>
         /// The client picks the nested render size off the referenced texture's own mipmap flag
         /// (<c>Node_Sub10_Sub25.method998</c>), not off the size of the texture being built.
+        ///
+        /// The result is memoised in <see cref="_compositionCache"/>, because a base texture that
+        /// forty graphs compose was otherwise rendered forty times over, each render re-loading
+        /// its own sprites and re-rendering whatever it composes in turn.
         /// </remarks>
         private static void LoadNestedTextureForNode(TextureNode node, RSCache cache, int textureDefId) {
             int nestedId = node.NestedTextureId;
-
-            _renderStack ??= new HashSet<int>();
-            if (_renderStack.Count >= 6 || !_renderStack.Add(nestedId)) {
-                Debug($"[GraphEval] tex {textureDefId}: node composes texture {nestedId} - refusing to recurse", LOG_DETAIL.ADVANCED);
-                return;
-            }
+            bool pushed = false;
 
             try {
                 if (!TextureManager.Textures.TryGetValue(nestedId, out TextureDefinition nested) || nested?.graph == null) {
@@ -384,18 +567,54 @@ namespace FlashEditor.Definitions.Sprites {
                 }
 
                 int size = nested.field1822 ? 64 : 128;
+                long key = ((long)nestedId << 32) | (uint)size;
+
+                //Consulted before the recursion guard. A hit does not recurse at all, so there is
+                //nothing for the guard to protect, and pushing the id would only make a second
+                //legitimate reference from the same graph look like a cycle.
+                if (_compositionCache.TryGetValue(key, out int[] cached)) {
+                    node.SpritePixels = cached;
+                    node.SpriteWidth = size;
+                    node.SpriteHeight = size;
+                    return;
+                }
+
+                _renderStack ??= new HashSet<int>();
+                if (_renderStack.Count >= 6 || !_renderStack.Add(nestedId)) {
+                    Debug($"[GraphEval] tex {textureDefId}: node composes texture {nestedId} - refusing to recurse", LOG_DETAIL.ADVANCED);
+                    _compositionRefusals++;
+                    return;
+                }
+                pushed = true;
+
+                int refusalsBefore = _compositionRefusals;
                 int[] argb = RenderArgb(nested.graph, size, size, cache, nested.field1824, nestedId);
                 if (argb == null)
                     return;
+
+                //Only a render that never hit the guard is a property of the texture alone. One
+                //that did depends on what happened to be on the render stack above it, and
+                //memoising that would hand a truncated picture to a shallower caller that would
+                //have rendered the whole thing.
+                if (_compositionRefusals == refusalsBefore &&
+                    Interlocked.Read(ref _compositionCacheBytes) < CacheByteLimit &&
+                    _compositionCache.TryAdd(key, argb))
+                    Interlocked.Add(ref _compositionCacheBytes, argb.Length * 4L);
 
                 node.SpritePixels = argb;
                 node.SpriteWidth = size;
                 node.SpriteHeight = size;
                 Debug($"[GraphEval] tex {textureDefId}: composed texture {nestedId} at {size}x{size}", LOG_DETAIL.ADVANCED);
+            } catch (TextureRenderBudgetException) {
+                //Rethrown rather than logged as a composition failure: the whole render is over,
+                //and swallowing it here would leave the caller grinding through its own rows
+                //until it noticed the same expired deadline.
+                throw;
             } catch (Exception ex) {
-                Debug($"[GraphEval] tex {textureDefId}: composing texture {nestedId} FAILED — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                Debug($"[GraphEval] tex {textureDefId}: composing texture {nestedId} FAILED - {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
             } finally {
-                _renderStack.Remove(nestedId);
+                if (pushed)
+                    _renderStack?.Remove(nestedId);
             }
         }
 
@@ -418,38 +637,72 @@ namespace FlashEditor.Definitions.Sprites {
             int spriteId = origSpriteId;
             if (textureDefId >= 0 && _spriteOverrides.TryGetValue(textureDefId, out int overrideId)) {
                 spriteId = overrideId;
-                Debug($"[SpriteLoad] tex {textureDefId}: sprite override {origSpriteId} → {spriteId}", LOG_DETAIL.ADVANCED);
+                Debug($"[SpriteLoad] tex {textureDefId}: sprite override {origSpriteId} -> {spriteId}", LOG_DETAIL.ADVANCED);
             }
+
+            //Keyed on the resolved id, not the declared one, so the override table cannot make two
+            //different sprites share an entry.
+            if (!_spriteCache.TryGetValue(spriteId, out CachedSprite entry))
+                entry = DecodeSpriteForCache(cache, spriteId, textureDefId);
+
+            if (entry.Pixels == null)
+                return;
+
+            node.SpritePixels = entry.Pixels;
+            node.SpriteWidth = entry.Width;
+            node.SpriteHeight = entry.Height;
+        }
+
+        /// <summary>
+        /// Decodes one sprite's frame 0 and records the outcome, success or failure, in the memo.
+        /// </summary>
+        /// <remarks>
+        /// <c>RSBufferedImage.GetPixels</c> hands back a clone, so the returned array is nobody
+        /// else's and is safe to share read-only across every node and thread that wants it. That
+        /// also means the decoded <see cref="SpriteDefinition"/> is dead the moment the pixels are
+        /// out, and it holds a GDI bitmap per frame - left to the finaliser those accumulated once
+        /// per sprite node across the whole sweep.
+        /// </remarks>
+        private static CachedSprite DecodeSpriteForCache(RSCache cache, int spriteId, int textureDefId) {
+            CachedSprite entry = new CachedSprite(null, 0, 0);
+            SpriteDefinition? sprite = null;
             try {
                 Debug($"[SpriteLoad] tex {textureDefId}: GetSprite({spriteId}) ...", LOG_DETAIL.INSANE);
-                SpriteDefinition sprite = cache.GetSprite(spriteId);
+                sprite = cache.GetSprite(spriteId);
                 if (sprite == null) {
-                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — GetSprite returned null", LOG_DETAIL.ADVANCED);
-                    return;
-                }
-                int frameCount = sprite.GetFrameCount();
-                if (frameCount == 0) {
-                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — 0 frames", LOG_DETAIL.ADVANCED);
-                    return;
-                }
-                var frame = sprite.GetFrame(0);
-                if (frame == null) {
-                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — frame 0 null", LOG_DETAIL.ADVANCED);
-                    return;
-                }
-                node.SpritePixels = frame.GetPixels();
-                node.SpriteWidth = frame.GetWidth();
-                node.SpriteHeight = frame.GetHeight();
-                if (node.SpritePixels == null || node.SpritePixels.Length == 0) {
-                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — GetPixels returned null/empty (w={node.SpriteWidth}, h={node.SpriteHeight})", LOG_DETAIL.BASIC);
-                    node.SpritePixels = null;
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} - GetSprite returned null", LOG_DETAIL.ADVANCED);
+                } else if (sprite.GetFrameCount() == 0) {
+                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} - 0 frames", LOG_DETAIL.ADVANCED);
                 } else {
-                    Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} — OK {node.SpriteWidth}x{node.SpriteHeight}, {node.SpritePixels.Length} pixels", LOG_DETAIL.ADVANCED);
+                    var frame = sprite.GetFrame(0);
+                    if (frame == null) {
+                        Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} - frame 0 null", LOG_DETAIL.ADVANCED);
+                    } else {
+                        int[] pixels = frame.GetPixels();
+                        int width = frame.GetWidth();
+                        int height = frame.GetHeight();
+                        if (pixels == null || pixels.Length == 0) {
+                            Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} - GetPixels returned null/empty (w={width}, h={height})", LOG_DETAIL.BASIC);
+                        } else {
+                            entry = new CachedSprite(pixels, width, height);
+                            Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} - OK {width}x{height}, {pixels.Length} pixels", LOG_DETAIL.ADVANCED);
+                        }
+                    }
                 }
             } catch (Exception ex) {
-                Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} FAILED — {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
+                Debug($"[SpriteLoad] tex {textureDefId}: sprite {spriteId} FAILED - {ex.GetType().Name}: {ex.Message}", LOG_DETAIL.BASIC);
                 Debug($"[SpriteLoad] tex {textureDefId}: stack: {ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}", LOG_DETAIL.ADVANCED);
+            } finally {
+                sprite?.Dispose();
             }
+
+            //A failure is worth an entry of its own: a sprite the cache does not hold is not going
+            //to appear, and re-proving that costs a full container read and inflate every time.
+            long cost = entry.Pixels != null ? entry.Pixels.Length * 4L : 0L;
+            if (Interlocked.Read(ref _spriteCacheBytes) < CacheByteLimit && _spriteCache.TryAdd(spriteId, entry))
+                Interlocked.Add(ref _spriteCacheBytes, cost);
+
+            return entry;
         }
 
         /// <summary>
@@ -463,6 +716,8 @@ namespace FlashEditor.Definitions.Sprites {
 
         // Get mono output from a node, with auto-conversion from colour if needed
         private static int[] GetMono(TextureNode node, int row) {
+            ThrowIfBudgetExpired();
+
             if (node.CachedRow == row && node.CachedIsMono)
                 return node.MonoCache;
 
@@ -475,7 +730,21 @@ namespace FlashEditor.Definitions.Sprites {
                 return node.MonoCache;
             }
 
-            EvalMono(node, row);
+            //A node reached while it is already being evaluated can only have got there through a
+            //cycle in the child indices, whatever row either visit asked for, because a DAG never
+            //revisits a node on its own path. Its buffer is handed back as it stands - zeroed on
+            //the first pass - which is a defined answer rather than a recursion to stack overflow.
+            if (node.Evaluating) {
+                Debug($"[GraphEval] node type {node.Type} is its own ancestor - breaking the cycle", LOG_DETAIL.ADVANCED);
+                return node.MonoCache;
+            }
+
+            node.Evaluating = true;
+            try {
+                EvalMono(node, row);
+            } finally {
+                node.Evaluating = false;
+            }
             node.CachedRow = row;
             node.CachedIsMono = true;
             return node.MonoCache;
@@ -483,6 +752,8 @@ namespace FlashEditor.Definitions.Sprites {
 
         // Get colour output from a node, with auto-promotion from mono if needed
         private static int[][] GetColour(TextureNode node, int row) {
+            ThrowIfBudgetExpired();
+
             if (node.ColourCache == null) {
                 // Node was never allocated — return a safe fallback
                 return _fallbackColour ??= new int[][] { new int[1], new int[1], new int[1] };
@@ -502,7 +773,18 @@ namespace FlashEditor.Definitions.Sprites {
                 return node.ColourCache;
             }
 
-            EvalColour(node, row);
+            //See GetMono: the same cycle break, on the colour side.
+            if (node.Evaluating) {
+                Debug($"[GraphEval] node type {node.Type} is its own ancestor - breaking the cycle", LOG_DETAIL.ADVANCED);
+                return node.ColourCache;
+            }
+
+            node.Evaluating = true;
+            try {
+                EvalColour(node, row);
+            } finally {
+                node.Evaluating = false;
+            }
             node.CachedRow = row;
             node.CachedIsMono = false;
             return node.ColourCache;
