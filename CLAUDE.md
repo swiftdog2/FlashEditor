@@ -97,7 +97,11 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   definition, every floor underlay and overlay, and every map square must re-encode to the bytes
   it was read from - 20,470 items, 13,359 NPCs, 56,199 objects, 159 underlays, 235 overlays and
   1684 map squares. **If a sweep fails, you broke something - do not adjust the sweep.** Add one
-  for any content type you teach the editor to write.
+  for any content type you teach the editor to write, through
+  `FlashEditor.Tests/Cache/RealCache/DefinitionSweep.cs` rather than by writing a fifth copy of the
+  enumerate-decode-re-encode-compare loop. It enumerates from the table's declared id list, pads
+  the decode buffer with sentinels so an over-read cannot look like a clean stop, compares
+  decompressed payloads, and asserts without an `or`.
 - **The real cache is read-only.** It is opened read-only and no test writes to it. Keep it so.
 - **Do not change a decode payload size** without evidence from the 639 data. The sizes are
   proven by exact-consumption sweeps over every definition.
@@ -138,6 +142,13 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   write path refuses to guess it. Keep all four branches implemented anyway: the first table that
   does set one is mis-parsed from that field onward, and no sweep would catch it, because no
   shipped table exercises the branch. idx255 declares 37 records; slots 34 and 35 hold nothing.
+- **Four indexes hold groups their reference table does not declare.** Index 3 has 772, 825 and
+  891; index 4 has 4787; index 12 has 699 and 700; index 32 has 498 and 1407. The client gates
+  every read on the table, so an undeclared group is unreachable in game whatever its bytes say -
+  which is why `RSCache.EnumerateGroups` is table-driven and `EnumerateOrphanGroups` reports the
+  difference rather than dropping it. Pinned by `RealCacheEnumerationTests`. A table-driven sweep
+  silently skips these, so an index-driven parser and a table-driven one disagree on exactly these
+  four and nowhere else. The first survey of this said only indexes 4 and 12, which missed two.
 - **Four indexes carry trailing bytes past the end of the table: four zero bytes per file.** Index
   9 has 3784 over 946 files in 946 groups, 26 has 4 over 1 file in 1 group, 27 has 1684 over 421
   files in only **2** groups, and 29 has 728 over 182 files in **1** group. Per *file* - 27 and 29
@@ -191,10 +202,22 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   `[DesignerSerializationVisibility(Hidden)]`** if it is runtime-only, or analyzer `WFO1000`
   fails the build. Attach them to the declaration, not to a doc comment above a same-named
   property elsewhere in the file.
-- **Nothing in the suite covers the renderer.** `ModelRenderer` and the shaders are OpenGL, so a
-  render-path defect passes every test in the suite. Faces the client refuses to draw were being
-  drawn for as long as the viewer has existed and the sweeps never saw it. Check render changes
-  by eye; model 15748 carries a render-type-2 face and is a fast case to load.
+- **Nothing in the suite covers the renderer or WinForms.** `ModelRenderer` and the shaders are
+  OpenGL, so a render-path defect passes every test in the suite. Faces the client refuses to draw
+  were being drawn for as long as the viewer has existed and the sweeps never saw it. Check render
+  changes by eye; model 15748 carries a render-type-2 face and is a fast case to load.
+  `tools/Capture-EditorTab.ps1` launches the app, selects a tab through UI Automation and writes a
+  PNG, which is the only automated check that a tab draws at all. Use it on any tab you touch.
+- **Every literal pixel size in `Editor.Designer.cs` is scaled at runtime.** It sets
+  `AutoScaleMode.Font` with `AutoScaleDimensions(9F, 20F)`, so each hardcoded `Width`/`Height` and
+  each `SizeType.Absolute` row is multiplied by the font ratio, about two thirds on the development
+  machine. Widths mostly survive it; heights do not, because a `ComboBox` or `NumericUpDown` keeps
+  the height its font needs while the row shrinks around it. That is how the map tab's 110px tool
+  row drew at 76 and sliced its own button row in half, and how a 60px combo rendered as "Pl".
+  Prefer `AutoSize` rows and docking. Re-tuning the number is treating the symptom.
+- **A downscaled screenshot is not evidence about a checkbox.** An unticked box reads as ticked
+  once the image is scaled below about 0.8. Crop at native resolution before claiming a control's
+  state, or settle it from the code instead, which is stronger anyway.
 - **A near-total aggregate match is not evidence that a join is correct.** The track-name join keyed
   the index-17 enum by index-6 group id, and every aggregate agreed: 958 of 970 keys landed on a
   real group, 958 of 963 groups got a name. It was wrong - the enum is in alphabetical order, so
@@ -270,6 +293,7 @@ measurement here confirms it.
 | `reference/hydra-637-definitions/` | De-obfuscated 637 opcode tables, every claim citing a `file:line` |
 | `reference/hydra-637-maps/` | The map path end to end: index-5 addressing and XTEA, the `m` and `l` byte formats, floor definitions, the colour model, and how to read the obfuscated client |
 | `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
+| `reference/index-survey/` | Per-index capability and format survey. `00-WORKLIST.md` is the ordered plan for the indexes that still need an editor, and its section 4 lists the shared abstractions to build before writing more of them |
 | `STATE_OF_THE_EDITOR.md` | What has been found and fixed, plus the roadmap |
 | `HydraScape/client/src` | The 637 client itself, for implementation questions |
 
