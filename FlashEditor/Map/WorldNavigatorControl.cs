@@ -21,6 +21,22 @@ namespace FlashEditor.Map {
         private bool[,] present = new bool[WorldSquares, WorldSquares];
         private Bitmap thumbnail;
 
+        /// <summary>
+        ///     The region-coordinate box the thumbnail covers.
+        /// </summary>
+        /// <remarks>
+        ///     The occupied world is a small part of the 256x256 grid, so drawing the whole grid
+        ///     spends almost all of the control on empty space and leaves the land too small to aim
+        ///     at. Everything is therefore expressed against this box rather than against
+        ///     <see cref="WorldSquares"/>.
+        ///
+        ///     <see cref="Paint"/>, <see cref="ThumbnailArea"/>, <see cref="OnPaint"/> and
+        ///     <see cref="ToRegion"/> all have to agree on it: if the draw and the pick disagree,
+        ///     clicking the navigator silently jumps to the wrong square, which reads as the map
+        ///     being broken rather than the navigator.
+        /// </remarks>
+        private Rectangle occupied = new Rectangle(0, 0, WorldSquares, WorldSquares);
+
         private int currentRegionX = -1;
         private int currentRegionY = -1;
 
@@ -99,10 +115,47 @@ namespace FlashEditor.Map {
         public void Build(bool[,] presence, int squareCount) {
             present = presence ?? new bool[WorldSquares, WorldSquares];
             SquareCount = squareCount;
+            occupied = OccupiedBounds(present);
 
             thumbnail?.Dispose();
             thumbnail = Paint(present);
             Invalidate();
+        }
+
+        /// <summary>
+        ///     The smallest region box containing every square that exists, padded by one.
+        /// </summary>
+        /// <remarks>
+        ///     The padding keeps a coastal square off the very edge of the thumbnail, so the
+        ///     viewport outline around it stays visible instead of being clipped by the border.
+        ///     Falls back to the whole world when nothing is present, so an empty cache still has a
+        ///     well-formed box to divide by.
+        /// </remarks>
+        /// <param name="squares">Which squares exist, indexed <c>[regionX, regionY]</c>.</param>
+        /// <returns>The box in region coordinates.</returns>
+        private static Rectangle OccupiedBounds(bool[,] squares) {
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+
+            for (int rx = 0; rx < WorldSquares; rx++) {
+                for (int ry = 0; ry < WorldSquares; ry++) {
+                    if (!squares[rx, ry])
+                        continue;
+                    if (rx < minX) minX = rx;
+                    if (rx > maxX) maxX = rx;
+                    if (ry < minY) minY = ry;
+                    if (ry > maxY) maxY = ry;
+                }
+            }
+
+            if (maxX < minX)
+                return new Rectangle(0, 0, WorldSquares, WorldSquares);
+
+            minX = Math.Max(0, minX - 1);
+            minY = Math.Max(0, minY - 1);
+            maxX = Math.Min(WorldSquares - 1, maxX + 1);
+            maxY = Math.Min(WorldSquares - 1, maxY + 1);
+
+            return new Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1);
         }
 
         /// <summary>
@@ -142,15 +195,15 @@ namespace FlashEditor.Map {
             && present[regionX, regionY];
 
         private Bitmap Paint(bool[,] squares) {
-            var bitmap = new Bitmap(WorldSquares, WorldSquares, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bitmap = new Bitmap(occupied.Width, occupied.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
 
-            for (int rx = 0; rx < WorldSquares; rx++) {
-                for (int ry = 0; ry < WorldSquares; ry++) {
+            for (int rx = occupied.Left; rx < occupied.Right; rx++) {
+                for (int ry = occupied.Top; ry < occupied.Bottom; ry++) {
                     if (!squares[rx, ry])
                         continue;
 
                     //Region Y runs north and screen Y runs down, same flip as the map view.
-                    bitmap.SetPixel(rx, WorldSquares - 1 - ry, LandColour);
+                    bitmap.SetPixel(rx - occupied.Left, occupied.Bottom - 1 - ry, LandColour);
                 }
             }
 
@@ -174,22 +227,22 @@ namespace FlashEditor.Map {
             e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
             e.Graphics.DrawImage(thumbnail, area);
 
-            float scale = area.Width / (float) WorldSquares;
+            float scale = area.Width / (float) occupied.Width;
 
             if (viewport.Width > 0 && viewport.Height > 0) {
                 //Region Y runs north, so the rectangle's top edge is its highest region row.
-                float top = area.Top + (WorldSquares - viewport.Bottom) * scale;
+                float top = area.Top + (occupied.Bottom - viewport.Bottom) * scale;
                 using (var pen = new Pen(ViewportColour, 1f))
                     e.Graphics.DrawRectangle(pen,
-                        area.Left + viewport.Left * scale, top,
+                        area.Left + (viewport.Left - occupied.Left) * scale, top,
                         Math.Max(1f, viewport.Width * scale), Math.Max(1f, viewport.Height * scale));
             }
 
             if (currentRegionX < 0)
                 return;
 
-            float markerX = area.Left + currentRegionX * scale;
-            float markerY = area.Top + (WorldSquares - 1 - currentRegionY) * scale;
+            float markerX = area.Left + (currentRegionX - occupied.Left) * scale;
+            float markerY = area.Top + (occupied.Bottom - 1 - currentRegionY) * scale;
             float size = Math.Max(3f, scale);
 
             using (var pen = new Pen(MarkerColour, 1f))
@@ -229,9 +282,9 @@ namespace FlashEditor.Map {
             if (area.Width <= 0 || !area.Contains(location))
                 return null;
 
-            float scale = area.Width / (float) WorldSquares;
-            int rx = (int) ((location.X - area.Left) / scale);
-            int ry = WorldSquares - 1 - (int) ((location.Y - area.Top) / scale);
+            float scale = area.Width / (float) occupied.Width;
+            int rx = occupied.Left + (int) ((location.X - area.Left) / scale);
+            int ry = occupied.Bottom - 1 - (int) ((location.Y - area.Top) / scale);
 
             if (rx < 0 || ry < 0 || rx >= WorldSquares || ry >= WorldSquares)
                 return null;
@@ -239,10 +292,23 @@ namespace FlashEditor.Map {
             return new Point(rx, ry);
         }
 
-        /// <summary>The square thumbnail rectangle, centred and aspect-preserved.</summary>
+        /// <summary>
+        ///     The thumbnail rectangle, centred and aspect-preserved against the occupied box.
+        /// </summary>
+        /// <remarks>
+        ///     One scale factor for both axes, so a square map square stays square. Taking the
+        ///     smaller of the two ratios is what keeps the thumbnail inside the control rather than
+        ///     letting the longer axis overflow.
+        /// </remarks>
         private Rectangle ThumbnailArea() {
-            int side = Math.Min(Width, Height);
-            return new Rectangle((Width - side) / 2, (Height - side) / 2, side, side);
+            if (occupied.Width <= 0 || occupied.Height <= 0)
+                return Rectangle.Empty;
+
+            float scale = Math.Min(Width / (float) occupied.Width, Height / (float) occupied.Height);
+            int w = Math.Max(1, (int) (occupied.Width * scale));
+            int h = Math.Max(1, (int) (occupied.Height * scale));
+
+            return new Rectangle((Width - w) / 2, (Height - h) / 2, w, h);
         }
 
         /// <inheritdoc/>
