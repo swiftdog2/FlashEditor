@@ -614,12 +614,18 @@ int peek = buffer[caret] & 0xFF;
 if (peek < 128) {
     return readUnsignedByte() - 64;      // 1 byte: range [-64, 63]
 } else {
-    return readUnsignedShort() - 49152;  // 2 bytes: range [-49152, 16383]
+    return readUnsignedShort() - 49152;  // 2 bytes: range [-16384, 16383]
 }
 ```
 
-**Range**: -64 to 63 (1 byte) or -49152 to 16383 (2 bytes)
+**Range**: -64 to 63 (1 byte) or -16384 to 16383 (2 bytes)
 **Bias**: 64 for single byte, 49152 (0xC000) for double byte
+
+The two-byte range is **not** -49152 to 16383, which this document asserted until it was
+checked against the reader. The branch is only taken when the leading byte has bit 7 set, so
+the biased `u16` is confined to `0x8000..0xFFFF` and subtracting `0xC000` cannot go below
+-16384. An encoder written from the wrong range emits bytes the reader returns a different
+value for, because anything below -16384 wraps into the one-byte branch.
 
 ### readSmart() - General Smart
 

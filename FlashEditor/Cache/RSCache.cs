@@ -1050,14 +1050,22 @@ namespace FlashEditor.cache {
         public ObjectDefinition GetObjectDefinition(int archiveId, int fileId) {
             JagStream objStream = ReadFile(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, fileId);
             ObjectDefinition def = ObjectDefinition.DecodeFromStream(objStream);
-            def.id = archiveId * 256 + fileId;
+            def.id = CacheAddressing.For(RSConstants.OBJECTS_DEFINITIONS_INDEX).DefinitionId(archiveId, fileId);
             return def;
         }
 
+        /// <remarks>
+        ///     NPCs page 128 ids to a group, not 256. This folded the id with <c>* 256</c>, which is
+        ///     the objects and items split, and produced an id naming a different NPC for every
+        ///     group above zero. It was invisible because the only caller overwrote the id on the
+        ///     next line and the encoder ignores it, so no sweep could see it. Routed through
+        ///     <see cref="CacheAddressing"/> so the split is stated once per index rather than
+        ///     open-coded per call site.
+        /// </remarks>
         internal NPCDefinition GetNPCDefinition(int archiveId, int fileId) {
             JagStream npcStream = ReadFile(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, fileId);
             NPCDefinition def = new NPCDefinition(npcStream);
-            def.SetId(archiveId * 256 + fileId);
+            def.SetId(CacheAddressing.For(RSConstants.NPC_DEFINITIONS_INDEX).DefinitionId(archiveId, fileId));
             return def;
         }
 

@@ -129,7 +129,7 @@ Build `DefinitionSweep` with one entry point taking the fixture, an index id and
 - compare **decompressed payloads**, never stored containers;
 - assert the count with no `or` in the assertion.
 
-Also add an idx-driven enumeration variant: index 12 has two groups present in idx12 and absent from the reference table, and index 4 has one. A table-driven sweep silently skips them.
+Also add an idx-driven enumeration variant. Four indexes hold groups present in their idx file and absent from their reference table, measured by `RealCacheEnumerationTests`: index 3 has 772, 825 and 891; index 4 has 4787; index 12 has 699 and 700; index 32 has 498 and 1407. A table-driven sweep skips them. This first read "index 12 has two and index 4 has one", which missed indexes 3 and 32 - both on this worklist, so an implementer working from the short version would size index 3's group count wrongly.
 
 ### 4.4 Settle the `IDefinition` contract
 `IDefinition` (`Definitions/IDefinition.cs`) is `internal`, and its `Decode(JagStream stream, int[] xteaKey = null)` carries an XTEA parameter only the map path ever uses. Definitions do not share a uniform construction path, so a generic sweep harness cannot instantiate them. Settle on `Decode(JagStream)` / `JagStream Encode()` plus a factory delegate, and move the key handling to where it belongs.
