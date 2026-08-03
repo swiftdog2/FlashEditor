@@ -43,18 +43,23 @@ namespace FlashEditor.Tests.Definitions
         ///     An index with no recorded split has no definition id, rather than a made-up one.
         /// </summary>
         /// <remarks>
-        ///     Index 3 is the case: <see cref="CacheAddressing.For"/> throws for it, because nothing
-        ///     has established how a component id folds into a group and a file. A panel that
-        ///     answered <c>group * 256 + file</c> anyway would hand every caller downstream a number
-        ///     that reads exactly like a real id and names a different file the moment it is folded
-        ///     back.
+        ///     Index 2 is the case: <see cref="CacheAddressing.For"/> throws for it, because it holds
+        ///     thirty-five unrelated config families in one index and no arithmetic relates a family's
+        ///     id to a group. A panel that answered <c>group * 256 + file</c> anyway would hand every
+        ///     caller downstream a number that reads exactly like a real id and names a different file
+        ///     the moment it is folded back.
+        ///     <para>
+        ///     This test named index 3 until its split was settled from the client -
+        ///     <c>EntityEnumType.java:46</c> folds a component id as <c>(group &lt;&lt; 16) | file</c> -
+        ///     so index 2 is now the standing example. The property under test is unchanged.
+        ///     </para>
         /// </remarks>
         [Fact]
         public void Address_LeavesTheDefinitionIdAbsent_ForAnIndexWithNoRecordedSplit()
         {
-            Assert.False(CacheAddressing.TryGetFor(RSConstants.INTERFACE_DEFINITIONS_INDEX, out _));
+            Assert.False(CacheAddressing.TryGetFor(RSConstants.CONFIG, out _));
 
-            var descriptor = new ProbeDescriptor(RSConstants.INTERFACE_DEFINITIONS_INDEX);
+            var descriptor = new ProbeDescriptor(RSConstants.CONFIG);
 
             DefinitionAddress address = descriptor.AddressFor(772, 4);
 
@@ -93,7 +98,7 @@ namespace FlashEditor.Tests.Definitions
         [Fact]
         public void Encode_ThrowsByDefault_SoAReadOnlyIndexCannotBeWritten()
         {
-            var descriptor = new ProbeDescriptor(RSConstants.INTERFACE_DEFINITIONS_INDEX);
+            var descriptor = new ProbeDescriptor(RSConstants.CONFIG);
 
             Assert.False(descriptor.IsEditable);
             Assert.Throws<NotSupportedException>(() => descriptor.Encode(new ProbeRow()));

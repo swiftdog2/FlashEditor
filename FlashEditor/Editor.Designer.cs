@@ -150,6 +150,7 @@ namespace FlashEditor {
             TrackEditorTab = new TabPage();
             AnimationEditorTab = new TabPage();
             SoundEffectEditorTab = new TabPage();
+            ConfigEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -263,6 +264,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(AnimationEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
+            EditorTabControl.Controls.Add(ConfigEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -1254,7 +1256,7 @@ namespace FlashEditor {
             // 
             // InterfaceEditorTab
             //
-            InterfaceEditorTab.Controls.Add(InterfaceListPanel);
+            InterfaceEditorTab.Controls.Add(InterfacePanel);
             InterfaceEditorTab.Location = new Point(4, 37);
             InterfaceEditorTab.Name = "InterfaceEditorTab";
             InterfaceEditorTab.Size = new Size(1113, 554);
@@ -1436,6 +1438,16 @@ namespace FlashEditor {
             SoundEffectEditorTab.TabIndex = 11;
             SoundEffectEditorTab.Text = "Sound";
             SoundEffectEditorTab.UseVisualStyleBackColor = true;
+            //
+            // ConfigEditorTab
+            //
+            ConfigEditorTab.Controls.Add(ConfigPanel);
+            ConfigEditorTab.Location = new Point(4, 37);
+            ConfigEditorTab.Name = "ConfigEditorTab";
+            ConfigEditorTab.Size = new Size(1113, 554);
+            ConfigEditorTab.TabIndex = 12;
+            ConfigEditorTab.Text = "Config";
+            ConfigEditorTab.UseVisualStyleBackColor = true;
             //
             // TextureListView
             // 
@@ -1658,9 +1670,14 @@ namespace FlashEditor {
         //beside it, so the form only has to hand it the cache.
         private TabPage SoundEffectEditorTab;
         private FlashEditor.Definitions.Audio.SoundEffectEditorPanel SoundEffectPanel = new FlashEditor.Definitions.Audio.SoundEffectEditorPanel();
-        //The reusable definition list. Which index it shows is decided by the descriptor the form
-        //binds, not by this field, so the next index editor reuses the type rather than the panel.
-        private FlashEditor.Definitions.Editing.DefinitionListPanel InterfaceListPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        //Index 2. One tab for thirty-five unrelated config families, selected by group, because a
+        //group in that index is the record type rather than a page of ids.
+        private TabPage ConfigEditorTab;
+        private FlashEditor.Definitions.Config.ConfigEditorPanel ConfigPanel = new FlashEditor.Definitions.Config.ConfigEditorPanel();
+        //Index 3. A group is one interface and a file is one component, so the panel owns the
+        //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
+        //field pane below it.
+        private FlashEditor.Definitions.Interfaces.InterfaceEditorPanel InterfacePanel = new FlashEditor.Definitions.Interfaces.InterfaceEditorPanel();
         private BrightIdeasSoftware.ObjectListView TextureListView;
         //InitializeComponent assigns all three; the null-forgiving initialiser is only there so
         //they do not each add a fresh CS8618 to the build the way the older designer fields do.

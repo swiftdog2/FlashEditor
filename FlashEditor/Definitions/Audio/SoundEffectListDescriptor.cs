@@ -46,8 +46,55 @@ namespace FlashEditor.Definitions.Audio {
         ///     Shown because the gap is real structure rather than a rendering detail: 1884 of the
         ///     effects in this cache leave a slot empty in the middle, and an editor that silently
         ///     compacted them would rewrite every one.
+        ///     <para>
+        ///     Contiguous runs collapse to <c>first-last</c>. A comma-separated list of all ten slots
+        ///     is nineteen characters and clipped to "0,1,2,3,4,..." in the column it is shown in;
+        ///     collapsing bounds the string at nine characters, which is the worst case of alternating
+        ///     gaps, and that worst case is exactly the shape the column exists to make visible.
+        ///     </para>
         /// </remarks>
-        public string Slots => string.Join(",", Effect.OccupiedSlots);
+        public string Slots => DescribeSlots(Effect.OccupiedSlots);
+
+        /// <summary>
+        ///     The occupied slots with contiguous runs collapsed.
+        /// </summary>
+        /// <remarks>
+        ///     Lossless: slots are 0..9, so <c>0-9</c> and <c>0,2,4-6</c> each name exactly one set.
+        ///     Takes the sequence rather than the effect so the run detection reads the ascending
+        ///     order <see cref="SoundEffectDefinition.OccupiedSlots"/> yields, which is what makes a
+        ///     run a run.
+        /// </remarks>
+        /// <param name="occupied">The occupied slots, ascending.</param>
+        /// <returns>The slot list, or an empty string when no slot is occupied.</returns>
+        private static string DescribeSlots(IEnumerable<int> occupied) {
+            var parts = new List<string>();
+            int start = -1;
+            int previous = -1;
+
+            foreach (int slot in occupied) {
+                if (start < 0) {
+                    start = slot;
+                } else if (slot != previous + 1) {
+                    parts.Add(Run(start, previous));
+                    start = slot;
+                }
+
+                previous = slot;
+            }
+
+            if (start >= 0)
+                parts.Add(Run(start, previous));
+
+            return string.Join(",", parts);
+        }
+
+        /// <summary>One run of consecutive slots, written as a single number when it is one slot long.</summary>
+        /// <param name="first">The first slot of the run.</param>
+        /// <param name="last">The last slot of the run.</param>
+        /// <returns>The run.</returns>
+        private static string Run(int first, int last) {
+            return first == last ? first.ToString() : first + "-" + last;
+        }
 
         /// <summary>Partials across every tone.</summary>
         public int Harmonics => Effect.Tones.OfType<SoundEffectTone>().Sum(tone => tone.Harmonics.Count);

@@ -66,11 +66,15 @@ namespace FlashEditor.Definitions.Editing {
     ///     Lists an index's groups and files without claiming to understand their contents.
     /// </summary>
     /// <remarks>
-    ///     For an index whose record format is not reverse engineered. Index 3 is the case this was
-    ///     written for: it has been declared in the editor's tab list from the start and renders an
-    ///     empty page, because there is no decoder to put behind it. A raw addressable listing is
-    ///     what can honestly be shown, and it is genuinely useful - it says what exists, how big it
-    ///     is and what the table names it.
+    ///     For an index whose record format is not reverse engineered. A raw addressable listing is
+    ///     what can honestly be shown for one, and it is genuinely useful - it says what exists, how
+    ///     big it is and what the table names it.
+    ///     <para>
+    ///     Index 3 is the case this was written for and is no longer one:
+    ///     <c>InterfaceComponentListDescriptor</c> decodes and re-encodes every component byte for
+    ///     byte, and the interface tab is bound to that. This stays for the indexes still waiting on
+    ///     a codec, and is still exercised by its own tests against index 3.
+    ///     </para>
     ///     <para>
     ///     Read only, and it must stay that way. There is no encoder, so
     ///     <see cref="DefinitionListDescriptor{TRow}.IsEditable"/> is left false and the panel

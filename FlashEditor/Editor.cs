@@ -2,7 +2,6 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
-using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
@@ -100,23 +99,6 @@ namespace FlashEditor {
 
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
-
-        /// <summary>
-        ///     What the Interfaces tab shows.
-        /// </summary>
-        /// <remarks>
-        ///     Index 3's record format is not reverse engineered, so there is nothing to decode into
-        ///     components. A raw addressable listing is what can be shown honestly, and it is what
-        ///     the tab showed before this: nothing at all, because the loader had no arm for index 3
-        ///     even though the tab claimed it.
-        ///     <para>
-        ///     One instance, held rather than built per bind, because <c>DefinitionListPanel.Bind</c>
-        ///     treats a different descriptor as a different thing to show and would reload on every
-        ///     visit to the tab.
-        ///     </para>
-        /// </remarks>
-        private static readonly IDefinitionListDescriptor InterfaceListing =
-            new RawFileListDescriptor(RSConstants.INTERFACE_DEFINITIONS_INDEX, "interface file");
 
         List<BackgroundWorker> workers = new List<BackgroundWorker>();
         public Editor() {
@@ -555,8 +537,15 @@ namespace FlashEditor {
 
             //The self-contained tabs. Each owns its worker and its layout, so all the form does is
             //hand it the cache.
+            /* Index 3 has two real levels - a group is one interface and a file is one component -
+               so the tab lists interfaces and loads a single interface's components on selection.
+               A flat listing of all 42,256 files hid the level that matters. */
             Register(InterfaceEditorTab, RSConstants.INTERFACE_DEFINITIONS_INDEX,
-                openCache => InterfaceListPanel.Bind(openCache, InterfaceListing));
+                openCache => InterfacePanel.Bind(openCache));
+            /* Index 2 is thirty-five unrelated config families sharing one index, so the tab is one
+               grid with a group selector: the group is the record type, not a page of ids. */
+            Register(ConfigEditorTab, RSConstants.CONFIG,
+                openCache => ConfigPanel.Bind(openCache));
             Register(MapEditorTab, RSConstants.MAPS_INDEX,
                 openCache => MapEditorPanel.Bind(openCache, GetCacheDir()));
             //The tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
@@ -1690,7 +1679,10 @@ namespace FlashEditor {
             //joining it, so a load already inside a group read can still see the store close. Every
             //group read there is guarded, so the worst case is a discarded result - which it was
             //going to be anyway, since unbinding supersedes it.
-            InterfaceListPanel.Bind(null);
+            InterfacePanel.Bind(null);
+
+            //Same again: the config tab's record list reads a whole group of index 2 on a worker.
+            ConfigPanel.Bind(null);
 
             //Same again: the animation tab's frame-set sweep reads every group in index 0, so a
             //reload started from another tab would leave it decoding out of a disposed file store.

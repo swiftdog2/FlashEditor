@@ -10,8 +10,9 @@ namespace FlashEditor.Definitions.Editing {
     /// <remarks>
     ///     The (group, file) pair is carried rather than recomputed because not every index can
     ///     recompute it. A paged index derives the pair from the definition id through
-    ///     <see cref="CacheAddressing"/>, but index 3 has no established id arithmetic at all, so
-    ///     there the pair <i>is</i> the identity and <see cref="DefinitionId"/> is -1. A panel that
+    ///     <see cref="CacheAddressing"/>, but index 2 has no established id arithmetic at all - it is
+    ///     thirty-five unrelated config families sharing one index - so there the pair <i>is</i> the
+    ///     identity and <see cref="DefinitionId"/> is -1. A panel that
     ///     assumed an id could always be folded back into an address would have to invent a split
     ///     for every index whose split is not yet known, which is exactly the guess
     ///     <see cref="CacheAddressing"/> exists to refuse.

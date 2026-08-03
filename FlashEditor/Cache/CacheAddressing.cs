@@ -249,7 +249,15 @@ namespace FlashEditor.cache {
                 //65,536 frames to a group. Index 20 stores a packed frame id and Class97.java:130-131
                 //splits it: method2624(2, i_1_ >> 16) picks the frame set and i_1_ &= 0xffff the frame
                 //within it. Index 0 has no name hashes, so that packed id is the only way in.
+                //
+                //Index 3 folds the same way and the client states both halves: EntityEnumType.java:46
+                //builds ID_TAG = (parent << 16) + childIndex, and Class247.java:412-413 takes it apart
+                //again as child = stack >> 16 with sub_child = stack & 0xFFFF. The fold is load bearing
+                //rather than cosmetic - RSInterface.unpackConfig:1057-1063 reconstructs a component's
+                //parent as parentID + (ID_TAG & ~0xffff), so the page size is what says a stored
+                //parent id names a sibling of the same interface.
                 case RSConstants.FRAMES_INDEX:
+                case RSConstants.INTERFACE_DEFINITIONS_INDEX:
                     addressing = Paged(16);
                     return true;
 
