@@ -16,9 +16,21 @@ namespace FlashEditor.Cache.Region {
         ///     The group is XTEA encrypted and no key is available for it.
         /// </summary>
         /// <remarks>
-        ///     Not an error. 659 of the 1684 shipped <c>l</c> groups are encrypted and 131 of those
-        ///     have no key in any published dump. The client reaches the same state and renders the
-        ///     square with no objects, so an empty loc list is the correct outcome.
+        ///     Not an error. The client reaches the same state and renders the square with no
+        ///     objects, so an empty loc list is the correct outcome.
+        ///     <para>
+        ///     Measured by <c>RealCacheXteaCoverageTests</c>: of the 1684 shipped <c>l</c> groups,
+        ///     659 are encrypted in the reference cache and <b>61</b> of those have no key in the
+        ///     shipped dump. Every one of the remaining 598 decrypts. An earlier revision of this
+        ///     comment put the unkeyed figure at 131, which no measurement supports.
+        ///     </para>
+        ///     <para>
+        ///     The encrypted count is a property of the cache, not of the format, and it moves: the
+        ///     same sweep over the OpenRS2 b639 archive finds 1649 encrypted and 62 unkeyed, because
+        ///     that copy stores as ciphertext the squares the reference cache holds as plaintext.
+        ///     Readable coverage lands in the same place either way, so do not treat 659 as a
+        ///     constant.
+        ///     </para>
         /// </remarks>
         MissingKey
     }

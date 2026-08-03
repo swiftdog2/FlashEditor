@@ -48,10 +48,23 @@ FLASHEDITOR_TEST_CACHE=C:\Users\Cristian.Rosu\source\repos\Personal\FlashEditor\
 FLASHEDITOR_TEST_CACHE_FULL=1     # sweep every archive rather than a per-index sample
 ```
 
-**`FULL=1` is a merge gate, not an inner-loop gate.** One full sweep is 10 to 15 minutes and
-saturates every core: it decodes and re-encodes every archive, and xunit parallelises collections
-across all of them by default. Iterate against the sampled suite, and run the full sweep once, at
-the point the work is accepted. Running it per change buys the same information repeatedly.
+**`FULL=1` is a merge gate, not an inner-loop gate.** A full sweep saturates every core: it decodes
+and re-encodes every archive, and xunit parallelises collections across all of them by default.
+Iterate against the sampled suite, and run the full sweep once, at the point the work is accepted.
+Running it per change buys the same information repeatedly. **Do not record how long it takes** -
+that is a property of the machine it ran on, not of the suite, and a stale figure gets read as a
+target. One already did damage: a run measurably faster than the number written here was treated as
+evidence that `FULL=1` had failed to apply, when the switch was working correctly. Measure on the
+machine in hand.
+
+**`FULL=1` does not widen the map tests, because they were never narrow.** It gates
+`RealCacheFixture.ArchivesToExamine`, and only the conformance and definition suites call it. The
+map suites enumerate through their own `EverySquare` helpers
+(`RealCacheMapDecodeTests.cs:306`, `RealCacheRegionCodecTests.cs:256`), which walk all 256x256
+region coordinates and yield every group the table holds, with no reference to the switch. So every
+map square is swept on **every** run, and the sampled and full runs differ by less than the name
+suggests. Do not reach for `FULL=1` to make a map assertion cover more ground - it already covers
+all of it, and a sampled run that passes the map tests has earned the same claim a full one has.
 
 **Never run more than one cache-backed suite at a time, and never run the full sweep in parallel
 agents.** Each worktree carries its own checkout, `obj/`, `bin/`, test host and MSBuild nodes, and
@@ -70,6 +83,16 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 
 ## Invariants
 
+- **A sweep that tolerates a failure does not test for it.**
+  `RealCacheMapDecodeTests.EveryLocationFileDecodesOrReportsAMissingKey` walks all 1684 `l` groups
+  and asserts `loaded + missingKey == 1684`, which scores a square that failed to decrypt exactly
+  like one that succeeded - a cache whose keys had all stopped working passes it unchanged. XTEA
+  decryption is pinned instead by `RealCacheXteaCoverageTests`, which asserts the claim that cannot
+  be met by giving up: a group the key table has a key for, and which does not open without it,
+  **must** open with it. Squares with no published key are excluded rather than counted, so they
+  cannot absorb a real regression. Measured: every keyed group decrypts, 598 of 598 in the
+  reference cache and 1587 of 1587 in the OpenRS2 b639 archive. Apply the same reading to any
+  future sweep - an `or` in the assertion is usually a hole.
 - **The byte-identity sweeps are the primary regression detector.** Every item, NPC and object
   definition, every floor underlay and overlay, and every map square must re-encode to the bytes
   it was read from - 20,470 items, 13,359 NPCs, 56,199 objects, 159 underlays, 235 overlays and
