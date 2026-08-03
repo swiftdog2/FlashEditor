@@ -1033,6 +1033,56 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
+        ///     Every file a group declares, decoded from one pass over that group's payload.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="ReadFile"/> calls <c>ReleaseData</c> as soon as it has handed back the one
+        ///     file it was asked for, so a loader that walks a group file by file re-reads the
+        ///     sector chain, re-inflates and re-decodes that group once per file. Index 3 declares
+        ///     42,256 files across 1078 groups, so the file-at-a-time shape does forty times the
+        ///     work of this one for the same bytes.
+        ///     <para>
+        ///     The streams handed back are the archive's own, exactly as <see cref="ReadFile"/>
+        ///     returns them - the container is released afterwards, which drops the archive but not
+        ///     the stream objects, so each one is the caller's from here on. A file the reference
+        ///     table declares but the payload does not carry is omitted rather than returned empty,
+        ///     so <c>Count</c> is the number of files that actually decoded.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index the group belongs to.</param>
+        /// <param name="groupId">The group id.</param>
+        /// <returns>The decoded files keyed by file id, ascending.</returns>
+        /// <exception cref="FileNotFoundException">The group is absent from the index's reference table.</exception>
+        public IReadOnlyDictionary<int, JagStream> ReadGroup(int indexId, int groupId) {
+            //One critical section for the whole group, for the reason ReadFile takes one for a
+            //single file: the decode runs off the container's shared stream and the release at the
+            //end drops it.
+            lock (_containerLock) {
+                RSArchiveEntry entry = GetReferenceTable(indexId).GetArchiveEntry(groupId);
+                if (entry == null)
+                    throw new FileNotFoundException("\tUnable to find archive " + groupId + " in index " + indexId);
+
+                var files = new SortedDictionary<int, JagStream>();
+
+                int[] fileIds = entry.GetValidFileIds();
+                if (fileIds.Length == 0)
+                    return files;
+
+                RSContainer container = GetContainer(indexId, groupId);
+                if (container == null)
+                    return files;
+
+                RSArchive archive = GetArchive(container, fileIds);
+                foreach (int fileId in fileIds)
+                    if (archive.HasFile(fileId))
+                        files[fileId] = archive.GetFile(fileId);
+
+                container.ReleaseData();
+                return files;
+            }
+        }
+
+        /// <summary>
         ///     The file ids present in a config group, ascending.
         /// </summary>
         /// <param name="groupId">The group within the config index.</param>

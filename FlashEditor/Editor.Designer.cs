@@ -1206,7 +1206,8 @@ namespace FlashEditor {
             morphVarbitColumn.Width = 80;
             // 
             // InterfaceEditorTab
-            // 
+            //
+            InterfaceEditorTab.Controls.Add(InterfaceListPanel);
             InterfaceEditorTab.Location = new Point(4, 37);
             InterfaceEditorTab.Name = "InterfaceEditorTab";
             InterfaceEditorTab.Size = new Size(1113, 554);
@@ -1576,6 +1577,9 @@ namespace FlashEditor {
         private FlashEditor.Map.MapEditorPanel MapEditorPanel = new FlashEditor.Map.MapEditorPanel();
         private TabPage TrackEditorTab;
         private FlashEditor.Definitions.Tracks.TrackEditorPanel TrackEditorPanel = new FlashEditor.Definitions.Tracks.TrackEditorPanel();
+        //The reusable definition list. Which index it shows is decided by the descriptor the form
+        //binds, not by this field, so the next index editor reuses the type rather than the panel.
+        private FlashEditor.Definitions.Editing.DefinitionListPanel InterfaceListPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
         private BrightIdeasSoftware.ObjectListView TextureListView;
         //InitializeComponent assigns all three; the null-forgiving initialiser is only there so
         //they do not each add a fresh CS8618 to the build the way the older designer fields do.

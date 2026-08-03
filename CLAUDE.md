@@ -168,17 +168,38 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   `RSFileStore.SaveTo` are `internal`. A read through the same `RSCache` after a write returns the
   new bytes whether or not it was committed, so **verify persistence by reopening the store**, not
   by reading back through the cache that wrote it.
+- **A tab states its own cache index; its position states nothing.** `Editor.RegisterEditorTabs`
+  maps each `TabPage` to an index and, for the self-contained tabs, to the delegate that binds their
+  panel. It replaced a `static int[] editorTypes` read as `editorTypes[SelectedIndex]`, where
+  inserting a page anywhere but the end silently pointed every later tab at the wrong index. The
+  constructor **throws** for a page in the strip with no registration, so forgetting one is caught on
+  the next launch rather than by a tab quietly showing another index's contents. Add the line, do
+  not reintroduce a parallel array.
+- **A new index editor should be a `DefinitionListPanel` descriptor, not another arm in
+  `LoadEditorTab`.** `FlashEditor/Definitions/Editing/` holds the reusable list: the panel owns the
+  worker, the percent-boundary progress, the UI-thread population and the edit commit, and one
+  `DefinitionListDescriptor<TRow>` states the index, the enumeration, the decode, the columns and the
+  re-encode. Items, sprites, NPCs and objects still predate it and each re-implement all of that;
+  leave them until they are migrated deliberately. The Interfaces tab (index 3) is the worked
+  example, and it is a `RawFileListDescriptor` - a raw group/file/size/name-hash listing - because
+  index 3's record format is not reverse engineered and a listing is what can be shown honestly.
 
 ## Traps that have already cost real work
 
 - **Never record a count of our own tests here, and distrust any you find.** It is stale by the
   next commit and it invites a reader to treat a number as a target. Measure instead. Counts *of
   the cache* are the opposite and worth writing down, because the cache does not change: 20,470
-  item definitions, 1684 map squares, 659 of them with encrypted locations. The line is whether
-  the number describes the data or describes us.
+  item definitions, 1684 map squares, 659 of them with encrypted locations, and 42,256 index-3
+  files across 1078 groups. The line is whether the number describes the data or describes us.
 - **A GZip re-encode is never byte-identical** (0 of 96,183 in the reference cache). Never
   compare compressed containers to decide whether something changed; compare the decompressed
   payload.
+- **Reading a group file by file re-decodes the group once per file.** `RSCache.ReadFile` calls
+  `ReleaseData` the moment it has handed back the one file it was asked for, so the next call
+  re-reads the sector chain, re-inflates and re-decodes the same archive. Over index 3 that is 42,256
+  group decodes where `RSCache.ReadGroup` does 1078 for the same bytes - a count, not a timing, so it
+  holds on any machine. `ReadGroup` returns byte-for-byte what the per-file path does, pinned by
+  `RealCacheReadGroupTests`. The tab loaders that walk files individually are still paying it.
 - **Round-tripping this encoder against this decoder proves nothing.** Two real defects survived
   exactly that way, and in both cases a hand-built test asserted the bug rather than catching
   it. Check against captured bytes or the client.

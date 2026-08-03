@@ -30,7 +30,7 @@ param(
     [Parameter(Mandatory)][string] $Out,
     [int] $SettleSeconds = 12,
     [int] $LaunchSeconds = 25,
-    [string] $Exe = "$PSScriptRoot\..\FlashEditor\bin\Debug\net9.0-windows\FlashEditor.exe"
+    [string] $Exe
 )
 
 Set-StrictMode -Version Latest
@@ -49,7 +49,15 @@ $sig = @'
 '@
 Add-Type -MemberDefinition $sig -Name Win -Namespace Cap
 
+# Resolved here rather than as a param default: $PSScriptRoot is empty in a param block under
+# `powershell -File`, which silently produced a relative path and a "not found" that looked like
+# a missing build rather than a broken default.
+if (-not $Exe) {
+    $root = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    $Exe = Join-Path $root '..\FlashEditor\bin\Debug\net9.0-windows\FlashEditor.exe'
+}
 if (-not (Test-Path $Exe)) { throw "FlashEditor.exe not found at $Exe. Build the solution first." }
+$Exe = (Resolve-Path $Exe).Path
 
 $proc = Start-Process -FilePath $Exe -PassThru
 try {

@@ -2,6 +2,7 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
@@ -60,26 +61,67 @@ namespace FlashEditor {
             int param = (spacing << 16) | spacing;
             SendMessage(lv.Handle, LVM_SETICONSPACING, 0, param);
         }
-        //Change the order of the indexes when you change the layout of the editor tabs
-        static readonly int[] editorTypes = {
-            -1,
-            RSConstants.ITEM_DEFINITIONS_INDEX,
-            RSConstants.SPRITES_INDEX,
-            RSConstants.NPC_DEFINITIONS_INDEX,
-            RSConstants.OBJECTS_DEFINITIONS_INDEX,
-            RSConstants.INTERFACE_DEFINITIONS_INDEX,
-            RSConstants.MODELS_INDEX,
-            RSConstants.TEXTURES,
-            RSConstants.MAPS_INDEX,
-            //The Tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
-            RSConstants.MUSIC_INDEX
-        };
+        /// <summary>
+        ///     What one editor tab is: the page, the cache index it edits, and how to hand it a
+        ///     cache when the tab owns its own panel.
+        /// </summary>
+        /// <remarks>
+        ///     A record per tab rather than a positional array. The array this replaced had to be
+        ///     kept in the same order as the tab strip - it was read as
+        ///     <c>editorTypes[EditorTabControl.SelectedIndex]</c> - so inserting a page anywhere but
+        ///     the end silently pointed every tab after it at the wrong index, and the only thing
+        ///     standing between the editor and that was a comment. Keyed by the page object, a tab
+        ///     can be moved, reordered or hidden and still name its own index.
+        /// </remarks>
+        private sealed class EditorTabBinding {
+            internal EditorTabBinding(int indexId, Action<RSCache>? bind) {
+                IndexId = indexId;
+                Bind = bind;
+            }
 
-        bool[] loaded = new bool[editorTypes.Length];
+            /// <summary>The cache index this tab edits.</summary>
+            internal int IndexId { get; }
+
+            /// <summary>
+            ///     Hands the tab's own panel the open cache, for a tab built as a self-contained
+            ///     <see cref="UserControl"/> rather than driven from the loader below.
+            /// </summary>
+            /// <remarks>
+            ///     Null for the older tabs, whose loading still lives in <see cref="LoadEditorTab"/>.
+            ///     Every new index editor should supply one: that is the whole difference between
+            ///     adding a tab and adding another arm to a method that already knows about every
+            ///     index before it.
+            /// </remarks>
+            internal Action<RSCache>? Bind { get; }
+        }
+
+        /// <summary>Every editor tab, keyed by the page itself so its position cannot matter.</summary>
+        private readonly Dictionary<TabPage, EditorTabBinding> editorTabs = new Dictionary<TabPage, EditorTabBinding>();
+
+        /// <summary>The tabs already populated for the cache currently open.</summary>
+        private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
+
+        /// <summary>
+        ///     What the Interfaces tab shows.
+        /// </summary>
+        /// <remarks>
+        ///     Index 3's record format is not reverse engineered, so there is nothing to decode into
+        ///     components. A raw addressable listing is what can be shown honestly, and it is what
+        ///     the tab showed before this: nothing at all, because the loader had no arm for index 3
+        ///     even though the tab claimed it.
+        ///     <para>
+        ///     One instance, held rather than built per bind, because <c>DefinitionListPanel.Bind</c>
+        ///     treats a different descriptor as a different thing to show and would reload on every
+        ///     visit to the tab.
+        ///     </para>
+        /// </remarks>
+        private static readonly IDefinitionListDescriptor InterfaceListing =
+            new RawFileListDescriptor(RSConstants.INTERFACE_DEFINITIONS_INDEX, "interface file");
 
         List<BackgroundWorker> workers = new List<BackgroundWorker>();
         public Editor() {
             InitializeComponent();
+            RegisterEditorTabs();
 
             //Added here rather than in the designer so the generated file stays untouched
             ToolStripMenuItem saveAsItem = new ToolStripMenuItem("Save As...");
@@ -412,7 +454,7 @@ namespace FlashEditor {
 
         private void LoadCache() {
             workers.ForEach(w => w.CancelAsync());
-            loaded = new bool[editorTypes.Length];
+            loadedTabs.Clear();
             LoadCache(GetCacheDir());
         }
 
@@ -457,10 +499,10 @@ namespace FlashEditor {
                 Debug("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
 
                 //Refresh the loaded pages
-                loaded = new bool[editorTypes.Length];
+                loadedTabs.Clear();
 
                 //Go back to the main panel
-                LoadEditorTab(EditorTabControl.SelectedIndex);
+                LoadEditorTab(EditorTabControl.SelectedTab);
             }
             catch (Exception ex) {
                 Debug("Cache failed to load: " + ex.Message);
@@ -468,38 +510,105 @@ namespace FlashEditor {
             }
         }
 
-        public void LoadEditorTab(int editorIndex) {
-            int type = editorTypes[editorIndex];
+        /// <summary>
+        ///     States which cache index each tab edits, and how the self-contained ones are bound.
+        /// </summary>
+        /// <remarks>
+        ///     Called once, from the constructor, after <c>InitializeComponent</c> has created the
+        ///     pages. Adding a tab means adding a line here; getting that wrong is caught on the
+        ///     next launch rather than by a tab quietly showing another index's contents.
+        /// </remarks>
+        private void RegisterEditorTabs() {
+            //The console describes the cache as a whole rather than one index, so it takes the
+            //meta index - which is also what the loader reads to rebuild it on every visit.
+            Register(Console, RSConstants.META_INDEX);
 
-            //Don't worry about the main menu
-            if (type == -1)
-                type = RSConstants.META_INDEX;
+            Register(ItemEditorTab, RSConstants.ITEM_DEFINITIONS_INDEX);
+            Register(SpriteEditorTab, RSConstants.SPRITES_INDEX);
+            Register(NPCEditorTab, RSConstants.NPC_DEFINITIONS_INDEX);
+            Register(ObjectEditorTab, RSConstants.OBJECTS_DEFINITIONS_INDEX);
+            Register(ModelViewerTab, RSConstants.MODELS_INDEX);
+            Register(TextureViewerTab, RSConstants.TEXTURES);
+
+            //The self-contained tabs. Each owns its worker and its layout, so all the form does is
+            //hand it the cache.
+            Register(InterfaceEditorTab, RSConstants.INTERFACE_DEFINITIONS_INDEX,
+                openCache => InterfaceListPanel.Bind(openCache, InterfaceListing));
+            Register(MapEditorTab, RSConstants.MAPS_INDEX,
+                openCache => MapEditorPanel.Bind(openCache, GetCacheDir()));
+            //The tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
+            Register(TrackEditorTab, RSConstants.MUSIC_INDEX,
+                openCache => TrackEditorPanel.Bind(openCache));
+
+            /* Every page in the strip has to have named its index. An unregistered page is the
+               failure the positional array made silent - it used to read whatever index happened to
+               sit at its position, or run off the end of the array - so it is refused loudly here,
+               at construction, rather than left to surface as a tab showing the wrong contents. */
+            foreach (TabPage page in EditorTabControl.TabPages)
+                if (!editorTabs.ContainsKey(page))
+                    throw new InvalidOperationException(
+                        "Editor tab '" + page.Name + "' is in the tab strip but names no cache index." +
+                        " Add a Register call for it in RegisterEditorTabs.");
+        }
+
+        /// <summary>
+        ///     Records what one tab edits.
+        /// </summary>
+        /// <param name="page">The page, which is the key - so its position in the strip is free to change.</param>
+        /// <param name="indexId">The cache index the tab edits.</param>
+        /// <param name="bind">
+        ///     Hands the tab's own panel the open cache, for a tab that owns its loading. Null for a
+        ///     tab still driven by the loader in <see cref="LoadEditorTab"/>.
+        /// </param>
+        private void Register(TabPage page, int indexId, Action<RSCache>? bind = null) {
+            if (page == null)
+                throw new ArgumentNullException(nameof(page));
+
+            if (editorTabs.ContainsKey(page))
+                throw new InvalidOperationException("Editor tab '" + page.Name + "' is registered twice.");
+
+            editorTabs.Add(page, new EditorTabBinding(indexId, bind));
+        }
+
+        /// <summary>
+        ///     Populates a tab, once per open cache.
+        /// </summary>
+        /// <remarks>
+        ///     Takes the page rather than its position. The position was the bug: it was used to
+        ///     index a parallel array of cache index ids, so the two could disagree and nothing
+        ///     would say so.
+        /// </remarks>
+        /// <param name="page">The tab to populate, typically <c>EditorTabControl.SelectedTab</c>.</param>
+        public void LoadEditorTab(TabPage? page) {
+            //SelectedTab is null while the tab control has no selection, which happens during
+            //construction and after the last page is removed
+            if (page == null)
+                return;
+
+            if (!editorTabs.TryGetValue(page, out EditorTabBinding? binding)) {
+                Debug("Editor tab '" + page.Name + "' names no cache index, so there is nothing to load");
+                return;
+            }
+
+            int type = binding.IndexId;
 
             if (cache == null) {
                 Debug("Cache failed to load");
                 return;
             }
 
-            //Already loaded, no need to reload
-            if (loaded[editorIndex] && type != RSConstants.META_INDEX)
+            //Already loaded, no need to reload. The console is the exception: it describes the whole
+            //cache rather than one index, so it is rebuilt on every visit.
+            if (loadedTabs.Contains(page) && type != RSConstants.META_INDEX)
                 return;
 
-            //The map tab loads squares on demand from its own UI rather than populating a list
-            //view up front, so it wants binding, not the background-worker path below. Below the
-            //loaded guard like every other tab: rebinding discards the undo history and every
-            //unsaved map edit with it, so a tab revisit has to be a no-op. Bind is idempotent as
-            //well, because loaded[] is reset wholesale whenever a cache is opened.
-            if (type == RSConstants.MAPS_INDEX) {
-                loaded[editorIndex] = true;
-                MapEditorPanel.Bind(cache, GetCacheDir());
-                return;
-            }
-
-            //The tracks tab spans two indexes and owns its own worker, so it binds rather than
-            //being driven from the switch below, which is keyed on a single index
-            if (type == RSConstants.MUSIC_INDEX) {
-                loaded[editorIndex] = true;
-                TrackEditorPanel.Bind(cache);
+            /* A tab that owns its own panel just gets the cache. Below the loaded guard like every
+               other tab: rebinding the map discards the undo history and every unsaved map edit with
+               it, so a tab revisit has to be a no-op. The binds are idempotent as well, because
+               loadedTabs is cleared wholesale whenever a cache is opened. */
+            if (binding.Bind != null) {
+                loadedTabs.Add(page);
+                binding.Bind(cache);
                 return;
             }
 
@@ -509,7 +618,7 @@ namespace FlashEditor {
              * to a single background worker, otherwise you run into race conditions)
              */
 
-            loaded[editorIndex] = true;
+            loadedTabs.Add(page);
 
             //Creates a new background worker
             BackgroundWorker bgw = new BackgroundWorker {
@@ -828,13 +937,13 @@ namespace FlashEditor {
                             //starts, so a fault has to clear that flag or the tab stays empty for
                             //the rest of the session with no way to retry.
                             if (e.Cancelled) {
-                                loaded[editorIndex] = false;
+                                loadedTabs.Remove(page);
                                 TextureLoadingLabel.Text = "Texture load cancelled";
                                 return;
                             }
 
                             if (e.Error != null) {
-                                loaded[editorIndex] = false;
+                                loadedTabs.Remove(page);
                                 TextureLoadingLabel.Text = "Texture load failed";
                                 Debug($"LoadTextures failed: {e.Error.GetType().Name}: {e.Error.Message}", LOG_DETAIL.BASIC);
                                 return;
@@ -879,14 +988,15 @@ namespace FlashEditor {
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void EditorTabControl_SelectedIndexChanged(object sender, EventArgs e) {
-            LoadEditorTab(EditorTabControl.SelectedIndex);
+            LoadEditorTab(EditorTabControl.SelectedTab);
         }
 
+        /// <summary>The cache index the selected tab edits, or -1 when it names none.</summary>
         public int GetEditorType() {
-            int editorIndex = EditorTabControl.SelectedIndex;
-            if (editorIndex > 0 & editorIndex < editorTypes.Length)
-                return editorTypes[editorIndex];
-            return -1;
+            TabPage? page = EditorTabControl.SelectedTab;
+            return page != null && editorTabs.TryGetValue(page, out EditorTabBinding? binding)
+                ? binding.IndexId
+                : -1;
         }
 
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
@@ -1541,6 +1651,12 @@ namespace FlashEditor {
             //rebinds the tab that happens to be selected, so a reload started from any other tab
             //would otherwise leave that thread decoding out of a disposed file store.
             MapEditorPanel.Bind(null);
+
+            //Same reason, one step weaker: this cancels the definition list's worker rather than
+            //joining it, so a load already inside a group read can still see the store close. Every
+            //group read there is guarded, so the worst case is a discarded result - which it was
+            //going to be anyway, since unbinding supersedes it.
+            InterfaceListPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {
