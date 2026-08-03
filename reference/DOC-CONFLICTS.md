@@ -17,10 +17,8 @@ Two rules this log exists to enforce:
 
 | Where | Claim | Problem |
 |---|---|---|
-| `CLAUDE.md` byte-identity invariant | Lists exact record counts per content type | These are counts of the *repack*. Several differ in the vanilla OpenRS2 b639 cache, which is now the preferred source of truth. The invariant should state "every record the reference table declares", which is true of any cache. |
-| `CLAUDE.md` XTEA invariant | "598 of 598 in the reference cache and 1587 of 1587 in the OpenRS2 b639 archive" | The 598 figure is a repack property. The claim worth keeping is the relationship: a group the key table has a key for, and which does not open without it, must open with it. |
-| `AGENTS.md` revision section | Names MAPS, MODELS, NPC_DEFINITIONS and ITEM_DEFINITIONS as the indexes sitting above 639 | Measured group-count deltas between the repack and vanilla b639 are on indexes 3, 7, 9 and 19. Group count is not the same measurement as reference-table version, so both may be true, but the document should say which measurement it means. |
 | `STATE_OF_THE_EDITOR.md` | Assessment header dated 2026-07-31; sections 1, 2 and 7 describe a build and suite that no longer exist | Already flagged in `CLAUDE.md`, still unresolved. Sections 7a-7f are worth keeping; the rest is a historical write-up presented as current fact. |
+| `TextureGraphConformanceTests.EveryTexture_ProducesAThumbnail` | Iterates textures declared by index 26 but carrying no graph in index 9 | The repack has 462 of those; the vanilla capture has none, so on the default cache that loop body never runs. The test is not silently green - it reports the population - but the branch needs either a synthetic case or an explicit statement that it only exercises on the repack. |
 
 ## Corrected
 
@@ -33,6 +31,10 @@ Two rules this log exists to enforce:
 | `index-architect-02.md` | 27 damage-mark records carry the bare `%1` substitution | 26 do: one record has no template opcode, one stores the empty string | A raw opcode walk transcribed from the client, going through neither the document nor our decoder. |
 | `index-survey/index-002-CONFIG.md` | 18 config groups have a client provider, 17 do not | 16 do, 19 do not - two of the 18 providers name groups absent from this cache | Cross-referencing each provider against the reference table's group list. |
 | `CLAUDE.md` reusable-tab section | The Interfaces tab is a raw listing because index 3's format is not reverse engineered | Both halves were true when written and neither is now | Index 3 was implemented. |
+| `CLAUDE.md` invariants | Four indexes carry four zero bytes per file past the end of their reference table | Repack residue. The vanilla b639 capture has no trailing bytes on any of its 35 tables | Parsing all 35 tables in both caches and comparing each against a field-by-field length. |
+| `CLAUDE.md` invariants | Four indexes hold groups their reference table does not declare, with the ids listed | Repack residue. The vanilla capture has no orphan groups on any index | Same parser, comparing live idx slots against declared ids. Written into CLAUDE.md by this session, so it lasted about a day. |
+| This log, first revision | The repack adds 55 item groups, roughly 14,000 items | Both caches declare 80 item groups. The repack's idx19 has 135 *slots*, 55 of them dead records pointing at sector zero. The real delta is 43 files | Dividing an idx file's size by 6 counts allocated slots, not declared groups. It also missed indexes 27 and 29, whose file counts move inside an unchanged group count. Six indexes carry content deltas, not four. |
+| `AGENTS.md` revision section | Reference-table versions identify which indexes a server customised | Index 3 carries the same version in both caches while holding 1,373 more files in the repack, and index 18 has identical group and file counts with a different version and 115 more payload bytes. A version match is not evidence an index is untouched | Comparing versions and payloads table by table across both caches. |
 
 ## Reference material worth pulling in
 
