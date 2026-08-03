@@ -568,6 +568,11 @@ namespace FlashEditor {
                set and index 1 is joined onto it. */
             Register(AnimationEditorTab, RSConstants.FRAMES_INDEX,
                 openCache => AnimationPanel.Bind(openCache));
+            /* Index 4 is one file per group and the group id is the effect id, so the tab is a list
+               of records rather than of files. The panel nests three grids under that list because a
+               record does: ten tone slots, each with its envelopes and a filter cascade. */
+            Register(SoundEffectEditorTab, RSConstants.SOUND_EFFECTS,
+                openCache => SoundEffectPanel.Bind(openCache));
 
             /* Every page in the strip has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to

@@ -149,6 +149,7 @@ namespace FlashEditor {
             MapEditorTab = new TabPage();
             TrackEditorTab = new TabPage();
             AnimationEditorTab = new TabPage();
+            SoundEffectEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -261,6 +262,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(MapEditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(AnimationEditorTab);
+            EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -1425,6 +1427,16 @@ namespace FlashEditor {
             AnimationEditorTab.Text = "Animation";
             AnimationEditorTab.UseVisualStyleBackColor = true;
             //
+            // SoundEffectEditorTab
+            //
+            SoundEffectEditorTab.Controls.Add(SoundEffectPanel);
+            SoundEffectEditorTab.Location = new Point(4, 37);
+            SoundEffectEditorTab.Name = "SoundEffectEditorTab";
+            SoundEffectEditorTab.Size = new Size(1113, 554);
+            SoundEffectEditorTab.TabIndex = 11;
+            SoundEffectEditorTab.Text = "Sound";
+            SoundEffectEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1642,6 +1654,10 @@ namespace FlashEditor {
         //two detail grids beside it, so the form only has to hand it the cache.
         private TabPage AnimationEditorTab;
         private FlashEditor.Definitions.Editing.AnimationEditorPanel AnimationPanel = new FlashEditor.Definitions.Editing.AnimationEditorPanel();
+        //Index 4. The panel owns a DefinitionListPanel for the effect list and the three detail grids
+        //beside it, so the form only has to hand it the cache.
+        private TabPage SoundEffectEditorTab;
+        private FlashEditor.Definitions.Audio.SoundEffectEditorPanel SoundEffectPanel = new FlashEditor.Definitions.Audio.SoundEffectEditorPanel();
         //The reusable definition list. Which index it shows is decided by the descriptor the form
         //binds, not by this field, so the next index editor reuses the type rather than the panel.
         private FlashEditor.Definitions.Editing.DefinitionListPanel InterfaceListPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
