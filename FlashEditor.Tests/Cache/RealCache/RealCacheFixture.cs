@@ -2,6 +2,7 @@ using FlashEditor.cache;
 using FlashEditor.Utils;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FlashEditor.Tests.Cache.RealCache
 {
@@ -36,6 +37,20 @@ namespace FlashEditor.Tests.Cache.RealCache
         /// <summary>Whether every archive is being examined rather than a per-index sample.</summary>
         public bool FullSweep => RealCacheLocator.FullSweep;
 
+        /// <summary>
+        ///     Which of the known revision-639 caches this is, recognised from its own content.
+        /// </summary>
+        /// <remarks>
+        ///     Two are supported and they disagree on eleven indexes, so a figure measured by
+        ///     decoding content belongs to one of them rather than to build 639. Tests scope
+        ///     those through here; everything the reference table states is read from the table
+        ///     instead and needs no profile at all.
+        /// </remarks>
+        public RealCacheProfile Profile { get; private set; } = RealCacheProfile.Unopened;
+
+        /// <summary>The key file the production probe resolved, or <c>null</c> when it found none.</summary>
+        public string KeyFile => RealCacheLocator.KeyFile;
+
         /// <summary>Opens the cache, or leaves the fixture unavailable when there is none.</summary>
         public RealCacheFixture()
         {
@@ -62,6 +77,32 @@ namespace FlashEditor.Tests.Cache.RealCache
                 indexes.Add(indexId);
             }
             TableIndexes = indexes;
+
+            Profile = RealCacheProfile.Identify(Table);
+        }
+
+        /// <summary>
+        ///     How many groups an index's reference table declares.
+        /// </summary>
+        /// <remarks>
+        ///     A count the table already states must be read from it rather than written down.
+        ///     The two supported caches disagree on eleven indexes, so a literal here would be a
+        ///     fact about whichever one it was measured on - while "the sweep covered every group
+        ///     the table declares" is a relationship that holds in any cache and is the claim the
+        ///     sweeps are actually making.
+        /// </remarks>
+        /// <param name="indexId">The index to count.</param>
+        /// <returns>The declared group count.</returns>
+        public int DeclaredGroups(int indexId) => Table(indexId).GetArchiveCount();
+
+        /// <summary>
+        ///     How many files an index's reference table declares across every one of its groups.
+        /// </summary>
+        /// <param name="indexId">The index to count.</param>
+        /// <returns>The declared file count.</returns>
+        public int DeclaredFiles(int indexId)
+        {
+            return Table(indexId).GetArchiveEntries().Values.Sum(entry => entry.GetValidFileIds().Length);
         }
 
         /// <summary>

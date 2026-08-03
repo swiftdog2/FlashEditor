@@ -40,8 +40,10 @@ namespace FlashEditor.Tests.Definitions
         /// <remarks>
         ///     The 637 client stops reading at the output indices and never looks at these, so
         ///     they are 639-era data it was never built to see - the cache being two builds
-        ///     ahead of the client, in the usual way. They are uniform across all 946 graphs,
-        ///     which is what makes them a trailer rather than a decode failure.
+        ///     ahead of the client, in the usual way. They are uniform across every graph in
+        ///     both supported caches, which is what makes them a trailer rather than a decode
+        ///     failure. Index 9 is one of the eleven the two disagree on, the repack holding 946
+        ///     graphs to the vanilla capture's 915, and the trailer is the same width in both.
         /// </remarks>
         private const int TrailerBytes = 10;
 
@@ -186,9 +188,18 @@ namespace FlashEditor.Tests.Definitions
         ///     Every declared texture must produce a bitmap, whether or not it has a graph.
         /// </summary>
         /// <remarks>
-        ///     The materials index declares 1,408 textures but only 946 have a graph, so 462 of
-        ///     them can only ever be shown as their declared colour. They used to come out as a
-        ///     numbered grey placeholder.
+        ///     The materials index declares more textures than index 9 holds graphs for, and the
+        ///     remainder can only ever be shown as their declared colour. They used to come out as
+        ///     a numbered grey placeholder.
+        ///     <para>
+        ///     How many there are is a fact about one cache: the repack declares 1,408 textures
+        ///     against 946 graphs, so 462 are flat, while the vanilla b639 capture declares 915
+        ///     against 915 and has <b>none</b>. That is why the flat-colour check is preceded by a
+        ///     count rather than left to iterate however many it finds - a loop over an empty set
+        ///     passes silently, and on the vanilla capture that is exactly what it does. What is
+        ///     asserted instead is the join: every graph index 9 declares is attached to a
+        ///     texture, and the flat ones are precisely the declared textures left over.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void EveryTexture_ProducesAThumbnail()
@@ -207,8 +218,15 @@ namespace FlashEditor.Tests.Definitions
             Assert.True(blank.Count == 0,
                 $"{blank.Count} textures produced no bitmap: {string.Join(", ", blank.Take(20))}");
 
+            //Every graph the index declares reached a texture. Without this the flat set below is
+            //just "whatever did not load", and a manager that dropped half the graphs would look
+            //like a cache with more flat colours in it.
+            List<TextureDefinition> flat = defs.Where(d => d.graph == null).ToList();
+            int declaredGraphs = cache.GetReferenceTable(RSConstants.TEXTURES).GetArchiveCount();
+            Assert.Equal(declaredGraphs, defs.Count - flat.Count);
+
             //The ones with no graph must be exactly their declared colour, flat.
-            foreach (TextureDefinition def in defs.Where(d => d.graph == null).Take(50))
+            foreach (TextureDefinition def in flat)
             {
                 int expected = TextureManager.RepresentativeRgb(def) & 0xFFFFFF;
                 Color actual = def.thumb.GetPixel(0, 0);

@@ -20,8 +20,8 @@ reproduce a defect. Two on the map path alone:
 
 - The XTEA keys are wired to the wrong file family. `Class181.java:44` passes `null` keys for
   `l` (locations), which is the only encrypted family, while `:76-77` passes the real keys to
-  `n`, which is never encrypted. In the running client this means 659 map squares render with
-  no objects at all.
+  `n`, which is never encrypted. In the running client this means every encrypted map square
+  renders with no objects at all - 1649 of them in the vanilla b639 capture, 659 in the repack.
 - The XTEA end offset is taken as `buffer.length`, which includes the two-byte version trailer,
   so one block past the container is enciphered. It is silent only because the extra block lands
   in the gzip trailer and the client's raw inflater never checks it.
@@ -40,13 +40,28 @@ dotnet build FlashEditor.sln
 dotnet test FlashEditor.Tests/FlashEditor.Tests.csproj
 ```
 
-Most of the suite needs a real 639 cache, which is **gitignored** at `cache/`. Point tests at
-it explicitly:
+Most of the suite needs a real 639 cache. **Two are on disk and both are gitignored**, and
+which one is loaded is not an implementation detail - they disagree on eleven indexes.
+
+| | | |
+|---|---|---|
+| **vanilla b639** | `OpenRS2/cache-runescape-live-en-b639-2011-02-23-00-00-00-openrs2#1194/cache` | A live-server capture, OpenRS2 cache id 1194. **The default and the source of truth.** Its key dump sits beside it as `keys.json`. |
+| **the repack** | `cache/` | A private-server repack: a 639 base with local modifications. Still supported and still has to pass. Its key dump is at `xteas/xteas.json`, a level above. |
+
+`RealCacheLocator` walks up from the test binaries and, at each ancestor, prefers
+`OpenRS2/<capture>/cache` over `cache`. Override it to run against a particular one:
 
 ```
-FLASHEDITOR_TEST_CACHE=C:\Users\Cristian.Rosu\source\repos\Personal\FlashEditor\cache
+FLASHEDITOR_TEST_CACHE=C:\Users\CJ\Desktop\FlashEditor\cache
 FLASHEDITOR_TEST_CACHE_FULL=1     # sweep every archive rather than a per-index sample
 ```
+
+Neither cache needs its key file moved. `XTEAKeyTable.FindKeyFile` probes the cache directory
+**and its parent**, each crossed with `''`, `xteas/` and `keys/`, so both layouts resolve. It
+probes `xteas.json` before `keys.json` at every root though, so an `xteas.json` dropped beside
+the capture would silently replace the shipped dump and every square would then report a missing
+key - which looks exactly like the keys being wrong.
+`RealCacheXteaCoverageTests.TheKeyTableIsLoaded` prints the resolved path for that reason.
 
 **`FULL=1` is a merge gate, not an inner-loop gate.** A full sweep saturates every core: it decodes
 and re-encodes every archive, and xunit parallelises collections across all of them by default.
@@ -60,7 +75,7 @@ machine in hand.
 **`FULL=1` does not widen the map tests, because they were never narrow.** It gates
 `RealCacheFixture.ArchivesToExamine`, and only the conformance and definition suites call it. The
 map suites enumerate through their own `EverySquare` helpers
-(`RealCacheMapDecodeTests.cs:306`, `RealCacheRegionCodecTests.cs:256`), which walk all 256x256
+(`RealCacheMapDecodeTests.cs:338`, `RealCacheRegionCodecTests.cs:256`), which walk all 256x256
 region coordinates and yield every group the table holds, with no reference to the switch. So every
 map square is swept on **every** run, and the sampled and full runs differ by less than the name
 suggests. Do not reach for `FULL=1` to make a map assertion cover more ground - it already covers
@@ -74,9 +89,18 @@ made the development machine unusable and had to be killed. Decode buffers are n
 allocates fresh and the large ones land on the LOH. **Parallelise the editing, serialise the
 sweeping**: fan work out across worktrees, then run one sweep against the merged tree.
 
-One thing you cannot infer: `RealCacheLocator` walks **up** the directory tree looking for
-`cache/`, so **unsetting the variable does not test the no-cache path** - point it at a directory
+One thing you cannot infer: `RealCacheLocator` walks **up** the directory tree probing for a
+cache, so **unsetting the variable does not test the no-cache path** - point it at a directory
 that is not a cache.
+
+**A count of decoded content belongs to one cache; a count the reference table states belongs to
+neither.** That is the line the suite now draws. Anything the table declares - group counts, file
+counts - is read from the table, so every sweep asserts the relationship "every declared record
+was swept" rather than a number. Anything measured by decoding content and differing between the
+two caches lives in `RealCacheProfile`, which recognises the cache from its own declared counts
+on indexes 3, 9 and 19 and never from a directory name. Reference-table **versions** are unusable
+as a discriminator: index 3 carries version 1131 in both caches while holding 11 more groups and
+1373 more files in the repack, so a matching version is not evidence that an index is untouched.
 
 A cache-backed test uses `[RealCacheFact]` rather than `[Fact]`, which skips with a named reason
 when no cache is present, and takes `RealCacheFixture` for a shared opened cache.
@@ -90,15 +114,21 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   decryption is pinned instead by `RealCacheXteaCoverageTests`, which asserts the claim that cannot
   be met by giving up: a group the key table has a key for, and which does not open without it,
   **must** open with it. Squares with no published key are excluded rather than counted, so they
-  cannot absorb a real regression. Measured: every keyed group decrypts, 598 of 598 in the
-  reference cache and 1587 of 1587 in the OpenRS2 b639 archive. Apply the same reading to any
-  future sweep - an `or` in the assertion is usually a hole.
+  cannot absorb a real regression. Measured: every keyed group decrypts, 1587 of 1587 in the
+  vanilla b639 capture and 598 of 598 in the repack. Both caches carry the same 1587 index-5 key
+  entries; the difference is that the repack has already decrypted about a thousand squares in
+  place. **A successful decrypt says the key dump is compatible, not that it matches a build.**
+  Apply the same reading to any future sweep - an `or` in the assertion is usually a hole.
 - **The byte-identity sweeps are the primary regression detector.** Every item, NPC and object
   definition, every floor underlay and overlay, and every map square must re-encode to the bytes
-  it was read from - 20,470 items, 13,359 NPCs, 56,199 objects, 159 underlays, 235 overlays,
-  1684 map squares, 3106 skeletons, 359,931 animation frames, 10,237 sound effects, 42,256
-  interface components across 1078 interfaces, and eight index-2 families totalling 6,985 records.
-  **If a sweep fails, you broke something - do not adjust the sweep.** Add one
+  it was read from. The invariant is that **every record the reference table declares** re-encodes
+  identically, which is what the sweeps assert - the totals are read from the table, not written
+  down, because six of them differ between the two caches. Figures that hold in both, and are
+  therefore properties of build 639: 56,199 objects, 13,359 NPCs, 159 underlays, 235 overlays,
+  1684 map squares, 3106 skeletons, 359,931 animation frames in 3526 sets, 10,237 sound effects,
+  and eight index-2 families totalling 6,985 records. Figures that differ: 20,427 items against
+  the repack's 20,470, and 40,883 interface components across 1067 interfaces against 42,256
+  across 1078. **If a sweep fails, you broke something - do not adjust the sweep.** Add one
   for any content type you teach the editor to write, through
   `FlashEditor.Tests/Cache/RealCache/DefinitionSweep.cs` rather than by writing a fifth copy of the
   enumerate-decode-re-encode-compare loop. It enumerates from the table's declared id list, pads
@@ -144,24 +174,29 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   write path refuses to guess it. Keep all four branches implemented anyway: the first table that
   does set one is mis-parsed from that field onward, and no sweep would catch it, because no
   shipped table exercises the branch. idx255 declares 37 records; slots 34 and 35 hold nothing.
-- **Four indexes hold groups their reference table does not declare.** Index 3 has 772, 825 and
-  891; index 4 has 4787; index 12 has 699 and 700; index 32 has 498 and 1407. The client gates
-  every read on the table, so an undeclared group is unreachable in game whatever its bytes say -
-  which is why `RSCache.EnumerateGroups` is table-driven and `EnumerateOrphanGroups` reports the
-  difference rather than dropping it. Pinned by `RealCacheEnumerationTests`. A table-driven sweep
-  silently skips these, so an index-driven parser and a table-driven one disagree on exactly these
-  four and nowhere else. The first survey of this said only indexes 4 and 12, which missed two.
-- **Four indexes carry trailing bytes past the end of the table: four zero bytes per file.** Index
-  9 has 3784 over 946 files in 946 groups, 26 has 4 over 1 file in 1 group, 27 has 1684 over 421
-  files in only **2** groups, and 29 has 728 over 182 files in **1** group. Per *file* - 27 and 29
-  are the only two that tell the readings apart, and a per-group parser sized from them would skip
-  8 and 4 bytes and leave 1676 and 724 in the stream. This note read "per child", which is exact by
-  `AGENTS.md:57` and reads as "per group" to everyone else; say file. The block sits where the
-  per-file identifier block would (`ReferenceTableCodec.cs:141`) with the identifiers flag clear,
-  so nothing reads it; that is the shape, not proven provenance. The other 31 tables consume to the
-  byte, indexes 2 and 5 among them, so a parser must tolerate the tail rather than assert exact
-  consumption. Pinned by
-  `RealCacheReferenceTableShapeTests.ReferenceTableTrailingBytes_AreFourZeroBytesPerFileOnFourIndexes`,
+- **A group in an idx file that its reference table does not declare is repack residue, not a
+  format feature.** The repack has eight: index 3 holds 772, 825 and 891; index 4 holds 4787;
+  index 12 holds 699 and 700; index 32 holds 498 and 1407. **The vanilla b639 capture has none on
+  any index**, so the idx-driven and table-driven readings agree everywhere in it. The client
+  gates every read on the table, so an undeclared group is unreachable in game whatever its bytes
+  say - which is why `RSCache.EnumerateGroups` is table-driven and `EnumerateOrphanGroups` reports
+  the difference rather than dropping it. `RealCacheEnumerationTests` pins it by deriving the same
+  set a second way, from the idx records and the dat2's length, and comparing the two readings;
+  the id lists themselves are scoped to `RealCacheProfile`. The first survey of this said only
+  indexes 4 and 12, which missed two.
+- **A reference table either consumes its payload to the byte or carries four zero bytes per
+  file past it, and nothing may require the tail to be there.** The repack carries one on four
+  indexes: 9 has 3784 over 946 files in 946 groups, 26 has 4 over 1 file in 1 group, 27 has 1684
+  over 421 files in only **2** groups, and 29 has 728 over 182 files in **1** group. **Every one
+  of the vanilla capture's 35 tables consumes to the byte**, which is what settles the tail as
+  repacker residue. Per *file* - 27 and 29 are the only two that tell the readings apart, and a
+  per-group parser sized from them would skip 8 and 4 bytes and leave 1676 and 724 in the stream.
+  This note read "per child", which is exact by `AGENTS.md:57` and reads as "per group" to
+  everyone else; say file. The block sits where the per-file identifier block would
+  (`ReferenceTableCodec.cs:141`) with the identifiers flag clear, so nothing reads it; that is the
+  shape, not proven provenance. A parser must therefore tolerate a tail without ever requiring
+  one. Pinned by
+  `RealCacheReferenceTableShapeTests.ReferenceTableTrailingBytes_AreAbsentOrFourZeroBytesPerFile`,
   which requires three figures to agree on the offset: a field-by-field length from the format,
   where `Decode` leaves the stream, and what `Encode` writes.
 - **Saving stages; it does not touch the disk.** `RSCache.WriteFile` and everything above it write
@@ -191,19 +226,30 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 ## Traps that have already cost real work
 
 - **Never record a count of our own tests here, and distrust any you find.** It is stale by the
-  next commit and it invites a reader to treat a number as a target. Measure instead. Counts *of
-  the cache* are the opposite and worth writing down, because the cache does not change: 20,470
-  item definitions, 1684 map squares, 659 of them with encrypted locations, and 42,256 index-3
-  files across 1078 groups. The line is whether the number describes the data or describes us.
-- **A GZip re-encode is never byte-identical** (0 of 96,183 in the reference cache). Never
-  compare compressed containers to decide whether something changed; compare the decompressed
-  payload.
+  next commit and it invites a reader to treat a number as a target. Measure instead.
+- **A count of the cache is only worth writing down once the cache is named**, because there are
+  two of them and they disagree on eleven indexes. Figures that hold in both, and are therefore
+  properties of build 639: 1684 map squares of terrain and 1684 of locations, 900 underwater
+  pairs, 35 `n` files, 5203 index-5 groups whose names map to the same ids in both, 56,199 object
+  definitions, 13,359 NPC definitions, 359,931 animation frames in 3526 sets, 3106 skeletons,
+  10,237 sound effects, 159 floor underlays and 235 overlays, and every index-2 family. Figures
+  that differ, and must be derived from the loaded cache or scoped to it: item definitions
+  (20,427 vanilla, 20,470 repack), interface groups and files (1067/40,883 against 1078/42,256),
+  models (63,607 against 63,614), textures (915 against 946), sprites, particle and billboard
+  configs, and every encryption census. The line is no longer whether the number describes the
+  data or describes us - it is whether it describes the format or describes one cache.
+- **A GZip re-encode is never byte-identical.** Never compare compressed containers to decide
+  whether something changed; compare the decompressed payload. The denominator is a whole-cache
+  total and so belongs to whichever cache produced it - measured at 0 of 96,183 in the repack -
+  so state the claim without one.
 - **Reading a group file by file re-decodes the group once per file.** `RSCache.ReadFile` calls
   `ReleaseData` the moment it has handed back the one file it was asked for, so the next call
-  re-reads the sector chain, re-inflates and re-decodes the same archive. Over index 3 that is 42,256
-  group decodes where `RSCache.ReadGroup` does 1078 for the same bytes - a count, not a timing, so it
-  holds on any machine. `ReadGroup` returns byte-for-byte what the per-file path does, pinned by
-  `RealCacheReadGroupTests`. The tab loaders that walk files individually are still paying it.
+  re-reads the sector chain, re-inflates and re-decodes the same archive. Over index 3 that is one
+  group decode per declared file where `RSCache.ReadGroup` does one per group for the same bytes -
+  40,883 against 1067 in the vanilla capture, 42,256 against 1078 in the repack. A count, not a
+  timing, so it holds on any machine. `ReadGroup` returns byte-for-byte what the per-file path
+  does, pinned by `RealCacheReadGroupTests`. The tab loaders that walk files individually are
+  still paying it.
 - **Round-tripping this encoder against this decoder proves nothing.** Two real defects survived
   exactly that way, and in both cases a hand-built test asserted the bug rather than catching
   it. Check against captured bytes or the client.

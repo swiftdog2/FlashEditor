@@ -5,6 +5,7 @@ using FlashEditor.cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
+using Xunit.Abstractions;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
@@ -28,10 +29,21 @@ namespace FlashEditor.Tests.Map
     public sealed class RealCacheRegionCodecTests : IClassFixture<RealCacheFixture>
     {
         private readonly RealCacheFixture _fixture;
+        private readonly ITestOutputHelper _output;
 
-        public RealCacheRegionCodecTests(RealCacheFixture fixture)
+        /// <summary>
+        ///     Takes the output helper so each sweep can state how many squares it actually swept.
+        /// </summary>
+        /// <remarks>
+        ///     A byte-identity sweep that silently covers nothing is green and worthless, and these
+        ///     three are the only ones in the suite whose population is not printed by the shared
+        ///     definition harness. The counts are asserted below as well; printing them is what lets
+        ///     a run against a different cache be audited without re-deriving the population.
+        /// </remarks>
+        public RealCacheRegionCodecTests(RealCacheFixture fixture, ITestOutputHelper output)
         {
             _fixture = fixture;
+            _output = output;
         }
 
         /// <summary>An untouched square writes back the bytes it was read as.</summary>
@@ -57,6 +69,8 @@ namespace FlashEditor.Tests.Map
                 if (checked_ >= 200)
                     break;
             }
+
+            _output.WriteLine($"{checked_} terrain squares were written back verbatim");
 
             AssertNoFailures(failures);
             Assert.True(checked_ > 0);
@@ -97,6 +111,9 @@ namespace FlashEditor.Tests.Map
                     failures.Add($"m{rx}_{ry}: {ex.Message}");
                 }
             }
+
+            _output.WriteLine($"{byteIdentical} of {total} terrain squares re-encoded byte-identically " +
+                              "under a forced re-encode");
 
             AssertNoFailures(failures);
             Assert.Equal(1684, total);
@@ -147,6 +164,9 @@ namespace FlashEditor.Tests.Map
                     failures.Add($"l{rx}_{ry}: {ex.Message}");
                 }
             }
+
+            _output.WriteLine($"{byteIdentical} of {total} readable location squares re-encoded " +
+                              $"byte-identically under a forced re-encode, {locs} locations in them");
 
             AssertNoFailures(failures);
             Assert.True(total > 1500, $"only {total} loc files were readable");

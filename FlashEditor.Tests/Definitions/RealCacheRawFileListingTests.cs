@@ -46,8 +46,8 @@ namespace FlashEditor.Tests.Definitions
         /// </summary>
         /// <remarks>
         ///     Compared against <see cref="RSCache.EnumerateFiles"/> pair for pair rather than by
-        ///     count. A count agrees with plenty of wrong enumerations; index 3's group ids are
-        ///     sparse - the idx holds 772, 825 and 891 that the table never declares - so only the
+        ///     count. A count agrees with plenty of wrong enumerations, and in the repack index 3's
+        ///     idx additionally holds 772, 825 and 891 that the table never declares, so only the
         ///     ids themselves tell a table-driven walk from a dense one.
         /// </remarks>
         [RealCacheFact]
@@ -64,7 +64,8 @@ namespace FlashEditor.Tests.Definitions
                 .ToList();
 
             Assert.Equal(declared, listed);
-            Assert.Equal(42256, listed.Count);
+            Assert.Equal(_cache.DeclaredFiles(RSConstants.INTERFACE_DEFINITIONS_INDEX), listed.Count);
+            Assert.True(listed.Count > 0, "the listing addressed nothing, so nothing was checked");
         }
 
         /// <summary>
@@ -102,9 +103,12 @@ namespace FlashEditor.Tests.Definitions
         ///     Index 3 sets the identifiers flag, so a hash column that came back empty everywhere
         ///     would mean the identifier block was being read into the wrong field - which is a real
         ///     failure mode here, the codec having a separate <c>hash</c> field that looks just as
-        ///     plausible a home for it. Measured in the reference cache: 1377 of the 42,256 rows sit
-        ///     in a group the table leaves unnamed, and 1721 are unnamed files, the format spelling
-        ///     "no name" as -1 rather than omitting the entry.
+        ///     plausible a home for it. That is what the "at least one real name hash" assertion
+        ///     below catches, and it is stated separately from the unnamed counts because those do
+        ///     not transfer between caches: the repack leaves 1377 of its 42,256 rows in an unnamed
+        ///     group and 1721 files unnamed, while every group and file of the vanilla capture's
+        ///     index 3 is named, so a count of zero there would otherwise read as the block being
+        ///     missed entirely.
         /// </remarks>
         [RealCacheFact]
         public void TheNameHashesComeFromTheTable()
@@ -118,6 +122,7 @@ namespace FlashEditor.Tests.Definitions
             List<RawFileListing> rows = Load(cache, descriptor);
             int unnamedGroups = 0;
             int unnamedFiles = 0;
+            int namedFiles = 0;
 
             foreach (RawFileListing row in rows)
             {
@@ -129,12 +134,24 @@ namespace FlashEditor.Tests.Definitions
                     unnamedGroups++;
                 if (row.FileNameHash == -1)
                     unnamedFiles++;
+                else
+                    namedFiles++;
             }
 
-            _output.WriteLine($"{unnamedGroups} rows in unnamed groups, {unnamedFiles} unnamed files");
+            _output.WriteLine($"{rows.Count} rows, {unnamedGroups} in unnamed groups, " +
+                              $"{unnamedFiles} unnamed files, {namedFiles} named files");
 
-            Assert.Equal(1377, unnamedGroups);
-            Assert.Equal(1721, unnamedFiles);
+            //The failure this exists to catch is the identifier block landing in the wrong field,
+            //which shows up as every hash coming back absent. A count of unnamed rows cannot say
+            //that on its own, because a cache where nothing is unnamed would report zero either
+            //way; what settles it is that real names came through.
+            Assert.True(rows.Count > 0, "the listing produced no rows, so nothing was checked");
+            Assert.True(namedFiles > 0,
+                "every index-3 file reports no name, so the identifier block is being read into " +
+                "the wrong field rather than into the file name hash");
+
+            _cache.Profile.AssertCensus(_output, "interface.rowsInUnnamedGroups", unnamedGroups);
+            _cache.Profile.AssertCensus(_output, "interface.unnamedFiles", unnamedFiles);
         }
 
         /// <summary>
@@ -175,7 +192,8 @@ namespace FlashEditor.Tests.Definitions
                 rows++;
             }
 
-            Assert.Equal(42256, rows);
+            Assert.True(rows > 0, "the listing enumerated nothing, so the fold was never checked");
+            Assert.Equal(_cache.DeclaredFiles(RSConstants.INTERFACE_DEFINITIONS_INDEX), rows);
         }
 
         /// <summary>Loads the whole listing the way the panel does: one read per group.</summary>

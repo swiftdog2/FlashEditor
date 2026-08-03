@@ -75,10 +75,17 @@ namespace FlashEditor.Tests.Cache
         ///     Every file the table declares for an index comes back from the group reads.
         /// </summary>
         /// <remarks>
-        ///     Index 3 rather than a sample, because it is the index the definition list panel loads
-        ///     and the one whose numbers are worth stating: 42,256 files across 1078 groups. A
-        ///     batched reader that silently dropped the tail of a group would still pass a spot
-        ///     check; it cannot pass this.
+        ///     Index 3 rather than a sample, because it is the index the definition list panel
+        ///     loads and the one where the two readers can most easily disagree. A batched reader
+        ///     that silently dropped the tail of a group would still pass a spot check; it cannot
+        ///     pass this.
+        ///     <para>
+        ///     The totals come from the reference table rather than from a literal. The claim is
+        ///     that the group reads yield every declared group and every declared file, which is a
+        ///     relationship and true of any cache - the two supported caches hold 1078 groups of
+        ///     42,256 files and 1067 of 40,883 respectively, and writing either down would turn a
+        ///     property of the reader into a property of one cache.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void ReadGroup_YieldsEveryDeclaredFileOfIndex3()
@@ -100,10 +107,16 @@ namespace FlashEditor.Tests.Cache
                 }
             }
 
+            int declaredGroups = _cache.DeclaredGroups(RSConstants.INTERFACE_DEFINITIONS_INDEX);
+            int declaredFiles = _cache.DeclaredFiles(RSConstants.INTERFACE_DEFINITIONS_INDEX);
             _output.WriteLine($"index 3: {groups} groups, {files} files, {bytes} bytes");
 
-            Assert.Equal(1078, groups);
-            Assert.Equal(42256, files);
+            //An empty index would satisfy "read everything declared" without reading anything.
+            Assert.True(declaredGroups > 0 && declaredFiles > 0,
+                "index 3's reference table declares nothing, so this run read nothing");
+
+            Assert.Equal(declaredGroups, groups);
+            Assert.Equal(declaredFiles, files);
             Assert.Equal(cache.CountFiles(RSConstants.INTERFACE_DEFINITIONS_INDEX), files);
         }
     }

@@ -33,12 +33,6 @@ namespace FlashEditor.Tests.Definitions
     [Collection("RealCache")]
     public sealed class RealCacheFrameTests : IClassFixture<RealCacheFixture>
     {
-        /// <summary>Groups index 0 holds in the shipped cache, one animation's frame set each.</summary>
-        private const int FrameSetsInCache = 3526;
-
-        /// <summary>Frame files across every group in the shipped cache.</summary>
-        private const int FramesInCache = 359931;
-
         /// <summary>Frames that declare no transforms at all, and are four bytes long.</summary>
         /// <remarks>
         ///     The index-0 survey says 1568. It is wrong: two independent measurements agree on 1573 -
@@ -78,6 +72,21 @@ namespace FlashEditor.Tests.Definitions
             _fixture = fixture;
             _output = output;
         }
+
+        /// <summary>
+        ///     Groups index 0's reference table declares, one animation's frame set each.
+        /// </summary>
+        /// <remarks>
+        ///     Read from the table rather than written down: what the sweeps claim is that every
+        ///     declared frame was decoded, which is a relationship. The content counts above are
+        ///     literals because index 0's reference table and every group CRC in it are
+        ///     byte-identical across both supported caches, so they describe build 639's animation
+        ///     data rather than one cache's.
+        /// </remarks>
+        private int FrameSetsInCache => _fixture.DeclaredGroups(RSConstants.FRAMES_INDEX);
+
+        /// <summary>Frame files index 0's reference table declares across every group.</summary>
+        private int FramesInCache => _fixture.DeclaredFiles(RSConstants.FRAMES_INDEX);
 
         /// <summary>The frame index bound to the production codec.</summary>
         /// <returns>A sweep over every frame the cache declares.</returns>
@@ -330,8 +339,12 @@ namespace FlashEditor.Tests.Definitions
             }
             single.Sort();
 
-            Assert.Equal(FrameSetsInCache, entries.Count);
-            Assert.Equal(FramesInCache, files);
+            //Stated outright here, and derived everywhere else. Index 0's reference table and every
+            //group CRC in it are byte-identical across both supported caches, so these two are
+            //properties of build 639 rather than of one cache - and the sweeps above assert the
+            //relationship "every declared frame was read" instead, which holds in any cache.
+            Assert.Equal(3526, entries.Count);
+            Assert.Equal(359931, files);
             Assert.Equal(SingleFileGroups, single.ToArray());
 
             //Group 757's one frame is file 40, so a single file does not imply file 0. Frame arrays

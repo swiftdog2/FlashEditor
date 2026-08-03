@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using FlashEditor.cache;
 using FlashEditor.Cache.Region;
+using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Tests.Cache.RealCache;
 using FlashEditor.Utils;
 using Xunit;
@@ -40,16 +41,15 @@ namespace FlashEditor.Tests.Map
             foreach (string file in Directory.GetFiles(source, "main_file_cache.*"))
                 File.Copy(file, Path.Combine(workingCopy, Path.GetFileName(file)));
 
-            //The key file lives beside the cache, and the loc groups cannot be read without it.
-            string keys = Path.Combine(source, "..", "xteas");
-            if (Directory.Exists(keys))
-            {
-                string target = Path.Combine(workingCopy, "..", "xteas");
-                if (!Directory.Exists(target))
-                    Directory.CreateDirectory(target);
-                foreach (string file in Directory.GetFiles(keys))
-                    File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
-            }
+            //The loc groups cannot be read without the key file, and where it sits differs by
+            //cache - the repack keeps it in an xteas directory a level above, the OpenRS2 capture
+            //as keys.json beside the cache. Resolve it through the same probe the production
+            //loader uses rather than assuming either layout, and copy it *into* the working copy:
+            //a fixed directory beside it would be shared by every run, so a copy left behind by a
+            //run against one cache would silently supply keys to a run against the other.
+            string keys = XTEAKeyTable.FindKeyFile(source);
+            if (keys != null)
+                File.Copy(keys, Path.Combine(workingCopy, Path.GetFileName(keys)), true);
 
             available = true;
         }

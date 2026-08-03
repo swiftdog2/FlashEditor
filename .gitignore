@@ -341,24 +341,27 @@ healthchecksdb
 # Tools
 dotnet-install.sh
 
-# A real revision-639 cache used by the real-cache conformance tests. Hundreds of
-# megabytes of game data, and a single dat2 exceeds GitHub's 100 MB file limit, so it
-# is kept local. The tests locate it here or via FLASHEDITOR_TEST_CACHE and skip when
-# it is absent - the small captured fixtures under FlashEditor.Tests/Fixtures are what
-# pin the codec without it.
+# A private-server repack of revision 639: a 639 base with local modifications on eleven
+# indexes. Still supported by the suite and still has to pass, but the OpenRS2 capture
+# below is the default and the source of truth. Hundreds of megabytes of game data, and a
+# single dat2 exceeds GitHub's 100 MB file limit, so it is kept local. Its XTEA keys live
+# in /xteas/ beside it. Point FLASHEDITOR_TEST_CACHE at this directory to sweep it.
 # Anchored: an unanchored "cache/" also matches FlashEditor/Cache and
 # FlashEditor.Tests/Cache, since core.ignorecase is true on Windows.
 /cache/
 
-# A second revision-639 cache downloaded from the OpenRS2 archive, kept for comparison
-# against the one above: same 1684 map squares, but it stores as ciphertext the squares
-# the reference cache holds as plaintext. Roughly 360 MB across an extracted cache and
-# its zip, and its dat2 alone exceeds GitHub's 100 MB file limit.
-# Point FLASHEDITOR_TEST_CACHE at the inner "cache" directory to sweep it. Its bundled
-# key dump has to be renamed before it is seen at all - XTEAKeyTable.FindKeyFile probes
-# only for xteas.json, xtea.json, keys.json and xteakeys.json, so a file left under its
-# OpenRS2 download name is silently ignored and every encrypted square then reports a
-# missing key, which looks exactly like the keys being wrong.
+# The vanilla revision-639 cache from the OpenRS2 archive, cache id 1194, captured
+# 2011-02-23. This is what the suite runs against by default: RealCacheLocator prefers
+# OpenRS2/<capture>/cache over the repack at every level of its upward walk. Roughly
+# 360 MB across an extracted cache and its zip, and its dat2 alone exceeds GitHub's
+# 100 MB file limit.
+# Its key dump sits beside the inner "cache" directory as keys.json, which
+# XTEAKeyTable.FindKeyFile finds by probing the parent as well as the cache directory
+# itself. It must keep that name: the probe only accepts xteas.json, xtea.json,
+# keys.json and xteakeys.json, so a file left under its OpenRS2 download name is
+# silently ignored and every encrypted square then reports a missing key, which looks
+# exactly like the keys being wrong. Equally, nothing may be dropped here as xteas.json,
+# which the probe would take in preference.
 /OpenRS2/
 
 # Screenshots produced by tools/Capture-EditorTab.ps1 for GUI verification.

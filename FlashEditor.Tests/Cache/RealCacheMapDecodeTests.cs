@@ -6,6 +6,7 @@ using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace FlashEditor.Tests.Cache
 {
@@ -27,10 +28,12 @@ namespace FlashEditor.Tests.Cache
     public sealed class RealCacheMapDecodeTests : IClassFixture<RealCacheFixture>
     {
         private readonly RealCacheFixture _fixture;
+        private readonly ITestOutputHelper _output;
 
-        public RealCacheMapDecodeTests(RealCacheFixture fixture)
+        public RealCacheMapDecodeTests(RealCacheFixture fixture, ITestOutputHelper output)
         {
             _fixture = fixture;
+            _output = output;
         }
 
         /// <summary>
@@ -79,6 +82,14 @@ namespace FlashEditor.Tests.Cache
         /// <summary>
         ///     Every terrain file decodes to exact buffer consumption.
         /// </summary>
+        /// <remarks>
+        ///     How many squares carry an extras section after the grid is scoped to the cache: 12
+        ///     of the 1684 terrain squares differ between the two supported caches, so the split
+        ///     between "ends at the grid" and "carries a tail" is a count of one cache's content.
+        ///     The claim that holds either way is that every declared square decodes and that the
+        ///     two populations account for all of them, which is what catches a grid decoder
+        ///     stopping in the wrong place.
+        /// </remarks>
         [RealCacheFact]
         public void EveryTerrainFileConsumesItsBufferExactly()
         {
@@ -105,13 +116,19 @@ namespace FlashEditor.Tests.Cache
                 }
             }
 
-            Assert.Equal(1684, decoded);
             AssertNoFailures(failures);
+            Assert.Equal(1684, decoded);
 
-            //Measured against this cache: 1324 squares carry an extras section after the grid and
-            //360 end at it. A shift in either direction means the grid decoder stopped in the
-            //wrong place, which exact consumption alone would not catch.
-            Assert.Equal(1324, withTail);
+            //Both populations have to be occupied. A grid decoder that stopped a field short would
+            //leave every square with a tail, and one that swallowed the extras would leave none
+            //with one - and neither shows up as a consumption failure, because the loader sweeps
+            //whatever the grid left into the tail either way.
+            Assert.True(withTail > 0 && withTail < decoded,
+                $"{withTail} of {decoded} terrain squares carry an extras section. All or none means " +
+                "the grid decoder is stopping in the wrong place rather than the cache differing.");
+            _output.WriteLine($"{_fixture.Profile.Name}: {withTail} of {decoded} terrain squares carry " +
+                              $"an extras section, {decoded - withTail} end at the grid");
+            _fixture.Profile.AssertCensus(_output, "map.terrainWithExtras", withTail);
         }
 
         /// <summary>
@@ -174,7 +191,15 @@ namespace FlashEditor.Tests.Cache
         /// <remarks>
         ///     This pins the defect that motivated <see cref="JagStream.ReadExtendedUnsignedSmart"/>.
         ///     Without it the suite would pass just as happily with the wrong reader, because the
-        ///     squares that need the continuation are a minority and the rest are unaffected.
+        ///     squares that need the continuation are a minority and the rest are unaffected. So
+        ///     the assertion that matters is that the minority is not empty: a cache where no
+        ///     square reached the continuation would let the plain reader through unnoticed.
+        ///     <para>
+        ///     How large that minority is belongs to the cache. 991 of the 1684 location squares
+        ///     differ between the two supported caches, and which of them are readable at all
+        ///     differs further - the repack holds 1025 as plaintext and the vanilla capture 35 -
+        ///     so the count is scoped rather than written down.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void ThePlainSmartReaderCorruptsSquaresThatUseTheContinuation()
@@ -182,6 +207,7 @@ namespace FlashEditor.Tests.Cache
             MapSquareLoader loader = NewLoader();
             RSReferenceTable table = _fixture.Table(RSConstants.MAPS_INDEX);
 
+            int readable = 0;
             int divergent = 0;
 
             foreach ((int rx, int ry) in EverySquare(table, "l"))
@@ -194,12 +220,18 @@ namespace FlashEditor.Tests.Cache
                 if (payload == null)
                     continue;
 
+                readable++;
                 if (UsesSmartContinuation(payload))
                     divergent++;
             }
 
-            //Measured: 63 of the readable l groups carry a 32767 continuation in the id delta.
-            Assert.Equal(63, divergent);
+            _output.WriteLine($"{_fixture.Profile.Name}: {divergent} of {readable} readable l groups " +
+                              "carry a 32767 continuation in the id delta");
+
+            Assert.True(divergent > 0,
+                $"none of the {readable} readable location groups reaches the 32767 continuation, so " +
+                "nothing here would notice the plain smart reader being used instead");
+            _fixture.Profile.AssertCensus(_output, "map.locationsUsingTheSmartContinuation", divergent);
         }
 
         /// <summary>

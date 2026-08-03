@@ -169,21 +169,36 @@ namespace FlashEditor.Tests.Cache
         // ===================================================================
 
         /// <summary>
-        ///     Four indexes carry bytes past the end of the last field the format defines, and the
-        ///     count is four zero bytes per <em>file</em>, not per group. What is measured here is
-        ///     the width and the position; the obvious reading of them is a per-file identifier
-        ///     block emitted with the identifiers flag clear, since that is the field the format
-        ///     would put at exactly that offset, but nothing in this cache proves the provenance.
+        ///     A reference table either consumes its payload to the byte or carries exactly four
+        ///     zero bytes per <em>file</em> past it. Nothing else occurs, and nothing requires a
+        ///     tail to be there at all.
         /// </summary>
         /// <remarks>
-        ///     The distinction is not pedantry. Index 27 holds 421 files across 2 groups and index
-        ///     29 holds 182 across 1, so a per-group reading predicts 8 and 4 bytes where the data
-        ///     has 1684 and 728. A parser sized from the wrong one would either assert exact
-        ///     consumption and reject four of this cache's tables, or skip a fixed per-group stride
-        ///     and leave the rest of the block in the stream.
+        ///     <para>
+        ///     The tail is a property of one cache rather than of the format. The repack carries
+        ///     it on four indexes - 9 has 3784 bytes, 26 has 4, 27 has 1684 and 29 has 728 - and
+        ///     every one of the vanilla b639 capture's 35 tables consumes to the byte. So it is
+        ///     repacker residue, which is why the shape assertion below is universal and the set
+        ///     of indexes carrying one is scoped to the cache: a parser must tolerate a tail and
+        ///     must never require one.
+        ///     </para>
+        ///     <para>
+        ///     Per file, not per group, and the distinction is not pedantry. Index 27 holds 421
+        ///     files across 2 groups and index 29 holds 182 across 1, so a per-group reading
+        ///     predicts 8 and 4 bytes where the repack has 1684 and 728. A parser sized from the
+        ///     wrong one would either assert exact consumption and reject four of its tables, or
+        ///     skip a fixed per-group stride and leave the rest of the block in the stream. That
+        ///     discrimination is asserted wherever the data can express it.
+        ///     </para>
+        ///     <para>
+        ///     What is measured is the width and the position. The obvious reading of them is a
+        ///     per-file identifier block emitted with the identifiers flag clear, since that is
+        ///     the field the format would put at exactly that offset, but nothing here proves the
+        ///     provenance.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
-        public void ReferenceTableTrailingBytes_AreFourZeroBytesPerFileOnFourIndexes()
+        public void ReferenceTableTrailingBytes_AreAbsentOrFourZeroBytesPerFile()
         {
             var failures = new List<string>();
             var trailingByIndex = new SortedDictionary<int, int>();
@@ -244,22 +259,44 @@ namespace FlashEditor.Tests.Cache
 
             AssertNoFailures(failures, "reference tables did not account for their payload as the format describes");
 
-            var withTrailing = trailingByIndex.Where(kv => kv.Value > 0).Select(kv => kv.Key).ToArray();
-            Assert.Equal(new[] { 9, 26, 27, 29 }, withTrailing);
+            //Every table was measured, so an empty tail set is a measured absence rather than a
+            //loop that never ran.
+            Assert.Equal(_cache.TableIndexes.Count, trailingByIndex.Count);
+            Assert.True(trailingByIndex.Count > 0, "no reference table was measured at all");
 
-            //Four per file, and specifically not four per group. Indexes 27 and 29 are the two
-            //that tell the readings apart; 9 and 26 hold one file per group and cannot.
+            var withTrailing = trailingByIndex.Where(kv => kv.Value > 0).Select(kv => kv.Key).ToArray();
+            _output.WriteLine($"{_cache.Profile.Name}: {withTrailing.Length} of {trailingByIndex.Count} " +
+                              "tables carry a tail");
+
+            //Four per file, on every table that carries one. This is the whole shape claim and it
+            //holds in any cache: a tail of some other width is a field this project drops, not
+            //residue past the end of the table.
             foreach (int indexId in withTrailing)
             {
                 Assert.Equal(filesByIndex[indexId] * 4, trailingByIndex[indexId]);
             }
 
-            Assert.Equal(new[] { 946, 1, 421, 182 }, withTrailing.Select(i => filesByIndex[i]).ToArray());
-            Assert.Equal(new[] { 946, 1, 2, 1 }, withTrailing.Select(i => groupsByIndex[i]).ToArray());
-            Assert.Equal(new[] { 3784, 4, 1684, 728 }, withTrailing.Select(i => trailingByIndex[i]).ToArray());
+            //Per file and specifically not per group. Only a table holding more files than groups
+            //can tell the two readings apart, so the discrimination is asserted over exactly those
+            //- and a cache whose tails all sit on one-file-per-group indexes must not be read as
+            //having settled the question.
+            if (withTrailing.Length > 0)
+            {
+                int[] discriminating = withTrailing.Where(i => filesByIndex[i] != groupsByIndex[i]).ToArray();
+                Assert.True(discriminating.Length > 0,
+                    "every table with a tail holds one file per group, so nothing here distinguishes " +
+                    "four bytes per file from four per group");
 
-            //Named in the same breath as the four above, because "some indexes have trailing bytes"
-            //is only useful alongside proof that others consume to the byte.
+                foreach (int indexId in discriminating)
+                    Assert.NotEqual(groupsByIndex[indexId] * 4, trailingByIndex[indexId]);
+            }
+
+            //Which indexes carry one is a fact about this cache, not about the format.
+            if (_cache.Profile.TablesWithATail != null)
+                Assert.Equal(_cache.Profile.TablesWithATail, withTrailing);
+
+            //Named separately because "some indexes may have trailing bytes" is only useful
+            //alongside proof that the two the map and config paths read consume to the byte.
             Assert.Equal(0, trailingByIndex[RSConstants.CONFIG]);
             Assert.Equal(0, trailingByIndex[RSConstants.MAPS_INDEX]);
         }

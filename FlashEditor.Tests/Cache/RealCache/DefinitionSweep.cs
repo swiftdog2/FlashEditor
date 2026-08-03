@@ -170,9 +170,9 @@ namespace FlashEditor.Tests.Cache.RealCache
     ///     answers -1 at the end of the buffer and every one of these decoders treats that as the
     ///     opcode 0 terminator, so a record that ran off its end leaves the position sitting on the
     ///     length and looks exact. The padding turns that into a visible overshoot.</item>
-    ///     <item>Comparison is against the decompressed payload, never the stored container. A
-    ///     GZip re-encode is byte-identical for 0 of the 96,183 GZip containers in this cache, so
-    ///     comparing containers measures the compressor and says nothing about the codec.</item>
+    ///     <item>Comparison is against the decompressed payload, never the stored container. No
+    ///     GZip container in either supported cache re-encodes byte-identically, so comparing
+    ///     containers measures the compressor and says nothing about the codec.</item>
     ///     <item>The assertions carry no <c>or</c>. A sweep that scores "decoded or reported
     ///     missing" passes on a cache where everything failed; the count assertion here is that
     ///     nothing failed and that something was checked.</item>

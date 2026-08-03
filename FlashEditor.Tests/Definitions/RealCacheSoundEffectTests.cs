@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.cache;
@@ -27,13 +28,6 @@ namespace FlashEditor.Tests.Definitions
     [Collection("RealCache")]
     public sealed class RealCacheSoundEffectTests : IClassFixture<RealCacheFixture>
     {
-        /// <summary>Groups the index-4 reference table declares, one sound effect each.</summary>
-        /// <remarks>
-        ///     One fewer than the idx file holds. See
-        ///     <see cref="TheOrphanGroup_IsARecordTheReferenceTableDoesNotDeclare"/>.
-        /// </remarks>
-        private const int SoundEffectsDeclared = 10237;
-
         /// <summary>Tones across every declared effect in the shipped cache.</summary>
         private const int TonesInCache = 20989;
 
@@ -58,9 +52,6 @@ namespace FlashEditor.Tests.Definitions
         /// <summary>Breakpoints across every one of those envelopes.</summary>
         private const int EnvelopeBreakpointsInCache = 486150;
 
-        /// <summary>The idx-4 group the reference table does not declare.</summary>
-        private const int OrphanGroup = 4787;
-
         private readonly RealCacheFixture _fixture;
         private readonly ITestOutputHelper _output;
 
@@ -70,6 +61,18 @@ namespace FlashEditor.Tests.Definitions
             _fixture = fixture;
             _output = output;
         }
+
+        /// <summary>
+        ///     Groups the index-4 reference table declares, one sound effect each.
+        /// </summary>
+        /// <remarks>
+        ///     Read from the table rather than written down: the sweeps below claim that every
+        ///     declared effect was decoded, which is a relationship and holds in any cache. The
+        ///     content counts further down are literals because index 4's reference table and
+        ///     every group CRC in it are byte-identical across both supported caches, so they
+        ///     describe build 639's sound data rather than one cache's.
+        /// </remarks>
+        private int SoundEffectsDeclared => _fixture.DeclaredGroups(RSConstants.SOUND_EFFECTS);
 
         /// <summary>
         ///     The sound-effect index bound to the production codec.
@@ -270,32 +273,47 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
-        ///     idx4 holds one more live group than the reference table declares, and it is a valid
-        ///     record.
+        ///     The repack's idx4 holds one more live group than its reference table declares, and
+        ///     it is a valid record.
         /// </summary>
         /// <remarks>
-        ///     The two readings of "how many sound effects are there" differ by one and both are
-        ///     right: 10,237 is what the client can reach, because it resolves every group through
-        ///     the table, and 10,238 is what the idx file physically holds. Group 4787 is repack
-        ///     residue - a 156-byte container that decompresses to a well-formed 185-byte patch and
-        ///     is byte-identical to no other group in the index. The table-driven sweeps above cannot
-        ///     see it, which is correct behaviour and not a gap, so it is pinned here instead and
-        ///     carried as a codec fixture by <c>SoundEffectCodecTests</c>.
+        ///     <para>
+        ///     The two readings of "how many sound effects are there" differ by one in that cache
+        ///     and both are right: 10,237 is what the client can reach, because it resolves every
+        ///     group through the table, and 10,238 is what the idx file physically holds. Group
+        ///     4787 is repacking residue - a 156-byte container that decompresses to a well-formed
+        ///     185-byte patch and is byte-identical to no other group in the index. The
+        ///     table-driven sweeps above cannot see it, which is correct behaviour and not a gap,
+        ///     so it is pinned here instead and carried as a codec fixture by
+        ///     <c>SoundEffectCodecTests</c>.
+        ///     </para>
+        ///     <para>
+        ///     The vanilla b639 capture has no orphan on index 4, or on any other index, so the
+        ///     cache half of this is scoped to the profile. The codec half is not: the captured
+        ///     bytes are committed in <c>SoundEffectCodecTests</c> and decode without touching the
+        ///     cache at all, so the record stays covered whichever cache is loaded.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void TheOrphanGroup_IsARecordTheReferenceTableDoesNotDeclare()
         {
             RSCache cache = _fixture.OpenCache();
-
             IReadOnlyList<int> orphans = cache.EnumerateOrphanGroups(RSConstants.SOUND_EFFECTS);
-            Assert.Equal(new[] { OrphanGroup }, orphans);
 
-            Assert.Equal(SoundEffectsDeclared,
-                _fixture.Table(RSConstants.SOUND_EFFECTS).GetArchiveCount());
+            _output.WriteLine($"{_fixture.Profile.Name}: index 4 declares {SoundEffectsDeclared} groups " +
+                              $"and holds {orphans.Count} the table does not [{string.Join(", ", orphans)}]");
 
+            if (_fixture.Profile.OrphanGroups != null)
+            {
+                _fixture.Profile.OrphanGroups.TryGetValue(RSConstants.SOUND_EFFECTS, out int[] expected);
+                Assert.Equal(expected ?? Array.Empty<int>(), orphans.ToArray());
+            }
+
+            //Whatever the cache holds, the record itself still has to decode and re-encode, so the
+            //orphan stays pinned even where no cache on disk contains it.
             byte[] stored = SoundEffectCodecTests.CapturedBytes(SoundEffectCodecTests.OrphanEffectId);
             var stream = new JagStream(stored);
-            var effect = new SoundEffectDefinition { Id = OrphanGroup }.Decode(stream);
+            var effect = new SoundEffectDefinition { Id = SoundEffectCodecTests.OrphanEffectId }.Decode(stream);
 
             Assert.Equal(stored.Length, stream.Position);
             Assert.Equal(1, effect.ToneCount);

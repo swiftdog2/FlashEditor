@@ -5,6 +5,7 @@ using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -134,22 +135,44 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        ///     The key table is loaded and covers a real share of the encrypted map.
+        ///     The key table is loaded, from a file beside the cache the suite actually opened.
         /// </summary>
         /// <remarks>
         ///     Split from the sweep above so that "the key file did not load at all" reads as its
         ///     own failure rather than as a thousand identical decrypt failures.
+        ///     <para>
+        ///     The path is named because the two supported caches keep their keys in different
+        ///     places - the repack under <c>xteas/xteas.json</c> a level above the cache, the
+        ///     OpenRS2 capture as <c>keys.json</c> beside it - and
+        ///     <see cref="XTEAKeyTable.FindKeyFile"/> probes <c>xteas.json</c> before
+        ///     <c>keys.json</c> at each root. So a file dropped beside a capture under the earlier
+        ///     name would silently replace the shipped dump, and every square would then report a
+        ///     missing key, which looks exactly like the keys being wrong. Asserting that the file
+        ///     sits under the cache directory or its parent is what keeps that visible.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void TheKeyTableIsLoaded()
         {
             XTEAKeyTable keys = _fixture.OpenCache().GetXTEAKeyTable();
 
+            _output.WriteLine($"cache   : {RealCacheLocator.Directory}");
+            _output.WriteLine($"profile : {_fixture.Profile.Name}");
+            _output.WriteLine($"key file: {_fixture.KeyFile ?? "(none found)"}");
+
             Assert.NotNull(keys);
             _output.WriteLine($"keys loaded: {keys.Count}");
             Assert.True(keys.Count > 0,
                 "no XTEA keys were loaded - XTEAKeyTable.FindKeyFile only probes for xteas.json, " +
                 "xtea.json, keys.json and xteakeys.json beside the cache or its parent");
+
+            Assert.NotNull(_fixture.KeyFile);
+            string cacheDir = Path.GetFullPath(RealCacheLocator.Directory);
+            string keyRoot = Path.GetFullPath(_fixture.KeyFile);
+            Assert.True(keyRoot.StartsWith(cacheDir, StringComparison.OrdinalIgnoreCase) ||
+                        keyRoot.StartsWith(Path.GetFullPath(Path.Combine(cacheDir, "..")),
+                            StringComparison.OrdinalIgnoreCase),
+                $"the keys came from {keyRoot}, which is neither inside {cacheDir} nor beside it");
         }
 
         private static IEnumerable<(int, int)> EveryLocationSquare(RSReferenceTable table)

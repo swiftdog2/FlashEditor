@@ -28,9 +28,6 @@ namespace FlashEditor.Tests.Definitions
     [Collection("RealCache")]
     public sealed class RealCacheSkeletonTests : IClassFixture<RealCacheFixture>
     {
-        /// <summary>Groups index 1 holds in the shipped cache, one skeleton each.</summary>
-        private const int SkeletonsInCache = 3106;
-
         /// <summary>Bones across every skeleton in the shipped cache.</summary>
         private const int BonesInCache = 173749;
 
@@ -46,6 +43,15 @@ namespace FlashEditor.Tests.Definitions
             _fixture = fixture;
             _output = output;
         }
+
+        /// <summary>Groups index 1's reference table declares, one skeleton each.</summary>
+        /// <remarks>
+        ///     Read from the table so the sweeps assert a relationship - every declared skeleton
+        ///     was read - rather than a count belonging to one cache. The content figures above
+        ///     stay literal because index 1's reference table and every group CRC in it are
+        ///     byte-identical across both supported caches.
+        /// </remarks>
+        private int SkeletonsInCache => _fixture.DeclaredGroups(RSConstants.SKINS);
 
         /// <summary>
         ///     The skeleton index bound to the production codec.
@@ -156,6 +162,9 @@ namespace FlashEditor.Tests.Definitions
             _output.WriteLine("flag bytes: " + Histogram(flags));
             _output.WriteLine("masks: " + Histogram(masks));
 
+            //Stated outright here, and derived everywhere else - index 1 is byte-identical across
+            //both supported caches, so 3106 is a property of build 639 rather than of one of them.
+            Assert.Equal(3106, swept.Records);
             Assert.Equal(SkeletonsInCache, swept.Records);
             Assert.Equal(BonesInCache, bones);
             Assert.Equal(LabelEntriesInCache, labels);

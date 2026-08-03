@@ -4,18 +4,31 @@ This repository contains a C# RuneScape cache editor targeting **Revision 639**.
 
 ### Which revision, and how that was established
 
-The editor decodes the **cache**, so 639 is the number that matters here. It was determined
-from the data rather than from any comment:
+The editor decodes the **cache**, so 639 is the number that matters here. Two 639 caches are on
+disk and the suite runs against both:
 
-- Reference-table versions are per-build and monotonic. The reference cache matches build
-  639's exactly on indexes 2, 3, 12, 16 and 20; it is never *below* 639 on any index, and it
-  is below build 640 on every one of those five. So the base build is 639.
-- The four indexes that sit *above* 639 - `MAPS`, `MODELS`, `NPC_DEFINITIONS` and
-  `ITEM_DEFINITIONS` - are the ones a private server customises, and every edit bumps the
-  version. The cache is therefore a 639 base with local modifications, which is also why 61
-  of its map squares are encrypted with keys that exist in no published dump.
-- XTEA keys do **not** identify a build. Builds 637, 639 and 640 all decrypt exactly the same
-  598 archives, so a successful decrypt says the key dump is compatible, not that it matches.
+- **The vanilla b639 capture**, `OpenRS2/cache-runescape-live-en-b639-2011-02-23-00-00-00-openrs2#1194/cache`,
+  a live-server capture from the OpenRS2 archive with its key dump beside it as `keys.json`.
+  This is the default and the source of truth.
+- **The repack**, `cache/`, a 639 base with local modifications. Still supported, still has to
+  pass, and every figure measured against it belongs to it.
+
+It was determined to be 639 from the data rather than from any comment:
+
+- Reference-table versions are per-build and monotonic. The cache matches build 639's exactly on
+  indexes 2, 3, 12, 16 and 20; it is never *below* 639 on any index, and it is below build 640 on
+  every one of those five. So the base build is 639.
+- The repack carries local modifications on at least **eleven** indexes, not the four first
+  reported. Measured against the vanilla capture, its reference-table version is higher on 5, 7,
+  8, 9, 17, 18, 19, 26, 27 and 29, and its index-3 table differs in content at the **same**
+  version, 1131 in both. So a bumped version is evidence that an index was touched and is never
+  evidence that one was not. The eleven tables whose payloads differ are 3, 5, 7, 8, 9, 17, 18,
+  19, 26, 27 and 29; the other 24 are byte-identical.
+- XTEA keys do **not** identify a build. The same key dump opens every keyed archive of both
+  caches - 1587 of 1587 in the vanilla capture, 598 of 598 in the repack, the difference being
+  that the repack has already decrypted the rest in place. A successful decrypt says the key dump
+  is compatible, not that it matches a build. 62 of the vanilla capture's encrypted map squares
+  have no key in the published dump; the repack has 61.
 
 The **client** source bundled alongside this cache (in the sibling HydraScape repository) is
 a different revision: **637**. It writes `637` as the revision field in the JS5 handshake and
@@ -39,8 +52,14 @@ which matters if you use that client as a reference for decoder behaviour - nota
 - xUnit 2.9.3 with `xunit.runner.visualstudio`. There is no mocking framework: the suite works
   against real bytes and synthetic caches in temp directories instead.
 - `dotnet test` builds first, so no separate build step is needed.
-- Most of the suite needs a real 639 cache. See `CLAUDE.md` for how to point it at one and for
-  the current expected counts.
+- Most of the suite needs a real 639 cache. Two are on disk, both gitignored, and the vanilla
+  OpenRS2 capture is the default; `FLASHEDITOR_TEST_CACHE` selects a particular one. See
+  `CLAUDE.md` for the layout and for which counts belong to which cache.
+- A count the reference table states is read from the table. A count of decoded content that
+  differs between the two caches lives in
+  `FlashEditor.Tests/Cache/RealCache/RealCacheProfile.cs`, which recognises the cache from its own
+  declared counts on indexes 3, 9 and 19 - never from a directory name, and never from a
+  reference-table version.
 
 ## Cache Editing Overview
 The editor loads, displays, and modifies the RuneScape JS5 cache for revision 639. Important details for understanding the cache structure:
@@ -76,10 +95,11 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
   - `fileCount` (u16)
   - Delta-encoded `fileIds` array
 
-#### Nothing in this cache sets the sizes flag, and nothing in it is format 7
+#### Nothing in either cache sets the sizes flag, and nothing in either is format 7
 
 Measured over all 35 reference tables in idx255 by
-`FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`:
+`FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`. The flags byte is identical
+index for index in both caches:
 
 | Flag or field | Where it is set |
 |---|---|
@@ -98,11 +118,13 @@ read path to infer encryption and the write path to refuse to guess.
 
 Index 2 carries no name hashes either, so a config group is addressable only by id.
 
-Four tables carry a tail the format does not account for: index 9 has 3784 trailing zero bytes, 26
-has 4, 27 has 1684 and 29 has 728 - four bytes per **file** in every case, not per group (27's 421
-files sit in 2 groups, 29's 182 in 1). It sits where the per-file identifier block would, with the
-identifiers flag clear, so nothing reads it. The other 31 tables consume to the byte, so a parser
-must tolerate trailing bytes rather than assert exact consumption.
+The **repack** carries a tail the format does not account for on four tables: index 9 has 3784
+trailing zero bytes, 26 has 4, 27 has 1684 and 29 has 728 - four bytes per **file** in every case,
+not per group (27's 421 files sit in 2 groups, 29's 182 in 1). It sits where the per-file
+identifier block would, with the identifiers flag clear, so nothing reads it. Its other 31 tables
+consume to the byte, and **every one of the vanilla b639 capture's 35 tables does**. So the tail
+is repacker residue rather than a feature of the format: a parser must tolerate trailing bytes
+rather than assert exact consumption, and nothing may assert that a tail is present either.
 
 ### Index Entry (.idx#)
 - 6 bytes per group
@@ -130,14 +152,19 @@ produces a cache that looks structurally fine and is unreadable.
 
 #### A re-encode is never byte-identical for GZip
 
-Compression in the reference cache: **96,244 GZip, 4,480 uncompressed, 1,743 BZip2.** Decoding
-and re-encoding every one of them gives:
+Compression in the **repack**: **96,244 GZip, 4,480 uncompressed, 1,743 BZip2.** These are
+whole-cache totals, so they belong to that cache; the ratio does not move much in the vanilla
+capture but the denominators have not been re-measured. Decoding and re-encoding every one of them
+gives:
 
 | Compression | Byte-identical after a round trip |
 |---|---|
 | none | 4,480 / 4,480 |
 | BZip2 | 1,724 / 1,743 |
 | **GZip** | **0 / 96,183** |
+
+The claim that survives without a denominator, and the only one worth relying on: **no GZip
+container in either cache re-encodes byte-identically.**
 
 Deflate is not canonical: Jagex used Java's `Deflater`, this project uses SharpZipLib, and both
 emit valid GZip of the same payload with different encodings. Our output is within 0.06% on
@@ -172,7 +199,9 @@ table, not from the payload.
 
 #### The split is arbitrary, and nothing may assume otherwise
 
-Measured across the whole reference cache:
+Measured across the whole **repack**. Every row bar the first is index 0 only, and index 0's
+reference table and every group CRC in it are byte-identical in both caches, so only the first row
+is a repack-scale figure:
 
 | | |
 |---|---|
@@ -227,7 +256,10 @@ use this ordering to remain compatible with the in-game client.
 - Keys for a given build can be had from the OpenRS2 archive
   (`https://archive.openrs2.org/caches.json`, then `/caches/runescape/<id>/keys.json`).
   In that export `archive` is the **index** and `group` is the **archive id**; entries also
-  carry `name_hash`, `name` (`l<x>_<y>`) and `mapsquare`. Build 639 is cache id 1194.
+  carry `name_hash`, `name` (`l<x>_<y>`) and `mapsquare`. Build 639 is cache id 1194, which is
+  the capture on disk at
+  `OpenRS2/cache-runescape-live-en-b639-2011-02-23-00-00-00-openrs2#1194/`, key dump included as
+  `keys.json` beside its `cache/` directory. Both caches use that same dump.
 
 ### The actual types
 
@@ -265,22 +297,28 @@ revision's layout (index 16 as "MIDI instrument bank", 18 as "Textures", 19 as "
 Contents column below. Believe what the client does with an index and what the index actually
 contains; treat the constant name as a claim.
 
-The group and file counts are measured from the reference cache, and corroborate the naming where
-it is right: index 19 holds 80 groups of ~20,470 item definitions, index 18 holds 13,359 NPCs and
-index 16 holds 56,199 objects, which is the right order of magnitude for this revision.
+The group and file counts below are measured from the **vanilla b639 capture**, and corroborate
+the naming where it is right: index 19 holds 80 groups of ~20,427 item definitions, index 18 holds
+13,359 NPCs and index 16 holds 56,199 objects, which is the right order of magnitude for this
+revision.
+
+**Six rows the repack inflates**, with its figures in brackets: index 3 (1078 groups / 42,256
+files), 7 (63,614), 9 (946), 19 (20,470 files), 27 (421 files) and 29 (182 files). Every other row
+is identical in both caches. Never write one of the six into a test - read it from the reference
+table.
 
    | ID  | RSConstants name       | Contents                        | Groups | Files   |
    |-----|------------------------|---------------------------------|--------|---------|
    | 0   | FRAMES                 | Animation frames                | 3526   | 359931  |
    | 1   | SKINS                  | Animation skins                 | 3106   | 3106    |
    | 2   | CONFIG                 | Configs                         | 35     | 16981   |
-   | 3   | INTERFACE_DEFINITIONS  | Interfaces                      | 1078   | 42256   |
+   | 3   | INTERFACE_DEFINITIONS  | Interfaces                      | 1067   | 40883   |
    | 4   | SOUND_EFFECTS          | Sound effects                   | 10237  | 10237   |
    | 5   | MAPS                   | Maps (partly XTEA encrypted)    | 5203   | 5203    |
    | 6   | MUSIC                  | Music                           | 963    | 963     |
-   | 7   | MODELS                 | 3-D models                      | 63614  | 63614   |
+   | 7   | MODELS                 | 3-D models                      | 63607  | 63607   |
    | 8   | SPRITES                | Sprites                         | 4593   | 4593    |
-   | 9   | TEXTURES               | Textures                        | 946    | 946     |
+   | 9   | TEXTURES               | Textures                        | 915    | 915     |
    | 10  | HUFFMAN                | Huffman chat table              | 1      | 1       |
    | 11  | MUSIC_2                | Music, second bank              | 441    | 441     |
    | 12  | CLIENT_SCRIPTS         | Client scripts (CS2)            | 4149   | 4149    |
@@ -290,7 +328,7 @@ index 16 holds 56,199 objects, which is the right order of magnitude for this re
    | 16  | OBJECTS_DEFINITIONS    | Object definitions              | 224    | 56199   |
    | 17  | CLIENTSCRIPT_SETTINGS  | **Enum table, NAME WRONG**      | 14     | 3558    |
    | 18  | NPC_DEFINITIONS        | NPC definitions                 | 106    | 13359   |
-   | 19  | ITEM_DEFINITIONS       | Item definitions                | 80     | 20470   |
+   | 19  | ITEM_DEFINITIONS       | Item definitions                | 80     | 20427   |
    | 20  | ANIMATIONS             | Animation definitions           | 120    | 15260   |
    | 21  | GRAPHICS               | Spot-animation definitions      | 12     | 2956    |
    | 22  | SCRIPT_CONFIGS         | Varbits                         | 9      | 8785    |
@@ -298,9 +336,9 @@ index 16 holds 56,199 objects, which is the right order of magnitude for this re
    | 24  | QUICK_CHAT_MESSAGES    | **Quick-chat bank, NAME WRONG** | 2      | 1299    |
    | 25  | QUICK_CHAT_MENU        | **Quick-chat bank, NAME WRONG** | 2      | 86      |
    | 26  | MATERIALS              | Material / lighting configs     | 1      | 1       |
-   | 27  | CONFIG_PARTICLES       | Particle emitters and effectors | 2      | 421     |
+   | 27  | CONFIG_PARTICLES       | Particle emitters and effectors | 2      | 285     |
    | 28  | DEFAULTS               | Default sprite ids and colours  | 2      | 2       |
-   | 29  | CONFIG_BILLBOARD       | Billboard configs               | 1      | 182     |
+   | 29  | CONFIG_BILLBOARD       | Billboard configs               | 1      | 90      |
    | 30  | NATIVE_LIBRARIES       | Native libraries                | 36     | 36      |
    | 31  | GRAPHICS_SHADERS       | Shader programs                 | 2      | 14      |
    | 32  | LOADING_SPRITES        | Loading sprites (JPEG)          | 26     | 26      |
@@ -310,9 +348,11 @@ index 16 holds 56,199 objects, which is the right order of magnitude for this re
    | 36  | VORBIS                 | **Theora video, NAME WRONG**    | 0      | 0       |
    | 255 | META                   | Reference tables                | 37     | -       |
 
-Indexes 34 and 35 have no reference table at all in the reference cache; index 36 has one
-that declares zero groups - a four byte format-5 stub, which is a real shape the table codec
-has to survive.
+Indexes 34 and 35 have no reference table at all in either cache; index 36 has one that declares
+zero groups - a four byte format-5 stub, which is a real shape the table codec has to survive.
+The repack additionally leaves one-byte `main_file_cache.idx34` and `idx35` files on disk, which
+the vanilla capture does not have at all; `RSFileStore.cs:34-36` skips a missing idx file, so both
+open cleanly.
 
 #### The five wrong names, and the audio family in particular
 
@@ -391,7 +431,9 @@ save.
 
 ## Models: the face render type decides what is drawn
 
-Every model face carries a render type. Only three values occur anywhere in this cache:
+Every model face carries a render type. Only three values occur anywhere, measured over the
+**repack's** index 7 - it holds 63,614 models to the vanilla capture's 63,607, so every absolute
+figure in this section is at repack scale and has not been re-measured against the capture:
 
 | Value | Meaning | Faces |
 |---|---|---|

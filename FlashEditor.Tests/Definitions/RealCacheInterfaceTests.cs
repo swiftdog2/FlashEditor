@@ -18,42 +18,25 @@ namespace FlashEditor.Tests.Definitions
     ///     terminator: the layout is a fixed header, a block chosen by the type byte, and a tail whose
     ///     shape is decided by an action nibble, a 24-bit mask and a version byte. So a field read one
     ///     byte too wide shifts everything after it and the record cannot land on its own last byte,
-    ///     which makes exact consumption across all 42,256 files the whole statement about the
+    ///     which makes exact consumption across every declared file the whole statement about the
     ///     layout. <c>NotOpcodeTerminated</c> drops the two assertions that only mean something for an
     ///     opcode format.
     ///     <para>
-    ///     Every group, not the 250-group sample: the index decompresses to 3,550,506 bytes in total,
-    ///     and "every component in the cache re-encodes to its stored bytes" is not a claim a run over
-    ///     250 of 1,078 groups can make.
+    ///     Every group, not the 250-group sample: "every component in the cache re-encodes to its
+    ///     stored bytes" is not a claim a run over 250 of a thousand-odd groups can make.
+    ///     </para>
+    ///     <para>
+    ///     Index 3 is one of the eleven the two supported caches disagree on - the repack holds
+    ///     42,256 components across 1078 interfaces and the vanilla b639 capture 40,883 across 1067
+    ///     - so the totals are read from the reference table and the content census is scoped to
+    ///     the cache it was measured on. What is asserted unconditionally is every relationship
+    ///     between those figures and every branch the data does or does not reach, which is what
+    ///     the census was really defending.
     ///     </para>
     /// </remarks>
     [Collection("RealCache")]
     public sealed class RealCacheInterfaceTests : IClassFixture<RealCacheFixture>
     {
-        /// <summary>Groups index 3's reference table declares, one interface each.</summary>
-        private const int InterfacesInCache = 1078;
-
-        /// <summary>Component files across every declared group.</summary>
-        private const int ComponentsInCache = 42256;
-
-        /// <summary>Decompressed component payload across the whole index.</summary>
-        private const int ComponentBytesInCache = 3550506;
-
-        /// <summary>
-        ///     Group ids that have a live record in idx3 but no row in the reference table.
-        /// </summary>
-        /// <remarks>
-        ///     The client cannot load them - <c>VersionTable.java:135</c> sizes its arrays to
-        ///     <c>maxGroupId + 1</c> and leaves the file count at 0 for an undeclared id, which
-        ///     <c>JS5Archive.method2758:1035</c> rejects - so they are dead weight in the running
-        ///     game. They matter here only as a trap: a sweep that walked idx3's slots rather than the
-        ///     table would meet three groups whose file count nothing states.
-        /// </remarks>
-        private static readonly int[] UndeclaredGroups = { 772, 825, 891 };
-
-        /// <summary>File counts recovered for <see cref="UndeclaredGroups"/>, in the same order.</summary>
-        private static readonly int[] UndeclaredGroupFileCounts = { 14, 32, 43 };
-
         private readonly RealCacheFixture _fixture;
         private readonly ITestOutputHelper _output;
 
@@ -63,6 +46,12 @@ namespace FlashEditor.Tests.Definitions
             _fixture = fixture;
             _output = output;
         }
+
+        /// <summary>Groups index 3's reference table declares, one interface each.</summary>
+        private int InterfacesInCache => _fixture.DeclaredGroups(RSConstants.INTERFACE_DEFINITIONS_INDEX);
+
+        /// <summary>Component files the table declares across every one of those groups.</summary>
+        private int ComponentsInCache => _fixture.DeclaredFiles(RSConstants.INTERFACE_DEFINITIONS_INDEX);
 
         private DefinitionSweep<InterfaceComponentDefinition> Sweep()
         {
@@ -127,13 +116,23 @@ namespace FlashEditor.Tests.Definitions
         ///     What index 3 actually contains, so the codec's coverage is stated rather than assumed.
         /// </summary>
         /// <remarks>
-        ///     Counts of the cache, not of this suite, so they do not go stale. Most of them exist to
-        ///     record which branches the sweeps above <b>cannot</b> defend: the version byte is 255 on
-        ///     every file, so six branches never fire; the 0x80 name flag, the extended model
-        ///     transform, an action high nibble above 1, an operand type byte other than 0 or 1, a
-        ///     slot value of 4095 and a boolean byte other than 0 or 1 all occur zero times. Each is
-        ///     implemented, and <c>InterfaceComponentCodecTests</c> is the only thing that tests it.
-        ///     If a repack ever introduces one, this assertion is what says so.
+        ///     <para>
+        ///     Most of this exists to record which branches the sweeps above <b>cannot</b> defend:
+        ///     the version byte is 255 on every file, so six branches never fire; the 0x80 name
+        ///     flag, the extended model transform, an action high nibble above 1, an operand type
+        ///     byte other than 0 or 1, a slot value of 4095 and a boolean byte other than 0 or 1
+        ///     all occur zero times. Each is implemented, and <c>InterfaceComponentCodecTests</c>
+        ///     is the only thing that tests it. If a cache ever introduces one, the key-set and
+        ///     zero-occurrence assertions here are what say so, and they hold whichever cache is
+        ///     loaded.
+        ///     </para>
+        ///     <para>
+        ///     The populations behind them are counts of one cache's content, so they are asserted
+        ///     through the profile. Every relationship between them is asserted outright instead -
+        ///     each histogram sums to the record count, the parent fold accounts for every
+        ///     component, the mask gate agrees with itself - which is what stops a decoder that
+        ///     mis-classified records from passing on a cache whose census has not been recorded.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void TheInterfaceIndex_HoldsWhatTheCodecClaimsItDoes()
@@ -275,84 +274,119 @@ namespace FlashEditor.Tests.Definitions
 
             Assert.Equal(ComponentsInCache, swept.Records);
             Assert.Equal(InterfacesInCache, swept.Groups);
-            Assert.Equal((long)ComponentBytesInCache, payloadBytes);
+            Assert.True(swept.Records > 0, "index 3 declared nothing, so nothing was counted");
 
             //The component type dispatch. Types 1, 2, 7 and 8 are expressible and unused, and
-            //10..127 read no type block at all, so six values account for the whole index.
+            //10..127 read no type block at all, so six values account for the whole index - and
+            //they account for all of it, which is the half a per-type population cannot state.
             Assert.Equal(new[] { 0, 3, 4, 5, 6, 9 }, types.Keys.ToArray());
-            Assert.Equal(new[] { 6573, 4528, 10317, 13462, 7009, 367 }, types.Values.ToArray());
+            Assert.Equal(swept.Records, types.Values.Sum());
 
             //Every file is if3, which is what makes the six version-gated branches untestable here.
             Assert.Equal(0, nonIf3);
             Assert.Equal(0, authoringNames);
 
-            //The parent fold, checked on every row rather than in aggregate.
-            Assert.Equal(8413, rootComponents);
-            Assert.Equal(33843, parentedComponents);
+            //The parent fold, checked on every row rather than in aggregate. Every component is
+            //either a root or names a sibling its own group holds; nothing falls between.
             Assert.Equal(0, danglingParents);
+            Assert.Equal(swept.Records, rootComponents + parentedComponents);
 
-            Assert.Equal(21, nonZeroContentTypes);
-            Assert.Equal(42163, emptySelectedActions);
-
-            Assert.Equal(1001, modelSentinels);
-            Assert.Equal(6466, animationSentinels);
             Assert.Equal(0, fontSentinels);
 
             //The slot table, and the sentinel that never occurs.
-            Assert.Equal(43, slotTables);
-            Assert.Equal(55, slotEntries);
             Assert.Equal(0, slotSentinels);
+            Assert.True(slotEntries >= slotTables,
+                "a component with a slot table holds at least one entry, so entries cannot trail tables");
             Assert.True(highestSlot <= InterfaceSlotEntry.MaxSlot,
                 "Slot " + highestSlot + " is past the eleven the client's parallel arrays hold.");
 
-            //The mask gate. All three shorts are the sentinel in every one of the 140 files, which is
-            //why the gate is derived from the mask rather than recorded.
-            Assert.Equal(140, targetGated);
-            Assert.Equal(140, targetShortsAtSentinel);
+            //The mask gate. All three shorts are the sentinel in every gated file, which is why the
+            //gate is derived from the mask rather than recorded - and that is the assertion, not
+            //how many files happen to be gated.
+            Assert.Equal(targetGated, targetShortsAtSentinel);
 
-            Assert.Equal(15541, hookArrays);
-            Assert.Equal(1391, triggerArrays);
-
-            //The latent non-canonical cases, each pinned at zero occurrences so a repack that
+            //The latent non-canonical cases, each pinned at zero occurrences so a cache that
             //introduces one is visible rather than silently exercising an untested branch.
             Assert.Equal(0, extendedModelTransforms);
             Assert.Equal(new[] { 0, 1 }, actionHighNibbles.Keys.ToArray());
-            Assert.Equal(42117, actionHighNibbles[0]);
-            Assert.Equal(139, actionHighNibbles[1]);
+            Assert.Equal(swept.Records, actionHighNibbles.Values.Sum());
             Assert.Equal(new[] { InterfaceScriptOperand.IntegerType, InterfaceScriptOperand.StringType },
                 operandTypes.Keys.ToArray());
-            Assert.Equal(46033, operandTypes[InterfaceScriptOperand.IntegerType]);
-            Assert.Equal(1505, operandTypes[InterfaceScriptOperand.StringType]);
             Assert.Equal(new[] { 0, 1 }, booleanBytes.Keys.ToArray());
             Assert.Equal(new[] { 0, 1 }, settings.Keys.ToArray());
             Assert.Equal(new[] { 0, 1, 2, 3 }, spriteFlags.Keys.ToArray());
             Assert.Equal(new[] { 0, 1, 5, 9, 13 }, modelSettings.Keys.ToArray());
+
+            //The populations themselves, which belong to whichever cache produced them.
+            RealCacheProfile profile = _fixture.Profile;
+            profile.AssertCensus(_output, "interface.payloadBytes", payloadBytes);
+            foreach (KeyValuePair<int, int> type in types)
+                profile.AssertCensus(_output, "interface.type." + type.Key, type.Value);
+            profile.AssertCensus(_output, "interface.rootComponents", rootComponents);
+            profile.AssertCensus(_output, "interface.parentedComponents", parentedComponents);
+            profile.AssertCensus(_output, "interface.nonZeroContentTypes", nonZeroContentTypes);
+            profile.AssertCensus(_output, "interface.emptySelectedActions", emptySelectedActions);
+            profile.AssertCensus(_output, "interface.modelSentinels", modelSentinels);
+            profile.AssertCensus(_output, "interface.animationSentinels", animationSentinels);
+            profile.AssertCensus(_output, "interface.slotTables", slotTables);
+            profile.AssertCensus(_output, "interface.slotEntries", slotEntries);
+            profile.AssertCensus(_output, "interface.targetGated", targetGated);
+            profile.AssertCensus(_output, "interface.hookArrays", hookArrays);
+            profile.AssertCensus(_output, "interface.triggerArrays", triggerArrays);
+            profile.AssertCensus(_output, "interface.actionHighNibble.0", actionHighNibbles[0]);
+            profile.AssertCensus(_output, "interface.actionHighNibble.1", actionHighNibbles[1]);
+            profile.AssertCensus(_output, "interface.operand.integer",
+                operandTypes[InterfaceScriptOperand.IntegerType]);
+            profile.AssertCensus(_output, "interface.operand.string",
+                operandTypes[InterfaceScriptOperand.StringType]);
         }
 
         /// <summary>
-        ///     The three groups the reference table does not declare are intact interfaces, not
-        ///     garbage.
+        ///     Groups the reference table does not declare are intact interfaces, not garbage.
         /// </summary>
         /// <remarks>
+        ///     <para>
         ///     Their file counts are stated nowhere, so each is recovered by requiring that the size
         ///     trailer parses, that the deltas sum to the body length, and that <b>every</b> resulting
         ///     file consumes exactly under the codec. Exactly one count satisfies all three per group.
         ///     That is a self-proving recovery rather than a guess, and it doubles as an independent
         ///     check on the decoder: a codec with a mis-sized field would find no working count at all.
+        ///     </para>
         ///     <para>
-        ///     Nothing in the editor reads them. This test exists so that stays a decision rather than
-        ///     an accident, and so a future enumeration written over idx3's slots meets a documented
-        ///     case instead of an exception.
+        ///     The client cannot load them - <c>VersionTable.java:135</c> sizes its arrays to
+        ///     <c>maxGroupId + 1</c> and leaves the file count at 0 for an undeclared id, which
+        ///     <c>JS5Archive.method2758:1035</c> rejects - so they are dead weight in the running
+        ///     game and nothing in the editor reads them. This test exists so that stays a decision
+        ///     rather than an accident, and so a future enumeration written over idx3's slots meets
+        ///     a documented case instead of an exception.
+        ///     </para>
+        ///     <para>
+        ///     Which groups those are is a fact about one cache: the repack holds 772, 825 and 891
+        ///     at 14, 32 and 43 files, and the vanilla b639 capture holds none at all on index 3 or
+        ///     anywhere else. The subject list therefore comes from the profile, and the assertion
+        ///     that the cache holds exactly that list is what keeps the test meaningful where the
+        ///     list is empty.
         ///     </para>
         /// </remarks>
         [RealCacheFact]
-        public void TheThreeUndeclaredGroups_AreIntactInterfacesAtExactlyOneFileCount()
+        public void TheUndeclaredGroups_AreIntactInterfacesAtExactlyOneFileCount()
         {
             RSReferenceTable table = _fixture.Table(RSConstants.INTERFACE_DEFINITIONS_INDEX);
+            IReadOnlyList<int> undeclared =
+                _fixture.OpenCache().EnumerateOrphanGroups(RSConstants.INTERFACE_DEFINITIONS_INDEX);
 
-            for (int i = 0; i < UndeclaredGroups.Length; i++)
+            _output.WriteLine($"{_fixture.Profile.Name}: index 3 holds {undeclared.Count} group(s) its " +
+                              $"table does not declare [{string.Join(", ", undeclared)}]");
+
+            if (_fixture.Profile.OrphanGroups != null)
             {
-                int groupId = UndeclaredGroups[i];
+                _fixture.Profile.OrphanGroups.TryGetValue(RSConstants.INTERFACE_DEFINITIONS_INDEX,
+                    out int[] expected);
+                Assert.Equal(expected ?? Array.Empty<int>(), undeclared.ToArray());
+            }
+
+            foreach (int groupId in undeclared)
+            {
                 Assert.Null(table.GetArchiveEntry(groupId));
 
                 byte[] stored = _fixture.RawContainer(RSConstants.INTERFACE_DEFINITIONS_INDEX, groupId);
@@ -368,7 +402,11 @@ namespace FlashEditor.Tests.Definitions
                 _output.WriteLine($"group {groupId}: {payload.Length} bytes of payload, " +
                                   $"file counts that decode exactly: {string.Join(", ", workingCounts)}");
 
-                Assert.Equal(new[] { UndeclaredGroupFileCounts[i] }, workingCounts.ToArray());
+                //Exactly one count works, whatever it is - that is the self-proving half, and it
+                //holds without knowing the answer in advance.
+                Assert.Single(workingCounts);
+                _fixture.Profile.AssertCensus(_output,
+                    $"interface.undeclared.{groupId}.files", workingCounts[0]);
             }
         }
 
