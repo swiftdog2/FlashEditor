@@ -37,6 +37,23 @@ number 639 appears nowhere in its 854 source files. Client and cache are a misma
 which matters if you use that client as a reference for decoder behaviour - notably
 `reference/hydra-model-decoding/`, which was taken from it.
 
+## Where the work list lives
+
+`TODO.md` at the repository root is the running work list: what is in flight, what is queued,
+and the backlog of everything that is not a codec. **Update it at milestones** - a finished
+index, a shipped feature, a change of direction - rather than on every commit, or it fills with
+noise and stops being read.
+
+Two companions to it:
+
+- `reference/index-survey/00-WORKLIST.md` is the per-index plan and stays the authority on cache
+  formats.
+- `reference/DOC-CONFLICTS.md` records claims in our own documents that turned out to be wrong,
+  and how each was settled. Read it before trusting a figure quoted from `reference/`.
+
+Keep volatile numbers out of all three. A count of our own code is stale by the next commit and
+gets read as a target; a count of the cache is stable and worth writing down.
+
 ## Build Requirements
 - Visual Studio or `dotnet` with the .NET 9 SDK.
 - Both projects target `net9.0-windows` and set `EnableWindowsTargeting`, so the solution and

@@ -124,7 +124,8 @@ namespace FlashEditor.Definitions.Editing {
         /// <returns>The column.</returns>
         public static DefinitionColumn ReadOnly<TRow>(string header, Func<TRow, object?> read, int width = 90)
             where TRow : class {
-            return new DefinitionColumn(header, width, row => read(Cast<TRow>(row)), null);
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? read(typed) : null, null);
         }
 
         /// <summary>A text column, editable when a setter is supplied.</summary>
@@ -137,8 +138,12 @@ namespace FlashEditor.Definitions.Editing {
         public static DefinitionColumn Text<TRow>(string header, Func<TRow, string?> read,
             Action<TRow, string>? write = null, int width = 160) where TRow : class {
             return new DefinitionColumn(header, width,
-                row => read(Cast<TRow>(row)),
-                write == null ? null : (row, value) => write(Cast<TRow>(row), value?.ToString() ?? string.Empty));
+                row => Cast<TRow>(row) is TRow typed ? read(typed) : null,
+                write == null ? null : (row, value) => {
+                    //A commit against a recycled row is dropped rather than written to the wrong one.
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, value?.ToString() ?? string.Empty);
+                });
         }
 
         /// <summary>An integer column, editable when a setter is supplied.</summary>
@@ -157,8 +162,11 @@ namespace FlashEditor.Definitions.Editing {
         public static DefinitionColumn Number<TRow>(string header, Func<TRow, object?> read,
             Action<TRow, int>? write = null, int width = 90) where TRow : class {
             return new DefinitionColumn(header, width,
-                row => read(Cast<TRow>(row)),
-                write == null ? null : (row, value) => write(Cast<TRow>(row), ToInt(value)));
+                row => Cast<TRow>(row) is TRow typed ? read(typed) : null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToInt(value));
+                });
         }
 
         private static int ToInt(object? value) {
@@ -167,10 +175,27 @@ namespace FlashEditor.Definitions.Editing {
             return Convert.ToInt32(value, CultureInfo.InvariantCulture);
         }
 
-        private static TRow Cast<TRow>(object row) where TRow : class {
+        /// <summary>
+        ///     The row as its expected type, or <c>null</c> when there is no row.
+        /// </summary>
+        /// <remarks>
+        ///     A null row is a legitimate state, not a defect: ObjectListView evaluates aspect
+        ///     getters for rows that are being recycled during a scroll and for cells it is
+        ///     measuring before the model is attached. Throwing there surfaced as an
+        ///     ArgumentException while simply scrolling a list. The caller renders an empty cell
+        ///     instead.
+        ///
+        ///     A row of the WRONG type still throws, because that can only mean a descriptor wired
+        ///     its columns to a different row type than it produces, and silently blanking those
+        ///     cells would hide it.
+        /// </remarks>
+        private static TRow? Cast<TRow>(object? row) where TRow : class {
+            if (row == null)
+                return null;
+
             return row as TRow ?? throw new ArgumentException(
                 "This column reads a " + typeof(TRow).Name + " but was handed a " +
-                (row?.GetType().Name ?? "null") + ".", nameof(row));
+                row.GetType().Name + ".", nameof(row));
         }
     }
 

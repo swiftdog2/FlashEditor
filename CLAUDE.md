@@ -380,7 +380,9 @@ measurement here confirms it.
 | `reference/hydra-637-definitions/` | De-obfuscated 637 opcode tables, every claim citing a `file:line` |
 | `reference/hydra-637-maps/` | The map path end to end: index-5 addressing and XTEA, the `m` and `l` byte formats, floor definitions, the colour model, and how to read the obfuscated client |
 | `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
+| `TODO.md` | **The running work list.** What is in flight, what is next, and the backlog including everything that is not a codec. Update it at milestones - a finished index, a shipped feature, a direction change - not on every commit, or it becomes noise and stops being read |
 | `reference/index-survey/` | Per-index capability and format survey. `00-WORKLIST.md` is the ordered plan for the indexes that still need an editor, and its section 4 lists the shared abstractions to build before writing more of them |
+| `reference/DOC-CONFLICTS.md` | Claims in our own documents that turned out wrong, with how each was settled. Read it before trusting a figure from `reference/` |
 | `STATE_OF_THE_EDITOR.md` | What has been found and fixed, plus the roadmap |
 | `HydraScape/client/src` | The 637 client itself, for implementation questions |
 
