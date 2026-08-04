@@ -27,46 +27,51 @@ read as targets. Counts *of the cache* are fine, because the cache does not chan
 
 ## In flight
 
-| Item | Notes |
-|---|---|
-| Verifying six index codecs | Indexes 7, 14, 23, 32, 2 remaining families and 26. Each was proved in an independent reader against both caches before the C# was written, but none of the C# has been compiled or tested. Index 7 alone claims every model byte-identical on both caches, across all three encodings |
-| Verifying map hover and texture populate | Whether the incremental texture grid was kept depends on what its measurement showed; keeping the old behaviour was an allowed outcome |
-| Tabs for the six new indexes | The codecs landed without GUI, by design, so none is reachable yet |
+Nothing. Every cache index with content now has a decoder, an encoder and a
+whole-index byte-identity sweep, verified against both caches, sampled and full.
 
 ---
 
 ## Next
 
-Ordered. Each is small enough to land in one pass.
+Ordered. The first three are small; the rest are features.
 
-1. **Interface name recovery.** Apply `HydraScape/docs/cache-format/Leanbow Interface Names.txt`
+1. **Tabs for the six newest indexes.** 7, 14, 23, 32, the remaining index-2 families and 26
+   all landed as codecs with no GUI, by design, so none is reachable from the application.
+   Index 7 wants the Entities page below rather than a list of its own.
+2. **Record index 26's census.** Both runs print `UNRECORDED` for its declared and present
+   texture counts, so a change in that population passes silently. Measured independently:
+   915 in the vanilla capture, 1,408 in the repack. Small, and it closes a real hole.
+3. **The editor half of the JS5 handshake.** The server half is written and pushed; without
+   this the loop cannot be proven at all. See the JS5 section below.
+4. **Interface name recovery.** Apply `HydraScape/docs/cache-format/Leanbow Interface Names.txt`
    (467 entries, keyed by group id). The hash is **djb2** (`h * 31 + c`), confirmed against the
    real cache; the `h * 61 + (c - 32)` variant is wrong and matched nothing. Every entry must
    re-hash and match before it is shown, so a bad row reads as unnamed rather than as a false
    name.
-2. **Entities page.** One page hosting Items, NPCs, Objects and Models with a type selector and a
+5. **Entities page.** One page hosting Items, NPCs, Objects and Models with a type selector and a
    single persistent viewport. Fixes the current tab dance, where seeing an item's model means
    visiting Models first. One GL context, never reparented - reparenting a `GLControl` destroys
    its handle and its context.
-3. **Skinning and animation playback.** The renderer has none: `VertSkins` and `FaceSkin` are
+6. **Skinning and animation playback.** The renderer has none: `VertSkins` and `FaceSkin` are
    parsed but never uploaded, and the shader has no bone attributes. Port the client's CPU-side
    transform application rather than inventing GPU skinning. Viewport runs at 30fps; the
    animation advances on its own stored frame durations, which is a different thing.
-4. **Model export and import via OBJ.** Import must be **geometry replacement, not file
+7. **Model export and import via OBJ.** Import must be **geometry replacement, not file
    replacement**: OBJ cannot express face render types, priority and alpha arrays, textured
    triangle types, vertex skins or particle attachment points, so everything except vertices and
    faces is preserved from the original and an unmappable face count is refused.
-5. **Wireframe and vertex index overlay.** Hover a face, see its edges and its vertex indices, so
+8. **Wireframe and vertex index overlay.** Hover a face, see its edges and its vertex indices, so
    particle attachment points can be chosen. CPU ray-triangle pick, then draw the indices as 2D
    text over the viewport rather than rendering text in GL.
-6. **Particle rendering.** Decode lands with index 7; the simulation and draw path are new work.
+9. **Particle rendering.** Decode lands with index 7; the simulation and draw path are new work.
    Index 27 supplies the emitters and effectors.
-7. **Sprite import.** PNG, JPG and BMP into the sprite editor. Three real problems: palette
+10. **Sprite import.** PNG, JPG and BMP into the sprite editor. Three real problems: palette
    quantisation to 255 colours with index 0 reserved transparent, the black remap (a stored
    `0x000000` decodes as `0x000001`, so pure black must be written as the latter or it
    disappears), and whether to emit an alpha plane for a fully opaque frame. Both spellings and
    both alpha choices occur in shipped data.
-8. **Client background import.** Probably a separate path: the background lives in index 32,
+11. **Client background import.** Probably a separate path: the background lives in index 32,
    which is mostly JPEG rather than sprite format. Storing the supplied file is likely correct;
    transcoding is not.
 
@@ -174,16 +179,21 @@ realistic target stays edit, reconnect, see the change.
 
 ## Done
 
-Kept short. Detail lives in the git history and in `reference/index-survey/00-WORKLIST.md`.
+Kept short. Detail lives in the git history, in `reference/index-survey/00-WORKLIST.md` and in
+`reference/DOC-CONFLICTS.md`.
 
-- Indexes 0, 1, 3, 4, 5, 6, 8, 10, 11, 13, 16, 17, 18, 19, 20, 21, 22, 24, 25, 27, 28, 29, 33
-  and 255 have a decoder, an encoder, a whole-index byte-identity sweep and a tab. Index 12 has
-  everything but the tab.
-- Indexes 34, 35 and 36 are empty in this cache and are struck off permanently.
+- **Every cache index that holds content now has a decoder, an encoder and a whole-index
+  byte-identity sweep.** Indexes 34, 35 and 36 are empty in this cache and are struck off
+  permanently. Index 12 ships without a tab by design; the six most recent codecs have no tab yet.
+- The suite runs against the vanilla b639 capture by default and the private-server repack as a
+  second gate, and asserts relationships rather than counts, so it holds on either.
 - Shared foundations: `DefinitionSweep`, `DefinitionListPanel`, `CacheAddressing`, `OpcodeStream`,
   table-driven enumeration, the signed-smart writer, `RSCache.ReadGroup`.
-- The suite is cache-agnostic and runs against the vanilla b639 capture by default, with the
-  repack as a second gate.
-- Whole-world map viewer, categorised navigation, and the form's autoscaling corrected at source.
-- Two live data-corruption bugs fixed: the map save path writing underwater terrain over the
-  surface square, and a malformed archive able to kill the process uncatchably.
+- Whole-world map viewer with hover feedback and a vertex affordance for height edits,
+  categorised navigation, and the form's autoscaling corrected at source.
+- Textures load off the UI thread and fill progressively without rebuilding the list.
+- Three live defects fixed: the map save path writing underwater terrain over the surface square,
+  a malformed archive able to kill the process uncatchably, and index 26 discarding every field
+  edit in silence.
+- The JS5 update server recomputes its master index instead of freezing it at boot, and can
+  release its file handles so a cache can be replaced underneath it.
