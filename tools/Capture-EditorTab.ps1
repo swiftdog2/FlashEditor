@@ -39,7 +39,18 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
 
 # PrintWindow captures a window that is partially covered or off-screen, which a plain
-# screen-region grab cannot. Flag 2 is PW_RENDERFULLCONTENT, needed for the GL child control.
+# screen-region grab cannot. Flag 2 is PW_RENDERFULLCONTENT.
+#
+# IT DOES NOT CAPTURE THE OPENGL SURFACE, and an earlier version of this comment claimed it did.
+# Measured on this machine: a GLControl clearing to magenta, with its paint handler confirmed
+# firing, captures as blank through CopyFromScreen and through PrintWindow flags 0, 1, 2 and 3 -
+# in this application and in a minimal one outside the repository. Every BitBlt-family capture
+# reads whatever GDI last blitted into that rectangle.
+#
+# So a screenshot of the Models page is NOT evidence about the renderer. It reliably shows the
+# previously visible page's pixels there, which looks exactly like a repaint defect and is not
+# one. That false reading cost a full investigation. Judge the 3D viewer on the monitor, or with
+# a Desktop Duplication or Windows.Graphics.Capture grab, never with this script.
 $sig = @'
 [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint f);
 [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);

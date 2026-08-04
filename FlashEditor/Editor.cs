@@ -7,6 +7,7 @@ using FlashEditor.cache.util;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
@@ -219,6 +220,16 @@ namespace FlashEditor {
         ///     every visit to the tab and throw away the sort and the selection with it.
         /// </remarks>
         private readonly IDefinitionListDescriptor spotAnims = new GraphicListDescriptor();
+
+        /// <summary>
+        ///     What the fonts tab shows, held for the reason <see cref="billboards"/> is.
+        /// </summary>
+        /// <remarks>
+        ///     Index 13 is the third flat list with no wrapper panel of its own, so its descriptor has
+        ///     nowhere else to live. Building one per bind would reload the index on every visit to the
+        ///     tab and throw away the sort and the selection with it.
+        /// </remarks>
+        private readonly IDefinitionListDescriptor fonts = new FontListDescriptor();
 
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
@@ -803,6 +814,12 @@ namespace FlashEditor {
                screens it categorises - so the tab selects the group. */
             Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS, EditorCategory.Media,
                 openCache => LoadingScreenPanel.Bind(openCache));
+            /* Index 13 is one file per group with the group id as the font id, so like indexes 21 and
+               29 the shared list panel is the whole tab. Filed under Media beside Sprites because a
+               font's glyphs are an index-8 sprite set addressed by this same id - the metrics here
+               and the pixels there are one asset split across two indexes. */
+            Register(FontEditorTab, RSConstants.FONTS_INDEX, EditorCategory.Media,
+                openCache => FontPanel.Bind(openCache, fonts));
 
             /* Every page in the deck has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -2322,6 +2339,10 @@ namespace FlashEditor {
             QuickChatPanel.Bind(null);
             ParticlePanel.Bind(null);
             LoadingScreenPanel.Bind(null);
+
+            //And index 13, on the same terms: its sweep decodes every group in the index, so a reload
+            //started from another tab would otherwise leave it reading out of a disposed file store.
+            FontPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {

@@ -165,6 +165,7 @@ namespace FlashEditor {
             QuickChatEditorTab = new TabPage();
             ParticleEditorTab = new TabPage();
             LoadingScreenEditorTab = new TabPage();
+            FontEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -274,14 +275,22 @@ namespace FlashEditor {
             // The navigation tree and the editor it shows, side by side. FixedPanel.Panel1 keeps the
             // tree at its width when the window is resized, so growing the window grows the editor -
             // the tree's width is set by its longest entry and does not benefit from more.
-            EditorNavSplit.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            //
+            // Docked rather than anchored at (12, 41). Anchoring left a strip of bare form around the
+            // whole editor - 11px between the menu strip and the split, 12px on the other three sides
+            // - which nothing but the form's own background paints. That background is only drawn
+            // where something invalidates it, so on a window maximised straight after launch the part
+            // of the strip that was outside the restored bounds stays unpainted and reads as a black
+            // band above the page. Filling the client area removes the strip rather than repainting
+            // it, and hands every page the 24px of width and 23px of height the margin was taking.
+            EditorNavSplit.Dock = DockStyle.Fill;
             EditorNavSplit.FixedPanel = FixedPanel.Panel1;
-            EditorNavSplit.Location = new Point(12, 41);
+            EditorNavSplit.Location = new Point(0, 42);
             EditorNavSplit.Name = "EditorNavSplit";
             EditorNavSplit.Panel1.Controls.Add(EditorNavTree);
             EditorNavSplit.Panel1MinSize = 200;
             EditorNavSplit.Panel2.Controls.Add(EditorTabControl);
-            EditorNavSplit.Size = new Size(1400, 595);
+            EditorNavSplit.Size = new Size(1424, 606);
             EditorNavSplit.SplitterDistance = 275;
             EditorNavSplit.SplitterWidth = 4;
             EditorNavSplit.TabIndex = 3;
@@ -324,6 +333,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(SpotAnimEditorTab);
             EditorTabControl.Controls.Add(SpriteEditorTab);
             EditorTabControl.Controls.Add(TextureViewerTab);
+            EditorTabControl.Controls.Add(FontEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(LoadingScreenEditorTab);
@@ -1686,6 +1696,16 @@ namespace FlashEditor {
             LoadingScreenEditorTab.Text = "Loading Screens";
             LoadingScreenEditorTab.UseVisualStyleBackColor = true;
             //
+            // FontEditorTab
+            //
+            FontEditorTab.Controls.Add(FontPanel);
+            FontEditorTab.Location = new Point(4, 37);
+            FontEditorTab.Name = "FontEditorTab";
+            FontEditorTab.Size = new Size(1113, 554);
+            FontEditorTab.TabIndex = 23;
+            FontEditorTab.Text = "Fonts";
+            FontEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1983,6 +2003,11 @@ namespace FlashEditor {
         //screens it categorises - so the panel selects the group and shows a record's fields below.
         private TabPage LoadingScreenEditorTab;
         private FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel LoadingScreenPanel = new FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel();
+        //Index 13, one file per group and the group id is the font id, so the shared list panel is
+        //the whole tab the way it is for indexes 21 and 29. The 256 advance widths are deliberately
+        //not columns: they belong beside the index-8 glyph sheet, where an edited width can be seen.
+        private TabPage FontEditorTab;
+        private FlashEditor.Definitions.Editing.DefinitionListPanel FontPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

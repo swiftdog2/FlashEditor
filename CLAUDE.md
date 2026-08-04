@@ -279,6 +279,12 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   changes by eye; model 15748 carries a render-type-2 face and is a fast case to load.
   `tools/Capture-EditorTab.ps1` launches the app, selects a tab through UI Automation and writes a
   PNG, which is the only automated check that a tab draws at all. Use it on any tab you touch.
+  **It cannot see the OpenGL surface, so it is no evidence at all about the renderer.** Measured:
+  a `GLControl` clearing to magenta, paint handler confirmed firing, captures blank through
+  `CopyFromScreen` and `PrintWindow` flags 0 to 3, in this app and in a minimal one outside the
+  repo. That rectangle shows whatever GDI last blitted into it, which reads convincingly as the
+  previous page bleeding through and is not. One investigation was spent on that phantom. The
+  3D viewer is judged on the monitor, or with Desktop Duplication.
 - **Every literal pixel size in `Editor.Designer.cs` is scaled at runtime.** It sets
   `AutoScaleMode.Font` with `AutoScaleDimensions(9F, 20F)`, so each hardcoded `Width`/`Height` and
   each `SizeType.Absolute` row is multiplied by the font ratio, about two thirds on the development
