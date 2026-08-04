@@ -151,6 +151,7 @@ namespace FlashEditor {
             AnimationEditorTab = new TabPage();
             SoundEffectEditorTab = new TabPage();
             ConfigEditorTab = new TabPage();
+            HuffmanEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -265,6 +266,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(AnimationEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(ConfigEditorTab);
+            EditorTabControl.Controls.Add(HuffmanEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -971,6 +973,7 @@ namespace FlashEditor {
             button3.TabIndex = 0;
             button3.Text = "Import NPC";
             button3.UseVisualStyleBackColor = false;
+            button3.Click += ImportNpcBtn_Click;
             // 
             // NPCListView
             // 
@@ -989,6 +992,9 @@ namespace FlashEditor {
             NPCListView.AllColumns.Add(npcModelIdsColumn);
             NPCListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             NPCListView.BackColor = Color.White;
+            //Without this the grid's activation is None, so the two handlers below can never run and
+            //index 18 is read-only however complete its write path is.
+            NPCListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
             NPCListView.CellEditUseWholeCell = false;
             NPCListView.Columns.AddRange(new ColumnHeader[] { npcIdColumn, nameColumn, sizeColumn, levelColumn, olvColumn10, olvColumn9, olvColumn11, rotationColumn, ambientColumn, contrastColumn, attackCursorColumn, visiblePriorityColumn, npcModelIdsColumn });
             NPCListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
@@ -1005,12 +1011,17 @@ namespace FlashEditor {
             NPCListView.UseCompatibleStateImageBehavior = false;
             NPCListView.View = View.Details;
             NPCListView.VirtualMode = true;
+            NPCListView.CellEditFinished += NPCListView_CellEditFinished;
+            NPCListView.CellEditStarting += NPCListView_CellEditStarting;
             NPCListView.SelectedIndexChanged += NPCListView_SelectedIndexChanged;
-            // 
+            //
             // npcIdColumn
-            // 
+            //
             npcIdColumn.AspectName = "id";
             npcIdColumn.Groupable = false;
+            //The id is the address, not a field: the commit derives the group and file from it, so
+            //an edited id writes the definition over a different NPC.
+            npcIdColumn.IsEditable = false;
             npcIdColumn.Searchable = false;
             npcIdColumn.Text = "ID";
             npcIdColumn.Width = 78;
@@ -1185,6 +1196,9 @@ namespace FlashEditor {
             GameObjectListView.AllColumns.Add(morphVarbitColumn);
             GameObjectListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             GameObjectListView.BackColor = Color.White;
+            //Same omission the NPC grid had: the handlers below are subscribed but nothing ever
+            //raises them while the activation is None.
+            GameObjectListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
             GameObjectListView.CellEditUseWholeCell = false;
             GameObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
             GameObjectListView.Font = new Font("Consolas", 11.25F);
@@ -1208,6 +1222,8 @@ namespace FlashEditor {
             // 
             objectIdColumn.AspectName = "id";
             objectIdColumn.Groupable = false;
+            //As with the NPC grid: the id is what the commit turns into a group and a file.
+            objectIdColumn.IsEditable = false;
             objectIdColumn.Searchable = false;
             objectIdColumn.Text = "ID";
             objectIdColumn.Width = 78;
@@ -1449,6 +1465,16 @@ namespace FlashEditor {
             ConfigEditorTab.Text = "Config";
             ConfigEditorTab.UseVisualStyleBackColor = true;
             //
+            // HuffmanEditorTab
+            //
+            HuffmanEditorTab.Controls.Add(HuffmanPanel);
+            HuffmanEditorTab.Location = new Point(4, 37);
+            HuffmanEditorTab.Name = "HuffmanEditorTab";
+            HuffmanEditorTab.Size = new Size(1113, 554);
+            HuffmanEditorTab.TabIndex = 13;
+            HuffmanEditorTab.Text = "Huffman";
+            HuffmanEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1674,6 +1700,10 @@ namespace FlashEditor {
         //group in that index is the record type rather than a page of ids.
         private TabPage ConfigEditorTab;
         private FlashEditor.Definitions.Config.ConfigEditorPanel ConfigPanel = new FlashEditor.Definitions.Config.ConfigEditorPanel();
+        //Index 10, which holds one group holding one file, so there is no list to put beside it. The
+        //panel shows the 256 records inside that file and a live compressor over them.
+        private TabPage HuffmanEditorTab;
+        private FlashEditor.Definitions.Compression.HuffmanEditorPanel HuffmanPanel = new FlashEditor.Definitions.Compression.HuffmanEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

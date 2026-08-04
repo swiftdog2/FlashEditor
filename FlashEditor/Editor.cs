@@ -2,6 +2,7 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
@@ -562,6 +563,11 @@ namespace FlashEditor {
                record does: ten tone slots, each with its envelopes and a filter cascade. */
             Register(SoundEffectEditorTab, RSConstants.SOUND_EFFECTS,
                 openCache => SoundEffectPanel.Bind(openCache));
+            /* Index 10 is one group holding one file, so there is nothing to list: the tab shows the
+               256 records inside that file and runs text through them, which is the only place in
+               the editor where a codec can be watched working rather than trusted. */
+            Register(HuffmanEditorTab, RSConstants.HUFFMAN_INDEX,
+                openCache => HuffmanPanel.Bind(openCache));
 
             /* Every page in the strip has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -1104,24 +1110,86 @@ namespace FlashEditor {
             PrintDifferences(newDef, currentObject);
         }
 
+        /// <summary>
+        ///     Stages an edited NPC definition.
+        /// </summary>
+        /// <remarks>
+        ///     Reachable only because <c>NPCListView.CellEditActivation</c> is set; without it
+        ///     ObjectListView never raises this and index 18 is read-only in the editor whatever the
+        ///     codec beneath it can do.
+        ///     <para>
+        ///     The unchanged check is inside <see cref="DefinitionWriter.Save"/>, against the bytes
+        ///     the cache holds rather than against the pre-edit snapshot, so a field typed back to
+        ///     its original value writes nothing.
+        ///     </para>
+        /// </remarks>
         private void NPCListView_CellEditFinished(object sender, CellEditEventArgs e) {
             NPCDefinition newDef = (NPCDefinition) e.RowObject;
 
-            //Skip write if nothing actually changed
-            byte[] newBytes = newDef.Encode().ToArray();
-            byte[] oldBytes = currentNpc.Encode().ToArray();
-            if (newBytes.AsSpan().SequenceEqual(oldBytes))
+            if (!DefinitionWriter.Save(cache, RSConstants.NPC_DEFINITIONS_INDEX, newDef.id,
+                                       newDef.Encode().ToArray()))
                 return;
 
             cache.npcs[newDef.id] = newDef;
 
-            int archiveId = newDef.id / 128;
-            int entryId = newDef.id % 128;
-
-            JagStream data = new JagStream(newBytes);
-            cache.WriteFile(RSConstants.NPC_DEFINITIONS_INDEX, archiveId, entryId, data);
-
             PrintDifferences(newDef, currentNpc);
+        }
+
+        /// <summary>
+        ///     Replaces the selected NPC's definition with the encoded bytes of a file on disk.
+        /// </summary>
+        /// <remarks>
+        ///     The bytes are decoded before anything is staged. An NPC record is a self-delimiting
+        ///     opcode stream with no length prefix, so the only check available on it is that our
+        ///     decoder can walk it to its terminator - and the decoder throws on an opcode it does
+        ///     not know rather than skipping it, which is what makes that check worth anything.
+        ///     <para>
+        ///     The file's own id is ignored: the target is the row that was selected, since the id is
+        ///     the cache address rather than a field of the record.
+        ///     </para>
+        /// </remarks>
+        private void ImportNpcBtn_Click(object sender, EventArgs e) {
+            if (cache == null || NPCListView.SelectedObject is not NPCDefinition target) {
+                MessageBox.Show(this, "Select the NPC to overwrite first.", "Import NPC",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using OpenFileDialog picker = new OpenFileDialog {
+                Title = "Import NPC " + target.id,
+                Filter = "NPC definition (*.dat)|*.dat|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            try {
+                byte[] imported = File.ReadAllBytes(picker.FileName);
+
+                //Decoded to validate, but the file's own bytes are what gets stored: re-encoding
+                //would substitute our opcode order for the one the file carries, and the format
+                //has more than one valid spelling of the same definition.
+                NPCDefinition decoded = new NPCDefinition(new JagStream(imported));
+                decoded.SetId(target.id);
+
+                if (!DefinitionWriter.Save(cache, RSConstants.NPC_DEFINITIONS_INDEX, target.id, imported)) {
+                    NPCLoadingLabel.Text = "NPC " + target.id + " already holds those bytes";
+                    return;
+                }
+
+                cache.npcs[target.id] = decoded;
+                NPCListView.RemoveObject(target);
+                NPCListView.AddObject(decoded);
+                NPCListView.SelectedObject = decoded;
+                NPCLoadingLabel.Text = "Imported NPC " + target.id;
+            }
+            catch (Exception ex) {
+                //Reported rather than thrown: a malformed file must cost the import and nothing else
+                Debug("NPC import failed: " + ex);
+                MessageBox.Show(this,
+                    "Could not import that file as an NPC definition:" + Environment.NewLine + ex.Message,
+                    "Import NPC", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void ExportItemDatBtn_Click(object sender, EventArgs e) {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FlashEditor.cache;
 
 namespace FlashEditor.Cache.Region {
@@ -19,17 +20,12 @@ namespace FlashEditor.Cache.Region {
         ///     Not an error. The client reaches the same state and renders the square with no
         ///     objects, so an empty loc list is the correct outcome.
         ///     <para>
-        ///     Measured by <c>RealCacheXteaCoverageTests</c>: of the 1684 shipped <c>l</c> groups,
-        ///     659 are encrypted in the reference cache and <b>61</b> of those have no key in the
-        ///     shipped dump. Every one of the remaining 598 decrypts. An earlier revision of this
-        ///     comment put the unkeyed figure at 131, which no measurement supports.
-        ///     </para>
-        ///     <para>
-        ///     The encrypted count is a property of the cache, not of the format, and it moves: the
-        ///     same sweep over the OpenRS2 b639 archive finds 1649 encrypted and 62 unkeyed, because
-        ///     that copy stores as ciphertext the squares the reference cache holds as plaintext.
-        ///     Readable coverage lands in the same place either way, so do not treat 659 as a
-        ///     constant.
+        ///     How many squares land here is a property of the cache, not of the format, and it
+        ///     moves a long way between the two supported ones: the vanilla b639 capture holds 1649
+        ///     of its 1684 <c>l</c> groups as ciphertext against the repack's 659, because the
+        ///     repack has already decrypted most of them in place. Every keyed group decrypts in
+        ///     both, which is what <c>RealCacheXteaCoverageTests</c> pins; the unkeyed remainder is
+        ///     62 and 61. Never treat either figure as a constant.
         ///     </para>
         /// </remarks>
         MissingKey
@@ -68,6 +64,19 @@ namespace FlashEditor.Cache.Region {
             ResolveGroup(MapSquareNames.Terrain(regionX, regionY)) != -1;
 
         /// <summary>
+        ///     Whether the square has underwater terrain.
+        /// </summary>
+        /// <remarks>
+        ///     Far fewer squares have a seabed than have a surface, so this is a separate question
+        ///     from <see cref="Exists"/> rather than a property of the same square.
+        /// </remarks>
+        /// <param name="regionX">Region X.</param>
+        /// <param name="regionY">Region Y.</param>
+        /// <returns><c>true</c> when a <c>um</c> group exists for this square.</returns>
+        public bool ExistsUnderwater(int regionX, int regionY) =>
+            ResolveGroup(MapSquareNames.UnderwaterTerrain(regionX, regionY)) != -1;
+
+        /// <summary>
         ///     Loads a map square's terrain and, where readable, its locations.
         /// </summary>
         /// <param name="regionX">Region X, 0..255.</param>
@@ -81,7 +90,7 @@ namespace FlashEditor.Cache.Region {
             if (terrainGroup == -1)
                 return null;
 
-            Region region = new Region(MapSquareNames.RegionId(regionX, regionY));
+            Region region = new Region(MapSquareNames.RegionId(regionX, regionY), MapSquareLayer.Surface);
             region.LoadTerrain(ReadGroup(terrainGroup));
 
             int locGroup = ResolveGroup(MapSquareNames.Locations(regionX, regionY));
@@ -101,32 +110,106 @@ namespace FlashEditor.Cache.Region {
             return region;
         }
 
+        /// <summary>Planes an underwater terrain file carries.</summary>
+        /// <remarks>
+        ///     One, and the client agrees: the underwater scene is built as
+        ///     <c>new Class305_Sub1(1, ...)</c> (Class181.java:230) against the surface scene's
+        ///     four (<c>:216</c>). Decoding a <c>um</c> file with more planes runs off the end of
+        ///     the buffer on every shipped square.
+        /// </remarks>
+        public const int UnderwaterPlanes = 1;
+
         /// <summary>
         ///     Loads the underwater terrain for a square, if it has any.
         /// </summary>
-        /// <remarks>
-        ///     Single plane. Every one of the 900 shipped <c>um</c> files fails to consume exactly
-        ///     with more than one, and none carries an extras tail.
-        /// </remarks>
         /// <param name="regionX">Region X.</param>
         /// <param name="regionY">Region Y.</param>
         /// <returns>The decoded square, or <c>null</c> when there is no underwater terrain.</returns>
-        public Region LoadUnderwater(int regionX, int regionY) {
+        public Region LoadUnderwater(int regionX, int regionY) =>
+            LoadUnderwater(regionX, regionY, out _);
+
+        /// <summary>
+        ///     Loads the underwater terrain for a square, and where readable its locations.
+        /// </summary>
+        /// <remarks>
+        ///     The returned square is tagged <see cref="MapSquareLayer.Underwater"/>, which is what
+        ///     sends <see cref="Save"/> at the <c>um</c> and <c>ul</c> groups rather than at the
+        ///     surface pair.
+        ///
+        ///     No <c>ul</c> group is encrypted in either supported cache, so
+        ///     <see cref="LocationLoadResult.MissingKey"/> is not expected here - but the same
+        ///     fallback is used rather than a different one, because an unreadable loc file has to
+        ///     produce an empty list and a square that refuses to save either way.
+        /// </remarks>
+        /// <param name="regionX">Region X.</param>
+        /// <param name="regionY">Region Y.</param>
+        /// <param name="locationResult">Why the locations were or were not read.</param>
+        /// <returns>The decoded square, or <c>null</c> when there is no underwater terrain.</returns>
+        public Region LoadUnderwater(int regionX, int regionY, out LocationLoadResult locationResult) {
+            locationResult = LocationLoadResult.NotPresent;
+
             int group = ResolveGroup(MapSquareNames.UnderwaterTerrain(regionX, regionY));
             if (group == -1)
                 return null;
 
-            Region region = new Region(MapSquareNames.RegionId(regionX, regionY));
-            region.LoadTerrain(ReadGroup(group), 1);
+            Region region = new Region(MapSquareNames.RegionId(regionX, regionY), MapSquareLayer.Underwater);
+            region.LoadTerrain(ReadGroup(group), UnderwaterPlanes);
 
             int locGroup = ResolveGroup(MapSquareNames.UnderwaterLocations(regionX, regionY));
-            if (locGroup != -1) {
-                JagStream locs = TryReadGroup(locGroup);
-                if (locs != null)
-                    region.LoadLocations(locs);
+            if (locGroup == -1)
+                return region;
+
+            JagStream locs = TryReadGroup(locGroup);
+            if (locs == null) {
+                locationResult = LocationLoadResult.MissingKey;
+                return region;
             }
 
+            region.LoadLocations(locs);
+            locationResult = LocationLoadResult.Loaded;
             return region;
+        }
+
+        /// <summary>
+        ///     Loads a square's NPC spawn table, the <c>n</c> family.
+        /// </summary>
+        /// <remarks>
+        ///     <b>No XTEA key is passed, deliberately.</b> The client has the wiring backwards -
+        ///     <c>Class181.java:76-77</c> hands the real keys to <c>n</c>, which is never
+        ///     encrypted, while <c>:44</c> hands <c>null</c> to <c>l</c>, which is the only family
+        ///     that ever is. Reproducing that would make every spawn table fail to read.
+        /// </remarks>
+        /// <param name="regionX">Region X.</param>
+        /// <param name="regionY">Region Y.</param>
+        /// <returns>The spawns, or <c>null</c> when the square has no spawn table.</returns>
+        public List<NpcSpawn>? LoadNpcSpawns(int regionX, int regionY) {
+            int group = ResolveGroup(MapSquareNames.NpcSpawns(regionX, regionY));
+            return group == -1 ? null : RegionCodec.DecodeNpcSpawns(ReadGroup(group));
+        }
+
+        /// <summary>
+        ///     Stages a square's NPC spawn table back into the cache.
+        /// </summary>
+        /// <remarks>
+        ///     As with <see cref="Save"/>, this only stages: nothing reaches disk until the cache
+        ///     is committed. The caller owns the decision that something changed, because a spawn
+        ///     table is a plain list with no dirty flag to consult - and re-encoding an unchanged
+        ///     one would bump the archive version and its CRC for nothing.
+        /// </remarks>
+        /// <param name="regionX">Region X.</param>
+        /// <param name="regionY">Region Y.</param>
+        /// <param name="spawns">The spawns to write.</param>
+        /// <returns><c>true</c> when the square has a spawn group to write to.</returns>
+        public bool SaveNpcSpawns(int regionX, int regionY, IReadOnlyList<NpcSpawn> spawns) {
+            if (spawns == null) throw new ArgumentNullException(nameof(spawns));
+
+            int group = ResolveGroup(MapSquareNames.NpcSpawns(regionX, regionY));
+            if (group == -1)
+                return false;
+
+            cache.WriteFile(RSConstants.MAPS_INDEX, group, 0,
+                new JagStream(RegionCodec.EncodeNpcSpawns(spawns)));
+            return true;
         }
 
         /// <summary>
@@ -159,6 +242,13 @@ namespace FlashEditor.Cache.Region {
         ///
         ///     Both files go through one batch, so the index-5 reference table - a 114KB payload -
         ///     is encoded once rather than once per file.
+        ///
+        ///     <b>The target family comes from the square, not from this method.</b> Until 2026-08-04
+        ///     the surface names were resolved unconditionally, so saving a square that came back
+        ///     from <see cref="LoadUnderwater"/> wrote its single plane of seabed over the
+        ///     four-plane <c>m</c> group - a silent, total loss of that square's surface terrain,
+        ///     with a shorter file, a fresh CRC and no error anywhere. <see cref="Region.Layer"/>
+        ///     is recorded at load precisely so this cannot be inferred wrongly.
         /// </remarks>
         /// <param name="region">The square to save.</param>
         /// <param name="regionX">Region X.</param>
@@ -171,7 +261,7 @@ namespace FlashEditor.Cache.Region {
                 return false;
 
             using (cache.BeginBatch()) {
-                int terrainGroup = ResolveGroup(MapSquareNames.Terrain(regionX, regionY));
+                int terrainGroup = ResolveGroup(MapSquareNames.Terrain(region.Layer, regionX, regionY));
                 if (terrainGroup != -1)
                     cache.WriteFile(RSConstants.MAPS_INDEX, terrainGroup, 0,
                         new JagStream(RegionCodec.EncodeTerrain(region)));
@@ -179,7 +269,7 @@ namespace FlashEditor.Cache.Region {
                 //Only write locations back where the square actually had a readable loc file. A
                 //square whose locations could not be decrypted decoded to an empty list, and
                 //writing that empty list would erase every object in it.
-                int locGroup = ResolveGroup(MapSquareNames.Locations(regionX, regionY));
+                int locGroup = ResolveGroup(MapSquareNames.Locations(region.Layer, regionX, regionY));
                 if (locGroup != -1 && region.RawLocations.Length > 0)
                     cache.WriteFile(RSConstants.MAPS_INDEX, locGroup, 0,
                         new JagStream(RegionCodec.EncodeLocations(region)));

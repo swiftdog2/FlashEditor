@@ -99,12 +99,25 @@ namespace FlashEditor.Cache.Region {
 
         /// <summary>Creates a region from its packed id.</summary>
         /// <param name="id">Region id, <c>(regionX &lt;&lt; 8) | regionY</c>.</param>
-        public Region(int id) {
+        /// <param name="layer">
+        ///     Which index-5 family this square was read from. Taken at construction rather than
+        ///     set afterwards, so a square can never reach the save path without one.
+        /// </param>
+        public Region(int id, MapSquareLayer layer = MapSquareLayer.Surface) {
             regionID = id;
             baseX = (id >> 8 & 0xFF) << 6;
             baseY = (id & 0xFF) << 6;
+            Layer = layer;
             Allocate(PLANES);
         }
+
+        /// <summary>
+        ///     Which index-5 file family this square came from, and therefore which it saves to.
+        /// </summary>
+        /// <remarks>
+        ///     See <see cref="MapSquareLayer"/> for why this is recorded rather than inferred.
+        /// </remarks>
+        public MapSquareLayer Layer { get; }
 
         private void Allocate(int planes) {
             planeCount = planes;
@@ -491,9 +504,13 @@ namespace FlashEditor.Cache.Region {
         public List<Location> GetLocations() => locations;
 
         /// <summary>The index-5 group name holding this square's locations.</summary>
-        public string GetLocationsIdentifier() => MapSquareNames.Locations(regionID);
+        /// <remarks>Resolves against <see cref="Layer"/>, so an underwater square names <c>ul</c>.</remarks>
+        public string GetLocationsIdentifier() =>
+            MapSquareNames.Locations(Layer, MapSquareNames.RegionX(regionID), MapSquareNames.RegionY(regionID));
 
         /// <summary>The index-5 group name holding this square's terrain.</summary>
-        public string GetTerrainIdentifier() => MapSquareNames.Terrain(regionID);
+        /// <remarks>Resolves against <see cref="Layer"/>, so an underwater square names <c>um</c>.</remarks>
+        public string GetTerrainIdentifier() =>
+            MapSquareNames.Terrain(Layer, MapSquareNames.RegionX(regionID), MapSquareNames.RegionY(regionID));
     }
 }

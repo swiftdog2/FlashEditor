@@ -163,5 +163,66 @@ namespace FlashEditor.Cache.Region {
             stream.WriteByte(0);
             return stream.Flip().ToArray();
         }
+
+        /// <summary>
+        ///     Decodes a square's NPC spawn table, the <c>n</c> family.
+        /// </summary>
+        /// <remarks>
+        ///     Fixed four-byte records with no count and no terminator, read until the buffer runs
+        ///     out - the client's loop condition is <c>caret &lt; length</c>
+        ///     (<c>Particle_Sub3_Sub2.java:233-246</c>). An empty file is legal and occurs in both
+        ///     supported caches, so an empty list is a real decode rather than a failure.
+        ///
+        ///     A length that is not a whole number of records means the stream is not what it was
+        ///     taken for, and is rejected rather than truncated. The client would read past the end
+        ///     of its own buffer there; every shipped table is a clean multiple of four.
+        /// </remarks>
+        /// <param name="buf">The decompressed spawn file.</param>
+        /// <returns>The decoded spawns, in file order.</returns>
+        /// <exception cref="System.IO.InvalidDataException">The file is not a whole number of records.</exception>
+        public static List<NpcSpawn> DecodeNpcSpawns(JagStream buf) {
+            if (buf == null) throw new ArgumentNullException(nameof(buf));
+
+            var spawns = new List<NpcSpawn>();
+
+            while (buf.Remaining() > 0) {
+                if (buf.Remaining() < NpcSpawnRecordBytes)
+                    throw new System.IO.InvalidDataException(
+                        "NPC spawn file has " + buf.Remaining() + " bytes left over, which is less " +
+                        "than one " + NpcSpawnRecordBytes + " byte record");
+
+                int packed = buf.ReadUnsignedShort();
+                int npcId = buf.ReadUnsignedShort();
+
+                spawns.Add(new NpcSpawn(npcId, packed >> 14, (packed >> 7) & 0x3F, packed & 0x3F));
+            }
+
+            return spawns;
+        }
+
+        /// <summary>
+        ///     Encodes a square's NPC spawn table.
+        /// </summary>
+        /// <remarks>
+        ///     No header and no terminator: an empty table encodes to zero bytes, which is what the
+        ///     shipped empty tables hold.
+        /// </remarks>
+        /// <param name="spawns">The spawns, in the order they should be written.</param>
+        /// <returns>The encoded spawn file.</returns>
+        public static byte[] EncodeNpcSpawns(IReadOnlyList<NpcSpawn> spawns) {
+            if (spawns == null) throw new ArgumentNullException(nameof(spawns));
+
+            var stream = new JagStream();
+
+            foreach (NpcSpawn spawn in spawns) {
+                stream.WriteShort(spawn.PackedPosition);
+                stream.WriteShort(spawn.NpcId);
+            }
+
+            return stream.Flip().ToArray();
+        }
+
+        /// <summary>Bytes one NPC spawn record occupies: two unsigned shorts.</summary>
+        public const int NpcSpawnRecordBytes = 4;
     }
 }

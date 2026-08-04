@@ -145,6 +145,9 @@ namespace FlashEditor.Map {
             RaiseHeight,
             LowerHeight,
             ToggleBlockedFlag,
+            PlaceLocation,
+            RotateTopLocation,
+            CycleTopLocationShape,
             DeleteTopLocation
         }
 
@@ -157,8 +160,45 @@ namespace FlashEditor.Map {
             ("Raise height", MapTool.RaiseHeight),
             ("Lower height", MapTool.LowerHeight),
             ("Toggle blocked flag", MapTool.ToggleBlockedFlag),
+            ("Place location", MapTool.PlaceLocation),
+            ("Rotate top location", MapTool.RotateTopLocation),
+            ("Cycle top location shape", MapTool.CycleTopLocationShape),
             ("Delete top location", MapTool.DeleteTopLocation)
         };
+
+        /// <summary>
+        ///     The upper bound the Value box takes for each tool, and why.
+        /// </summary>
+        /// <remarks>
+        ///     Not cosmetic. An underlay id is written back as <c>id + 81</c> in a single byte
+        ///     (<c>RegionCodec.EncodeTile</c>), so 175 and above wraps and the tile silently decodes
+        ///     as something else entirely - the box allowed 255 before this existed. An overlay id is
+        ///     written as a bare byte and so reaches 255, and an object id is a smart delta with no
+        ///     byte to overflow, which is what lets the place tool address the whole of index 16.
+        /// </remarks>
+        private static int MaximumValueFor(MapTool tool) {
+            switch (tool) {
+                case MapTool.PaintUnderlay:
+                    return 174;
+                case MapTool.PaintOverlay:
+                    return 255;
+                case MapTool.PlaceLocation:
+                    return 65535;
+                default:
+                    return 255;
+            }
+        }
+
+        /// <summary>
+        ///     The shape a freshly placed location takes.
+        /// </summary>
+        /// <remarks>
+        ///     10 is the ordinary standing game object. Shapes 0-3 are walls, 4-8 wall decorations
+        ///     and 22 is ground decoration (Class64_Sub17.anIntArray3685), all of which need a wall
+        ///     or a floor to make sense of; 10 is the one that renders anywhere. Cycle it afterwards
+        ///     with the shape tool.
+        /// </remarks>
+        private const int PlacedLocationShape = 10;
 
         private static readonly (string Name, MapLayers Layer)[] LayerRows = {
             ("Underlay", MapLayers.Underlay),
@@ -199,6 +239,12 @@ namespace FlashEditor.Map {
             };
 
             layerList.ItemCheck += OnLayerToggled;
+
+            //BuildLayout has already selected the first tool, so the bound is applied once here as
+            //well as on every later change - otherwise the box would keep whatever maximum it was
+            //constructed with until the user touched the combo.
+            toolBox.SelectedIndexChanged += (_, _) => ApplyToolValueBound();
+            ApplyToolValueBound();
 
             view.TileHovered += (_, hit) => {
                 lastHit = hit;
@@ -294,6 +340,9 @@ namespace FlashEditor.Map {
         private MapTool SelectedTool =>
             toolBox.SelectedIndex >= 0 ? ToolRows[toolBox.SelectedIndex].Tool : MapTool.Inspect;
 
+        /// <summary>Narrows the Value box to the range the selected tool can encode.</summary>
+        private void ApplyToolValueBound() => toolValue.Maximum = MaximumValueFor(SelectedTool);
+
         private void OnViewChanged() {
             Rectangle regions = view.Camera.VisibleRegionBounds();
             navigator.SetViewport(new RectangleF(regions.X, regions.Y, regions.Width, regions.Height));
@@ -329,7 +378,7 @@ namespace FlashEditor.Map {
             if (square == null)
                 return;
 
-            IMapEdit edit = BuildEdit(SelectedTool, square, hit);
+            IMapEdit? edit = BuildEdit(SelectedTool, square, hit);
             if (edit == null)
                 return;
 
@@ -367,7 +416,20 @@ namespace FlashEditor.Map {
             return result;
         }
 
-        private IMapEdit BuildEdit(MapTool tool, MapRegion square, TileHit hit) {
+        /// <summary>
+        ///     Turns a click into the edit the selected tool would apply, if any.
+        /// </summary>
+        /// <remarks>
+        ///     Nullable because most tools decline on some tiles - cycling a shape needs an overlay
+        ///     to cycle and the location tools need a location to act on - and a decline has to be
+        ///     distinguishable from an edit so the caller does not push an empty entry onto the
+        ///     undo stack.
+        /// </remarks>
+        /// <param name="tool">The selected tool.</param>
+        /// <param name="square">The square the click landed on.</param>
+        /// <param name="hit">The tile the click landed on.</param>
+        /// <returns>The edit, or <c>null</c> when the tool has nothing to do on this tile.</returns>
+        private IMapEdit? BuildEdit(MapTool tool, MapRegion square, TileHit hit) {
             int p = hit.Plane, x = hit.LocalX, y = hit.LocalY;
             int value = (int) toolValue.Value;
 
@@ -406,17 +468,84 @@ namespace FlashEditor.Map {
                     return new SetTileFlagsEdit(square, p, x, y,
                         (byte) (square.GetRenderRule(p, x, y) ^ 0x1));
 
+                case MapTool.PlaceLocation:
+                    return new AddLocationEdit(square,
+                        NewLocation(square, value, PlacedLocationShape, 0, p, x, y));
+
+                case MapTool.RotateTopLocation: {
+                    Location? target = TopLocation(square, p, x, y);
+                    return target == null
+                        ? null
+                        : new ReplaceLocationEdit(square, target,
+                            NewLocation(square, target.Id, target.Shape,
+                                (target.Orientation + 1) & 3, p, x, y));
+                }
+
+                case MapTool.CycleTopLocationShape: {
+                    Location? target = TopLocation(square, p, x, y);
+                    return target == null
+                        ? null
+                        : new ReplaceLocationEdit(square, target,
+                            NewLocation(square, target.Id, (target.Shape + 1) % LocationShapeCount,
+                                target.Orientation, p, x, y));
+                }
+
                 case MapTool.DeleteTopLocation: {
-                    Location target = null;
-                    foreach (Location loc in square.GetLocations())
-                        if (loc.Plane == p && loc.LocalX == x && loc.LocalY == y)
-                            target = loc;
+                    Location? target = TopLocation(square, p, x, y);
                     return target == null ? null : new RemoveLocationEdit(square, target);
                 }
 
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        ///     Shape codes a location can take, 0..22 inclusive.
+        /// </summary>
+        /// <remarks>
+        ///     The decoder rejects anything above 22 as a desynchronised stream
+        ///     (<c>Region.LoadLocations</c>), so a cycle that ran past it would produce a square the
+        ///     editor could write and then refuse to read back.
+        /// </remarks>
+        private const int LocationShapeCount = 23;
+
+        /// <summary>
+        ///     The last location decoded on a tile, which is the one drawn on top of the others.
+        /// </summary>
+        /// <param name="square">The square.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="x">Tile X within the square.</param>
+        /// <param name="y">Tile Y within the square.</param>
+        /// <returns>The location, or <c>null</c> when the tile holds none.</returns>
+        private static Location? TopLocation(MapRegion square, int plane, int x, int y) {
+            Location? target = null;
+            foreach (Location loc in square.GetLocations())
+                if (loc.Plane == plane && loc.LocalX == x && loc.LocalY == y)
+                    target = loc;
+            return target;
+        }
+
+        /// <summary>
+        ///     Builds a location whose absolute position agrees with its square-local one.
+        /// </summary>
+        /// <remarks>
+        ///     Both are stored on a <see cref="Location"/> and only the local pair is encoded, so a
+        ///     mismatch between them would never reach the file - it would show up as an object the
+        ///     inspector puts in one place and the renderer in another.
+        /// </remarks>
+        /// <param name="square">The square the location belongs to.</param>
+        /// <param name="id">The object definition id.</param>
+        /// <param name="shape">The shape code.</param>
+        /// <param name="orientation">The rotation, 0..3.</param>
+        /// <param name="plane">The plane.</param>
+        /// <param name="x">Tile X within the square.</param>
+        /// <param name="y">Tile Y within the square.</param>
+        /// <returns>The location.</returns>
+        private static Location NewLocation(MapRegion square, int id, int shape, int orientation,
+            int plane, int x, int y) {
+            return new Location(id, shape, orientation, x, y, plane,
+                new Position(square.GetBaseX() + x, square.GetBaseY() + y, plane));
         }
 
         /// <summary>
