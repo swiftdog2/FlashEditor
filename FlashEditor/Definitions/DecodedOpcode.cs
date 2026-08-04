@@ -5,12 +5,18 @@ namespace FlashEditor.Definitions {
     ///     One opcode as it appeared in a definition file, with the value it carried.
     /// </summary>
     /// <remarks>
+    ///     The weaker of the two occurrence records here, and only usable where every opcode's
+    ///     payload is a single integer. Anything with a multi-field or variable-length payload -
+    ///     which is most of the format - wants <see cref="OpcodeRecord"/> and
+    ///     <see cref="OpcodeStreamDefinition"/> instead, which keep the payload bytes verbatim.
+    ///     <para>
     ///     Recording the value per occurrence, rather than only the field it landed in, is what
     ///     makes a byte-exact round trip possible when a definition sets the same opcode twice.
     ///     Floor overlay 94 in the shipped 639 cache emits opcode 11 as 255 and then 127; a decoder
     ///     that keeps only the winning value re-encodes both as 127, producing a file of the right
     ///     length and the wrong contents. The archive CRC covers those bytes, so that is a silent
     ///     corruption rather than an error.
+    ///     </para>
     /// </remarks>
     public readonly struct DecodedOpcode {
         /// <summary>The opcode.</summary>

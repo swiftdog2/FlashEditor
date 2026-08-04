@@ -2,6 +2,7 @@
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
@@ -97,6 +98,17 @@ namespace FlashEditor {
 
         /// <summary>Every editor tab, keyed by the page itself so its position cannot matter.</summary>
         private readonly Dictionary<TabPage, EditorTabBinding> editorTabs = new Dictionary<TabPage, EditorTabBinding>();
+
+        /// <summary>
+        ///     What the billboards tab shows, held because the panel treats a different descriptor
+        ///     instance as a different thing to show.
+        /// </summary>
+        /// <remarks>
+        ///     Index 29 is the one new tab with no wrapper panel of its own - it is a flat list - so
+        ///     its descriptor has nowhere else to live. Building one per bind would reload the index
+        ///     on every visit to the tab and throw away the sort and the selection with it.
+        /// </remarks>
+        private readonly IDefinitionListDescriptor billboards = new BillboardListDescriptor();
 
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
@@ -397,9 +409,30 @@ namespace FlashEditor {
             Properties.Settings.Default.Reload();
         }
 
+        /// <summary>
+        ///     The cache directory to open, asking for one only when nothing else can supply it.
+        /// </summary>
+        /// <remarks>
+        ///     The persisted setting is the source of truth and is never overridden: whatever the
+        ///     user last opened is what opens again. <see cref="CachePaths.Input"/> is consulted only
+        ///     when there is no setting at all, and only when what it names really is a cache - it
+        ///     falls back to a literal path that may not exist on this machine, and seeding the
+        ///     setting with a directory holding no cache would leave the folder picker appearing
+        ///     with no explanation.
+        /// </remarks>
+        /// <returns>The directory the cache will be read from.</returns>
         public string GetCacheDir() {
+            if (!IsCacheDirSet()) {
+                string discovered = CachePaths.Input;
+                if (CachePaths.IsCacheDirectory(discovered)) {
+                    Debug("No cache directory set, defaulting to " + discovered);
+                    SetCacheDir(discovered);
+                }
+            }
+
             while (!IsCacheDirSet())
                 SetCacheDir();
+
             return Properties.Settings.Default.cacheDir;
         }
 
@@ -409,7 +442,13 @@ namespace FlashEditor {
             //designer's literals in the first place.
             SizeProgressBars();
 
-            if (!string.Equals(Properties.Settings.Default.cacheDir, string.Empty, StringComparison.Ordinal))
+            //Seeded rather than prompted for. A first run with no setting used to open nothing at
+            //all and say nothing about it; asking for a folder here would be worse, because the
+            //application can usually see a cache from where it is running.
+            if (!IsCacheDirSet() && CachePaths.IsCacheDirectory(CachePaths.Input))
+                SetCacheDir(CachePaths.Input);
+
+            if (IsCacheDirSet())
                 LoadCache(Properties.Settings.Default.cacheDir);
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
             ItemListView.AlwaysGroupByColumn = ItemID;
@@ -480,7 +519,7 @@ namespace FlashEditor {
                 //Load the cache and the reference tables
                 RSFileStore store = new RSFileStore(directory);
                 cache = new RSCache(store);
-                cache.TryAutoLoadXTEAKeys(directory);
+                LoadXTEAKeys(directory);
                 _textureCache = new GLTextureCache(cache);
                 sw.Stop();
 
@@ -499,6 +538,38 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        ///     Resolves and loads the XTEA keys for the cache just opened.
+        /// </summary>
+        /// <remarks>
+        ///     Split out of <see cref="LoadCache(string)"/> because the outcome has to be reported
+        ///     either way. The map index is the only encrypted content in a 639 cache, and with no
+        ///     key table every encrypted square reports as unkeyed and draws with no objects on it -
+        ///     which looks like a decoder fault rather than a missing file, and is exactly how this
+        ///     went unnoticed while the same bytes decrypted in the test suite.
+        ///     <para>
+        ///     <c>RSCache.TryAutoLoadXTEAKeys</c> is not used: it probes beside the cache and stops,
+        ///     which is right when a key dump sits next to the cache and silent when one does not.
+        ///     <c>CachePaths.FindKeyFile</c> starts there and then widens to the application's own
+        ///     directory tree, and says where it looked when it finds nothing.
+        ///     </para>
+        /// </remarks>
+        /// <param name="directory">The directory the cache was opened from.</param>
+        private void LoadXTEAKeys(string directory) {
+            string? keyFile = CachePaths.FindKeyFile(directory, out IReadOnlyList<string> probed);
+
+            if (keyFile != null) {
+                cache.LoadXTEAKeys(keyFile);
+                Debug("XTEA keys for " + directory + " resolved to " + keyFile);
+                return;
+            }
+
+            Debug("No XTEA key file found for " + directory +
+                  " - every encrypted map square will read as unkeyed. Put xteas.json beside the" +
+                  " cache, or in an xteas/ or keys/ directory next to it. Searched: " +
+                  string.Join("; ", probed));
+        }
+
+        /// <summary>
         ///     Gives the editor-controls progress bars a height their own font can fill.
         /// </summary>
         /// <remarks>
@@ -512,7 +583,7 @@ namespace FlashEditor {
         ///     bar the same way and for the same reason.
         /// </remarks>
         private void SizeProgressBars() {
-            foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar })
+            foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar, NPCProgressBar })
                 bar.Height = Math.Max(10, bar.Font.Height);
         }
 
@@ -568,6 +639,23 @@ namespace FlashEditor {
                the editor where a codec can be watched working rather than trusted. */
             Register(HuffmanEditorTab, RSConstants.HUFFMAN_INDEX,
                 openCache => HuffmanPanel.Bind(openCache));
+            /* Index 17 is the enum table whatever its constant is called. An enum is a keyed table,
+               so the tab lists the enums and shows the selected one's pairs beside them. */
+            Register(EnumEditorTab, RSConstants.CLIENTSCRIPT_SETTINGS,
+                openCache => EnumPanel.Bind(openCache));
+            /* Index 22 is one bit range of one varplayer per file. The second level is the varp: a
+               range on its own is three numbers, and against its siblings it is one field of a
+               packed variable. */
+            Register(VarBitEditorTab, RSConstants.SCRIPT_CONFIGS,
+                openCache => VarBitPanel.Bind(openCache));
+            /* Index 28 is two unrelated config blobs sharing an index, so the tab selects between
+               them by group in the same shape the Config tab uses on index 2. */
+            Register(DefaultsEditorTab, RSConstants.DEFAULTS,
+                openCache => DefaultsPanel.Bind(openCache));
+            /* Index 29 is a single group of records addressed by file id, so there is no second
+               level and the shared list panel is the whole tab. */
+            Register(BillboardEditorTab, RSConstants.CONFIG_BILLBOARD,
+                openCache => BillboardPanel.Bind(openCache, billboards));
 
             /* Every page in the strip has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -1372,13 +1460,41 @@ namespace FlashEditor {
             currentNpc = currentNpc.Clone();
         }
 
+        /// <summary>Reopens the pristine copy, discarding whatever the working cache holds.</summary>
         private void button5_Click(object sender, EventArgs e) {
-            SetCacheDir(RSConstants.CACHE_ORIGINAL_COPY);
-            LoadCache(GetCacheDir());
+            ReopenAt(CachePaths.Pristine, "pristine copy", CachePaths.PristineVariable);
         }
 
+        /// <summary>Reopens the directory edits are written to, so a save can be inspected.</summary>
         private void button6_Click(object sender, EventArgs e) {
-            SetCacheDir(RSConstants.CACHE_OUTPUT_DIRECTORY);
+            ReopenAt(CachePaths.Output, "edited copy", CachePaths.OutputVariable);
+        }
+
+        /// <summary>
+        ///     Points the editor at one of the two secondary cache directories.
+        /// </summary>
+        /// <remarks>
+        ///     Checked before the setting is written. Both directories are resolved rather than
+        ///     hardcoded now, and the pristine copy in particular is one the user takes rather than
+        ///     one the editor makes, so it legitimately may not exist - and pointing the persisted
+        ///     setting at a directory holding no cache would leave the editor unable to open
+        ///     anything on the next launch either.
+        /// </remarks>
+        /// <param name="directory">The directory to reopen from.</param>
+        /// <param name="what">What that directory is, for the message when it holds no cache.</param>
+        /// <param name="variable">The environment variable that points it somewhere else.</param>
+        private void ReopenAt(string directory, string what, string variable) {
+            if (!CachePaths.IsCacheDirectory(directory)) {
+                Debug("No cache at the " + what + " directory: " + directory);
+                MessageBox.Show(this,
+                    "There is no cache in the " + what + " directory:" + Environment.NewLine + directory +
+                    Environment.NewLine + Environment.NewLine +
+                    "Set " + variable + " to point somewhere else, or put a copy of the cache there.",
+                    "Reload cache", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            SetCacheDir(directory);
             LoadCache(GetCacheDir());
         }
 
@@ -1755,6 +1871,15 @@ namespace FlashEditor {
             //Same again: the animation tab's frame-set sweep reads every group in index 0, so a
             //reload started from another tab would leave it decoding out of a disposed file store.
             AnimationPanel.Bind(null);
+
+            //And the four newest tabs, each of which owns a DefinitionListPanel whose worker walks a
+            //whole index. Index 17 and index 22 are the ones that matter - 3,558 and 8,785 files -
+            //but all four are unbound for the same reason: a reload started from any other tab would
+            //otherwise leave a sweep reading out of a file store that is about to be disposed.
+            EnumPanel.Bind(null);
+            VarBitPanel.Bind(null);
+            DefaultsPanel.Bind(null);
+            BillboardPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {

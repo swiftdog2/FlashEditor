@@ -1,7 +1,7 @@
 # Index 11 - MUSIC_2 (jingles)
 
 **Format:** fully-understood  
-**Capability:** read-only  
+**Capability:** codec complete, no GUI write path  
 **Effort:** large
 
 ## What it is
@@ -16,33 +16,33 @@ Measured directly from the cache bytes (idx255 group 11, inflated 6182 bytes, co
 
 ## Current capability
 
-READ ONLY, with a GUI tab, and no encoder anywhere.
+Decode and encode, with a GUI tab that is still export-only.
 
-- Decoder: `FlashEditor/Definitions/Tracks/Track.cs:141` `Track.Decode(JagStream)` - a full port of `Node_Sub7`, four passes (opcode census, delta-time walk, controller-number replay + run-boundary cursors, re-interleave). Verified arm-for-arm against `Node_Sub7.java:183-300`, including the pitch-wheel low/high cursor order (`Track.cs:432-433` vs `Node_Sub7.java:271-273`) and the signed `sbyte` reads.
+- Codec: `FlashEditor/Definitions/Tracks/Track.cs` - `Track.Decode(JagStream)` is a full port of `Node_Sub7`, verified arm for arm against `Node_Sub7.java:183-300` including the pitch-wheel low/high cursor order (vs `Node_Sub7.java:271-273`) and the signed `sbyte` reads. It differs from the client in retaining the packed spans rather than cursors into a buffer it discards, so `Track.Encode()` can reproduce the file and `Track.Project()` rebuilds the MIDI as derived output. `TrackRun.cs` states the twenty-one runs in their on-disk order.
+- Sweep: `FlashEditor.Tests/Definitions/RealCacheTrackCodecTests.cs` re-encodes every declared group of index 11 and index 6 to its stored bytes through `DefinitionSweep`, and separately requires the stored length, the field-by-field sum of the retained spans and the encoder's output to agree with nothing left in front of the trailer.
 - Cache entry point: `FlashEditor/Cache/RSCache.cs:760` `GetTrack(indexId, groupId)` - takes the first valid file id from the reference-table entry, so it works on index 11's one-file groups.
 - Index constant: `FlashEditor/Cache/RSConstants.cs:26` `MUSIC_2 = 11`.
 - GUI: `FlashEditor/Definitions/Tracks/TrackEditorPanel.cs:38` lists index 11 as "Jingles" next to index 6; tab wired at `Editor.Designer.cs:1362-1370` and bound at `Editor.cs:493-497`. It is a `BackgroundWorker` sweep of both indexes with a list, a stats pane and `Export MIDI...` (`TrackEditorPanel.cs:310`). Export only - `File.WriteAllBytes` to disk, nothing writes back to the cache.
 - Tests: `FlashEditor.Tests/Definitions/RealCacheTrackTests.cs:43` `EveryTrackDecodesToAStructurallyValidMidi` sweeps every group of index 6 and index 11 (`:32` `JingleIndex = RSConstants.MUSIC_2`) and checks two things that a decoder with wrong run boundaries cannot satisfy: emitted length reconciles with the packed file's own predicted length (`:78`), and the output is structurally valid MIDI - MThd, MTrk chunks that tile exactly, FF 2F 00 closing each (`:165-217`). `TrackNamesJoinOnTheArchiveNameHash:155-156` asserts every index-11 group identifier is -1.
-- There is no `Encode` anywhere under `FlashEditor/Definitions/Tracks/` (grep: zero hits). No repack, no byte-identity sweep, no way to import a MIDI.
+- Offline codec test: `FlashEditor.Tests/Definitions/TrackCodecTests.cs` builds packed files by hand from `Node_Sub7.java` and asserts their expected MIDI literally, so the pair is not proven only by running this encoder against this decoder. It pins the aliases directly: a signed run delta, bit 7 of a controller-number delta, a wide variable-length delta time, and the dropped meta status byte going into the projection but never into the packed form.
 
-Grade: read-only. The generic `RSCache.WriteFile` could replace an index-11 file with arbitrary bytes, but nothing produces those bytes and no GUI path reaches it.
+Grade: the codec round-trips; the GUI does not write. `RSCache.WriteFile` could take `Track.Encode()`'s bytes, and no GUI path reaches it.
 
 ## Gaps
 
-- Track.Encode: rebuild the packed file from a MIDI. This is the whole job. It needs the decoder to retain the raw run bytes (note/velocity/controller/pitch-wheel/tempo runs) as read, because the decode is lossy in the direction that matters - see the accumulator trap in notes. Realistically: Decode records the runs verbatim, Encode re-emits them, and only edited events get their deltas recomputed.
-- A codec test against captured bytes: take a handful of real index-11 files (group 0 is 21 bytes at the small end, the 102,768-byte group at the large end), keep them as fixtures, and assert decode->encode reproduces them. CLAUDE.md is explicit that round-tripping this encoder against this decoder proves nothing.
-- A full-index byte-identity sweep: all 441 index-11 groups (and the 963 in index 6) must re-encode to the bytes they were read from, in the style of the item/NPC/object/map sweeps. Nothing of the kind exists for either index today.
 - GUI editing: TrackEditorPanel is export-only. It needs an Import MIDI / Replace action feeding RSCache.WriteFile(11, groupId, 0, bytes), plus the usual staged-save behaviour. The tab pattern itself is already right - it is code-built like MapEditorPanel and bound from Editor.cs:493, so no Editor.Designer.cs surgery is needed.
+- Mutating the stored form: `Track` exposes the runs read-only (`Track.Run`), which reproduces an unedited jingle and cannot change one. Any mutation API has to keep the opcode stream, the delta times and the twenty-one runs consistent, since nothing in the file states a length.
+- A MIDI import path, which is strictly harder than round-tripping: it must synthesise run splits, channel-delta nibbles and running-status decisions from scratch.
 
 ## Notes and traps
 
 TRAPS, in the order they will bite.
 
-1. THE ACCUMULATORS ARE NOT RESET PER TRACK, AND THEIR UNMASKED STATE IS LOST. Note, velocities, pitch wheel, channel pressure, key pressure, channel, controller number and the 128 per-controller values are all initialised once before the track loop (`Node_Sub7.java:174-182`, mirrored at `Track.cs:316-328`) and carry across every MTrk in the file. Each is a running sum of SIGNED byte deltas, and the output is `accumulator & 127`. So the accumulator routinely holds values outside 0..127 and the emitted MIDI cannot tell you what it was. An encoder that recomputes deltas from the decoded MIDI will produce a valid file with different bytes. This is the single reason a byte-identity encoder must keep the raw runs.
+1. THE ACCUMULATORS ARE NOT RESET PER TRACK, AND THEIR UNMASKED STATE IS LOST. Note, velocities, pitch wheel, channel pressure, key pressure, channel, controller number and the 128 per-controller values are all initialised once before the track loop (`Node_Sub7.java:174-182`, mirrored in `Track`'s projection) and carry across every MTrk in the file. Each is a running sum of SIGNED byte deltas, and the output is `accumulator & 127`. So the accumulator routinely holds values outside 0..127 and the emitted MIDI cannot tell you what it was. This is the whole reason `Track` keeps the raw runs and `Encode` recomputes nothing; an encoder working back from the MIDI would produce a valid file with different bytes.
 
-2. CLIENT BUG, and it hits every jingle. `Node_Sub7.java:196-199` gates the 0xFF meta status byte on the running-status test used for channel messages. Opcodes 7 (end of track) and 23 (set tempo) both mask to nibble 7, so an end-of-track directly after a tempo change loses its 0xFF and the chunk closes with a bare `2F 00`, which the MIDI spec forbids. Measured by walking pass 1 over the raw bytes of all 441 index-11 groups: 441 dropped status bytes, one in every one of the 441 groups. So the 637 client emits non-conformant MIDI for 100% of jingles. `Track.cs:354` writes the byte unconditionally and counts it in `RepairedMetaStatusBytes`; `RealCacheTrackTests.cs:78` adds it back before comparing lengths. An encoder must drop it again to hit byte identity - the packed file's own length prediction (`Node_Sub7.java:166`) does NOT allow for it.
+2. CLIENT BUG, and it hits every jingle. `Node_Sub7.java:196-199` gates the 0xFF meta status byte on the running-status test used for channel messages. Opcodes 7 (end of track) and 23 (set tempo) both mask to nibble 7, so an end-of-track directly after a tempo change loses its 0xFF and the chunk closes with a bare `2F 00`, which the MIDI spec forbids. Measured by walking pass 1 over the raw bytes of all 441 index-11 groups: 441 dropped status bytes, one in every one of the 441 groups. So the 637 client emits non-conformant MIDI for 100% of jingles. `Track` writes the byte unconditionally and counts it in `RepairedMetaStatusBytes`, and `RealCacheTrackTests` adds it back before comparing lengths. It cannot reach the packed file: `Encode` replays the stored opcode stream, which has no representation of that byte, so the packed file's own length prediction (`Node_Sub7.java:166`) not allowing for it costs nothing.
 
-3. THE HEADER IS THE LAST THREE BYTES, NOT THE FIRST (`Node_Sub7.java:22`, `Track.cs:150`). The opcode stream must start at offset 0 because pass 4 indexes the raw buffer from 0.
+3. THE HEADER IS THE LAST THREE BYTES, NOT THE FIRST (`Node_Sub7.java:22`). The opcode stream must start at offset 0 because the re-interleave indexes the raw buffer from 0. This is also why the shared sweep harness's padded `AssertExactConsumption` is unusable here - the padding moves the header - and why `RealCacheTrackCodecTests` asserts exact consumption by making three independently-derived lengths agree instead.
 
 4. INDEX 11 DOES NOT EXERCISE THE WHOLE FORMAT. Opcode census over all 447,357 opcode bytes in index 11: low nibbles 0, 1, 2, 3, 6, 7 only. Nibble 4 (channel pressure) and nibble 5 (polyphonic key pressure) NEVER occur here. High nibbles 0-15 all occur, so the channel XOR-delta uses the full range. A sweep that passes on index 11 alone has not touched two arms of the decoder; index 6 must be swept too.
 
@@ -54,6 +54,6 @@ TRAPS, in the order they will bite.
 
 8. `Class247.java:2013,2036` and `PacketParser.java:2073` pass the jingle id as a raw 16-bit value with 0xFFFF reserved. Ids are contiguous 0..440 here, so any renumbering on repack breaks every server and every script that references one. Treat group ids as fixed.
 
-9. 637 vs 639: no divergence found. Every opcode byte in this cache is handled by the 637 decoder - the census hit no value that reaches the client's `throw` (`Node_Sub7.java:62-68`, mirrored at `Track.cs:204`). The format is unchanged between the pair.
+9. 637 vs 639: no divergence found. Every opcode byte in this cache is handled by the 637 decoder - the census hit no value that reaches the client's `throw` (`Node_Sub7.java:62-68`, mirrored in `Track.CountOpcodes`). The format is unchanged between the pair.
 
-10. `RealCacheTrackTests` is the right shape but it is NOT a byte-identity sweep and must not be read as one. Its two checks are strong (the format's own length prediction, and MIDI structural validity) precisely because there is nothing to compare against; do not let them stand in for the sweep once an encoder exists.
+10. `RealCacheTrackTests` is NOT the byte-identity sweep and must not be read as one; that is `RealCacheTrackCodecTests`. The two do not overlap and both are needed. The encoder replays the stored runs, so it would reproduce the cache byte for byte even if the MIDI projection were nonsense - which means the byte-identity sweep says nothing at all about the export, and `RealCacheTrackTests`' length prediction and structural-validity checks are the only thing that does.

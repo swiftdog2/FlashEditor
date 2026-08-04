@@ -927,16 +927,43 @@ namespace FlashEditor.cache {
         /// <param name="containerId">The container id of the sprite</param>
         /// <returns>The decoded <see cref="SpriteDefinition"/></returns>
         public SpriteDefinition GetSprite(int containerId) {
-            Debug($"GetSprite: {containerId}", LOG_DETAIL.ADVANCED);
+            return GetSprite(RSConstants.SPRITES_INDEX, containerId);
+        }
+
+        /// <summary>
+        ///     Decodes a sprite set from any index that stores the sprite format.
+        /// </summary>
+        /// <remarks>
+        ///     Index 8 is not the only one holding this format. The client opens index <b>32</b>
+        ///     (or 34 - <c>InterfaceSettings.java:73-74</c> picks between them) and hands it
+        ///     straight to the same decoder at <c>Class114.java:82</c>, pairing each glyph sheet
+        ///     with the font metrics it reads from index 13. Index 13 itself is <em>not</em> this
+        ///     format: it holds <c>Class197</c> metrics, read by <c>Class119_Sub1.method2182</c>,
+        ///     and none of its 25 groups parses as a sprite set. Index 32 is mixed - five of its
+        ///     26 groups are 256-frame glyph sheets and the other 21 are JPEG, ending in the
+        ///     <c>FF D9</c> marker - so a caller has to know which it is asking for.
+        ///     <para>
+        ///     The whole group container is handed to the decoder without going through
+        ///     <see cref="RSArchive"/>, which is correct only while a group holds exactly one file -
+        ///     true of every group in index 8. A second file would put the multi-file size table
+        ///     where the sprite metadata is read from, and the decode would silently produce
+        ///     nonsense rather than fail.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index holding the sprite set.</param>
+        /// <param name="containerId">The group id within that index.</param>
+        /// <returns>The decoded <see cref="SpriteDefinition"/>.</returns>
+        public SpriteDefinition GetSprite(int indexId, int containerId) {
+            Debug($"GetSprite: index {indexId} container {containerId}", LOG_DETAIL.ADVANCED);
 
             //Decode and release together under the lock. Both the map render thread (map scene
             //icons) and the texture worker call this, and the release nulls the very stream the
             //other one is decoding from.
             lock (_containerLock) {
                 //Get the sprite for the given archive
-                RSContainer container = GetContainer(RSConstants.SPRITES_INDEX, containerId);
+                RSContainer container = GetContainer(indexId, containerId);
                 if (container == null || container.GetStream() == null)
-                    throw new FileNotFoundException($"Sprite container {containerId} not found or has no data");
+                    throw new FileNotFoundException($"Sprite container {containerId} in index {indexId} not found or has no data");
                 Debug($"Container index {container.GetIndexId()} id {container.GetId()} length {container.GetStream().Length}", LOG_DETAIL.INSANE);
                 Debug($"Decoding sprite container {containerId}", LOG_DETAIL.ADVANCED);
                 SpriteDefinition sprite = SpriteDefinition.DecodeFromStream(container.GetStream());

@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using FlashEditor.Definitions;
 
 namespace FlashEditor {
     /// <summary>
     /// RuneScape NPC definition for rev 639. Stores appearance, interaction
     /// options, sounds, and morph variant data.
     /// </summary>
-    public class NPCDefinition : ICloneable, IDefinition {
+    public class NPCDefinition : OpcodeStreamDefinition, ICloneable, IDefinition {
         sbyte primaryShadowModifier = -33;
         byte respawnDirection = 7;
         sbyte secondaryShadowModifier = -113;
@@ -287,25 +288,6 @@ namespace FlashEditor {
         public bool[] decoded = new bool[256];
 
         /// <summary>
-        ///     Every opcode the stream carried, in order, paired with the exact payload bytes it
-        ///     was read from.
-        /// </summary>
-        /// <remarks>
-        ///     Nothing in the format fixes an opcode order and the cache does not use one: only
-        ///     127 of the 13,359 NPC definitions in the rev-639 cache are in ascending numeric
-        ///     order, so an encoder with its own fixed order rewrites all but a handful of
-        ///     definitions the user merely opened, changing the archive and its CRC.
-        ///     <para>
-        ///     The payload bytes are kept as well because 538 definitions repeat an opcode with a
-        ///     different value each time. The decoder keeps only the last value, as the client
-        ///     does, so the earlier occurrences exist nowhere except in the bytes they were read
-        ///     from and can only be reproduced by replaying them.
-        ///     </para>
-        /// </remarks>
-        private List<KeyValuePair<int, byte[]>> _streamRecords =
-            new List<KeyValuePair<int, byte[]>>();
-
-        /// <summary>
         /// Constructs a new item definition from the stream data
         /// </summary>
         /// <param name="stream">The stream containing the encoded item data</param>
@@ -330,35 +312,29 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="stream"></param>
         public void Decode(JagStream stream, int[] xteaKey = null) {
-            if (stream != null) {
-                while (true) {
-                    int opcode = stream.ReadByte();
-
-                    if (opcode <= 0 || opcode == 255)
-                        break;
-
-                    decoded[opcode] = true;
-
-                    /* The payload has no length prefix, so its extent is whatever the per-opcode
-                       reader consumed. Rewinding and re-reading that span is the only way to keep
-                       the bytes verbatim, which is what an occurrence superseded by a later one
-                       has left of it. */
-                    int payloadStart = stream.Position;
-                    Decode(stream, opcode);
-                    int payloadEnd = stream.Position;
-                    stream.Position = payloadStart;
-                    _streamRecords.Add(
-                        new KeyValuePair<int, byte[]>(opcode, stream.ReadBytes(payloadEnd - payloadStart)));
-                }
-            }
+            DecodeOpcodeStream(stream);
         }
+
+        /// <summary>
+        ///     255 ends an NPC record as well as 0.
+        /// </summary>
+        /// <remarks>
+        ///     No opcode 255 exists in this format, so the byte can only be a sentinel; treating it
+        ///     as an opcode would fail a record the client reads happily.
+        /// </remarks>
+        /// <param name="opcode">The byte read where an opcode was expected.</param>
+        /// <returns>True to stop reading.</returns>
+        protected override bool IsTerminator(int opcode) => opcode <= 0 || opcode == 255;
 
         /// <summary>
         /// Overrides a specific property corresponding to opcode
         /// </summary>
         /// <param name="stream">The stream to read from</param>
         /// <param name="opcode">The opcode value signalling which type to read</param>
-        private void Decode(JagStream stream, int opcode) {
+        /// <returns>True when the payload was consumed; false to fail the record.</returns>
+        protected override bool DecodeOpcode(JagStream stream, int opcode) {
+            decoded[opcode] = true;
+
             switch (opcode) {
                 case 1: {
                         int length = stream.ReadByte();
@@ -701,16 +677,13 @@ namespace FlashEditor {
                     }
 
                 default:
-                    /* An NPC definition is a self-delimiting opcode stream, so an opcode whose
-                       payload size is unknown cannot be skipped - the next byte read is then
-                       payload mistaken for an opcode and every field after it is garbage.
-                       Reporting the position beats returning a silently wrong definition.
-                       No opcode outside this switch occurs in the rev-639 cache, so this never
-                       fires for the data the editor ships against. */
-                    throw new InvalidOperationException(
-                        "NPC definition opcode " + opcode + " at offset " + (stream.Position - 1) +
-                        " has no known payload size, so the remainder of the stream cannot be parsed");
+                    /* No opcode outside this switch occurs in either cache, so this never fires
+                       for the data the editor ships against. The base loop turns it into a report
+                       of where the parse stopped, which beats a silently wrong definition. */
+                    return false;
             }
+
+            return true;
         }
 
 
@@ -837,8 +810,8 @@ namespace FlashEditor {
             /* Every bare flag below is emitted from the hit map alone. The properties behind them
                are views over that map, so a field test would be the same question asked twice;
                more to the point, clearing one of them drops the opcode from the map AND from the
-               recorded stream, which is the only thing that stops WriteRecordsInStreamOrder
-               replaying a flag the user has just turned off. */
+               recorded stream, which is the only thing that stops the replay pass putting back a
+               flag the user has just turned off. */
 
             // 93: drawMinimapDot off
             if (decoded[93]) Emit(93);
@@ -1035,7 +1008,9 @@ namespace FlashEditor {
                     }
                 });
 
-            return WriteRecordsInStreamOrder(records);
+            /* Ascending, so a definition the editor built from nothing - which has no recorded
+               stream to replay - still encodes in a predictable order. */
+            return Opcodes.Replay(records, appendInAscendingOrder: true);
         }
 
         /// <summary>
@@ -1043,17 +1018,16 @@ namespace FlashEditor {
         ///     will put it back on the next encode.
         /// </summary>
         /// <remarks>
-        ///     Clearing <see cref="decoded"/> alone is not enough. An opcode still listed in
-        ///     <c>_streamRecords</c> is written back from the bytes it was read from by
-        ///     <see cref="WriteRecordsInStreamOrder"/>, which is what keeps a repeated opcode
-        ///     byte-exact but would also resurrect a flag the user had just turned off - the row
-        ///     in the grid changes, the save reports success and the definition in the cache is
-        ///     unaltered.
+        ///     Clearing <see cref="decoded"/> alone is not enough. An opcode still listed in the
+        ///     recorded stream is written back from the bytes it was read from, which is what
+        ///     keeps a repeated opcode byte-exact but would also resurrect a flag the user had
+        ///     just turned off - the row in the grid changes, the save reports success and the
+        ///     definition in the cache is unaltered.
         /// </remarks>
         /// <param name="op">The opcode to remove.</param>
         private void DropOpcode(int op) {
             decoded[op] = false;
-            _streamRecords.RemoveAll(record => record.Key == op);
+            Opcodes.Remove(op);
         }
 
         /// <summary>
@@ -1061,72 +1035,7 @@ namespace FlashEditor {
         /// </summary>
         /// <param name="op">The opcode to look for.</param>
         /// <returns>The index into the recorded stream, or -1.</returns>
-        private int LastStreamIndexOf(int op) {
-            for (int i = _streamRecords.Count - 1 ; i >= 0 ; i--)
-                if (_streamRecords[i].Key == op)
-                    return i;
-            return -1;
-        }
-
-        /// <summary>
-        ///     Lays the encoded opcode records down in the order the definition was decoded in,
-        ///     then appends anything the decoder never saw.
-        /// </summary>
-        /// <remarks>
-        ///     A freshly encoded record with no place in the recorded stream is one the field
-        ///     values asked for but the original did not carry - a value the user set on a
-        ///     definition that arrived without that opcode, or the whole of a definition the
-        ///     editor created from nothing. Appending it in ascending order keeps such an edit
-        ///     rather than dropping it.
-        ///     <para>
-        ///     Only the last occurrence of an opcode takes the freshly encoded payload, because
-        ///     that is the occurrence whose value the decoder kept and therefore the only one an
-        ///     edit can have changed. Every earlier occurrence, and any opcode the field-driven
-        ///     pass declined to re-emit at all - opcode 31 on a definition that also carries 151,
-        ///     for instance - is written back from the bytes it was read from.
-        ///     </para>
-        /// </remarks>
-        /// <param name="records">Each opcode and the payload bytes freshly encoded for it.</param>
-        /// <returns>The complete definition stream, terminator included, ready to read.</returns>
-        private JagStream WriteRecordsInStreamOrder(List<KeyValuePair<int, byte[]>> records) {
-            var o = new JagStream();
-            var encoded = new Dictionary<int, byte[]>(records.Count);
-            foreach (KeyValuePair<int, byte[]> record in records)
-                encoded[record.Key] = record.Value;
-
-            var lastOccurrence = new Dictionary<int, int>();
-            for (int i = 0 ; i < _streamRecords.Count ; i++)
-                lastOccurrence[_streamRecords[i].Key] = i;
-
-            var replaced = new HashSet<int>();
-
-            void Put(int op, byte[] payload) {
-                o.WriteByte((byte) op);
-                if (payload.Length > 0)
-                    o.Write(payload, 0, payload.Length);
-            }
-
-            for (int i = 0 ; i < _streamRecords.Count ; i++) {
-                int op = _streamRecords[i].Key;
-
-                if (lastOccurrence[op] == i && encoded.TryGetValue(op, out byte[] fresh)) {
-                    Put(op, fresh);
-                    replaced.Add(op);
-                }
-                else {
-                    Put(op, _streamRecords[i].Value);
-                }
-            }
-
-            //Ascending, so a definition built from nothing still encodes in a predictable order.
-            records.Sort((left, right) => left.Key.CompareTo(right.Key));
-            foreach (KeyValuePair<int, byte[]> record in records)
-                if (!replaced.Contains(record.Key))
-                    Put(record.Key, record.Value);
-
-            o.WriteByte(0);
-            return o.Flip();
-        }
+        private int LastStreamIndexOf(int op) => Opcodes.LastIndexOf(op);
 
         internal void SetId(int id) {
             this.id = id;
@@ -1145,7 +1054,7 @@ namespace FlashEditor {
         public NPCDefinition Clone() {
             var clone = (NPCDefinition) MemberwiseClone();
             clone.decoded = (bool[]) decoded.Clone();
-            clone._streamRecords = new List<KeyValuePair<int, byte[]>>(_streamRecords);
+            clone.DetachOpcodeStream();
             clone.options = (string[]) options.Clone();
             if (config != null)
                 clone.config = new List<KeyValuePair<int, object>>(config);

@@ -1,6 +1,5 @@
-﻿using FlashEditor.cache.util;
+using FlashEditor.cache.util;
 using static FlashEditor.Utils.DebugUtil;
-using FlashEditor.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System;
@@ -8,28 +7,135 @@ using FlashEditor;
 
 namespace FlashEditor.cache.sprites {
     /// <summary>
-    /// Represents a sprite set which may contain one or more frames.
+    ///     A sprite set from index 8: a shared palette, a canvas size, and one or more frames.
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///     Two representations live here and they are deliberately not the same thing. The
+    ///     <b>stored form</b> - <see cref="Frames"/>, <see cref="PaletteStored"/>,
+    ///     <see cref="width"/> and <see cref="height"/> - is what the file holds and is the only
+    ///     thing <see cref="Encode"/> reads. The <b>rendered form</b> - <see cref="GetFrame"/>,
+    ///     <see cref="GetFrames"/> and <see cref="thumb"/> - is derived from it on demand and can
+    ///     be thrown away at any time.
+    ///     </para>
+    ///     <para>
+    ///     The split exists because rasterising is lossy in both directions. Palette entry 0 is
+    ///     transparent, so a colour stored as black is remapped to 0x000001 on read
+    ///     (<c>Class324.java:77-79</c>) and the drawn pixel can no longer say which of the two the
+    ///     file held; an alpha plane of all 0xFF draws the same as no plane; and on a one-pixel-wide
+    ///     frame the row-major and column-major orders produce identical bytes. An encoder driven
+    ///     by pixels therefore rewrites files nobody edited, and because an archive CRC covers the
+    ///     stored bytes that drags in the reference-table entry of everything packed alongside.
+    ///     </para>
+    ///     <para>
+    ///     Rasterising is also deferred rather than done during <see cref="Decode"/>: a frame costs
+    ///     a pinned pixel buffer and a GDI bitmap, and a sweep over every group in the index has no
+    ///     use for either.
+    ///     </para>
+    ///     <para>
+    ///     Layout, from <c>Class324.method3690</c> (<c>Class324.java:43-133</c>), read backwards
+    ///     from the end of the file: frame count at <c>[len-2]</c>; canvas width, canvas height and
+    ///     <c>paletteSize-1</c> at <c>[len-7-8N]</c>, followed by four <c>N</c>-entry unsigned short
+    ///     arrays - offsetX, offsetY, subWidth, subHeight; the palette at
+    ///     <c>[len-7-8N-3(paletteSize-1)]</c>, entry 0 reserved as transparent and never stored;
+    ///     and the pixel planes from offset 0 forwards, one flags byte each. The right and bottom
+    ///     padding the client carries (<c>anInt2719</c>, <c>anInt2724</c>) are computed at
+    ///     <c>:70-71</c>, not stored.
+    ///     </para>
+    /// </remarks>
     public class SpriteDefinition : IDefinition, IDisposable {
-        //This flag indicates that the pixels should be read vertically instead of horizontally.
-        public static readonly int FLAG_VERTICAL = 0x01;
+        /// <summary>Bytes of metadata after the pixel planes and the palette.</summary>
+        /// <remarks>
+        ///     Canvas width and height, the palette-size byte, and the two-byte frame count -
+        ///     the <c>7</c> in the client's <c>is.length - 7 - i * 8</c> (<c>Class324.java:52</c>).
+        /// </remarks>
+        private const int TrailerBytes = 7;
 
-        //This flag indicates that every pixel has an alpha, as well as red, green and blue, component.
-        public static readonly int FLAG_ALPHA = 0x02;
+        /// <summary>Bytes of per-frame metadata: four unsigned short arrays.</summary>
+        /// <remarks>The <c>8</c> in <c>Class324.java:52</c>.</remarks>
+        private const int BytesPerFrameHeader = 8;
+
+        /// <summary>Bytes per stored palette entry: 24-bit RGB (<c>Class324.java:76</c>).</summary>
+        private const int BytesPerPaletteEntry = 3;
 
         //The index at which this sprite exists.
         public int index;
 
-        //The width of this sprite.
+        /// <summary>Canvas width as stored, which is not derivable from the frames.</summary>
+        /// <remarks>
+        ///     Frames are placed within the canvas and routinely do not reach its edges - a third
+        ///     of the sets in both caches have a canvas larger than any frame's extent - so it
+        ///     cannot be recomputed as <c>max(offsetX + subWidth)</c>.
+        /// </remarks>
         public int width;
 
-        //The height of this sprite.
+        /// <summary>Canvas height as stored. See <see cref="width"/>.</summary>
         public int height;
 
-        //The array of animation frames in this sprite.
-        private List<RSBufferedImage> frames;
+        /// <summary>The rendered frames, built on first use and released by <see cref="Dispose()"/>.</summary>
+        private List<RSBufferedImage> rendered;
+
+        /// <summary>The rendered first frame, backing the lazy <see cref="thumb"/>.</summary>
+        private Bitmap thumbnail;
+
+        /// <summary>Frame count as stored, which is what <see cref="Encode"/> writes.</summary>
         public int frameCount;
-        public Bitmap thumb;
+
+        /// <summary>
+        ///     The frames in stored order.
+        /// </summary>
+        /// <remarks>Null on a <see cref="RSBufferedImage"/>, which is a rendered frame rather than a set.</remarks>
+        public List<SpriteFrame> Frames { get; private set; }
+
+        /// <summary>
+        ///     The palette exactly as stored: entry 0 unused, entries 1 upwards 24-bit RGB.
+        /// </summary>
+        /// <remarks>
+        ///     Verbatim, including entries stored as 0x000000 and entries no pixel references.
+        ///     Both occur in both supported caches, and neither survives a palette rebuilt by
+        ///     scanning the drawn pixels. <see cref="RenderPalette"/> is the read-side view.
+        /// </remarks>
+        public int[] PaletteStored { get; private set; } = System.Array.Empty<int>();
+
+        /// <summary>
+        ///     The palette as the client draws with it: entry 0 transparent, a stored black
+        ///     promoted to 0x000001.
+        /// </summary>
+        /// <remarks>
+        ///     The promotion is the client's (<c>Class324.java:77-79</c>) and exists so that "the
+        ///     palette value is zero" means "transparent" and nothing else. Kept apart from
+        ///     <see cref="PaletteStored"/> so the remap never reaches the encoder.
+        /// </remarks>
+        public int[] RenderPalette { get; private set; } = System.Array.Empty<int>();
+
+        /// <summary>
+        ///     Bytes sitting between the last pixel plane and the palette, normally empty.
+        /// </summary>
+        /// <remarks>
+        ///     The format has no length field between the two - the planes run forwards from 0 and
+        ///     the palette is found by seeking back from the end - so a packer can leave a gap that
+        ///     nothing reads. Thirteen groups in the private-server repack do, three zero bytes
+        ///     each; the vanilla b639 capture has none. Captured rather than dropped, because a
+        ///     re-encode without them is three bytes short of the file it came from.
+        /// </remarks>
+        public byte[] PixelPlaneTrailer { get; private set; } = System.Array.Empty<byte>();
+
+        /// <summary>
+        ///     Where the decoder stopped reading pixel planes, as an offset into the file.
+        /// </summary>
+        /// <remarks>
+        ///     Read off the stream rather than computed, so a test can hold it against the length
+        ///     the frame metadata implies. The two agreeing is what says every plane was sized
+        ///     correctly; the format offers no other check, since a mis-sized plane simply eats
+        ///     into the next one.
+        /// </remarks>
+        public long PixelPlaneEnd { get; private set; }
+
+        /// <summary>Where the palette block begins, derived from the frame count and palette size.</summary>
+        public long PaletteOffset { get; private set; }
+
+        /// <summary>Length of the buffer this set was decoded from.</summary>
+        public long StoredLength { get; private set; }
 
         /// <summary>
         /// Creates a new sprite with one frame.
@@ -52,130 +158,195 @@ namespace FlashEditor.cache.sprites {
             this.width = width;
             this.height = height;
             this.frameCount = frameCount;
-            frames = new List<RSBufferedImage>(frameCount);
+            Frames = new List<SpriteFrame>(frameCount);
         }
 
         /// <summary>
-        /// Decodes this sprite set from the specified stream.
+        ///     Decodes a sprite set into the form the file stores, without rasterising anything.
         /// </summary>
-        /// <param name="stream">The stream containing encoded sprite data.</param>
-        /// <param name="xteaKey">Optional XTEA decryption key (unused for sprites).</param>
+        /// <param name="stream">The whole group payload; the format is located from its end.</param>
+        /// <param name="xteaKey">Unused - index 8 is opened unencrypted (<c>InterfaceSettings.java:157</c>).</param>
         public void Decode(JagStream stream, int[] xteaKey = null) {
             Debug("Decoding sprite", LOG_DETAIL.ADVANCED);
-            //Find the size of this sprite set
+
+            StoredLength = stream.Length;
+
+            //Frame count first: everything else is positioned relative to it.
             stream.Seek(stream.Length - 2);
             int size = stream.ReadUnsignedShort();
-            Debug($"Sprite frame count: {size}", LOG_DETAIL.ADVANCED);
 
-            //Read the width, height and palette size
-            stream.Seek(stream.Length - size * 8 - 7);
-            int width = stream.ReadUnsignedShort();
-            int height = stream.ReadUnsignedShort();
-            Debug($"Dimensions: {width}x{height}", LOG_DETAIL.ADVANCED);
-            int[] palette = new int[stream.ReadByte() + 1];
+            long headerOffset = stream.Length - TrailerBytes - (long) size * BytesPerFrameHeader;
+            if (headerOffset < 0)
+                throw new InvalidOperationException(
+                    $"A sprite set of {size} frames needs {TrailerBytes + size * BytesPerFrameHeader} bytes of " +
+                    $"metadata but the file is only {stream.Length}.");
 
-            Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + palette.Length, LOG_DETAIL.INSANE);
+            stream.Seek(headerOffset);
+            width = stream.ReadUnsignedShort();
+            height = stream.ReadUnsignedShort();
+            int paletteSize = stream.ReadByte() + 1;
+            frameCount = size;
 
-            //And allocate an object for this sprite set
-            this.width = width;
-            this.height = height;
-            this.frameCount = size;
-            frames = new List<RSBufferedImage>(size);
+            Debug("Size: " + size + ", width: " + width + ", height: " + height + ", palette elements: " + paletteSize, LOG_DETAIL.INSANE);
 
-            //Read the offsets and dimensions of the individual sprites
             int[] offsetsX = stream.ReadUnsignedShortArray(size);
             int[] offsetsY = stream.ReadUnsignedShortArray(size);
             int[] subWidths = stream.ReadUnsignedShortArray(size);
             int[] subHeights = stream.ReadUnsignedShortArray(size);
 
-            //Read the palette
-            stream.Seek(stream.Length - size * 8 - 7 - (palette.Length - 1) * 3);
-            for(int index = 1; index < palette.Length; index++) {
-                palette[index] = stream.ReadMedium();
-                if(palette[index] == 0)
-                    palette[index] = 1;
-            }
-            Debug($"Palette loaded with {palette.Length} colours", LOG_DETAIL.ADVANCED);
+            PaletteOffset = headerOffset - (long) (paletteSize - 1) * BytesPerPaletteEntry;
+            if (PaletteOffset < 0)
+                throw new InvalidOperationException(
+                    $"A palette of {paletteSize} entries does not fit before the metadata at {headerOffset}.");
 
-            //Read the pixels themselves
+            //Entry 0 is never stored: it is the transparent index.
+            PaletteStored = new int[paletteSize];
+            RenderPalette = new int[paletteSize];
+            stream.Seek(PaletteOffset);
+            for (int entry = 1; entry < paletteSize; entry++) {
+                int colour = stream.ReadMedium();
+                PaletteStored[entry] = colour;
+                RenderPalette[entry] = colour == 0 ? 1 : colour;
+            }
+
+            Frames = new List<SpriteFrame>(size);
             stream.Seek(0);
-            for(int id = 0; id < size; id++) {
-                Debug($"\tReading frame {id}", LOG_DETAIL.INSANE);
+            for (int id = 0; id < size; id++) {
+                var frame = new SpriteFrame {
+                    OffsetX = offsetsX[id],
+                    OffsetY = offsetsY[id],
+                    SubWidth = subWidths[id],
+                    SubHeight = subHeights[id]
+                };
 
-                //Grab some frequently used values
-                int subWidth = subWidths[id], subHeight = subHeights[id];
-                int offsetX = offsetsX[id], offsetY = offsetsY[id];
+                frame.Flags = stream.ReadByte();
+                frame.PaletteIndices = ReadPlane(stream, frame);
+                if (frame.HasAlphaPlane)
+                    frame.Alpha = ReadPlane(stream, frame);
 
-                Debug("\t\tsubWidth: " + subWidth + ", subHeight: " + subHeight + ", offsetX: " + offsetX + ", offsetY: " + offsetY, LOG_DETAIL.INSANE);
-
-                //Create a BufferedImage to store the resulting image
-                RSBufferedImage image = new RSBufferedImage(id, Math.Max(width, subWidth), Math.Max(height, subHeight));
-
-                //Allocate an array for the palette indices
-                int[][] indices = ArrayUtil.ReturnRectangularArray<int>(subWidth, subHeight);
-
-                //Read the flags so we know whether to read horizontally or vertically
-                int flags = stream.ReadByte();
-                Debug("\t\tFlags [alpha: " + (flags & FLAG_ALPHA) + ", vertical: " + (flags & FLAG_VERTICAL) + "]", LOG_DETAIL.INSANE);
-
-                //Read the palette indices
-                if((flags & FLAG_VERTICAL) != 0) {
-                    for(int x = 0; x < subWidth; x++)
-                        for(int y = 0; y < subHeight; y++)
-                            indices[x][y] = stream.ReadByte();
-                } else {
-                    for(int y = 0; y < subHeight; y++)
-                        for(int x = 0; x < subWidth; x++)
-                            indices[x][y] = stream.ReadByte();
-                }
-
-                Debug($"SubWidth: {subWidth}, SubHeight: {subHeight}, ", LOG_DETAIL.INSANE);
-
-                //Read the alpha (if there is alpha) and convert values to ARGB
-                if((flags & FLAG_ALPHA) == 0) {
-                    //If it's horizontal
-                    if((flags & FLAG_VERTICAL) == 0) {
-                        for(int x = 0; x < subWidth; x++) {
-                            for(int y = 0; y < subHeight; y++) {
-                                int index = indices[x][y];
-                                image.SetRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
-                            }
-                        }
-                    } else { //If it's vertical
-                        for(int y = 0; y < subHeight; y++) {
-                            for(int x = 0; x < subWidth; x++) {
-                                int index = indices[x][y];
-                                image.SetRGB(x + offsetX, y + offsetY, index == 0 ? 0 : (int) (0xFF000000 | palette[index]));
-                            }
-                        }
-                    }
-                } else {
-                    if((flags & FLAG_VERTICAL) != 0) {
-                        for(int x = 0; x < subWidth; x++) {
-                            for(int y = 0; y < subHeight; y++) {
-                                int alpha = stream.ReadByte();
-                                image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
-                            }
-                        }
-                    } else {
-                        for(int y = 0; y < subHeight; y++) {
-                            for(int x = 0; x < subWidth; x++) {
-                                int alpha = stream.ReadByte();
-                                image.SetRGB(x + offsetX, y + offsetY, alpha << 24 | palette[indices[x][y]]);
-                            }
-                        }
-                    }
-                }
-
-                Debug("Finished decoding sprite", LOG_DETAIL.ADVANCED);
-
-                //First frame in the sprite is the thumb image
-                if(id == 0)
-                    thumb = image.GetSprite();
-
-                this.frames.Add(image);
+                Debug($"\tFrame {id}: {frame.SubWidth}x{frame.SubHeight} at {frame.OffsetX},{frame.OffsetY} flags {frame.Flags}", LOG_DETAIL.INSANE);
+                Frames.Add(frame);
             }
+
+            PixelPlaneEnd = stream.Position;
+            if (PixelPlaneEnd > PaletteOffset)
+                throw new InvalidOperationException(
+                    $"The pixel planes ran to {PixelPlaneEnd}, past the palette at {PaletteOffset}, so at least " +
+                    "one plane was sized wrongly.");
+
+            PixelPlaneTrailer = new byte[PaletteOffset - PixelPlaneEnd];
+            if (PixelPlaneTrailer.Length > 0) {
+                stream.Seek(PixelPlaneEnd);
+                stream.Read(PixelPlaneTrailer, 0, PixelPlaneTrailer.Length);
+            }
+
             Debug("Sprite decode complete", LOG_DETAIL.ADVANCED);
+        }
+
+        /// <summary>
+        ///     Encodes the set back to the bytes index 8 stores for it.
+        /// </summary>
+        /// <remarks>
+        ///     Everything comes off the stored form. Nothing is recomputed from the rendered
+        ///     bitmaps, and nothing is normalised: the flags byte, the palette and the trailing gap
+        ///     all go back exactly as they arrived, because each of them has more than one spelling
+        ///     that decodes to the same picture.
+        /// </remarks>
+        /// <returns>The encoded sprite set.</returns>
+        public JagStream Encode() {
+            if (Frames == null)
+                throw new InvalidOperationException("This sprite set holds no decoded frames to encode.");
+
+            JagStream stream = new JagStream();
+
+            foreach (SpriteFrame frame in Frames) {
+                stream.WriteByte((byte) frame.Flags);
+                WritePlane(stream, frame, frame.PaletteIndices);
+                if (frame.HasAlphaPlane)
+                    WritePlane(stream, frame, frame.Alpha);
+            }
+
+            stream.Write(PixelPlaneTrailer, 0, PixelPlaneTrailer.Length);
+
+            for (int entry = 1; entry < PaletteStored.Length; entry++)
+                stream.WriteMedium(PaletteStored[entry]);
+
+            stream.WriteShort(width);
+            stream.WriteShort(height);
+            stream.WriteByte((byte) (PaletteStored.Length - 1));
+
+            foreach (SpriteFrame frame in Frames)
+                stream.WriteShort(frame.OffsetX);
+            foreach (SpriteFrame frame in Frames)
+                stream.WriteShort(frame.OffsetY);
+            foreach (SpriteFrame frame in Frames)
+                stream.WriteShort(frame.SubWidth);
+            foreach (SpriteFrame frame in Frames)
+                stream.WriteShort(frame.SubHeight);
+
+            stream.WriteShort(Frames.Count);
+
+            return stream.Flip();
+        }
+
+        /// <summary>
+        ///     Reads one plane, honouring the frame's stored traversal order.
+        /// </summary>
+        /// <remarks>
+        ///     Both branches fill the same canonical <c>x + y * SubWidth</c> layout the client uses
+        ///     (<c>Class324.java:92-100</c>), so the flag is needed again only on the way out.
+        /// </remarks>
+        /// <param name="stream">The stream, positioned at the start of the plane.</param>
+        /// <param name="frame">The frame whose geometry sizes the plane.</param>
+        /// <returns>The plane bytes.</returns>
+        private static byte[] ReadPlane(JagStream stream, SpriteFrame frame) {
+            byte[] plane = new byte[frame.Area];
+
+            if (frame.IsColumnMajor) {
+                for (int x = 0; x < frame.SubWidth; x++)
+                    for (int y = 0; y < frame.SubHeight; y++)
+                        plane[x + y * frame.SubWidth] = ReadPlaneByte(stream);
+            } else {
+                for (int i = 0; i < plane.Length; i++)
+                    plane[i] = ReadPlaneByte(stream);
+            }
+
+            return plane;
+        }
+
+        /// <summary>Reads one plane byte, refusing to treat the end of the buffer as data.</summary>
+        /// <remarks>
+        ///     <see cref="JagStream.ReadByte"/> answers -1 past the end without advancing, which
+        ///     would silently fill the rest of a plane with 0xFF and leave the position looking
+        ///     correct.
+        /// </remarks>
+        /// <param name="stream">The stream to read from.</param>
+        /// <returns>The byte.</returns>
+        private static byte ReadPlaneByte(JagStream stream) {
+            int value = stream.ReadByte();
+            if (value < 0)
+                throw new System.IO.EndOfStreamException("A sprite pixel plane ran past the end of the file.");
+            return (byte) value;
+        }
+
+        /// <summary>Writes one plane back in the traversal order the frame was stored in.</summary>
+        /// <param name="stream">The destination.</param>
+        /// <param name="frame">The frame whose flags decide the order.</param>
+        /// <param name="plane">The plane in canonical layout.</param>
+        private static void WritePlane(JagStream stream, SpriteFrame frame, byte[]? plane) {
+            if (plane == null || plane.Length != frame.Area)
+                throw new InvalidOperationException(
+                    $"A {frame.SubWidth}x{frame.SubHeight} frame needs a {frame.Area} byte plane, not " +
+                    (plane == null ? "null" : plane.Length.ToString()) + ".");
+
+            if (frame.IsColumnMajor) {
+                for (int x = 0; x < frame.SubWidth; x++)
+                    for (int y = 0; y < frame.SubHeight; y++)
+                        stream.WriteByte(plane[x + y * frame.SubWidth]);
+            } else {
+                for (int i = 0; i < plane.Length; i++)
+                    stream.WriteByte(plane[i]);
+            }
         }
 
         /// <summary>
@@ -189,13 +360,52 @@ namespace FlashEditor.cache.sprites {
             return sprite;
         }
 
+        // ===================================================================
+        //  Derived state: the rasterised frames
+        // ===================================================================
+
+        /// <summary>
+        ///     The rasterised first frame, built on first use.
+        /// </summary>
+        /// <remarks>
+        ///     Derived, and therefore never read by <see cref="Encode"/>. A set with no frames has
+        ///     none, which is what the sprite list and the map icon path already check for.
+        /// </remarks>
+        public Bitmap thumb {
+            get {
+                if (thumbnail != null)
+                    return thumbnail;
+                List<RSBufferedImage> frames = GetFrames();
+                if (frames != null && frames.Count > 0)
+                    thumbnail = frames[0].GetSprite();
+                return thumbnail;
+            }
+            set { thumbnail = value; }
+        }
+
+        /// <summary>
+        ///     Whether a frame's stored geometry reaches outside the stored canvas.
+        /// </summary>
+        /// <remarks>
+        ///     The client would throw on one of these: it allocates exactly canvas width by canvas
+        ///     height (<c>Class324.method3686</c>, sized by <c>:313-316</c> and <c>:154-157</c>) and
+        ///     writes at <c>offset + pixel</c>. The vanilla capture has none. The repack has eleven,
+        ///     all in one group, so this is reported rather than fatal - the raster is grown to fit
+        ///     instead, which is what the previous decoder did by accident.
+        /// </remarks>
+        /// <param name="frame">The frame to test.</param>
+        /// <returns>Whether it overflows.</returns>
+        public bool Overflows(SpriteFrame frame) {
+            return frame.OffsetX + frame.SubWidth > width || frame.OffsetY + frame.SubHeight > height;
+        }
+
         /// <summary>
         /// Gets the frame with the specified id.
         /// </summary>
-        /// <param name="id"></param>
+        /// <param name="id">The frame index.</param>
         /// <returns>The frame.</returns>
         public RSBufferedImage GetFrame(int id) {
-            return frames[id];
+            return GetFrames()[id];
         }
 
         /// <summary>
@@ -216,38 +426,84 @@ namespace FlashEditor.cache.sprites {
             return width;
         }
 
-        /// <summary>Sets the frame with the specified id.</summary>
+        /// <summary>Replaces a rendered frame.</summary>
+        /// <remarks>
+        ///     Touches the derived form only, so it does not change what <see cref="Encode"/>
+        ///     writes. Editing the stored form means editing <see cref="Frames"/>.
+        /// </remarks>
         /// <param name="id">The frame index.</param>
         /// <param name="frame">The replacement frame image.</param>
         public void SetFrame(int id, RSBufferedImage frame) {
             if(frame.GetWidth() != width || frame.GetHeight() != height)
                 throw new ArgumentException("The frame's dimensions do not match with the sprite's dimensions.");
 
-            frames[id] = frame;
+            GetFrames()[id] = frame;
         }
 
         /// <summary>
         /// Gets the number of frames in this set.
         /// </summary>
+        /// <remarks>Answered from the stored form, so it costs no rasterisation.</remarks>
         /// <returns>The number of frames.</returns>
         public int GetFrameCount() {
-            if(frames != null)
-                return frames.Count;
-            return 0;
+            return Frames == null ? 0 : Frames.Count;
         }
 
+        /// <summary>
+        ///     The rasterised frames, built on first use.
+        /// </summary>
+        /// <returns>The rendered frames, or <c>null</c> when this instance holds no stored frames.</returns>
         public List<RSBufferedImage> GetFrames() {
-            return frames;
+            if (rendered != null || Frames == null)
+                return rendered;
+
+            rendered = new List<RSBufferedImage>(Frames.Count);
+            for (int id = 0; id < Frames.Count; id++)
+                rendered.Add(Rasterise(id, Frames[id]));
+            return rendered;
+        }
+
+        /// <summary>
+        ///     Draws one stored frame onto its own canvas-sized bitmap.
+        /// </summary>
+        /// <remarks>
+        ///     The colour rule is the client's <c>Class324.method3686</c> (<c>:196-225</c>): with an
+        ///     alpha plane the pixel is <c>alpha &lt;&lt; 24 | colour</c>, and without one a palette
+        ///     value of zero is transparent and anything else is opaque. That is why the promoted
+        ///     palette is used here and the stored one is not - a colour stored as black would
+        ///     otherwise vanish.
+        /// </remarks>
+        /// <param name="id">The frame index, carried onto the image.</param>
+        /// <param name="frame">The stored frame.</param>
+        /// <returns>The rendered frame.</returns>
+        private RSBufferedImage Rasterise(int id, SpriteFrame frame) {
+            //Grown to fit rather than clipped: a frame that reaches outside the canvas is malformed
+            //and only occurs in the repack, and dropping its pixels would be a silent edit.
+            int canvasWidth = Math.Max(width, frame.OffsetX + frame.SubWidth);
+            int canvasHeight = Math.Max(height, frame.OffsetY + frame.SubHeight);
+
+            var image = new RSBufferedImage(id, canvasWidth, canvasHeight);
+
+            for (int y = 0; y < frame.SubHeight; y++) {
+                for (int x = 0; x < frame.SubWidth; x++) {
+                    int at = x + y * frame.SubWidth;
+                    int colour = RenderPalette[frame.PaletteIndices[at]];
+
+                    int argb;
+                    if (frame.Alpha == null)
+                        argb = colour == 0 ? 0 : (int) (0xFF000000 | (uint) colour);
+                    else
+                        argb = frame.Alpha[at] << 24 | colour;
+
+                    image.SetRGB(x + frame.OffsetX, y + frame.OffsetY, argb);
+                }
+            }
+
+            return image;
         }
 
         internal void SetIndex(int index) {
             this.index = index;
-        }
-
-        /// <summary>Encodes the sprite set to a stream.</summary>
-        /// <returns>Serialized sprite data.</returns>
-        public JagStream Encode() {
-            throw new NotImplementedException();
         }
 
         /// <summary>Releases the frames and thumbnail held by this sprite set.</summary>
@@ -258,7 +514,7 @@ namespace FlashEditor.cache.sprites {
 
         /// <summary>
         /// Releases the resources held by this definition. Derived types (notably
-        /// <see cref="Cache.Util.RSBufferedImage"/>) override this rather than hiding
+        /// <see cref="RSBufferedImage"/>) override this rather than hiding
         /// <see cref="Dispose()"/>, which is what guarantees the derived cleanup still
         /// runs when the instance is disposed through a <see cref="SpriteDefinition"/>
         /// or <see cref="IDisposable"/> reference.
@@ -268,12 +524,12 @@ namespace FlashEditor.cache.sprites {
             if(!disposing)
                 return;
 
-            if(frames != null) {
-                foreach(var frame in frames)
+            if(rendered != null) {
+                foreach(var frame in rendered)
                     frame?.Dispose();
-                frames = null;
+                rendered = null;
             }
-            thumb = null;
+            thumbnail = null;
         }
     }
 }

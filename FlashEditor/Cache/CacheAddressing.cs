@@ -280,8 +280,10 @@ namespace FlashEditor.cache {
                     return true;
 
                 //One group holding the whole index. Class260.java:106 reads index 26 as
-                //getChildFromFolder(0, 0).
+                //getChildFromFolder(0, 0). Class177.java:21 reads index 29 as
+                //getChildFromFolder(0, id), so a billboard id is a file id in group 0.
                 case RSConstants.MATERIALS:
+                case RSConstants.CONFIG_BILLBOARD:
                     addressing = SingleGroup(0);
                     return true;
 
@@ -302,11 +304,24 @@ namespace FlashEditor.cache {
                 //(JS5Archive.java:591-611) returns getChildFromFolder(id, 0) when the group holds
                 //exactly one file and throws otherwise, and Node_Sub46_Sub16.java:161 is the only
                 //caller. All 3106 groups in this cache are single-file.
+                //
+                //Index 28 is the same shape reached from the other direction: it holds two
+                //unrelated config blobs rather than a record table, and the client asks for them by
+                //literal group id through the same single-file accessor -
+                //InterfaceSettings.java:234-235 calls method2733(1, ...) and method2733(3, ...).
+                //Its group ids are 1 and 3, so a 0..n-1 walk names neither.
+                //
+                //Index 8 reaches the same accessor from a third direction: Class324.method3683 and
+                //method3684 both fetch a sprite set through method2733, so a group holding anything
+                //other than one file would throw before the decoder ever ran. Every group in both
+                //caches holds exactly one file, id 0.
                 case RSConstants.SKINS:
                 case RSConstants.SOUND_EFFECTS:
                 case RSConstants.MUSIC_INDEX:
                 case RSConstants.MUSIC_2:
                 case RSConstants.CLIENT_SCRIPTS_INDEX:
+                case RSConstants.DEFAULTS:
+                case RSConstants.SPRITES_INDEX:
                     addressing = GroupPerId;
                     return true;
 

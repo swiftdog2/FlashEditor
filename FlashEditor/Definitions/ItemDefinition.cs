@@ -2,13 +2,14 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using FlashEditor.Definitions;
 
 namespace FlashEditor {
     /// <summary>
     /// RuneScape "obj" (item-definition) – rev 639
     /// Opcode table sourced from decompiled rev 640 client (openrs2-nonfree639).
     /// </summary>
-    public class ItemDefinition : ICloneable, IDefinition {
+    public class ItemDefinition : OpcodeStreamDefinition, ICloneable, IDefinition {
         /*──────────────────────────*
          *  ▌   PUBLIC FIELDS      ▐ *
          *──────────────────────────*/
@@ -23,25 +24,21 @@ namespace FlashEditor {
 
         /// <summary>The opcodes this definition was decoded from, in the order they appeared.</summary>
         /// <remarks>
-        ///     The revision-639 packer does not write item opcodes in ascending order - a typical
-        ///     record runs 1, 7, 8, 4, 6, 5, ... with the name near the end - and nothing in the
-        ///     format says it should, because the client dispatches on whatever opcode it reads
-        ///     next. Order is therefore not recoverable from the decoded fields, so it is kept
-        ///     here and replayed by <see cref="Encode"/>. Without it a saved item is semantically
-        ///     identical but byte-different, which changes the archive, its CRC, and the
-        ///     reference table entry for every item packed alongside it.
+        ///     A view over the recorded opcode stream, kept because the packer does not write item
+        ///     opcodes in ascending order - a typical record runs 1, 7, 8, 4, 6, 5, ... with the
+        ///     name near the end - and nothing in the format says it should, because the client
+        ///     dispatches on whatever opcode it reads next. Order is therefore not recoverable from
+        ///     the decoded fields.
         /// </remarks>
-        public readonly List<int> opcodeOrder = new List<int>();
+        public IReadOnlyList<int> opcodeOrder {
+            get {
+                List<int> order = new List<int>(Opcodes.Count);
+                foreach (OpcodeRecord record in Opcodes)
+                    order.Add(record.Opcode);
+                return order;
+            }
+        }
 
-        /// <summary>The raw payload of each entry in <see cref="opcodeOrder"/>, index for index.</summary>
-        /// <remarks>
-        ///     Three hundred of the twenty thousand items in a revision-639 cache write the same
-        ///     opcode twice, and the client keeps only the second - the first never reaches a
-        ///     field, so nothing but its bytes records that it was ever there.
-        ///     <see cref="Encode"/> replays those bytes verbatim and re-derives only the last
-        ///     occurrence from the fields, which is the one an edit would have changed.
-        /// </remarks>
-        public readonly List<byte[]> opcodePayloads = new List<byte[]>();
         /// <summary>
         ///     The ground menu the client assumes when no opcode 30-34 is present.
         /// </summary>
@@ -179,7 +176,11 @@ namespace FlashEditor {
 
         private static readonly StringBuilder SharedBuilder = new();
 
-        public ItemDefinition Clone() => (ItemDefinition) MemberwiseClone();
+        public ItemDefinition Clone() {
+            ItemDefinition clone = (ItemDefinition) MemberwiseClone();
+            clone.DetachOpcodeStream();
+            return clone;
+        }
         object ICloneable.Clone() => Clone();
         internal void SetId(int v) => id = v;
         public int GetId() => id;
@@ -198,26 +199,7 @@ namespace FlashEditor {
         /// <param name="s">The stream to read from.</param>
         /// <param name="xteaKey">Unused; item definitions are not separately encrypted.</param>
         public void Decode(JagStream s, int[] xteaKey = null) {
-            int safety = 0;
-
-            while (true) {
-                int op = s.ReadByte();
-                if (op <= 0) break;                       // 0 = terminator, -1 = EOF
-
-                int payloadStart = s.Position;
-                DecodeOpcode(s, op);
-
-                byte[] payload = new byte[s.Position - payloadStart];
-                if (payload.Length > 0) {
-                    s.Position = payloadStart;
-                    s.Read(payload, 0, payload.Length);
-                }
-
-                opcodeOrder.Add(op);
-                opcodePayloads.Add(payload);
-
-                if (++safety > 256) break;                // corrupt-stream guard
-            }
+            DecodeOpcodeStream(s);
         }
 
         public static ItemDefinition DecodeFromStream(JagStream s) {
@@ -230,42 +212,46 @@ namespace FlashEditor {
          *  ▌  PER-OPCODE HANDLER   ▐ *
          *──────────────────────────*/
 
-        private void DecodeOpcode(JagStream buf, int op) {
+        /// <summary>Reads one opcode's payload, or reports that its width is unknown.</summary>
+        /// <param name="buf">The stream, positioned at the payload.</param>
+        /// <param name="op">The opcode just read.</param>
+        /// <returns>True when the payload was consumed; false to fail the record.</returns>
+        protected override bool DecodeOpcode(JagStream buf, int op) {
             decoded[op] = true;
 
             switch (op) {
-                case 1: inventoryModelId = buf.ReadUnsignedShort(); return;
-                case 2: name = buf.ReadJagexString(); return;
-                case 4: modelZoom = buf.ReadUnsignedShort(); return;
-                case 5: modelRotation1 = buf.ReadUnsignedShort(); return;
-                case 6: modelRotation2 = buf.ReadUnsignedShort(); return;
+                case 1: inventoryModelId = buf.ReadUnsignedShort(); return true;
+                case 2: name = buf.ReadJagexString(); return true;
+                case 4: modelZoom = buf.ReadUnsignedShort(); return true;
+                case 5: modelRotation1 = buf.ReadUnsignedShort(); return true;
+                case 6: modelRotation2 = buf.ReadUnsignedShort(); return true;
 
                 case 7:
                     modelOffsetX = buf.ReadUnsignedShort();
                     if (modelOffsetX > 32767) modelOffsetX -= 65536;
-                    return;
+                    return true;
                 case 8:
                     modelOffsetY = buf.ReadUnsignedShort();
                     if (modelOffsetY > 32767) modelOffsetY -= 65536;
-                    return;
+                    return true;
 
-                case 11: stackable = 1; return;
-                case 12: value = buf.ReadInt(); return;
-                case 16: membersOnly = true; return;
-                case 18: multiStackSize = buf.ReadUnsignedShort(); return;
+                case 11: stackable = 1; return true;
+                case 12: value = buf.ReadInt(); return true;
+                case 16: membersOnly = true; return true;
+                case 18: multiStackSize = buf.ReadUnsignedShort(); return true;
 
                 /* worn models */
-                case 23: maleWearModel1 = buf.ReadUnsignedShort(); return;
-                case 24: maleWearModel2 = buf.ReadUnsignedShort(); return;
-                case 25: femaleWearModel1 = buf.ReadUnsignedShort(); return;
-                case 26: femaleWearModel2 = buf.ReadUnsignedShort(); return;
+                case 23: maleWearModel1 = buf.ReadUnsignedShort(); return true;
+                case 24: maleWearModel2 = buf.ReadUnsignedShort(); return true;
+                case 25: femaleWearModel1 = buf.ReadUnsignedShort(); return true;
+                case 26: femaleWearModel2 = buf.ReadUnsignedShort(); return true;
 
                 /* ground / inventory menus */
                 case int a when a >= 30 && a < 35:
-                    groundOptions[a - 30] = buf.ReadJagexString(); return;
+                    groundOptions[a - 30] = buf.ReadJagexString(); return true;
 
                 case int b when b >= 35 && b < 40:
-                    inventoryOptions[b - 35] = buf.ReadJagexString(); return;
+                    inventoryOptions[b - 35] = buf.ReadJagexString(); return true;
 
                 /* recolour */
                 case 40: {
@@ -276,7 +262,7 @@ namespace FlashEditor {
                             originalModelColors[i] = (short) buf.ReadUnsignedShort();
                             modifiedModelColors[i] = (short) buf.ReadUnsignedShort();
                         }
-                        return;
+                        return true;
                     }
 
                 /* retexture */
@@ -288,7 +274,7 @@ namespace FlashEditor {
                             textureColour1[i] = (short) buf.ReadUnsignedShort();
                             textureColour2[i] = (short) buf.ReadUnsignedShort();
                         }
-                        return;
+                        return true;
                     }
 
                 /* texture priority table */
@@ -297,89 +283,89 @@ namespace FlashEditor {
                         texturePriorities = new sbyte[n];
                         for (int i = 0 ; i < n ; i++)
                             texturePriorities[i] = buf.ReadSignedByte();
-                        return;
+                        return true;
                     }
 
                 /* GE tradeable */
-                case 65: unnoted = true; return;
+                case 65: unnoted = true; return true;
 
                 /* tertiary worn models */
-                case 78: maleWearModel3 = buf.ReadUnsignedShort(); return;
-                case 79: femaleWearModel3 = buf.ReadUnsignedShort(); return;
+                case 78: maleWearModel3 = buf.ReadUnsignedShort(); return true;
+                case 79: femaleWearModel3 = buf.ReadUnsignedShort(); return true;
 
                 /* chathead models - the client pairs 90 with 92 (male) and 91 with 93 (female) */
-                case 90: maleHeadModel1 = buf.ReadUnsignedShort(); return;
-                case 91: femaleHeadModel1 = buf.ReadUnsignedShort(); return;
-                case 92: maleHeadModel2 = buf.ReadUnsignedShort(); return;
-                case 93: femaleHeadModel2 = buf.ReadUnsignedShort(); return;
+                case 90: maleHeadModel1 = buf.ReadUnsignedShort(); return true;
+                case 91: femaleHeadModel1 = buf.ReadUnsignedShort(); return true;
+                case 92: maleHeadModel2 = buf.ReadUnsignedShort(); return true;
+                case 93: femaleHeadModel2 = buf.ReadUnsignedShort(); return true;
 
                 /* z-axis rotation */
-                case 95: zan2d = buf.ReadUnsignedShort(); return;
+                case 95: zan2d = buf.ReadUnsignedShort(); return true;
 
                 /* dummy item */
-                case 96: dummyItem = buf.ReadByte(); return;
+                case 96: dummyItem = buf.ReadByte(); return true;
 
                 /* noted pair */
-                case 97: notedId = buf.ReadUnsignedShort(); return;
-                case 98: notedTemplateId = buf.ReadUnsignedShort(); return;
+                case 97: notedId = buf.ReadUnsignedShort(); return true;
+                case 98: notedTemplateId = buf.ReadUnsignedShort(); return true;
 
                 /* stack variants 100-109 */
                 case int v when v >= 100 && v < 110:
                     if (stackIds == null) { stackIds = new int[10]; stackAmounts = new int[10]; }
                     stackIds[v - 100] = buf.ReadUnsignedShort();
                     stackAmounts[v - 100] = buf.ReadUnsignedShort();
-                    return;
+                    return true;
 
                 /* model resize */
-                case 110: resizeX = buf.ReadUnsignedShort(); return;
-                case 111: resizeY = buf.ReadUnsignedShort(); return;
-                case 112: resizeZ = buf.ReadUnsignedShort(); return;
+                case 110: resizeX = buf.ReadUnsignedShort(); return true;
+                case 111: resizeY = buf.ReadUnsignedShort(); return true;
+                case 112: resizeZ = buf.ReadUnsignedShort(); return true;
 
                 /* ambient / contrast */
-                case 113: ambient = buf.ReadSignedByte(); return;
-                case 114: contrast = buf.ReadSignedByte() * 5; return;
+                case 113: ambient = buf.ReadSignedByte(); return true;
+                case 114: contrast = buf.ReadSignedByte() * 5; return true;
 
                 /* team id */
-                case 115: teamId = buf.ReadByte(); return;
+                case 115: teamId = buf.ReadByte(); return true;
 
                 /* lending */
-                case 121: lendId = buf.ReadUnsignedShort(); return;
-                case 122: lendTemplateId = buf.ReadUnsignedShort(); return;
+                case 121: lendId = buf.ReadUnsignedShort(); return true;
+                case 122: lendTemplateId = buf.ReadUnsignedShort(); return true;
 
                 /* wear offsets */
                 case 125:
                     manWearXOffset = buf.ReadSignedByte() << 2;
                     manWearYOffset = buf.ReadSignedByte() << 2;
                     manWearZOffset = buf.ReadSignedByte() << 2;
-                    return;
+                    return true;
 
                 case 126:
                     womanWearXOffset = buf.ReadSignedByte() << 2;
                     womanWearYOffset = buf.ReadSignedByte() << 2;
                     womanWearZOffset = buf.ReadSignedByte() << 2;
-                    return;
+                    return true;
 
                 /* cursor overrides */
                 case 127:
                     cursor1Op = buf.ReadByte();
                     cursor1Id = buf.ReadUnsignedShort();
-                    return;
+                    return true;
                 case 128:
                     cursor2Op = buf.ReadByte();
                     cursor2Id = buf.ReadUnsignedShort();
-                    return;
+                    return true;
                 case 129:
                     cursor3Op = buf.ReadByte();
                     cursor3Id = buf.ReadUnsignedShort();
-                    return;
+                    return true;
                 case 130:
                     cursor4Op = buf.ReadByte();
                     cursor4Id = buf.ReadUnsignedShort();
-                    return;
+                    return true;
                 case 131:
                     cursor5Op = buf.ReadByte();
                     cursor5Id = buf.ReadUnsignedShort();
-                    return;
+                    return true;
 
                 /* quest requirements */
                 case 132: {
@@ -387,15 +373,15 @@ namespace FlashEditor {
                         quests = new int[n];
                         for (int i = 0 ; i < n ; i++)
                             quests[i] = buf.ReadUnsignedShort();
-                        return;
+                        return true;
                     }
 
                 /* pick size shift */
-                case 134: pickSizeShift = buf.ReadByte(); return;
+                case 134: pickSizeShift = buf.ReadByte(); return true;
 
                 /* bind/shard pair */
-                case 139: bindId = buf.ReadUnsignedShort(); return;
-                case 140: bindTemplateId = buf.ReadUnsignedShort(); return;
+                case 139: bindId = buf.ReadUnsignedShort(); return true;
+                case 140: bindTemplateId = buf.ReadUnsignedShort(); return true;
 
                 /* params */
                 case 249: {
@@ -411,13 +397,13 @@ namespace FlashEditor {
                             itemParamEntries.Add(new KeyValuePair<int, object>(key, val));
                             if (!itemParams.ContainsKey(key)) itemParams.Add(key, val);
                         }
-                        return;
+                        return true;
                     }
 
                 /* unknown opcode - bail out */
                 default:
                     Debug($"Unknown item opcode {op} at position {buf.Position}/{buf.Length} for item {id}");
-                    throw new InvalidOperationException($"Unknown item opcode {op}");
+                    return false;
             }
         }
 
@@ -446,21 +432,13 @@ namespace FlashEditor {
             var o = new JagStream();
             var written = new bool[256];
 
-            var lastOccurrence = new int[256];
-            for (int op = 0 ; op < lastOccurrence.Length ; op++)
-                lastOccurrence[op] = -1;
-            for (int i = 0 ; i < opcodeOrder.Count ; i++) {
-                int op = opcodeOrder[i];
-                if (op > 0 && op < 256)
-                    lastOccurrence[op] = i;
-            }
-
-            for (int i = 0 ; i < opcodeOrder.Count ; i++) {
-                int op = opcodeOrder[i];
+            for (int i = 0 ; i < Opcodes.Count ; i++) {
+                OpcodeRecord record = Opcodes[i];
+                int op = record.Opcode;
                 if (op <= 0 || op > 255)
                     continue;
 
-                if (i == lastOccurrence[op]) {
+                if (Opcodes.IsLastOccurrence(i)) {
                     written[op] = true;
                     EmitOpcode(o, op, true);
                     continue;
@@ -473,8 +451,7 @@ namespace FlashEditor {
                    the earlier copy would survive and the client would still read the flag as set,
                    so the row would change, the save would report success and the item would come
                    back members-only. */
-                byte[] payload = i < opcodePayloads.Count ? opcodePayloads[i] : null;
-                if (payload == null || payload.Length == 0) {
+                if (record.IsBareFlag) {
                     EmitOpcode(o, op, true);
                     continue;
                 }
@@ -482,7 +459,7 @@ namespace FlashEditor {
                 //A superseded occurrence with a payload has no field left to rebuild it from, so
                 //its bytes are all that is left of it.
                 o.WriteByte((byte) op);
-                o.Write(payload, 0, payload.Length);
+                o.Write(record.Payload, 0, record.Payload.Length);
             }
 
             for (int op = 1 ; op < 256 ; op++) {

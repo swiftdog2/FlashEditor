@@ -22,7 +22,7 @@ MEASURED IN THIS CACHE, parsed straight out of idx255/dat2 with an independent P
 
 Everything. Decode, encode, a full-index byte-identity sweep, and a GUI editing tab.
 
-DECODER: FlashEditor/Definitions/ItemDefinition.cs:200 Decode(JagStream), dispatching at :233 DecodeOpcode over 69 opcodes. It records opcodeOrder (:34) and opcodePayloads (:44) so a non-canonical layout can be reproduced.
+DECODER: FlashEditor/Definitions/ItemDefinition.cs:200 Decode(JagStream), dispatching at :233 DecodeOpcode over 69 opcodes. It records the opcode and its verbatim payload per occurrence in `OpcodeStreamDefinition.Opcodes` so a non-canonical layout can be reproduced; `opcodeOrder` is a read-only view over it.
 
 ENCODER: ItemDefinition.cs:445 Encode(), per-opcode emission at :512 EmitOpcode, opcode-249 block at :705 WriteParams. Replays the recorded opcode order first, then appends any field moved off its default that the record never carried.
 

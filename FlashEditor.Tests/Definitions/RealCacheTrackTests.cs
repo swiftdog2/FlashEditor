@@ -14,14 +14,19 @@ namespace FlashEditor.Tests.Definitions
     ///     format's own accounting rather than against itself.
     /// </summary>
     /// <remarks>
-    ///     There is no encoder for this format, so there is no byte-identity sweep to pair with one.
-    ///     Two independent checks stand in for it. The packed file states how long the decoded MIDI
-    ///     must be - the client sizes its output buffer from the first pass and never re-measures
+    ///     These checks are about the MIDI <b>projection</b>, and they stay worth running now that
+    ///     the byte-identity sweep exists next door in <see cref="RealCacheTrackCodecTests"/> -
+    ///     because that sweep cannot see them. The encoder replays the stored runs verbatim, so it
+    ///     would reproduce the cache byte for byte even if the projection were nonsense.
+    ///     <para>
+    ///     Two independent checks cover it. The packed file states how long the decoded MIDI must
+    ///     be - the client sizes its output buffer from the first pass and never re-measures
     ///     (Node_Sub7.java:166) - so the emitted length has to reconcile with it. And the emitted
     ///     file has to be a structurally valid MIDI: an MThd whose track count matches the number of
     ///     MTrk chunks, chunk lengths that tile the file exactly, and an end-of-track meta event
     ///     closing every chunk. Neither can be satisfied by a decoder that has the run boundaries
     ///     wrong, which is the failure mode this format invites.
+    ///     </para>
     /// </remarks>
     public sealed class RealCacheTrackTests : IClassFixture<RealCacheFixture>
     {

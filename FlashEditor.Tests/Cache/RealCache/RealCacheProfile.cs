@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+﻿using FlashEditor.cache;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -221,7 +221,32 @@ namespace FlashEditor.Tests.Cache.RealCache
                     //991 l squares differ and the same 63 of them still reach the continuation,
                     //because what the repack changed was the encryption, not the object lists.
                     ["map.terrainWithExtras"] = 1323,
-                    ["map.locationsUsingTheSmartContinuation"] = 63
+                    ["map.locationsUsingTheSmartContinuation"] = 63,
+
+                    //Index 8. Both caches declare the same 4593 groups, so every difference below
+                    //is content the repacker rewrote rather than a different population. The three
+                    //aliasing figures are what say whether the sprite codec's non-canonical
+                    //branches are exercised at all: a stored black, a redundant alpha plane and a
+                    //frame whose row/column order cannot be recovered from its pixels.
+                    ["sprite.frames"] = 11177,
+                    ["sprite.flagByte.0"] = 6786,
+                    ["sprite.flagByte.1"] = 4211,
+                    ["sprite.flagByte.2"] = 113,
+                    ["sprite.flagByte.3"] = 67,
+                    ["sprite.framesWithUnknownFlagBits"] = 0,
+                    ["sprite.multiFrameSets"] = 44,
+                    ["sprite.framesWithZeroArea"] = 2377,
+                    ["sprite.paletteEntriesStoredAsBlack"] = 1337,
+                    ["sprite.setsWithAPaletteEntryStoredAsBlack"] = 1337,
+                    ["sprite.paletteEntriesStoredAsOne"] = 73,
+                    ["sprite.setsWithAnUnreferencedPaletteEntry"] = 1,
+                    ["sprite.framesWithAnAlphaPlane"] = 180,
+                    ["sprite.framesWithARedundantAlphaPlane"] = 6,
+                    ["sprite.framesWhoseOrderIsUnrecoverable"] = 2767,
+                    ["sprite.framesStoredColumnMajorWithAnUnrecoverableOrder"] = 0,
+                    ["sprite.setsWithAPixelPlaneTrailer"] = 0,
+                    ["sprite.pixelPlaneTrailerBytes"] = 0,
+                    ["sprite.framesOverflowingTheCanvas"] = 0
                 });
         }
 
@@ -282,7 +307,32 @@ namespace FlashEditor.Tests.Cache.RealCache
                     //disagree on - 12 of the 1684 terrain squares and 991 of the location squares
                     //differ - so neither transfers.
                     ["map.terrainWithExtras"] = 1324,
-                    ["map.locationsUsingTheSmartContinuation"] = 63
+                    ["map.locationsUsingTheSmartContinuation"] = 63,
+
+                    //Index 8. Same 4593 groups as the vanilla capture, different content. Two
+                    //figures here have no counterpart there at all and are the reason the decoder
+                    //carries the branches it does: thirteen groups leave three unread zero bytes
+                    //between the last pixel plane and the palette, and eleven frames in group 1455
+                    //reach outside the canvas the same file declares.
+                    ["sprite.frames"] = 11195,
+                    ["sprite.flagByte.0"] = 6775,
+                    ["sprite.flagByte.1"] = 4207,
+                    ["sprite.flagByte.2"] = 147,
+                    ["sprite.flagByte.3"] = 66,
+                    ["sprite.framesWithUnknownFlagBits"] = 0,
+                    ["sprite.multiFrameSets"] = 44,
+                    ["sprite.framesWithZeroArea"] = 2377,
+                    ["sprite.paletteEntriesStoredAsBlack"] = 1334,
+                    ["sprite.setsWithAPaletteEntryStoredAsBlack"] = 1334,
+                    ["sprite.paletteEntriesStoredAsOne"] = 74,
+                    ["sprite.setsWithAnUnreferencedPaletteEntry"] = 1,
+                    ["sprite.framesWithAnAlphaPlane"] = 213,
+                    ["sprite.framesWithARedundantAlphaPlane"] = 39,
+                    ["sprite.framesWhoseOrderIsUnrecoverable"] = 2767,
+                    ["sprite.framesStoredColumnMajorWithAnUnrecoverableOrder"] = 0,
+                    ["sprite.setsWithAPixelPlaneTrailer"] = 13,
+                    ["sprite.pixelPlaneTrailerBytes"] = 39,
+                    ["sprite.framesOverflowingTheCanvas"] = 11
                 });
         }
 

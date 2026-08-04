@@ -10,7 +10,7 @@ namespace FlashEditor.Definitions
     /// Opcode layout matches the 633-official client (closest public reference to rev 639).
     /// For build &lt;670, readBigSmart() == readUnsignedShort().
     /// </summary>
-    public class ObjectDefinition : ICloneable, IDefinition
+    public class ObjectDefinition : OpcodeStreamDefinition, ICloneable, IDefinition
     {
         /*───────────────────────────────────────────*
          *  ▌  Static / shared helpers              ▐
@@ -365,24 +365,6 @@ namespace FlashEditor.Definitions
         /// <summary>Diagnostic flag array tracking which opcodes were read.</summary>
         public bool[] decoded = new bool[256];  // opcode hit-map
 
-        /// <summary>
-        /// Every opcode the stream carried, in order, paired with the exact payload bytes it was
-        /// read from.
-        /// </summary>
-        /// <remarks>
-        /// Nothing in the format fixes an opcode order, and the definitions shipped in the cache
-        /// are not in ascending order, so an encoder that emitted its own order would rewrite
-        /// every definition the user merely opened. Replaying the order the decoder saw is what
-        /// makes an untouched definition re-encode to the bytes it came from.
-        /// <para>
-        /// The payload is kept as well because a few hundred definitions repeat an opcode with a
-        /// different value each time. The decoder keeps only the last value, as the client does,
-        /// so the earlier occurrences can only be reproduced from the bytes they were read from.
-        /// </para>
-        /// </remarks>
-        private List<KeyValuePair<int, byte[]>> _streamRecords =
-            new List<KeyValuePair<int, byte[]>>();
-
         /*───────────────────────────────────────────*
          *  ▌  Clone support                        ▐
          *───────────────────────────────────────────*/
@@ -397,7 +379,7 @@ namespace FlashEditor.Definitions
         {
             var clone = (ObjectDefinition)MemberwiseClone();
             clone.decoded = (bool[])decoded.Clone();
-            clone._streamRecords = new List<KeyValuePair<int, byte[]>>(_streamRecords);
+            clone.DetachOpcodeStream();
             return clone;
         }
 
@@ -408,24 +390,9 @@ namespace FlashEditor.Definitions
          *───────────────────────────────────────────*/
         public void Decode(JagStream stream, int[] xteaKey = null)
         {
-            int safeGuard = 0;
             SharedBuilder.Clear();
 
-            while (true)
-            {
-                int op = stream.ReadByte();
-                if (op <= 0) break;          // 0 = terminator, -1 = EOF
-                decoded[op] = true;
-
-                int payloadStart = stream.Position;
-                Decode(stream, op);
-                int payloadEnd = stream.Position;
-                stream.Position = payloadStart;
-                _streamRecords.Add(new KeyValuePair<int, byte[]>(op, stream.ReadBytes(payloadEnd - payloadStart)));
-
-                if (++safeGuard > 256)
-                    throw new InvalidOperationException("Opcode overflow while decoding ObjectDefinition.");
-            }
+            DecodeOpcodeStream(stream);
 
             for (int i = 0; i < decoded.Length; i++)
                 if (decoded[i]) SharedBuilder.Append(i).Append(' ');
@@ -444,8 +411,14 @@ namespace FlashEditor.Definitions
         /*───────────────────────────────────────────*
          *  ▌  Private per-opcode handler           ▐
          *───────────────────────────────────────────*/
-        private void Decode(JagStream buf, int op)
+        /// <summary>Reads one opcode's payload, or reports that its width is unknown.</summary>
+        /// <param name="buf">The stream, positioned at the payload.</param>
+        /// <param name="op">The opcode just read.</param>
+        /// <returns>True when the payload was consumed; false to fail the record.</returns>
+        protected override bool DecodeOpcode(JagStream buf, int op)
         {
+            decoded[op] = true;
+
             switch (op)
             {
                 /*──────── 1 / 5 : model lists ────────*/
@@ -499,20 +472,20 @@ namespace FlashEditor.Definitions
                 // category/id-grouping
                 case 19:
                     category = (byte) buf.ReadByte();
-                    return;
+                    return true;
 
                 /* ─────────────── clip & contour flags ─────────────── */
-                case 21: contourGroundType = 1; return;             // flag only (0 bytes)
+                case 21: contourGroundType = 1; return true;             // flag only (0 bytes)
 
                 /* The bare flags - 22, 62, 64, 73, 74, 82, 88-91, 96-98, 105, 168, 169, 177 and
                    189 - have no payload and no case body. Their properties read straight off the
                    opcode hit map, which the decode loop has already written, so there is nothing
                    left to assign. Going through the property here would be worse than redundant:
                    its setter drops opcodes from the recorded stream. */
-                case 22: return;                                    // isClipped (aBoolean3867)
-                case 23: obstructsGround = 1; return;              // flag only (thirdInt = 1)
-                case 24: animationId = buf.ReadUnsignedShort(); return; // readBigSmart = UShort for <670
-                case 27: clipType = 1; return;                     // flag only
+                case 22: return true;                                    // isClipped (aBoolean3867)
+                case 23: obstructsGround = 1; return true;              // flag only (thirdInt = 1)
+                case 24: animationId = buf.ReadUnsignedShort(); return true; // readBigSmart = UShort for <670
+                case 27: clipType = 1; return true;                     // flag only
                 case 28: decorDisplacement = buf.ReadByte() << 2; break; // 1 byte
                 case 29: ambientLighting = buf.ReadSignedByte(); break; // 1 byte
 
@@ -561,7 +534,7 @@ namespace FlashEditor.Definitions
                         texturePriorities = new sbyte[n];
                         for (int i = 0; i < n; i++)
                             texturePriorities[i] = buf.ReadSignedByte();
-                        return;
+                        return true;
                     }
 
                 /*──────── 44 / 45: bitmap-decoded byte arrays ────────*/
@@ -595,22 +568,22 @@ namespace FlashEditor.Definitions
                     }
 
                 /* ─────────────── render-side flags ─────────────── */
-                case 62: return;                                    // flipped - mirror on X
-                case 64: return;                                    // castsShadow off
-                case 65: scaleX = buf.ReadUnsignedShort(); return;  // 2 bytes
-                case 66: scaleY = buf.ReadUnsignedShort(); return;  // 2 bytes
-                case 67: scaleZ = buf.ReadUnsignedShort(); return;  // 2 bytes
-                case 68: mapSceneId = buf.ReadUnsignedShort(); return; // 2 bytes (may not be in 633, kept for safety)
-                case 69: minimapForceClip = (byte) buf.ReadByte(); return;  // 1 byte
+                case 62: return true;                                    // flipped - mirror on X
+                case 64: return true;                                    // castsShadow off
+                case 65: scaleX = buf.ReadUnsignedShort(); return true;  // 2 bytes
+                case 66: scaleY = buf.ReadUnsignedShort(); return true;  // 2 bytes
+                case 67: scaleZ = buf.ReadUnsignedShort(); return true;  // 2 bytes
+                case 68: mapSceneId = buf.ReadUnsignedShort(); return true; // 2 bytes (may not be in 633, kept for safety)
+                case 69: minimapForceClip = (byte) buf.ReadByte(); return true;  // 1 byte
 
                 /* signed short offsets */
-                case 70: offsetX = buf.ReadShort() << 2; return;    // 2 bytes
-                case 71: offsetY = buf.ReadShort() << 2; return;    // 2 bytes
-                case 72: offsetZ = buf.ReadShort() << 2; return;    // 2 bytes (anInt2946)
+                case 70: offsetX = buf.ReadShort() << 2; return true;    // 2 bytes
+                case 71: offsetY = buf.ReadShort() << 2; return true;    // 2 bytes
+                case 72: offsetZ = buf.ReadShort() << 2; return true;    // 2 bytes (anInt2946)
 
-                case 73: return;                                    // obstructsWheelchair
-                case 74: return;                                    // isSolid
-                case 75: unknownByte75 = buf.ReadUnsignedByte(); return; // 1 byte (anInt2975)
+                case 73: return true;                                    // obstructsWheelchair
+                case 74: return true;                                    // isSolid
+                case 75: unknownByte75 = buf.ReadUnsignedByte(); return true; // 1 byte (anInt2975)
 
                 /*──────── morph (77 / 92) ────────*/
                 case 77:
@@ -773,9 +746,15 @@ namespace FlashEditor.Definitions
 
                 /*──────── unhandled opcodes ────────*/
                 default:
+                    /* Every opcode the 637 client handles is above, plus twelve it does not, and
+                       an exact-consumption sweep over both caches reaches none of the rest. The
+                       payload width of an opcode outside the switch is unknown, so the record
+                       cannot be parsed past it - the base loop reports where it stopped. */
                     Debug($"ObjectDef {id}: unhandled opcode {op} at pos {buf.Position}", LOG_DETAIL.BASIC);
-                    break;
+                    return false;
             }
+
+            return true;
         }
 
         /*───────────────────────────────────────────*
@@ -872,7 +851,7 @@ namespace FlashEditor.Definitions
             /* Every bare flag is emitted from the hit map alone. The properties behind them are
                views over that map, so a field test would be the same question asked twice; more
                to the point, clearing one drops the opcode from the map AND from the recorded
-               stream, which is the only thing that stops WriteRecordsInStreamOrder replaying a
+               stream, which is the only thing that stops the replay pass putting back a
                flag the user has just turned off. */
             if (decoded[21]) Emit(21);
             if (decoded[22]) Emit(22);                  // isClipped
@@ -978,7 +957,7 @@ namespace FlashEditor.Definitions
             {
                 /* This codec writes both opcodes into the same fields, and 81 definitions in the
                    cache carry both, so only the one the decoder read last still has its values in
-                   the fields. The other is replayed from its own bytes by WriteRecordsInStreamOrder,
+                   the fields. The other is replayed from its own recorded bytes,
                    which is what keeps those 81 byte-exact.
                    The conflation is ours, not the format's: the 637 client reads 78 and 79 into
                    two distinct fields and forwards them to the sound emitter as separate slots.
@@ -1099,7 +1078,9 @@ namespace FlashEditor.Definitions
                     }
                 });
 
-            return WriteRecordsInStreamOrder(records);
+            /* The blocks above already build `records` in ascending opcode order, so an opcode the
+               decoded stream never carried lands in a predictable place without a further sort. */
+            return Opcodes.Replay(records);
         }
 
         /// <summary>
@@ -1107,94 +1088,23 @@ namespace FlashEditor.Definitions
         /// put it back on the next encode.
         /// </summary>
         /// <remarks>
-        /// Clearing <see cref="decoded"/> alone is not enough: an opcode still listed in
-        /// <see cref="_streamRecords"/> is written back from the bytes it was read from, which is
-        /// what keeps repeated opcodes byte-exact but would also resurrect a flag the user just
-        /// turned off.
+        /// Clearing <see cref="decoded"/> alone is not enough: an opcode still listed in the
+        /// recorded stream is written back from the bytes it was read from, which is what keeps
+        /// repeated opcodes byte-exact but would also resurrect a flag the user just turned off.
         /// </remarks>
         /// <param name="op">The opcode to remove.</param>
         private void DropOpcode(int op)
         {
             decoded[op] = false;
-            _streamRecords.RemoveAll(record => record.Key == op);
+            Opcodes.Remove(op);
         }
 
         /// <summary>
         /// Where an opcode last appeared in the decoded stream, or -1 when it never did.
         /// </summary>
         /// <param name="op">The opcode to look for.</param>
-        /// <returns>The index into <see cref="_streamRecords"/>, or -1.</returns>
-        private int LastStreamIndexOf(int op)
-        {
-            for (int i = _streamRecords.Count - 1; i >= 0; i--)
-                if (_streamRecords[i].Key == op)
-                    return i;
-            return -1;
-        }
-
-        /// <summary>
-        /// Lays the encoded opcode records down in the order the definition was decoded in, then
-        /// appends anything the decoder never saw.
-        /// </summary>
-        /// <remarks>
-        /// A freshly encoded record with no place in <see cref="_streamRecords"/> is one the field
-        /// values asked for but the original stream did not carry - a value the user set on a
-        /// definition that arrived without that opcode. Appending it keeps such an edit rather
-        /// than dropping it, which is what the value-driven encoder above did before the order was
-        /// recorded.
-        /// <para>
-        /// Only the last occurrence of an opcode takes the freshly encoded payload, because that
-        /// is the occurrence whose value the decoder kept and therefore the only one an edit can
-        /// have changed. Every earlier occurrence, and any opcode the field-driven pass declined
-        /// to re-emit at all - opcode 78 on a definition that also carries 79, for instance - is
-        /// written back from the bytes it was read from.
-        /// </para>
-        /// </remarks>
-        /// <param name="records">Each opcode and the payload bytes freshly encoded for it.</param>
-        /// <returns>The complete definition stream, terminator included, ready to read.</returns>
-        private JagStream WriteRecordsInStreamOrder(List<KeyValuePair<int, byte[]>> records)
-        {
-            var o = new JagStream();
-            var encoded = new Dictionary<int, byte[]>(records.Count);
-            foreach (KeyValuePair<int, byte[]> record in records)
-                encoded[record.Key] = record.Value;
-
-            var lastOccurrence = new Dictionary<int, int>();
-            for (int i = 0; i < _streamRecords.Count; i++)
-                lastOccurrence[_streamRecords[i].Key] = i;
-
-            var replaced = new HashSet<int>();
-
-            void Put(int op, byte[] payload)
-            {
-                o.WriteByte((byte)op);
-                if (payload.Length > 0)
-                    o.Write(payload);
-            }
-
-            for (int i = 0; i < _streamRecords.Count; i++)
-            {
-                int op = _streamRecords[i].Key;
-
-                if (lastOccurrence[op] == i && encoded.TryGetValue(op, out byte[] fresh))
-                {
-                    Put(op, fresh);
-                    replaced.Add(op);
-                }
-                else
-                {
-                    Put(op, _streamRecords[i].Value);
-                }
-            }
-
-            foreach (KeyValuePair<int, byte[]> record in records)
-                if (!replaced.Contains(record.Key))
-                    Put(record.Key, record.Value);
-
-            /* terminator */
-            o.WriteByte(0);
-            return o.Flip();
-        }
+        /// <returns>The index into the recorded stream, or -1.</returns>
+        private int LastStreamIndexOf(int op) => Opcodes.LastIndexOf(op);
 
         /// <summary>
         /// Re-encodes a bitmap byte array back to the UShort bitmask used by opcodes 44/45.

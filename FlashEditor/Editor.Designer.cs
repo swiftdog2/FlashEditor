@@ -100,6 +100,7 @@ namespace FlashEditor {
             Image = new OLVColumn();
             NPCEditorTab = new TabPage();
             groupBox6 = new GroupBox();
+            NPCControlsLayout = new TableLayoutPanel();
             NPCLoadingLabel = new Label();
             NPCProgressBar = new ProgressBar();
             button2 = new Button();
@@ -152,6 +153,10 @@ namespace FlashEditor {
             SoundEffectEditorTab = new TabPage();
             ConfigEditorTab = new TabPage();
             HuffmanEditorTab = new TabPage();
+            EnumEditorTab = new TabPage();
+            VarBitEditorTab = new TabPage();
+            DefaultsEditorTab = new TabPage();
+            BillboardEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -177,6 +182,7 @@ namespace FlashEditor {
             ((System.ComponentModel.ISupportInitialize) SpriteListView).BeginInit();
             NPCEditorTab.SuspendLayout();
             groupBox6.SuspendLayout();
+            NPCControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) NPCListView).BeginInit();
             ObjectEditorTab.SuspendLayout();
             groupBox5.SuspendLayout();
@@ -267,6 +273,10 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(ConfigEditorTab);
             EditorTabControl.Controls.Add(HuffmanEditorTab);
+            EditorTabControl.Controls.Add(EnumEditorTab);
+            EditorTabControl.Controls.Add(VarBitEditorTab);
+            EditorTabControl.Controls.Add(DefaultsEditorTab);
+            EditorTabControl.Controls.Add(BillboardEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -920,10 +930,7 @@ namespace FlashEditor {
             // 
             groupBox6.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox6.BackColor = Color.White;
-            groupBox6.Controls.Add(NPCLoadingLabel);
-            groupBox6.Controls.Add(NPCProgressBar);
-            groupBox6.Controls.Add(button2);
-            groupBox6.Controls.Add(button3);
+            groupBox6.Controls.Add(NPCControlsLayout);
             groupBox6.Font = new Font("Consolas", 12.25F);
             groupBox6.Location = new Point(857, 3);
             groupBox6.Name = "groupBox6";
@@ -931,50 +938,77 @@ namespace FlashEditor {
             groupBox6.TabIndex = 16;
             groupBox6.TabStop = false;
             groupBox6.Text = "Editor Controls";
-            // 
+            //
+            // NPCControlsLayout
+            //
+            // Same rebuild as ItemControlsLayout, and for the same defect - see the note there. This
+            // strip was the last one still stating a Size on its buttons, which is what cut the tops
+            // and bottoms off "Import NPC" and "Export Selected": the form is AutoScaleMode.Font
+            // against AutoScaleDimensions(9, 20) and its own font measures about two thirds of that,
+            // so the stated 35-pixel height was scaled down while the 12pt font on the button was
+            // not. Nothing here states a pixel.
+            NPCControlsLayout.ColumnCount = 1;
+            NPCControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            NPCControlsLayout.Controls.Add(button3, 0, 0);
+            NPCControlsLayout.Controls.Add(button2, 0, 1);
+            NPCControlsLayout.Controls.Add(NPCLoadingLabel, 0, 3);
+            NPCControlsLayout.Controls.Add(NPCProgressBar, 0, 4);
+            NPCControlsLayout.Dock = DockStyle.Fill;
+            NPCControlsLayout.Name = "NPCControlsLayout";
+            NPCControlsLayout.RowCount = 5;
+            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            NPCControlsLayout.TabIndex = 0;
+            //
             // NPCLoadingLabel
-            // 
-            NPCLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            // AutoSize with the cell width to measure against, so a status line longer than the strip
+            // wraps onto a second line instead of losing its last characters off the edge.
             NPCLoadingLabel.AutoSize = true;
             NPCLoadingLabel.BackColor = Color.Transparent;
+            NPCLoadingLabel.Dock = DockStyle.Fill;
             NPCLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            NPCLoadingLabel.Location = new Point(3, 439);
             NPCLoadingLabel.Name = "NPCLoadingLabel";
-            NPCLoadingLabel.Size = new Size(168, 28);
             NPCLoadingLabel.TabIndex = 17;
             NPCLoadingLabel.Text = "Loading NPCs";
             NPCLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            // 
+            //
             // NPCProgressBar
-            // 
-            NPCProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            // Anchored to both sides rather than docked, so it stretches across the cell and keeps the
+            // height SizeProgressBars derives from its font. A ProgressBar cannot measure itself, so
+            // it is the one control in this strip whose height has to be stated at all.
+            NPCProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
             NPCProgressBar.ForeColor = Color.DarkRed;
-            NPCProgressBar.Location = new Point(0, 461);
             NPCProgressBar.Name = "NPCProgressBar";
-            NPCProgressBar.Size = new Size(240, 62);
             NPCProgressBar.TabIndex = 8;
-            // 
+            //
             // button2
-            // 
+            //
+            button2.AutoSize = true;
+            button2.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button2.BackColor = Color.White;
-            button2.Location = new Point(6, 70);
+            button2.Dock = DockStyle.Fill;
             button2.Name = "button2";
-            button2.Size = new Size(231, 35);
             button2.TabIndex = 1;
             button2.Text = "Export Selected (.dat)";
             button2.UseVisualStyleBackColor = false;
-            // 
+            //
             // button3
-            // 
+            //
+            button3.AutoSize = true;
+            button3.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button3.BackColor = Color.White;
-            button3.Location = new Point(6, 29);
+            button3.Dock = DockStyle.Fill;
             button3.Name = "button3";
-            button3.Size = new Size(231, 35);
             button3.TabIndex = 0;
             button3.Text = "Import NPC";
             button3.UseVisualStyleBackColor = false;
             button3.Click += ImportNpcBtn_Click;
-            // 
+            //
             // NPCListView
             // 
             NPCListView.AllColumns.Add(npcIdColumn);
@@ -1475,6 +1509,46 @@ namespace FlashEditor {
             HuffmanEditorTab.Text = "Huffman";
             HuffmanEditorTab.UseVisualStyleBackColor = true;
             //
+            // EnumEditorTab
+            //
+            EnumEditorTab.Controls.Add(EnumPanel);
+            EnumEditorTab.Location = new Point(4, 37);
+            EnumEditorTab.Name = "EnumEditorTab";
+            EnumEditorTab.Size = new Size(1113, 554);
+            EnumEditorTab.TabIndex = 14;
+            EnumEditorTab.Text = "Enums";
+            EnumEditorTab.UseVisualStyleBackColor = true;
+            //
+            // VarBitEditorTab
+            //
+            VarBitEditorTab.Controls.Add(VarBitPanel);
+            VarBitEditorTab.Location = new Point(4, 37);
+            VarBitEditorTab.Name = "VarBitEditorTab";
+            VarBitEditorTab.Size = new Size(1113, 554);
+            VarBitEditorTab.TabIndex = 15;
+            VarBitEditorTab.Text = "Varbits";
+            VarBitEditorTab.UseVisualStyleBackColor = true;
+            //
+            // DefaultsEditorTab
+            //
+            DefaultsEditorTab.Controls.Add(DefaultsPanel);
+            DefaultsEditorTab.Location = new Point(4, 37);
+            DefaultsEditorTab.Name = "DefaultsEditorTab";
+            DefaultsEditorTab.Size = new Size(1113, 554);
+            DefaultsEditorTab.TabIndex = 16;
+            DefaultsEditorTab.Text = "Defaults";
+            DefaultsEditorTab.UseVisualStyleBackColor = true;
+            //
+            // BillboardEditorTab
+            //
+            BillboardEditorTab.Controls.Add(BillboardPanel);
+            BillboardEditorTab.Location = new Point(4, 37);
+            BillboardEditorTab.Name = "BillboardEditorTab";
+            BillboardEditorTab.Size = new Size(1113, 554);
+            BillboardEditorTab.TabIndex = 17;
+            BillboardEditorTab.Text = "Billboards";
+            BillboardEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1544,6 +1618,8 @@ namespace FlashEditor {
             ((System.ComponentModel.ISupportInitialize) numericUpDown1).EndInit();
             ((System.ComponentModel.ISupportInitialize) SpriteListView).EndInit();
             NPCEditorTab.ResumeLayout(false);
+            NPCControlsLayout.ResumeLayout(false);
+            NPCControlsLayout.PerformLayout();
             groupBox6.ResumeLayout(false);
             groupBox6.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) NPCListView).EndInit();
@@ -1619,6 +1695,7 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn membersOnlyColumn;
         private System.Windows.Forms.Label NPCLoadingLabel;
         private System.Windows.Forms.GroupBox groupBox6;
+        private System.Windows.Forms.TableLayoutPanel NPCControlsLayout;
         private System.Windows.Forms.ProgressBar NPCProgressBar;
         private System.Windows.Forms.Button button2;
         private System.Windows.Forms.Button button3;
@@ -1704,6 +1781,22 @@ namespace FlashEditor {
         //panel shows the 256 records inside that file and a live compressor over them.
         private TabPage HuffmanEditorTab;
         private FlashEditor.Definitions.Compression.HuffmanEditorPanel HuffmanPanel = new FlashEditor.Definitions.Compression.HuffmanEditorPanel();
+        //Index 17, which the index constant still calls CLIENTSCRIPT_SETTINGS. An enum is a keyed
+        //table, so the panel owns a DefinitionListPanel for the enums and an entry grid beside it.
+        private TabPage EnumEditorTab;
+        private FlashEditor.Definitions.Enums.EnumEditorPanel EnumPanel = new FlashEditor.Definitions.Enums.EnumEditorPanel();
+        //Index 22. A varbit only means something against the varplayer it is carved out of, so the
+        //panel puts every varbit sharing a varp beside the one selected.
+        private TabPage VarBitEditorTab;
+        private FlashEditor.Definitions.VarBits.VarBitEditorPanel VarBitPanel = new FlashEditor.Definitions.VarBits.VarBitEditorPanel();
+        //Index 28, which holds two unrelated config blobs with no opcode in common, so the panel
+        //selects between them by group the way the Config tab selects a family.
+        private TabPage DefaultsEditorTab;
+        private FlashEditor.Definitions.Defaults.DefaultsEditorPanel DefaultsPanel = new FlashEditor.Definitions.Defaults.DefaultsEditorPanel();
+        //Index 29, which is one group of records addressed by file id, so the tab is the shared list
+        //panel with nothing wrapped around it.
+        private TabPage BillboardEditorTab;
+        private FlashEditor.Definitions.Editing.DefinitionListPanel BillboardPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

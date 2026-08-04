@@ -29,18 +29,25 @@ namespace FlashEditor.cache {
             SFX2_INDEX = 14, //VORBIS/midi instruments
             SFX3_INDEX = 15,
             OBJECTS_DEFINITIONS_INDEX = 16,
+            //The enum table, not client-script settings. The client's own field for the store it
+            //opens here is enumFileStore (Node_Sub10_Sub24.java:9); an enum id splits 256 to a
+            //group. The name is left alone because renaming it is another change's job.
             CLIENTSCRIPT_SETTINGS = 17,
             NPC_DEFINITIONS_INDEX = 18,
             ITEM_DEFINITIONS_INDEX = 19,
             ANIMATIONS_INDEX = 20,
             GRAPHICS_INDEX = 21,
-            SCRIPT_CONFIGS = 22, //aka varbits
+            SCRIPT_CONFIGS = 22, //aka varbits: one bit range of one varp per file, 1024 files a group
             WORLD_MAP = 23,
             QUICK_CHAT_MESSAGES = 24,
             QUICK_CHAT_MENU = 25,
             MATERIALS = 26,
             CONFIG_PARTICLES = 27, //map effects
-            DEFAULTS = 28, //fonts?
+            //Not fonts, which are index 13, and not the sprite ids and colours AGENTS.md's index map
+            //claims: group 1 is the default environment cube map plus the player-title enum tables
+            //(Class276.method3284), group 3 the hitsplat slot layout plus the benchmark model id
+            //(Class155.method2495). Two groups, ids 1 and 3, one file each.
+            DEFAULTS = 28,
             CONFIG_BILLBOARD = 29,
             NATIVE_LIBRARIES = 30,
             GRAPHICS_SHADERS = 31,
@@ -124,9 +131,23 @@ namespace FlashEditor.cache {
          */
         public const bool ENCRYPTED_CACHE = true;
         public const int MAX_VALID_ARCHIVE_LENGTH = 1000000;
-        public const string CACHE_DIRECTORY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";
-        public static string CACHE_OUTPUT_DIRECTORY  =  "C:/Users/CJ/Desktop/RSPS/Hydra/cache2/";
-        public const string CACHE_ORIGINAL_COPY =           "C:/Users/CJ/Desktop/RSPS/Hydra/cache0/";
+
+        /*
+         * These three were compile-time literals naming one machine, and a const string is inlined
+         * into every caller, so there was no way to point the editor anywhere else without a
+         * rebuild. They now resolve at runtime through CachePaths, which searches for a cache and
+         * for its key file and keeps these literals only as the last fallback. They stay here as
+         * forwarding properties so nothing that already names them has to change.
+         */
+
+        /// <summary>The cache being read when the user has chosen none. See <see cref="CachePaths.Input"/>.</summary>
+        public static string CACHE_DIRECTORY => CachePaths.Input;
+
+        /// <summary>Where edits and item exports are written. See <see cref="CachePaths.Output"/>.</summary>
+        public static string CACHE_OUTPUT_DIRECTORY => CachePaths.Output;
+
+        /// <summary>The untouched copy the revert button reloads. See <see cref="CachePaths.Pristine"/>.</summary>
+        public static string CACHE_ORIGINAL_COPY => CachePaths.Pristine;
 
         /*
          * Configuration sub-archive details

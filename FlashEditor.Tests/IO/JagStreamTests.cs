@@ -1188,7 +1188,8 @@ namespace FlashEditor.Tests.IO
 
         /// <summary>
         ///     ReadVarInt and WriteVarInt are the MIDI delta-time codec on the track path
-        ///     (Track.cs:218 and :343). This comment used to say they had no callers at all,
+        ///     (Track.Decode measures the delta-time block with the reader, Track's projection
+        ///     re-emits it with the writer). This comment used to say they had no callers at all,
         ///     which was true when it was written and stopped being true when index 6 landed.
         ///     The ordering is worth pinning regardless: MSB-first here, the opposite of the
         ///     LSB-first scheme most "varint" implementations use.

@@ -1,8 +1,25 @@
 # Index 8 - SPRITES
 
 **Format:** fully-understood  
-**Capability:** read-only  
+**Capability:** read/write, swept for byte identity - **no GUI write path yet**  
 **Effort:** medium
+
+> **Updated after the decoder rewrite.** The "Current capability" and "Gaps" sections below were
+> written against a decoder that rasterised straight to a bitmap and threw away everything needed
+> to re-encode. That is no longer what the code does: `SpriteDefinition` now keeps the stored form
+> (`Frames` of `SpriteFrame`, `PaletteStored`, `PixelPlaneTrailer`, the stored canvas) and derives
+> the bitmap lazily, `Encode` is implemented, and `RealCacheSpriteTests` sweeps every one of the
+> 4593 declared groups in both caches for byte identity. What is still open is the GUI: the import
+> button is still unhandled, `ExportSpriteDatBtn_Click` is still empty, and PNG export still writes
+> frame 0 only. Two facts the survey did not have, both measured:
+>
+> - **Thirteen repack groups leave three unread zero bytes** between the last pixel plane and the
+>   palette (498, 1455, 2498, 4088, 4139-4147). The vanilla capture has none. Nothing reads them and
+>   nothing can recompute them, so they are captured verbatim - this is trap 6 below, and it is real.
+> - **Eleven frames of repack group 1455 reach outside the canvas their own file declares** (16x16
+>   frames on a 13x11 canvas). The client would throw on these; the vanilla capture has none. Trap 5
+>   below says to let an overflow fail loudly, which would take the repack's sprite tab down - the
+>   raster grows to fit instead and the count is asserted per cache.
 
 ## What it is
 
