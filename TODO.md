@@ -29,15 +29,9 @@ read as targets. Counts *of the cache* are fine, because the cache does not chan
 
 | Item | Notes |
 |---|---|
-| Index 7 models | Three encoders, three known decoder defects, textured face types 1-3, particles and bonds |
-| Index 14 SFX2 | Codec only. A Vorbis decoder is explicitly out of scope |
-| Index 23 world map | Tile stream flag byte is probably non-canonical; check before recomputing it |
-| Index 32 loading sprites | Mixed index: some sprite sheets, most JPEG. Byte identity needs original-bytes passthrough |
-| Index 2 remaining families | Only the groups with a client provider. The provider-less ones are empty in every file |
-| Index 26 materials | Dirty flag must land before the write path, or the sweep passes while edits are discarded |
-| Map hover highlight and edit feedback | Overlay only, must not invalidate the tile cache |
-| Textures incremental populate | Measured, not assumed. Keeping the current behaviour is an acceptable outcome |
-| JS5 architecture evaluation | Which component serves JS5, whether the master index is live, what live reload would cost |
+| Verifying six index codecs | Indexes 7, 14, 23, 32, 2 remaining families and 26. Each was proved in an independent reader against both caches before the C# was written, but none of the C# has been compiled or tested. Index 7 alone claims every model byte-identical on both caches, across all three encodings |
+| Verifying map hover and texture populate | Whether the incremental texture grid was kept depends on what its measurement showed; keeping the old behaviour was an allowed outcome |
+| Tabs for the six new indexes | The codecs landed without GUI, by design, so none is reachable yet |
 
 ---
 
@@ -111,12 +105,56 @@ The codec already round-trips every component byte-identically, which is the pre
 - Check the OpenRS2 archive for other 637 and 639 caches whose reference tables carry names this
   cache does not. The OpenRS2 *repository* ships no name dictionary; that was checked.
 
-### JS5 and live updates
+### JS5 and live reloading
 
-- Decide what to do once the architecture evaluation reports.
-- A master index generator, if the serving component needs one rather than computing it.
-- Realistic target is edit, reconnect, see the change. True live reload of already-loaded content
-  probably needs client changes.
+**Evaluated. The server side is done; the editor side is not.**
+
+What the evaluation settled, so nobody re-derives it:
+
+- **The standalone update server serves JS5**, on port 43594. The game server binds 5915 only and
+  refuses a JS5 handshake outright. Settled by the ports, not by structure.
+- **There are three copies of the cache code.** `server/src/net/tazogaming/hydra/cacheserver/` is
+  the real one and is where to work. `js5/` at the HydraScape root is a flattened extract that
+  does not compile - packages stripped, imports not, and six classes in the default package,
+  which cannot be imported at all. `server/src/.../io/js5/` is the game server's read-only
+  reader and serves nothing.
+- **Every group and every reference table is read from disk per request.** Only the master index
+  was held in memory, built once at boot, which is why an edited cache was fully readable and
+  completely invisible: the client compared against a frozen checksum table and never asked for
+  a group.
+- **The game server does not read the cache for most item data.** Weight, shop and exchange
+  price, examine text, tradeable and wilderness rules live in `config/item/item_definitions.cfg`;
+  map clipping lives in loose files under `server/config/mapdata/`. Editing an item in the cache
+  changes its appearance, name and stack behaviour, not its price or weight. Both have to be
+  edited to change both.
+
+Done on the server, compiling but **not yet run against a live client**:
+
+- The master index rebuilds when the cache files change, checked on the 255/255 request.
+- `FileStore.close()`, and `load()` reopens rather than reusing a stale handle.
+- `CacheWatcher`, a sentinel handshake, because a plain file watcher cannot work here: the stores
+  hold read handles without FILE_SHARE_DELETE, so on Windows the editor's write fails while the
+  server runs, the files never change, and a watcher waiting for a change waits forever. The
+  release has to come first, so the editor has to ask. Protocol is `reload.request` from the
+  editor, `reload.released` back once handles are shut, request deleted after the write, then
+  reload.
+- The cache path takes `-Dcache.path=`, since the hardcoded `data/cache/` does not exist.
+
+Still to do:
+
+1. **The editor half of the handshake.** In the save path: write `reload.request`, wait for
+   `reload.released`, save, delete the request. Behind a setting, since it must only fire when
+   pointed at a live server's cache.
+2. **Prove the loop end to end** with a running server and client. Nothing above has been tested
+   against either.
+3. **Decide whether the sentinel is worth keeping** or should become a localhost admin socket.
+   The handshake is deliberately crude and shuts the server for the duration.
+4. A master index generator is **not** needed. The serving component computes it, and now
+   recomputes it.
+
+Out of reach without client changes: true live reload of content already loaded in a running
+client. Definitions are memoised after first decode and scenes are baked at region load, so the
+realistic target stays edit, reconnect, see the change.
 
 ### Smaller items
 
