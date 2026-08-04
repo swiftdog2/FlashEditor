@@ -183,9 +183,10 @@ namespace FlashEditor.Tests.Definitions
             TextureManager.Clear();
             TextureManager.DecodeColumnar(new JagStream(original));
 
-            // Encode from fields (clear raw data to force field-based encode)
-            TextureManager.RawIndexData = null;
-            byte[] reencoded = TextureManager.EncodeColumnar().ToArray();
+            // The field encoder specifically, not the write path: EncodeColumnar now replays the
+            // stored bytes of every column nobody edited, so it would pass here without the fields
+            // being consulted at all.
+            byte[] reencoded = TextureManager.EncodeFromFields().ToArray();
 
             Assert.Equal(original, reencoded);
         }
@@ -275,9 +276,9 @@ namespace FlashEditor.Tests.Definitions
             Assert.Equal(2000, t1.field1831);
             Assert.Equal(0x445566, t1.field1835);
 
-            // Round-trip
-            TextureManager.RawIndexData = null;
-            byte[] reencoded = TextureManager.EncodeColumnar().ToArray();
+            // Round-trip through the field encoder, which is the one this exercises: the write path
+            // would replay the stored bytes and never read a field.
+            byte[] reencoded = TextureManager.EncodeFromFields().ToArray();
             Assert.Equal(data, reencoded);
         }
     }

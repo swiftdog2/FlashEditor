@@ -1,30 +1,45 @@
-﻿using FlashEditor;
 using FlashEditor.Utils;
-using Newtonsoft.Json.Linq;
 using System;
-using System.Diagnostics;
 using System.IO;
-using System.Security.AccessControl;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FlashEditor.Definitions {
     /// <summary>
-    ///     Decodes RuneScape <c>model.dat</c> files from cache revisions 602‑647 (RuneTek 5, incl. rev 639).
-    ///     <para>
-    ///         The format stores its <em>header at the end</em>. We therefore:
-    ///         <ol>
-    ///             <li>Seek to <c>length ‑ footerSize</c> and read counts &amp; flags.</li>
-    ///             <li>Compute absolute offsets for every variable‑length block.</li>
-    ///             <li>Rewind to byte 0 and stream each block into strongly‑typed arrays.</li>
-    ///         </ol>
-    ///     </para>
-    ///     <para>
-    ///         Three footer flavours exist; this resolver fully supports the newest (23‑/26‑byte) flavour which every
-    ///         639 model uses.  Older flavours are parsed just enough to avoid crashes but may omit HD‑only fields.
-    ///     </para>
+    ///     A model from index 7, in the form the viewer wants it.
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///     This is the <b>derived</b> half of the model path: absolute vertex coordinates rather
+    ///     than deltas, triangles rather than a strip-opcode stream, normals, UVs and animation
+    ///     tables. It is projected from <see cref="Source"/>, which holds the file as stored, and
+    ///     that split is what makes the index encodable at all - several fields here are computed
+    ///     and cannot be turned back into bytes, and several things the file stores were never kept
+    ///     here.
+    ///     </para>
+    ///     <para>
+    ///     The most load-bearing example is the vertex shift. <c>decoder_newer_format</c> never
+    ///     touches the coordinates; the client's callers shift them left by two afterwards through
+    ///     <c>method2592</c> when the format type is below 13 (Class107.java:175, Class152.java:114,
+    ///     Node_Sub10_Sub16.java:33, ItemDefinition.java:155). This type applies the shift so the
+    ///     viewer sees what the client draws, and <see cref="VertexShift"/> says by how much, so
+    ///     nothing has to infer it back out of the coordinates.
+    ///     </para>
+    /// </remarks>
     public class ModelDefinition : IDefinition {
-        #region ≡ public decoded fields
+        #region stored form
+
+        /// <summary>
+        ///     The file exactly as index 7 stores it, or null when this definition was not decoded.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Encode"/> writes this back, not the derived arrays below. Nothing edits a
+        ///     mesh yet, so the two cannot disagree; the moment something does, the edit has to be
+        ///     applied here rather than to the projection.
+        /// </remarks>
+        public ModelFile? Source { get; private set; }
+
+        #endregion
+
+        #region decoded fields
 
         /// <summary>Total number of vertices in the model.</summary>
         public int VertexCount { get; private set; }
@@ -33,13 +48,20 @@ namespace FlashEditor.Definitions {
         /// <summary>Number of texture-mapped triangles.</summary>
         public int TexturedTriangleCount { get; private set; }
 
-        /// <summary>X coordinates for each vertex.</summary>
+        /// <summary>X coordinates for each vertex, shifted by <see cref="VertexShift"/>.</summary>
         public int[] VertX = Array.Empty<int>();
-        /// <summary>Y coordinates for each vertex (vertical axis).</summary>
+        /// <summary>Y coordinates for each vertex (vertical axis), shifted by <see cref="VertexShift"/>.</summary>
         public int[] VertY = Array.Empty<int>();
-        /// <summary>Z coordinates for each vertex.</summary>
+        /// <summary>Z coordinates for each vertex, shifted by <see cref="VertexShift"/>.</summary>
         public int[] VertZ = Array.Empty<int>();
-        /// <summary>Animation skin group assignment per vertex, or null if ungrouped.</summary>
+
+        /// <summary>
+        ///     Animation skin group per vertex, or null when the model has none.
+        /// </summary>
+        /// <remarks>
+        ///     Consumed and cleared by <see cref="ComputeAnimationTables"/>, which turns it into
+        ///     <see cref="VertexGroups"/>. Read <see cref="Source"/> for the stored values.
+        /// </remarks>
         public int[]? VertSkins;
 
         /// <summary>First vertex index of each triangle face.</summary>
@@ -49,42 +71,129 @@ namespace FlashEditor.Definitions {
         /// <summary>Third vertex index of each triangle face.</summary>
         public int[] faceIndices3 = Array.Empty<int>();
 
-        /// <summary>Per-face HSL-555 colour values. Convert to RGB via <see cref="HslToRgb"/>.</summary>
+        /// <summary>Per-face HSL-565 colour values. Convert to RGB via <see cref="RawHslToRgb"/>.</summary>
         public short[] FaceColour = Array.Empty<short>();
-        /// <summary>Per-face render type (0 = flat shaded, 1 = textured), or null.</summary>
-        public sbyte[]? FaceRenderType;
-        /// <summary>Per-face render priority (0-255), or null when a global priority is used.</summary>
-        public sbyte[]? FacePriority;
-        /// <summary>Per-face alpha transparency (0-255), or null if fully opaque.</summary>
-        public sbyte[]? FaceAlpha;
-        /// <summary>Per-face animation skin group, or null.</summary>
-        public sbyte[]? FaceSkin;
-
-        /// <summary>Per-textured-face type flags (0, 1, 2, or 3), or null.</summary>
-        public sbyte[]? TextureType;
-        /// <summary>Texture coordinate index per face, mapping into TexInd arrays.</summary>
-        public sbyte[] TextureCoordinates;
-        /// <summary>Texture id per face, or -1 for untextured.</summary>
-        public short[] FaceTextures;
-        /// <summary>First, second, and third reference vertex indices for UV coordinate computation.</summary>
-        public short[]? TexIndA, TexIndB, TexIndC;
-
-        /// <summary>Animaya (skeletal morph) group ids per vertex.</summary>
-        public int[][] AnimayaGroups { get; private set; }
-        /// <summary>Animaya (skeletal morph) weight scales per vertex.</summary>
-        public int[][] AnimayaScales { get; private set; }
-
-        /// <summary>Particle effect id attached to this model (0xFFFF = none).</summary>
-        public ushort ParticleEffectId { get; private set; } = 0xFFFF;
-        /// <summary>Vertex ids to which particle effects are anchored, or null.</summary>
-        public ushort[]? ParticleAnchorVert;
 
         /// <summary>
-        /// Model format version. Old-format models have implicit type 12;
-        /// newer formats default to 13+. When FormatType &lt; 13 the client
-        /// left-shifts all vertex coordinates by 2 bits.
+        ///     Per-face render type, or null when the model carries none.
+        /// </summary>
+        /// <remarks>
+        ///     0 Gouraud, 1 flat, and <b>2 not drawn at all</b> - both of the client's renderers gate
+        ///     their draw list on it before anything else (Renderable_Sub2.java:397,
+        ///     Renderable_Sub3.java:172). The legacy encoding derives it from one bit of a mask and
+        ///     so can only ever produce 0 or 1.
+        /// </remarks>
+        public sbyte[]? FaceRenderType;
+
+        /// <summary>Per-face render priority, or null when a global priority is used.</summary>
+        public sbyte[]? FacePriority;
+
+        /// <summary>Per-face alpha, or null when the model is fully opaque.</summary>
+        public sbyte[]? FaceAlpha;
+
+        /// <summary>
+        ///     Per-face animation skin group, or null.
+        /// </summary>
+        /// <remarks>
+        ///     Held as <c>int</c> because the stored field is an <em>unsigned</em> byte
+        ///     (Model.java:596) and 8,639 models in the repack carry a value above 127. A signed
+        ///     byte turned every one of those negative.
+        /// </remarks>
+        public int[]? FaceSkin;
+
+        /// <summary>
+        ///     Type of each textured face, 0 to 3, or null when the model has no textured faces.
+        /// </summary>
+        /// <remarks>
+        ///     Type 0 is a plain triangle mapping. Types 1 to 3 additionally carry the projection
+        ///     scalars in <see cref="TextureScaleP"/> and the three per-face byte fields; type 2
+        ///     carries two bytes more than the others. The legacy encoding has no type block and its
+        ///     textured faces are all type 0.
+        /// </remarks>
+        public int[]? TextureType;
+
+        /// <summary>
+        ///     Index into the textured-face arrays for each face, or -1 when the face has no mapping.
+        /// </summary>
+        /// <remarks>
+        ///     Held as <c>int</c> rather than a signed byte: the newer encoding allows 255 textured
+        ///     faces and the new-protocol one allows 65,535, so the index does not fit a byte and
+        ///     truncating it pointed faces at the wrong mapping.
+        /// </remarks>
+        public int[]? TextureCoordinates;
+
+        /// <summary>Texture id per face, or -1 for untextured. Null when the model stores none.</summary>
+        public short[]? FaceTextures;
+
+        /// <summary>First reference vertex of each textured face.</summary>
+        public short[]? TexIndA;
+        /// <summary>Second reference vertex of each textured face.</summary>
+        public short[]? TexIndB;
+        /// <summary>Third reference vertex of each textured face.</summary>
+        public short[]? TexIndC;
+
+        /// <summary>
+        ///     First projection scalar of each type 1-3 textured face, or null.
+        /// </summary>
+        /// <remarks>
+        ///     <c>anIntArray1389</c>. Shifted alongside the vertices by <c>method2592</c>
+        ///     (Model.java:1694-1698), which is why the shift is recorded rather than assumed.
+        /// </remarks>
+        public int[]? TextureScaleP;
+
+        /// <summary>Second projection scalar of each type 1-3 textured face, or null.</summary>
+        public int[]? TextureScaleQ;
+
+        /// <summary>Third projection scalar of each type 1-3 textured face, or null.</summary>
+        public int[]? TextureScaleR;
+
+        /// <summary>First per-face byte of a type 1-3 textured face, or null.</summary>
+        public sbyte[]? TextureFieldA;
+
+        /// <summary>Second per-face byte of a type 1-3 textured face, or null.</summary>
+        public sbyte[]? TextureFieldB;
+
+        /// <summary>Third per-face byte of a type 1-3 textured face, or null.</summary>
+        public sbyte[]? TextureFieldC;
+
+        /// <summary>First extra byte carried only by a type-2 textured face, or null.</summary>
+        public sbyte[]? TextureType2FieldA;
+
+        /// <summary>Second extra byte carried only by a type-2 textured face, or null.</summary>
+        public sbyte[]? TextureType2FieldB;
+
+        /// <summary>Particle emitters riding on this model's faces, or null when it has none.</summary>
+        public ModelParticleEmitter[]? Emitters;
+
+        /// <summary>Particle effectors riding on this model's vertices, or null when it has none.</summary>
+        public ModelParticleEffector[]? Effectors;
+
+        /// <summary>Billboard bonds attached to this model's faces, or null when it has none.</summary>
+        public ModelBond[]? Bonds;
+
+        /// <summary>
+        ///     The first emitter's configuration id, or 0xFFFF when the model has no emitters.
+        /// </summary>
+        /// <remarks>
+        ///     A convenience for the model tab's summary line. A model may carry several emitters -
+        ///     read <see cref="Emitters"/> for all of them.
+        /// </remarks>
+        public ushort ParticleEffectId { get; private set; } = 0xFFFF;
+
+        /// <summary>
+        ///     Model format version, which decides several field widths and the vertex shift.
         /// </summary>
         public int FormatType { get; private set; } = 12;
+
+        /// <summary>
+        ///     How many bits <see cref="VertX"/> and its siblings have been shifted left by.
+        /// </summary>
+        /// <remarks>
+        ///     Two for a model below format type 13, zero otherwise. Without this the stored deltas
+        ///     could not be recovered from the coordinates, which is what made the old decoder
+        ///     unencodable.
+        /// </remarks>
+        public int VertexShift { get; private set; }
 
         /// <summary>Per-vertex surface normals computed from triangle data.</summary>
         public VertexNormal[]? VertexNormals;
@@ -103,1005 +212,411 @@ namespace FlashEditor.Definitions {
 
         #endregion
 
-        #region ≡ decoding entry points
+        #region decoding entry points
+
+        /// <summary>The group id this model was read from, which is also its model id.</summary>
+        /// <remarks>Set before <see cref="Decode"/>: it is what selects the new-protocol layout.</remarks>
+        public int ModelID { get; set; }
 
         /// <summary>
-        /// Populates this definition by decoding the supplied stream (and optional XTEA key array).
+        ///     Decodes a model and projects it into the arrays the viewer reads.
         /// </summary>
-        /// <param name="stream">JagStream containing full model+footer data.</param>
-        /// <param name="xteaKey">Optional 4- or 10-int array for decryption.</param>
+        /// <param name="stream">The stored model bytes.</param>
+        /// <param name="xteaKey">Unused. No group in index 7 is encrypted in either cache.</param>
         public void Decode(JagStream stream, int[] xteaKey = null) {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            // Copy raw bytes into a new JagStream so we can parse and rewind.
-            byte[] rawBytes = stream.ToArray();
-            JagStream rawStream = new JagStream(rawBytes);
+            Source = ModelCodec.Decode(stream, ModelID);
+            DebugUtil.Debug($"Decoding model {ModelID} ({Source.Encoding})");
 
-            // Parse the last 2 bytes to get the model format (or use model ID for newProtocol models)
-            ModelFormat modelFormat = GetModelFormat(rawStream, ModelID);
+            Project(Source);
 
-            DebugUtil.Debug($"Decoding Model (Format: {modelFormat})");
-
-            // Decode based on format
-            switch (modelFormat) {
-                case ModelFormat.Old:
-                    DecodeOld(stream, xteaKey);
-                    break;
-                case ModelFormat.Newer:
-                    DecodeRS2(stream, xteaKey);
-                    break;
-                case ModelFormat.Newest:
-                    DecodeRS3(stream, xteaKey);
-                    break;
-
-                default:
-                    throw new NotSupportedException($"Unknown model format: {modelFormat}");
-            }
-
-            DebugUtil.Debug("Finished decoding");
-
-            // Always compute derived data so downstream consumers like
-            // the OpenGL renderer have the arrays they expect.
-            // The helpers themselves guard against double work when
-            // the values are already present.
             ComputeNormals();
             ComputeTextureUVCoordinates();
             ComputeAnimationTables();
+        }
 
+        /// <inheritdoc />
+        /// <remarks>
+        ///     Writes back <see cref="Source"/>, so a model that was decoded re-encodes to the bytes
+        ///     it came from. A definition assembled by hand has no stored form and cannot be written
+        ///     at all rather than being written as a guess.
+        /// </remarks>
+        public JagStream Encode() {
+            if (Source == null)
+                throw new NotSupportedException(
+                    "This model was not decoded from a cache file, so there is no stored form to " +
+                    "write back. Build a ModelFile and encode that.");
+            return Source.Encode();
         }
 
         /// <summary>
-        /// Peeks at the last two bytes of the given JagStream (without altering its Position)
-        /// and returns the appropriate ModelFormat enum.
+        ///     Which of index 7's three layouts a model uses.
         /// </summary>
-        /// <param name="stream">JagStream containing raw model+footer bytes.</param>
-        /// <returns>
-        /// ModelFormat.Newest for 0xFF FD,
-        /// ModelFormat.Newer  for 0xFF FE or 0xFF FF,
-        /// ModelFormat.Old    otherwise.
-        /// </returns>
+        /// <remarks>
+        ///     Kept as a distinct enum from <see cref="ModelEncoding"/> because it is what the model
+        ///     tab and the existing sweep report. There is no fourth case: an <c>FF FD</c> tail is
+        ///     legacy to the client (Model.java:96-101), and no model in either cache carries one.
+        /// </remarks>
+        public enum ModelFormat {
+            /// <summary>The 18-byte-footer legacy layout.</summary>
+            Old = 0,
+
+            /// <summary>The <c>FF FF</c> sentinel layout that holds all but nine models.</summary>
+            Newer = 1,
+
+            /// <summary>The new-protocol layout, selected by model id 63607-63613.</summary>
+            Newest = 2
+        }
+
+        /// <summary>
+        ///     Classifies a model without decoding it.
+        /// </summary>
+        /// <param name="stream">The stored model bytes.</param>
+        /// <param name="modelId">The group id the model was read from.</param>
+        /// <returns>The layout the client would decode it with.</returns>
         public static ModelFormat GetModelFormat(JagStream stream, int modelId = -1) {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            // Models 63607-63613 use the newProtocol variant of the Newest format,
-            // identified by model ID rather than a sentinel (matches Java client).
-            if (modelId >= 63607 && modelId <= 63613)
-                return ModelFormat.Newest;
+            switch (ModelCodec.ClassifyEncoding(stream.ToArray(), modelId)) {
+                case ModelEncoding.Legacy:
+                    return ModelFormat.Old;
+                case ModelEncoding.Newer:
+                    return ModelFormat.Newer;
+                default:
+                    return ModelFormat.Newest;
+            }
+        }
 
-            long length = stream.Length;
-            if (length < 2)
-                throw new InvalidDataException("Stream too short to determine model format.");
+        #endregion
 
-            // Read without moving the stream's Position
-            byte last = stream.Get((int) (length - 1));
-            byte penultimate = stream.Get((int) (length - 2));
+        #region projection
 
-            // 0xFF FF = Newer format (23-byte footer, no per-face textures in flags)
-            if (penultimate == 0xFF && last == 0xFF)
-                return ModelFormat.Newer;
+        /// <summary>
+        ///     Turns the stored form into the arrays the renderer and the tabs read.
+        /// </summary>
+        /// <param name="file">The model as stored.</param>
+        private void Project(ModelFile file) {
+            VertexCount = file.VertexCount;
+            TriangleCount = file.FaceCount;
+            TexturedTriangleCount = file.TexturedFaceCount;
+            FormatType = file.FormatType;
+            VertexShift = file.VertexShift;
 
-            // 0xFF FD = Newest format (23-byte footer, with per-face texture data)
-            if (penultimate == 0xFF && last == 0xFD)
-                return ModelFormat.Newest;
+            ProjectVertices(file);
+            ProjectFaceIndices(file);
+            ProjectFaceAttributes(file);
+            ProjectTexturedFaces(file);
+            ProjectAttachments(file);
 
-            // anything else => old RS2-legacy format (18-byte footer)
-            return ModelFormat.Old;
+            if (file.Encoding == ModelEncoding.Legacy)
+                FinishLegacy(file);
+        }
+
+        private void ProjectVertices(ModelFile file) {
+            int count = file.VertexCount;
+            VertX = new int[count];
+            VertY = new int[count];
+            VertZ = new int[count];
+
+            int x = 0, y = 0, z = 0;
+            int nextX = 0, nextY = 0, nextZ = 0;
+            for (int i = 0; i < count; i++) {
+                int mask = file.VertexFlags[i];
+                if ((mask & 1) != 0) x += file.VertexDeltasX[nextX++].Value;
+                if ((mask & 2) != 0) y += file.VertexDeltasY[nextY++].Value;
+                if ((mask & 4) != 0) z += file.VertexDeltasZ[nextZ++].Value;
+
+                VertX[i] = x << VertexShift;
+                VertY[i] = y << VertexShift;
+                VertZ[i] = z << VertexShift;
+            }
+
+            if (file.VertexSkins == null)
+                return;
+
+            VertSkins = new int[count];
+            for (int i = 0; i < count; i++)
+                VertSkins[i] = SkinValue(file, file.VertexSkins![i], file.VertexSkinsAreSmart);
         }
 
         /// <summary>
-        /// Decodes an RS2 “type 2” model (explicit‐length 23-byte footer, revisions ~602–618)
-        /// into this <see cref="ModelDefinition"/>.
+        ///     Replays the strip opcodes against the delta stream to recover each face's three
+        ///     vertices.
         /// </summary>
-        /// <param name="modelStream">
-        /// A <see cref="JagStream"/> positioned over the entire model + footer bytes.
-        /// </param>
-        /// <param name="xteaKey">Optional XTEA key (ignored by type 2 models).</param>
-        /// <param name="footer">Footer info (counts are re‐read from the stream, so this may be unused).</param>
-        /// <summary>
-        /// Decodes the "newer" RS2 model format (0xFF 0xFF sentinel, 23-byte footer).
-        /// Ported from Java's <c>decoder_newer_format()</c>.
-        /// </summary>
-        private void DecodeRS2(JagStream modelStream, int[] xteaKey) {
-            byte[] data = modelStream.ToArray();
+        /// <remarks>
+        ///     The new-protocol decoder masks the opcode byte to three bits (Model.java:1071); the
+        ///     other two use it whole. Bits above that carry the per-face flag the trailing block
+        ///     would consume, which no model in either cache has.
+        /// </remarks>
+        /// <param name="file">The model as stored.</param>
+        private void ProjectFaceIndices(ModelFile file) {
+            int count = file.FaceCount;
+            faceIndices1 = new int[count];
+            faceIndices2 = new int[count];
+            faceIndices3 = new int[count];
 
-            // 7 streams to match Java's RSBuffer through RSBuffer_57_
-            var st1 = new JagStream(data);
-            var st2 = new JagStream(data);
-            var st3 = new JagStream(data);
-            var st4 = new JagStream(data);
-            var st5 = new JagStream(data);
-            var st6 = new JagStream(data);
-            var st7 = new JagStream(data);
+            int opcodeMask = file.Encoding == ModelEncoding.NewProtocol ? 0x7 : 0xFF;
+            int a = 0, b = 0, c = 0, offset = 0, next = 0;
 
-            // ── 1) Read 23-byte footer ───────────────────────────────────────────
-            st1.Seek(data.Length - 23);
+            for (int i = 0; i < count; i++) {
+                int opcode = file.FaceOpcodes[i] & opcodeMask;
 
-            int vc  = st1.ReadUnsignedShort();       // vertex count
-            int fc  = st1.ReadUnsignedShort();       // face (triangle) count
-            int tfc = st1.ReadUnsignedByte();        // textured triangle count
-
-            // Packed flags byte — must extract bits, NOT compare == 1
-            int flagsByte    = st1.ReadUnsignedByte();
-            bool hasFaceType = (flagsByte & 0x1) == 1;   // face render type present
-
-            // ── 1b) Determine format type ────────────────────────────────────
-            // Hydra client (line 401-405): immediately after flags byte, caret
-            // is at length-17.  caret -= 7 reads from length-24, then caret += 6
-            // restores to length-17 so the rest of the footer reads normally.
-            if ((flagsByte & 0x8) == 8) {
-                long saved = st1.Position;           // data.Length - 17
-                st1.Seek(saved - 7);                 // data.Length - 24
-                FormatType = st1.ReadUnsignedByte();
-                st1.Seek(saved);                     // restore to data.Length - 17
-            }
-
-            int priorityFlag  = st1.ReadUnsignedByte();  // 255 = per-face priority
-            int alphaFlag     = st1.ReadUnsignedByte();   // 1 = per-face alpha
-            int faceSkinFlag  = st1.ReadUnsignedByte();   // 1 = per-face skin group
-            int faceTexFlag   = st1.ReadUnsignedByte();   // 1 = per-face texture id
-            int vertSkinFlag  = st1.ReadUnsignedByte();   // 1 = per-vertex skin group
-
-            int vertexXLen   = st1.ReadUnsignedShort();   // length of X-delta block
-            int vertexYLen   = st1.ReadUnsignedShort();   // length of Y-delta block
-            int vertexZLen   = st1.ReadUnsignedShort();   // length of Z-delta block
-            int faceIndexLen = st1.ReadUnsignedShort();   // length of face-index smart block
-            int texCoordLen  = st1.ReadUnsignedShort();   // length of texture-coord block
-
-            // ── 2) Read texture face types from byte 0 ──────────────────────────
-            int texType0Count = 0;
-            if (tfc > 0) {
-                TextureType = new sbyte[tfc];
-                st1.Seek(0);
-                for (int i = 0; i < tfc; i++) {
-                    sbyte t = st1.ReadSignedByte();
-                    TextureType[i] = t;
-                    if (t == 0) texType0Count++;
+                if (opcode == 1) {
+                    a = offset + file.FaceIndexDeltas[next++].Value;
+                    b = a + file.FaceIndexDeltas[next++].Value;
+                    c = b + file.FaceIndexDeltas[next++].Value;
+                    offset = c;
                 }
-            }
-
-            // ── 3) Compute block offsets (matching Java decoder_newer_format) ────
-            //  Data starts with tfc bytes of texture-type, then all geometry blocks.
-            int pos = tfc;
-
-            int vertexFlagsOff = pos;
-            pos += vc;
-
-            int faceTypeOff = pos;
-            if (hasFaceType) pos += fc;
-
-            int faceOpcodeOff = pos;
-            pos += fc;
-
-            int facePriorityOff = pos;
-            if (priorityFlag == 255) pos += fc;
-
-            int faceSkinOff = pos;
-            if (faceSkinFlag == 1) pos += fc;
-
-            int vertSkinOff = pos;
-            if (vertSkinFlag == 1) pos += vc;
-
-            int faceAlphaOff = pos;
-            if (alphaFlag == 1) pos += fc;
-
-            int faceIndexSmartOff = pos;
-            pos += faceIndexLen;
-
-            int faceTextureOff = pos;
-            if (faceTexFlag == 1) pos += fc * 2;
-
-            int texCoordOff = pos;
-            pos += texCoordLen;
-
-            int faceColourOff = pos;
-            pos += fc * 2;
-
-            int vertexXOff = pos;
-            pos += vertexXLen;
-
-            int vertexYOff = pos;
-            pos += vertexYLen;
-
-            int vertexZOff = pos;
-            pos += vertexZLen;
-
-            int texFaceGeomOff = pos;   // type-0 texture geometry (6 bytes each)
-
-            // ── 4) Populate counts ──────────────────────────────────────────────
-            VertexCount = vc;
-            TriangleCount = fc;
-            TexturedTriangleCount = tfc;
-
-            // ── 5) Allocate arrays ──────────────────────────────────────────────
-            VertX = new int[vc];
-            VertY = new int[vc];
-            VertZ = new int[vc];
-
-            faceIndices1 = new int[fc];
-            faceIndices2 = new int[fc];
-            faceIndices3 = new int[fc];
-
-            FaceColour = new short[fc];
-
-            if (hasFaceType)
-                FaceRenderType = new sbyte[fc];
-
-            if (priorityFlag == 255)
-                FacePriority = new sbyte[fc];
-            else
-                _globalPriority = (byte) priorityFlag;
-
-            if (alphaFlag == 1)
-                FaceAlpha = new sbyte[fc];
-
-            if (faceSkinFlag == 1)
-                FaceSkin = new sbyte[fc];
-
-            if (vertSkinFlag == 1)
-                VertSkins = new int[vc];
-
-            if (faceTexFlag == 1)
-                FaceTextures = new short[fc];
-
-            if (faceTexFlag == 1 && tfc > 0)
-                TextureCoordinates = new sbyte[fc];
-
-            if (tfc > 0) {
-                TexIndA = new short[tfc];
-                TexIndB = new short[tfc];
-                TexIndC = new short[tfc];
-            }
-
-            // ── 6) Decode vertex positions ──────────────────────────────────────
-            st1.Seek(vertexFlagsOff);
-            st2.Seek(vertexXOff);
-            st3.Seek(vertexYOff);
-            st4.Seek(vertexZOff);
-            st5.Seek(vertSkinOff);
-
-            int cx = 0, cy = 0, cz = 0;
-            for (int i = 0; i < vc; i++) {
-                int mask = st1.ReadUnsignedByte();
-                int dx = (mask & 1) != 0 ? st2.ReadShortSmart() : 0;
-                int dy = (mask & 2) != 0 ? st3.ReadShortSmart() : 0;
-                int dz = (mask & 4) != 0 ? st4.ReadShortSmart() : 0;
-                cx += dx; cy += dy; cz += dz;
-                VertX[i] = cx;
-                VertY[i] = cy;
-                VertZ[i] = cz;
-
-                if (vertSkinFlag == 1)
-                    VertSkins![i] = st5.ReadUnsignedByte();
-            }
-
-            // ── 6b) Scale vertices for old-format models ────────────────────────
-            if (FormatType < 13) {
-                for (int i = 0; i < vc; i++) {
-                    VertX[i] <<= 2;
-                    VertY[i] <<= 2;
-                    VertZ[i] <<= 2;
-                }
-            }
-
-            // ── 7) Decode face data (each field from its own stream) ────────────
-            st1.Seek(faceColourOff);
-            st2.Seek(faceTypeOff);
-            st3.Seek(facePriorityOff);
-            st4.Seek(faceAlphaOff);
-            st5.Seek(faceSkinOff);
-            st6.Seek(faceTextureOff);
-            st7.Seek(texCoordOff);
-
-            for (int i = 0; i < fc; i++) {
-                FaceColour[i] = (short) st1.ReadUnsignedShort();
-
-                if (hasFaceType)
-                    FaceRenderType![i] = st2.ReadSignedByte();
-
-                if (priorityFlag == 255)
-                    FacePriority![i] = st3.ReadSignedByte();
-
-                if (alphaFlag == 1)
-                    FaceAlpha![i] = st4.ReadSignedByte();
-
-                if (faceSkinFlag == 1)
-                    FaceSkin![i] = (sbyte) st5.ReadUnsignedByte();
-
-                if (faceTexFlag == 1)
-                    FaceTextures![i] = (short) (st6.ReadUnsignedShort() - 1);
-
-                if (TextureCoordinates != null) {
-                    if (FaceTextures![i] == -1)
-                        TextureCoordinates[i] = -1;
-                    else
-                        TextureCoordinates[i] = (sbyte) (st7.ReadUnsignedByte() - 1);
-                }
-            }
-
-            // ── 8) Decode triangle-strip indices ────────────────────────────────
-            st1.Seek(faceIndexSmartOff);
-            st2.Seek(faceOpcodeOff);
-
-            int a = 0, b = 0, c = 0, ptr = 0;
-            for (int i = 0; i < fc; i++) {
-                int op = st2.ReadUnsignedByte();
-
-                if (op == 1) {
-                    a = ptr + st1.ReadShortSmart();
-                    b = a + st1.ReadShortSmart();
-                    c = b + st1.ReadShortSmart();
-                    ptr = c;
-                } else if (op == 2) {
+                else if (opcode == 2) {
                     b = c;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
-                } else if (op == 3) {
+                    c = offset + file.FaceIndexDeltas[next++].Value;
+                    offset = c;
+                }
+                else if (opcode == 3) {
                     a = c;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
-                } else { // op == 4
-                    int tmp = a;
+                    c = offset + file.FaceIndexDeltas[next++].Value;
+                    offset = c;
+                }
+                else if (opcode == 4) {
+                    int swap = a;
                     a = b;
-                    b = tmp;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
+                    b = swap;
+                    c = offset + file.FaceIndexDeltas[next++].Value;
+                    offset = c;
                 }
 
                 faceIndices1[i] = a;
                 faceIndices2[i] = b;
                 faceIndices3[i] = c;
             }
+        }
 
-            // ── 9) Decode textured-face lookup tables (type 0 only) ─────────────
-            st1.Seek(texFaceGeomOff);
-            if (TexIndA != null) {
-                for (int i = 0; i < tfc; i++) {
-                    int type = TextureType != null ? (TextureType[i] & 0xFF) : 0;
-                    if (type == 0) {
-                        TexIndA[i] = (short) st1.ReadUnsignedShort();
-                        TexIndB![i] = (short) st1.ReadUnsignedShort();
-                        TexIndC![i] = (short) st1.ReadUnsignedShort();
-                    }
-                    // Types 1-3 have more complex geometry data; skipped for basic rendering
+        private void ProjectFaceAttributes(ModelFile file) {
+            int count = file.FaceCount;
+            FaceColour = new short[count];
+            for (int i = 0; i < count; i++)
+                FaceColour[i] = (short) file.FaceColours[i];
+
+            if (file.FacePriorities != null) {
+                FacePriority = new sbyte[count];
+                for (int i = 0; i < count; i++)
+                    FacePriority[i] = (sbyte) file.FacePriorities[i];
+            }
+            else {
+                _globalPriority = file.PriorityFlag;
+            }
+
+            if (file.FaceAlphas != null) {
+                FaceAlpha = new sbyte[count];
+                for (int i = 0; i < count; i++)
+                    FaceAlpha[i] = (sbyte) file.FaceAlphas[i];
+            }
+
+            if (file.FaceSkins != null) {
+                FaceSkin = new int[count];
+                for (int i = 0; i < count; i++)
+                    FaceSkin[i] = SkinValue(file, file.FaceSkins![i], file.FaceSkinsAreSmart);
+            }
+
+            if (file.FaceTextureIds != null) {
+                FaceTextures = new short[count];
+                for (int i = 0; i < count; i++)
+                    FaceTextures[i] = (short) (file.FaceTextureIds[i] - 1);
+            }
+
+            if (file.Encoding == ModelEncoding.Legacy) {
+                ProjectLegacyFaceMasks(file);
+                return;
+            }
+
+            if (file.FaceTypeBytes != null) {
+                FaceRenderType = new sbyte[count];
+                for (int i = 0; i < count; i++)
+                    FaceRenderType[i] = (sbyte) file.FaceTypeBytes[i];
+            }
+
+            //The client allocates the coordinate array only when both a texture id block and at
+            //least one textured face are present, and consumes an entry only for a face that
+            //actually carries a texture.
+            if (file.FaceTextureFlag != 1 || file.TexturedFaceCount == 0)
+                return;
+
+            TextureCoordinates = new int[count];
+            int next = 0;
+            for (int i = 0; i < count; i++) {
+                TextureCoordinates[i] = FaceTextures![i] == -1
+                    ? -1
+                    : file.TextureCoords[next++].Value - 1;
+            }
+        }
+
+        /// <summary>
+        ///     Unpacks the legacy encoding's packed per-face mask byte.
+        /// </summary>
+        /// <remarks>
+        ///     Bit 0 is the render type, bit 1 says the face is textured, and the remaining six bits
+        ///     are the texture-coordinate index. A textured face's colour word is the texture id, so
+        ///     the colour is replaced by the neutral 127 (Model.java:1497-1505).
+        /// </remarks>
+        /// <param name="file">The model as stored.</param>
+        private void ProjectLegacyFaceMasks(ModelFile file) {
+            if (file.FaceTypeBytes == null)
+                return;
+
+            int count = file.FaceCount;
+            FaceRenderType = new sbyte[count];
+            TextureCoordinates = new int[count];
+            FaceTextures = new short[count];
+
+            for (int i = 0; i < count; i++) {
+                int mask = file.FaceTypeBytes[i];
+                FaceRenderType[i] = (sbyte) (mask & 1);
+
+                if ((mask & 2) == 2) {
+                    TextureCoordinates[i] = mask >> 2;
+                    FaceTextures[i] = FaceColour[i];
+                    FaceColour[i] = 127;
+                }
+                else {
+                    TextureCoordinates[i] = -1;
+                    FaceTextures[i] = -1;
                 }
             }
         }
 
+        private void ProjectTexturedFaces(ModelFile file) {
+            int count = file.TexturedFaceCount;
+            if (count == 0)
+                return;
+
+            TextureType = new int[count];
+            TexIndA = new short[count];
+            TexIndB = new short[count];
+            TexIndC = new short[count];
+
+            for (int i = 0; i < count; i++) {
+                TextureType[i] = file.TextureTypes == null ? 0 : file.TextureTypes[i];
+                TexIndA[i] = (short) file.TextureVertexA[i];
+                TexIndB[i] = (short) file.TextureVertexB[i];
+                TexIndC[i] = (short) file.TextureVertexC[i];
+            }
+
+            if (file.Type1To3FaceCount == 0)
+                return;
+
+            TextureScaleP = new int[count];
+            TextureScaleQ = new int[count];
+            TextureScaleR = new int[count];
+            TextureFieldA = new sbyte[count];
+            TextureFieldB = new sbyte[count];
+            TextureFieldC = new sbyte[count];
+            TextureType2FieldA = new sbyte[count];
+            TextureType2FieldB = new sbyte[count];
+
+            for (int i = 0; i < count; i++) {
+                //The scalars share the vertices' coordinate space, so they take the same shift.
+                //method2592 leaves the third one alone for a type-1 face (Model.java:1697).
+                int shift = VertexShift;
+                TextureScaleP[i] = file.TextureScaleP[i] << shift;
+                TextureScaleQ[i] = file.TextureScaleQ[i] << shift;
+                TextureScaleR[i] = TextureType![i] == 1
+                    ? file.TextureScaleR[i]
+                    : file.TextureScaleR[i] << shift;
+
+                TextureFieldA[i] = (sbyte) file.TextureFieldA[i];
+                TextureFieldB[i] = (sbyte) file.TextureFieldB[i];
+                TextureFieldC[i] = (sbyte) file.TextureFieldC[i];
+                TextureType2FieldA[i] = (sbyte) file.TextureType2FieldA[i];
+                TextureType2FieldB[i] = (sbyte) file.TextureType2FieldB[i];
+            }
+        }
+
+        private void ProjectAttachments(ModelFile file) {
+            Emitters = file.Emitters;
+            Effectors = file.Effectors;
+            Bonds = file.Bonds;
+            ParticleEffectId = Emitters != null && Emitters.Length > 0
+                ? (ushort) Emitters[0].EmitterId
+                : (ushort) 0xFFFF;
+        }
 
         /// <summary>
-        /// Decodes an RS2 "old" legacy model (18-byte footer, no animaya).
-        /// Ported from Hydra's <c>method2587()</c>.
+        ///     Applies the two passes the legacy decoder runs after everything else is read.
         /// </summary>
-        private void DecodeOld(JagStream modelStream, int[] xteaKey) {
-            byte[] data = modelStream.ToArray();
+        /// <remarks>
+        ///     An array whose flag was set but whose content is uniformly absent is dropped, so a
+        ///     legacy model without textures reports no textures rather than an array of -1. The
+        ///     coordinate pass additionally drops a mapping whose reference triangle is the face
+        ///     itself, which is the identity mapping and needs no UV computation
+        ///     (Model.java:1585-1604).
+        /// </remarks>
+        /// <param name="file">The model as stored.</param>
+        private void FinishLegacy(ModelFile file) {
+            int count = file.FaceCount;
 
-            var st1 = new JagStream(data);
-            var st2 = new JagStream(data);
-            var st3 = new JagStream(data);
-            var st4 = new JagStream(data);
-            var st5 = new JagStream(data);
-
-            // 1) Read the 18-byte footer
-            st1.Seek(data.Length - 18);
-
-            int vertexCountFlag = st1.ReadUnsignedShort();
-            int triangleCountFlag = st1.ReadUnsignedShort();
-            int texturedCountFlag = st1.ReadUnsignedByte();
-
-            int hasFaceRenderFlag = st1.ReadUnsignedByte();   // 1 = yes
-            int renderPriorities = st1.ReadUnsignedByte();     // 255 = per-face
-            int hasFaceAlphaFlag = st1.ReadUnsignedByte();     // 1 = yes
-            int hasFaceSkinFlag = st1.ReadUnsignedByte();      // 1 = yes
-            int hasVertSkinFlag = st1.ReadUnsignedByte();      // 1 = yes
-
-            int vertexXDataLen = st1.ReadUnsignedShort();
-            int vertexYDataLen = st1.ReadUnsignedShort();
-            int vertexZDataLen = st1.ReadUnsignedShort();
-            int faceIndexDataLen = st1.ReadUnsignedShort();
-
-            // 2) Compute block offsets (cumulative from byte 0)
-            int offset = 0;
-
-            int vertexFlagsOff = offset;
-            offset += vertexCountFlag;
-
-            int faceIndexOpcodesOff = offset;
-            offset += triangleCountFlag;
-
-            int facePriorityOff = offset;
-            if (renderPriorities == 255)
-                offset += triangleCountFlag;
-
-            int faceSkinOff = offset;
-            if (hasFaceSkinFlag == 1)
-                offset += triangleCountFlag;
-
-            int faceRenderTypeOff = offset;
-            if (hasFaceRenderFlag == 1)
-                offset += triangleCountFlag;
-
-            int vertSkinOff = offset;
-            if (hasVertSkinFlag == 1)
-                offset += vertexCountFlag;
-
-            int faceAlphaOff = offset;
-            if (hasFaceAlphaFlag == 1)
-                offset += triangleCountFlag;
-
-            int faceIndexSmartOff = offset;
-            offset += faceIndexDataLen;
-
-            int faceColourOff = offset;
-            offset += triangleCountFlag * 2;
-
-            int texturedFaceOff = offset;
-            offset += texturedCountFlag * 6;
-
-            int vertexXOff = offset;
-            offset += vertexXDataLen;
-
-            int vertexYOff = offset;
-            offset += vertexYDataLen;
-
-            int vertexZOff = offset;
-
-            // 3) Populate counts
-            VertexCount = vertexCountFlag;
-            TriangleCount = triangleCountFlag;
-            TexturedTriangleCount = texturedCountFlag;
-
-            // 4) Allocate arrays
-            VertX = new int[VertexCount];
-            VertY = new int[VertexCount];
-            VertZ = new int[VertexCount];
-
-            faceIndices1 = new int[TriangleCount];
-            faceIndices2 = new int[TriangleCount];
-            faceIndices3 = new int[TriangleCount];
-
-            FaceColour = new short[TriangleCount];
-
-            if (texturedCountFlag > 0) {
-                TextureType = new sbyte[texturedCountFlag];
-                TexIndA = new short[texturedCountFlag];
-                TexIndB = new short[texturedCountFlag];
-                TexIndC = new short[texturedCountFlag];
+            if (FaceRenderType != null) {
+                bool anyFlat = false;
+                for (int i = 0; i < count && !anyFlat; i++)
+                    anyFlat = FaceRenderType[i] == 1;
+                if (!anyFlat)
+                    FaceRenderType = null;
             }
 
-            if (hasFaceRenderFlag == 1) {
-                FaceRenderType = new sbyte[TriangleCount];
-                TextureCoordinates = new sbyte[TriangleCount];
-                FaceTextures = new short[TriangleCount];
-            }
-
-            if (renderPriorities == 255)
-                FacePriority = new sbyte[TriangleCount];
-            else
-                _globalPriority = (byte) renderPriorities;
-
-            if (hasFaceAlphaFlag == 1)
-                FaceAlpha = new sbyte[TriangleCount];
-
-            if (hasFaceSkinFlag == 1)
-                FaceSkin = new sbyte[TriangleCount];
-
-            if (hasVertSkinFlag == 1)
-                VertSkins = new int[VertexCount];
-
-            // 5) Decode vertices
-            st1.Seek(vertexFlagsOff);
-            st2.Seek(vertexXOff);
-            st3.Seek(vertexYOff);
-            st4.Seek(vertexZOff);
-            st5.Seek(vertSkinOff);
-
-            int cx = 0, cy = 0, cz = 0;
-            for (int i = 0; i < VertexCount; i++) {
-                int mask = st1.ReadUnsignedByte();
-                int dx = (mask & 1) != 0 ? st2.ReadShortSmart() : 0;
-                int dy = (mask & 2) != 0 ? st3.ReadShortSmart() : 0;
-                int dz = (mask & 4) != 0 ? st4.ReadShortSmart() : 0;
-                cx += dx; cy += dy; cz += dz;
-                VertX[i] = cx;
-                VertY[i] = cy;
-                VertZ[i] = cz;
-
-                if (hasVertSkinFlag == 1)
-                    VertSkins![i] = st5.ReadUnsignedByte();
-            }
-
-            // 5b) Old-format models have implicit formatType 12 (< 13) — scale vertices
-            for (int i = 0; i < VertexCount; i++) {
-                VertX[i] <<= 2;
-                VertY[i] <<= 2;
-                VertZ[i] <<= 2;
-            }
-
-            // 6) Decode face colours, render types, priorities, alpha, skins
-            bool anyTextured = false;
-            bool anyRendered = false;
-
-            st1.Seek(faceColourOff);
-            st2.Seek(faceRenderTypeOff);
-            st3.Seek(facePriorityOff);
-            st4.Seek(faceAlphaOff);
-            st5.Seek(faceSkinOff);
-
-            for (int i = 0; i < TriangleCount; i++) {
-                FaceColour[i] = (short) st1.ReadUnsignedShort();
-
-                if (hasFaceRenderFlag == 1) {
-                    int mask = st2.ReadUnsignedByte();
-
-                    if ((mask & 1) != 0) {
-                        FaceRenderType![i] = 1;
-                        anyRendered = true;
-                    } else {
-                        FaceRenderType![i] = 0;
-                    }
-
-                    if ((mask & 2) == 2) {
-                        TextureCoordinates[i] = (sbyte) (mask >> 2);
-                        FaceTextures[i] = FaceColour[i];
-                        FaceColour[i] = 127;
-                        if (FaceTextures[i] != -1)
-                            anyTextured = true;
-                    } else {
-                        TextureCoordinates[i] = -1;
-                        FaceTextures[i] = -1;
-                    }
-                }
-
-                if (renderPriorities == 255)
-                    FacePriority![i] = st3.ReadSignedByte();
-
-                if (hasFaceAlphaFlag == 1)
-                    FaceAlpha![i] = st4.ReadSignedByte();
-
-                if (hasFaceSkinFlag == 1)
-                    FaceSkin![i] = st5.ReadSignedByte();
-            }
-
-            // 7) Null-out arrays that never saw a flag
-            if (FaceRenderType != null && !anyRendered)
-                FaceRenderType = null;
-
-            if (FaceTextures != null && !anyTextured)
-                FaceTextures = null;
-
-            // 8) Decode triangle-strip indices
-            st1.Seek(faceIndexSmartOff);
-            st2.Seek(faceIndexOpcodesOff);
-
-            int a = 0, b = 0, c = 0, ptr = 0;
-            for (int i = 0; i < TriangleCount; i++) {
-                int op = st2.ReadUnsignedByte();
-
-                if (op == 1) {
-                    a = ptr + st1.ReadShortSmart();
-                    b = a + st1.ReadShortSmart();
-                    c = b + st1.ReadShortSmart();
-                    ptr = c;
-                } else if (op == 2) {
-                    b = c;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
-                } else if (op == 3) {
-                    a = c;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
-                } else { // op == 4
-                    int tmp = a;
-                    a = b;
-                    b = tmp;
-                    c = ptr + st1.ReadShortSmart();
-                    ptr = c;
-                }
-
-                faceIndices1[i] = a;
-                faceIndices2[i] = b;
-                faceIndices3[i] = c;
-            }
-
-            // 9) Decode textured-face lookup tables
-            st1.Seek(texturedFaceOff);
-            if (TexIndA != null) {
-                for (int i = 0; i < TexturedTriangleCount; i++) {
-                    if (TextureType != null)
-                        TextureType[i] = 0;
-                    TexIndA[i] = (short) st1.ReadUnsignedShort();
-                    TexIndB![i] = (short) st1.ReadUnsignedShort();
-                    TexIndC![i] = (short) st1.ReadUnsignedShort();
-                }
-            }
-
-            // 10) Check if texture coordinates are needed
             if (TextureCoordinates != null) {
-                bool anyUV = false;
-                for (int i = 0; i < TriangleCount; i++) {
-                    int tcIdx = TextureCoordinates[i] & 0xFF;
-                    if (tcIdx != 255 && TexIndA != null && tcIdx < TexIndA.Length) {
-                        if (faceIndices1[i] != (TexIndA[tcIdx] & 0xFFFF) ||
-                            faceIndices2[i] != (TexIndB![tcIdx] & 0xFFFF) ||
-                            faceIndices3[i] != (TexIndC![tcIdx] & 0xFFFF)) {
-                            anyUV = true;
-                            break;
-                        }
-                    }
+                bool anyMapping = false;
+                for (int i = 0; i < count; i++) {
+                    int coordinate = TextureCoordinates[i];
+                    if (coordinate == -1 || TexIndA == null || coordinate >= TexIndA.Length)
+                        continue;
+
+                    if ((TexIndA[coordinate] & 0xFFFF) != faceIndices1[i] ||
+                        (TexIndB![coordinate] & 0xFFFF) != faceIndices2[i] ||
+                        (TexIndC![coordinate] & 0xFFFF) != faceIndices3[i])
+                        anyMapping = true;
+                    else
+                        TextureCoordinates[i] = -1;
                 }
-                if (!anyUV)
+
+                if (!anyMapping)
                     TextureCoordinates = null;
             }
 
-            // 11) Compute derived data
-            ComputeNormals();
-            ComputeTextureUVCoordinates();
-            ComputeAnimationTables();
+            if (FaceTextures == null)
+                return;
+
+            bool anyTexture = false;
+            for (int i = 0; i < count && !anyTexture; i++)
+                anyTexture = FaceTextures[i] != -1;
+            if (!anyTexture)
+                FaceTextures = null;
         }
-
-        public int ModelID { get; set; }
-
-
-        /// <inheritdoc />
-        public JagStream Encode() => throw new NotSupportedException("Model re‑encoding is out of scope for viewer.");
-
-        #endregion
-
-        #region ≡ footer parsing
-
-        public enum ModelFormat {
-            Old = 0, // pre-sentinel style
-            Newer = 1, // sentinel style without textures
-            Newest = 2 // sentinel style with texture faces
-        }
-
-        public readonly struct Footer {
-            public int VertexCount { get; }
-            public int TriangleCount { get; }
-            public int TexturedTriangleCount { get; }
-            public ModelFormat Format { get; }
-            public int FooterSize { get; }
-
-            public Footer(int vertexCount, int triangleCount, int texturedTriangleCount, ModelFormat format, int footerSize) {
-                VertexCount = vertexCount;
-                TriangleCount = triangleCount;
-                TexturedTriangleCount = texturedTriangleCount;
-                Format = format;
-                FooterSize = footerSize;
-            }
-        }
-
-
-        #endregion
-
-        #region ≡ newest‑footer decoder (602‑647)
 
         /// <summary>
-        /// Decode the "newest" RS2 (602–647) model layout.
-        /// Uses a 26-byte footer with explicit block offsets.
-        /// Ported from Hydra's <c>decoder_newest_format()</c>.
+        ///     The skin group a stored value stands for.
         /// </summary>
-        private void DecodeRS3(JagStream full, int[] xteaKey) {
-            byte[] b = full.ToArray();
-
-            // Mirror Java's streams — we need enough to avoid caret collisions
-            var st1 = new JagStream(b);
-            var st2 = new JagStream(b);
-            var st3 = new JagStream(b);
-            var st4 = new JagStream(b);
-            var st5 = new JagStream(b);
-            var st6 = new JagStream(b);
-            var st7 = new JagStream(b);
-
-            // Models 63607-63613 use the newProtocol variant (3-byte header, 26-byte footer)
-            bool newProtocol = (ModelID >= 63607 && ModelID <= 63613);
-
-            // 1) Read header (newProtocol only) and seek to footer
-            if (newProtocol) {
-                int version = st1.ReadUnsignedByte();
-                if (version != 1)
-                    throw new InvalidDataException($"newProtocol model {ModelID}: expected version 1, got {version}");
-                st1.ReadUnsignedByte();                     // unused
-                FormatType = st1.ReadUnsignedByte();        // format type from header
-                st1.Seek(b.Length - 26);
-            } else {
-                st1.Seek(b.Length - 23);
-            }
-
-            // 2) Read counts & flags
-            int vc = st1.ReadUnsignedShort();
-            int fc = st1.ReadUnsignedShort();
-            int tfc = newProtocol ? st1.ReadUnsignedShort() : st1.ReadUnsignedByte();
-
-            // Packed flags byte — newProtocol uses all 8 bits
-            int flagsByte = st1.ReadUnsignedByte();
-            bool hasFaceType = (flagsByte & 0x1) == 1;
-            bool hasTextures = (flagsByte & 0x2) == 2;
-            bool hasFormatInFooter = (flagsByte & 0x8) == 8;   // bit 3
-            int explicitVertSkin = (flagsByte & 0x10) != 0 ? 1 : 0;  // bit 4 (i1)
-            int explicitFaceSkin = (flagsByte & 0x20) != 0 ? 1 : 0;  // bit 5 (i2)
-
-            // If bit 3 is set, formatType lives 7 bytes before current position
-            if (hasFormatInFooter) {
-                long saved = st1.Position;
-                st1.Seek(saved - 7);
-                FormatType = st1.ReadUnsignedByte();
-                st1.Seek(saved);
-            } else if (!newProtocol) {
-                FormatType = 13;  // default for non-newProtocol newest
-            }
-
-            int i5 = st1.ReadUnsignedByte();  // priority: 255 = per-face
-            int i6 = st1.ReadUnsignedByte();  // alpha: 1 = yes
-            int i7 = st1.ReadUnsignedByte();  // face skins: 1 = yes
-            int i8 = st1.ReadUnsignedByte();  // face textures: 1 = yes
-            int i9 = st1.ReadUnsignedByte();  // vertex skins: 1 = yes
-
-            // Explicit block-length offsets from footer
-            int i10 = st1.ReadUnsignedShort();   // vertex data len
-            int i11 = st1.ReadUnsignedShort();   // face colour len
-            int i12 = st1.ReadUnsignedShort();   // face data len
-            int i13 = st1.ReadUnsignedShort();   // face index len
-            int i14 = st1.ReadUnsignedShort();   // texture data len
-
-            // Vertex skin / face skin lengths (i15/i16) — logic differs by protocol
-            int i15, i16;
-            if (newProtocol) {
-                i15 = st1.ReadUnsignedShort();
-                i16 = st1.ReadUnsignedShort();
-                if (explicitVertSkin == 0) {
-                    i15 = (i9 == 1) ? vc : 0;
-                }
-                if (explicitFaceSkin == 0) {
-                    i16 = (i7 == 1) ? fc : 0;
-                }
-            } else {
-                if (explicitVertSkin != 0)
-                    i15 = st1.ReadUnsignedShort();
-                else
-                    i15 = (i9 == 1) ? vc : 0;
-
-                if (explicitFaceSkin != 0)
-                    i16 = st1.ReadUnsignedShort();
-                else
-                    i16 = (i7 == 1) ? fc : 0;
-            }
-
-            // 3) Compute block offsets
-            int dataStart = newProtocol ? tfc + 3 : tfc;   // newProtocol has 3-byte header
-
-            int vertexFlagsOff = dataStart;
-            int faceTypeOff = vertexFlagsOff + vc;
-
-            int faceIndexOpcodesOff = faceTypeOff;
-            if (hasFaceType)
-                faceIndexOpcodesOff = faceTypeOff + fc;
-
-            int offset = faceIndexOpcodesOff + fc;
-
-            int facePriorityOff = offset;
-            if (i5 == 255)
-                offset += fc;
-
-            int faceSkinOff = offset;
-            offset += i16;
-
-            int vertSkinOff = offset;
-            offset += i15;
-
-            int faceAlphaOff = offset;
-            if (i6 == 1)
-                offset += fc;
-
-            int faceIndexSmartOff = offset;
-            offset += i13;
-
-            int faceTextureOff = offset;
-            if (i8 == 1)
-                offset += fc * 2;
-
-            int faceTexCoordOff = offset;
-            offset += i14;
-
-            int faceColourOff = offset;
-            offset += fc * 2;
-
-            int vertexXOff = offset;
-            offset += i10;
-
-            int vertexYOff = offset;
-            offset += i11;
-
-            int vertexZOff = offset;
-            offset += i12;
-
-            // 4) Populate counts
-            VertexCount = vc;
-            TriangleCount = fc;
-            TexturedTriangleCount = tfc;
-
-            // 5) Allocate arrays
-            VertX = new int[vc];
-            VertY = new int[vc];
-            VertZ = new int[vc];
-
-            faceIndices1 = new int[fc];
-            faceIndices2 = new int[fc];
-            faceIndices3 = new int[fc];
-
-            FaceColour = new short[fc];
-
-            if (hasFaceType)
-                FaceRenderType = new sbyte[fc];
-
-            if (i5 == 255)
-                FacePriority = new sbyte[fc];
-            else
-                _globalPriority = (byte) i5;
-
-            if (i6 == 1)
-                FaceAlpha = new sbyte[fc];
-
-            if (i7 == 1)
-                FaceSkin = new sbyte[fc];
-
-            if (i9 == 1)
-                VertSkins = new int[vc];
-
-            if (i8 == 1) {
-                FaceTextures = new short[fc];
-            }
-
-            if (i8 == 1 && tfc > 0) {
-                TextureCoordinates = new sbyte[fc];
-            }
-
-            if (tfc > 0) {
-                TextureType = new sbyte[tfc];
-                TexIndA = new short[tfc];
-                TexIndB = new short[tfc];
-                TexIndC = new short[tfc];
-            }
-
-            // 6) Decode textured face types (at the start of data section)
-            if (tfc > 0) {
-                st1.Seek(newProtocol ? 3 : 0);
-                for (int i = 0; i < tfc; i++)
-                    TextureType![i] = st1.ReadSignedByte();
-            }
-
-            // 7) Decode vertex positions
-            st1.Seek(vertexFlagsOff);
-            st2.Seek(vertexXOff);
-            st3.Seek(vertexYOff);
-            st4.Seek(vertexZOff);
-            st5.Seek(vertSkinOff);
-
-            int px = 0, py = 0, pz = 0;
-            for (int i = 0; i < vc; i++) {
-                int f = st1.ReadUnsignedByte();
-                if ((f & 1) != 0) px += st2.ReadShortSmart();
-                if ((f & 2) != 0) py += st3.ReadShortSmart();
-                if ((f & 4) != 0) pz += st4.ReadShortSmart();
-                VertX[i] = px;
-                VertY[i] = py;
-                VertZ[i] = pz;
-                if (i9 == 1) {
-                    if (explicitVertSkin != 0)
-                        VertSkins![i] = st5.ReadSpecialSmart();
-                    else {
-                        int id = st5.ReadUnsignedByte();
-                        VertSkins![i] = (id == 255) ? -1 : id;
-                    }
-                }
-            }
-
-            // 7b) Upscale old-format models to match the coordinate space.
-            // Hydra client (Class141:1170) only shifts for formatType < 13;
-            // newer models (formatType >= 13) already use full-scale coordinates.
-            if (FormatType < 13) {
-                for (int i = 0; i < vc; i++) {
-                    VertX[i] <<= 2;
-                    VertY[i] <<= 2;
-                    VertZ[i] <<= 2;
-                }
-            }
-
-            // 8) Decode face data — each field from its own stream to avoid caret collision
-            st1.Seek(faceColourOff);     // face colours
-            st2.Seek(faceTypeOff);       // face render type (if hasFaceType)
-            st3.Seek(facePriorityOff);   // priorities (if i5==255)
-            st4.Seek(faceAlphaOff);      // alpha (if i6==1)
-            st5.Seek(faceSkinOff);       // face skins (if i7==1)
-            st6.Seek(faceTextureOff);    // face textures (if i8==1)
-            st7.Seek(faceTexCoordOff);   // texture coords (if i8==1 && tfc>0)
-
-            for (int i = 0; i < fc; i++) {
-                FaceColour[i] = (short) st1.ReadUnsignedShort();
-
-                if (hasFaceType)
-                    FaceRenderType![i] = st2.ReadSignedByte();
-
-                if (i5 == 255)
-                    FacePriority![i] = st3.ReadSignedByte();
-
-                if (i6 == 1)
-                    FaceAlpha![i] = st4.ReadSignedByte();
-
-                if (i7 == 1) {
-                    if (explicitFaceSkin != 0)
-                        FaceSkin![i] = (sbyte) st5.ReadSpecialSmart();
-                    else {
-                        int id = st5.ReadUnsignedByte();
-                        FaceSkin![i] = (id == 255) ? (sbyte) -1 : (sbyte) id;
-                    }
-                }
-
-                if (i8 == 1) {
-                    FaceTextures![i] = (short) (st6.ReadUnsignedShort() - 1);
-                }
-
-                if (TextureCoordinates != null) {
-                    if (FaceTextures![i] == -1)
-                        TextureCoordinates[i] = -1;
-                    else if (FormatType >= 16)
-                        TextureCoordinates[i] = (sbyte) (st7.ReadShortSmart() - 1);
-                    else
-                        TextureCoordinates[i] = (sbyte) (st7.ReadUnsignedByte() - 1);
-                }
-            }
-
-            // 9) Decode triangle indices
-            st1.Seek(faceIndexSmartOff);
-            st2.Seek(faceIndexOpcodesOff);
-
-            int a = 0, bPrev = 0, cPrev = 0, idxPtr = 0;
-            for (int i = 0; i < fc; i++) {
-                int raw = st2.ReadUnsignedByte();
-                int op = newProtocol ? (raw & 0x7) : raw;  // newProtocol masks to 3 bits
-                if (op == 1) {
-                    a = st1.ReadShortSmart() + idxPtr;
-                    bPrev = st1.ReadShortSmart() + a;
-                    cPrev = st1.ReadShortSmart() + bPrev;
-                    idxPtr = cPrev;
-                } else if (op == 2) {
-                    bPrev = cPrev;
-                    cPrev = st1.ReadShortSmart() + idxPtr;
-                    idxPtr = cPrev;
-                } else if (op == 3) {
-                    a = cPrev;
-                    cPrev = st1.ReadShortSmart() + idxPtr;
-                    idxPtr = cPrev;
-                } else if (op == 4) {
-                    int tmpA = a;
-                    a = bPrev;
-                    bPrev = tmpA;
-                    cPrev = st1.ReadShortSmart() + idxPtr;
-                    idxPtr = cPrev;
-                }
-
-                faceIndices1[i] = a;
-                faceIndices2[i] = bPrev;
-                faceIndices3[i] = cPrev;
-            }
-
-            // 10) Decode textured face references (type 0 = simple triangles)
-            if (tfc > 0) {
-                // Seek past the complex texture geometry to the type-0 block
-                // The offset layout was already computed above
-                st1.Seek(offset);  // vertexZOff + i12 = end of vertex Z data = start of tex geometry
-                for (int i = 0; i < tfc; i++) {
-                    int type = TextureType != null ? (TextureType[i] & 0xFF) : 0;
-                    if (type == 0) {
-                        TexIndA![i] = (short) st1.ReadUnsignedShort();
-                        TexIndB![i] = (short) st1.ReadUnsignedShort();
-                        TexIndC![i] = (short) st1.ReadUnsignedShort();
-                    }
-                }
-            }
+        /// <remarks>
+        ///     The byte form uses 255 as "no group" on the new-protocol encoding only
+        ///     (Model.java:1054-1058); the other two read a plain unsigned byte and 255 is a real
+        ///     group there.
+        /// </remarks>
+        /// <param name="file">The model as stored.</param>
+        /// <param name="stored">The stored value.</param>
+        /// <param name="smart">Whether the block held smarts rather than bytes.</param>
+        /// <returns>The group, or -1 for none.</returns>
+        private static int SkinValue(ModelFile file, StoredSmart stored, bool smart) {
+            if (smart)
+                return stored.Value;
+            if (file.Encoding == ModelEncoding.NewProtocol && stored.Value == 255)
+                return -1;
+            return stored.Value;
         }
+
+        #endregion
+
+        #region derived data
 
         /// <summary>
         /// Computes per-vertex and per-face normals for lighting calculations.
@@ -1206,9 +721,7 @@ namespace FlashEditor.Definitions {
                         u[2] = 0f; v[2] = 0f;
                     }
                     else {
-                        textureCoordinate &= 0xFF;
-
-                        sbyte textureRenderType = 0;
+                        int textureRenderType = 0;
                         if (TextureType != null && textureCoordinate < TextureType.Length)
                             textureRenderType = TextureType[textureCoordinate];
 
@@ -1337,12 +850,24 @@ namespace FlashEditor.Definitions {
 
         /// <summary>Simple container for accumulated vertex normals.</summary>
         public class VertexNormal {
-            public int x, y, z, magnitude;
+            /// <summary>Accumulated X component.</summary>
+            public int x;
+            /// <summary>Accumulated Y component.</summary>
+            public int y;
+            /// <summary>Accumulated Z component.</summary>
+            public int z;
+            /// <summary>How many face normals were folded in.</summary>
+            public int magnitude;
         }
 
         /// <summary>Container for face normal vectors.</summary>
         public class FaceNormal {
-            public int x, y, z;
+            /// <summary>X component.</summary>
+            public int x;
+            /// <summary>Y component.</summary>
+            public int y;
+            /// <summary>Z component.</summary>
+            public int z;
         }
 
         /// <summary>
@@ -1357,16 +882,24 @@ namespace FlashEditor.Definitions {
         /// Returns the effective render priority for face <paramref name="i"/>.
         /// Uses per-face array when available, otherwise the global value.
         /// </summary>
+        /// <param name="i">The face index.</param>
+        /// <returns>The priority.</returns>
         public int GetFacePriority(int i) => FacePriority != null ? FacePriority[i] : _globalPriority;
 
         #endregion
 
-        #region ≡ helper methods
+        #region helper methods
 
         /// <summary>
         /// Creates a shallow clone with deep-copied mutable arrays so that
         /// NPC/item recolour transforms don't corrupt the cached original.
         /// </summary>
+        /// <returns>The clone.</returns>
+        /// <remarks>
+        ///     The clone shares <see cref="Source"/> with the original, so recolouring it does not
+        ///     change what <see cref="Encode"/> would write - which is right today, because a
+        ///     recolour is a rendering transform rather than an edit to the model.
+        /// </remarks>
         public ModelDefinition CloneForRendering() {
             var clone = (ModelDefinition)MemberwiseClone();
             if (FaceColour != null) clone.FaceColour = (short[])FaceColour.Clone();
@@ -1380,8 +913,8 @@ namespace FlashEditor.Definitions {
         /// <summary>
         /// Computes per-vertex lit colours using Gouraud shading (smooth) or
         /// flat shading, matching the RS client light pipeline.
-        /// Returns <c>int[TriangleCount][3]</c> of packed 0xRRGGBB per vertex of each face.
         /// </summary>
+        /// <returns><c>int[TriangleCount][3]</c> of packed 0xRRGGBB per vertex of each face.</returns>
         public int[][] ComputeVertexColours() {
             if (VertexNormals == null)
                 ComputeNormals();
@@ -1460,9 +993,11 @@ namespace FlashEditor.Definitions {
 
         /// <summary>
         /// Computes per-face vertex base colours WITHOUT directional lighting applied.
-        /// Returns <c>int[TriangleCount][3]</c> of packed 0xRRGGBB at full brightness,
-        /// suitable for dynamic lighting in the GPU shader.
         /// </summary>
+        /// <returns>
+        ///     <c>int[TriangleCount][3]</c> of packed 0xRRGGBB at full brightness, suitable for
+        ///     dynamic lighting in the GPU shader.
+        /// </returns>
         public int[][] ComputeUnlitColours() {
             var result = new int[TriangleCount][];
 
@@ -1492,8 +1027,8 @@ namespace FlashEditor.Definitions {
         /// For flat-shaded faces (renderType==1), all three vertices share the face normal.
         /// For Gouraud-shaded faces, each vertex uses its accumulated vertex normal.
         /// Components are transformed to match the rendering coordinate system (Y and Z negated).
-        /// Returns <c>float[TriangleCount][9]</c> — three (x,y,z) triples per face.
         /// </summary>
+        /// <returns><c>float[TriangleCount][9]</c> - three (x,y,z) triples per face.</returns>
         public float[][] ComputeFaceVertexNormals() {
             if (VertexNormals == null)
                 ComputeNormals();
@@ -1537,7 +1072,9 @@ namespace FlashEditor.Definitions {
 
         private static readonly int[] _hsl2Rgb = BuildHslLut();
 
-        /// <summary>Converts a packed HSV index to 24‑bit sRGB via the precomputed palette.</summary>
+        /// <summary>Converts a packed HSV index to 24-bit sRGB via the precomputed palette.</summary>
+        /// <param name="hsl">The packed palette index.</param>
+        /// <returns>24-bit RGB.</returns>
         public static int HslToRgb(int hsl) => _hsl2Rgb[hsl & 0xFFFF];
 
         /// <summary>

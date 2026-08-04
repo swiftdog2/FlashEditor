@@ -26,7 +26,9 @@ namespace FlashEditor.cache {
             MUSIC_2 = 11,
             CLIENT_SCRIPTS_INDEX = 12,
             FONTS_INDEX = 13,
-            SFX2_INDEX = 14, //VORBIS/midi instruments
+            //Vorbis sound-effect samples. Not the MIDI instrument bank - that is index 15, which
+            //Particle_Sub3_Sub5_Sub2.java:99-100 hands to the synth alongside this one and index 4.
+            SFX2_INDEX = 14,
             SFX3_INDEX = 15,
             OBJECTS_DEFINITIONS_INDEX = 16,
             //The enum table, not client-script settings. The client's own field for the store it

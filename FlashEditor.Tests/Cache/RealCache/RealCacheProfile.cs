@@ -248,6 +248,17 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["sprite.pixelPlaneTrailerBytes"] = 0,
                     ["sprite.framesOverflowingTheCanvas"] = 0,
 
+                    //Index 32, the pre-login art store. Byte-identical in both caches - same 26
+                    //groups, same identifiers, same payload lengths - so the repack profile below
+                    //carries the same four figures rather than its own. The split is the point:
+                    //the constant is commented "in jpg format" and a fifth of the index is not
+                    //JPEG at all, so a run where either figure fell to zero would mean a shape had
+                    //stopped being dispatched.
+                    ["loadingSprite.jpegGroups"] = 21,
+                    ["loadingSprite.spriteSetGroups"] = 5,
+                    ["loadingSprite.jpegPixels"] = 1176093,
+                    ["loadingSprite.glyphFrames"] = 1280,
+
                     //Index 27. Emitter opcodes 5 and 31 are aliases for the same pair of size
                     //bounds and every emitter carries exactly one of them, so the two sum to the
                     //group's file count - which is one of the six that move between the caches.
@@ -292,7 +303,44 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["clientscript.switchBlocks"] = 831,
                     ["clientscript.switchCases"] = 11962,
                     ["clientscript.distinctOpcodes"] = 582,
-                    ["clientscript.maxOpcode"] = 7314
+                    ["clientscript.maxOpcode"] = 7314,
+
+                    //Index 7. This capture stops at model 63606, so it holds neither of the two
+                    //legacy models nor any of the seven new-protocol ones - both of those encoders
+                    //are exercised only by the repack, and only ModelCodecTests covers them here.
+                    //The three zeroes at the end are the ones worth reading: no smart in the index
+                    //is stored wider than it needed, no model has a byte between its data and its
+                    //footer, and no textured face of type 1-3 sits after a type-0 one. Each is a
+                    //branch a byte-identity sweep over this cache cannot defend, and each is pinned
+                    //synthetically instead.
+                    ["model.encoding.legacy"] = 0,
+                    ["model.encoding.newer"] = 63607,
+                    ["model.encoding.newProtocol"] = 0,
+                    ["model.formatType.12"] = 39050,
+                    ["model.formatType.14"] = 1933,
+                    ["model.formatType.15"] = 22624,
+                    ["model.formatType.16"] = 0,
+                    ["model.withEmbeddedFormatType"] = 24557,
+                    ["model.embeddedFormatTypeIs12"] = 0,
+                    ["model.withParticleTail"] = 211,
+                    ["model.emitters"] = 555,
+                    ["model.effectors"] = 12,
+                    ["model.withBondTail"] = 245,
+                    ["model.bonds"] = 1751,
+                    ["model.texturedFaces.type0"] = 130034,
+                    ["model.texturedFaces.type1"] = 54991,
+                    ["model.texturedFaces.type2"] = 285938,
+                    ["model.texturedFaces.type3"] = 1098,
+                    ["model.withType1To3Faces"] = 50743,
+                    ["model.withType13FaceAfterType0"] = 0,
+                    ["model.withFaceSkins"] = 21434,
+                    ["model.faceSkinsAbove127"] = 8640,
+                    ["model.withVertexSkins"] = 26831,
+                    ["model.vertexSkinsAbove127"] = 15423,
+                    ["model.withScaleBlockSlack"] = 13787,
+                    ["model.scaleBlockSlackBytes"] = 152690,
+                    ["model.widenedSmarts"] = 0,
+                    ["model.withGapBeforeFooter"] = 0
                 });
         }
 
@@ -380,6 +428,16 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["sprite.pixelPlaneTrailerBytes"] = 39,
                     ["sprite.framesOverflowingTheCanvas"] = 11,
 
+                    //Index 32. Byte-identical to the vanilla capture: the same 26 groups at the
+                    //same sparse ids, the same identifiers and the same payload lengths, so these
+                    //four are measured here and land on that cache's figures exactly. Two orphan
+                    //idx slots this cache carries, 498 and 1407, are listed above and no reference
+                    //table declares them, so they are outside the sweep.
+                    ["loadingSprite.jpegGroups"] = 21,
+                    ["loadingSprite.spriteSetGroups"] = 5,
+                    ["loadingSprite.jpegPixels"] = 1176093,
+                    ["loadingSprite.glyphFrames"] = 1280,
+
                     //Index 27. Both moved against the vanilla capture, because this cache holds 403
                     //emitters to its 269 - the two still sum to the group's declared file count, so
                     //every emitter carries exactly one of the two size encodings here too.
@@ -419,7 +477,43 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["clientscript.switchBlocks"] = 831,
                     ["clientscript.switchCases"] = 11962,
                     ["clientscript.distinctOpcodes"] = 582,
-                    ["clientscript.maxOpcode"] = 7314
+                    ["clientscript.maxOpcode"] = 7314,
+
+                    //Index 7. This cache holds seven models the capture does not - 63607 to 63613,
+                    //the whole new-protocol population - plus two legacy models at 6700 and 6701,
+                    //so it is the only one of the two that exercises all three encoders. It also
+                    //holds the single model that sets the embedded-format-type bit while storing
+                    //12, which is what bit 3 clear already means: the capture has none, so a
+                    //recomputed flag bit would sweep clean on the default cache and drop a byte
+                    //here.
+                    ["model.encoding.legacy"] = 2,
+                    ["model.encoding.newer"] = 63605,
+                    ["model.encoding.newProtocol"] = 7,
+                    ["model.formatType.12"] = 39045,
+                    ["model.formatType.14"] = 1934,
+                    ["model.formatType.15"] = 22628,
+                    ["model.formatType.16"] = 7,
+                    ["model.withEmbeddedFormatType"] = 24563,
+                    ["model.embeddedFormatTypeIs12"] = 1,
+                    ["model.withParticleTail"] = 215,
+                    ["model.emitters"] = 569,
+                    ["model.effectors"] = 12,
+                    ["model.withBondTail"] = 250,
+                    ["model.bonds"] = 1772,
+                    ["model.texturedFaces.type0"] = 130080,
+                    ["model.texturedFaces.type1"] = 54989,
+                    ["model.texturedFaces.type2"] = 285922,
+                    ["model.texturedFaces.type3"] = 1098,
+                    ["model.withType1To3Faces"] = 50745,
+                    ["model.withType13FaceAfterType0"] = 0,
+                    ["model.withFaceSkins"] = 21447,
+                    ["model.faceSkinsAbove127"] = 8639,
+                    ["model.withVertexSkins"] = 26841,
+                    ["model.vertexSkinsAbove127"] = 15427,
+                    ["model.withScaleBlockSlack"] = 13792,
+                    ["model.scaleBlockSlackBytes"] = 152714,
+                    ["model.widenedSmarts"] = 0,
+                    ["model.withGapBeforeFooter"] = 0
                 });
         }
 

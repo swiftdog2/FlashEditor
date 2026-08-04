@@ -5,6 +5,7 @@ using System.Text;
 using System.Windows.Forms;
 using FlashEditor.cache;
 using FlashEditor.Cache.Region;
+using FlashEditor.Definitions;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
@@ -115,6 +116,16 @@ namespace FlashEditor.Map {
         private int lastQueuedTiles = -1;
 
         private TileHit? lastHit;
+
+        /// <summary>
+        ///     What the most recent edit did, in numbers, for the foot of the inspector.
+        /// </summary>
+        /// <remarks>
+        ///     Survives the flash on purpose. The flash is under a second and says where; this says
+        ///     what, and is still there when the user looks down from the map to work out whether
+        ///     the click did anything.
+        /// </remarks>
+        private string? lastEditNote;
 
         /// <summary>Guards the two-way plane binding between the combo and the canvas.</summary>
         /// <remarks>
@@ -243,8 +254,8 @@ namespace FlashEditor.Map {
             //BuildLayout has already selected the first tool, so the bound is applied once here as
             //well as on every later change - otherwise the box would keep whatever maximum it was
             //constructed with until the user touched the combo.
-            toolBox.SelectedIndexChanged += (_, _) => ApplyToolValueBound();
-            ApplyToolValueBound();
+            toolBox.SelectedIndexChanged += (_, _) => ApplyToolSelection();
+            ApplyToolSelection();
 
             view.TileHovered += (_, hit) => {
                 lastHit = hit;
@@ -265,8 +276,8 @@ namespace FlashEditor.Map {
 
             fitButton.Click += (_, _) => view.FitWorld();
 
-            undoButton.Click += (_, _) => InvalidateFor(UnderStoreLock(history.Undo));
-            redoButton.Click += (_, _) => InvalidateFor(UnderStoreLock(history.Redo));
+            undoButton.Click += (_, _) => StepHistory(history.Undo, "undone", reversed: true);
+            redoButton.Click += (_, _) => StepHistory(history.Redo, "redone", reversed: false);
             history.Changed += (_, _) => {
                 undoButton.Enabled = history.CanUndo;
                 redoButton.Enabled = history.CanRedo;
@@ -340,8 +351,20 @@ namespace FlashEditor.Map {
         private MapTool SelectedTool =>
             toolBox.SelectedIndex >= 0 ? ToolRows[toolBox.SelectedIndex].Tool : MapTool.Inspect;
 
-        /// <summary>Narrows the Value box to the range the selected tool can encode.</summary>
-        private void ApplyToolValueBound() => toolValue.Maximum = MaximumValueFor(SelectedTool);
+        /// <summary>
+        ///     Applies everything that depends on which tool is selected.
+        /// </summary>
+        /// <remarks>
+        ///     Two things: the Value box narrows to the range the tool can encode, and the canvas is
+        ///     told whether to draw the height-vertex affordance. The affordance is on only for the
+        ///     height tools, because it is an explanation of what they do rather than a general
+        ///     grid, and drawn under every tool it would be permanent clutter.
+        /// </remarks>
+        private void ApplyToolSelection() {
+            toolValue.Maximum = MaximumValueFor(SelectedTool);
+            view.ShowVertexAffordance =
+                SelectedTool == MapTool.RaiseHeight || SelectedTool == MapTool.LowerHeight;
+        }
 
         private void OnViewChanged() {
             Rectangle regions = view.Camera.VisibleRegionBounds();
@@ -379,8 +402,15 @@ namespace FlashEditor.Map {
                 return;
 
             IMapEdit? edit = BuildEdit(SelectedTool, square, hit);
-            if (edit == null)
+            if (edit == null) {
+                //A refusal used to be completely silent - the tool fired, declined, and neither the
+                //map nor the status line said anything. That is the worst case of "it isn't clear
+                //what edits are happening", because nothing distinguishes it from a working edit
+                //whose result is invisible.
+                view.Flash(hit.WorldX, hit.WorldY, 1, 1, hit.Plane, MapFlashKind.Rejected, "no change");
+                ShowMessage(RefusalReason(SelectedTool));
                 return;
+            }
 
             //Under the store's lock, which is what LocationSnapshot copies under. An add or a
             //remove that grows the live list between the snapshot's sizing and its CopyTo throws
@@ -392,8 +422,199 @@ namespace FlashEditor.Map {
             //reloaded copy would silently orphan every edit already recorded against it.
             store.PinEdited(edit.Target);
 
+            lastEditNote = EditNote(edit, "last edit");
             InvalidateFor(edit);
-            ShowMessage(edit.Description);
+            ShowMessage(edit.Description + HeightVisibilityWarning(edit));
+        }
+
+        /// <summary>
+        ///     Why a tool declined to change anything, in the user's terms.
+        /// </summary>
+        /// <remarks>
+        ///     Every case here is a tool that needs something already on the tile to act on. Saying
+        ///     which is the difference between a refusal and an apparent malfunction.
+        /// </remarks>
+        /// <param name="tool">The tool that declined.</param>
+        /// <returns>The message to show.</returns>
+        private static string RefusalReason(MapTool tool) {
+            switch (tool) {
+                case MapTool.CycleOverlayShape:
+                case MapTool.CycleOverlayRotation:
+                    return "No overlay on this tile - paint one first, then cycle it";
+                case MapTool.RotateTopLocation:
+                case MapTool.CycleTopLocationShape:
+                case MapTool.DeleteTopLocation:
+                    return "No object on this tile";
+                default:
+                    return "Nothing to change on this tile";
+            }
+        }
+
+        /// <summary>
+        ///     Warns when a height edit has been written but cannot be seen.
+        /// </summary>
+        /// <remarks>
+        ///     A flat top-down view has exactly one way to show terrain elevation, and that is
+        ///     relief shading. With the layer unticked or the slider near zero a height edit is
+        ///     applied correctly, saves correctly, and changes not one pixel - which reads as the
+        ///     tool being broken. The edit flash still fires, so the warning explains the gap
+        ///     between "something happened here" and "the terrain looks identical".
+        /// </remarks>
+        /// <param name="edit">The edit just applied.</param>
+        /// <returns>The clause to append, or an empty string.</returns>
+        private string HeightVisibilityWarning(IMapEdit edit) {
+            if (edit is not SetHeightEdit)
+                return "";
+
+            if ((CheckedLayers() & MapLayers.Hillshade) == 0)
+                return "  -  tick Relief shading to see it: a height change is only visible as shading";
+
+            //Below about a sixth of the range a single 32-unit step shades by under two levels of
+            //grey, which on textured terrain is indistinguishable from nothing.
+            return reliefBar.Value < 15
+                ? "  -  raise the Relief slider to see it: one step barely shades at this strength"
+                : "";
+        }
+
+        /// <summary>
+        ///     The "last edit" block for the inspector, which outlives the flash.
+        /// </summary>
+        /// <remarks>
+        ///     The flash says <em>where</em> and lasts under a second. This says <em>what</em>, in
+        ///     numbers, and stays until the next edit - which is what makes a height change
+        ///     readable at all, since the terrain itself only moves by one shading step.
+        /// </remarks>
+        /// <param name="edit">The edit applied, undone or redone.</param>
+        /// <param name="heading">
+        ///     What to call it - "last edit", "undone", "redone". Continuation lines are indented to
+        ///     match, so the heading can be any length.
+        /// </param>
+        /// <param name="reversed"><c>true</c> when the edit was undone rather than applied.</param>
+        /// <returns>The block, or <c>null</c> when the edit cannot describe itself.</returns>
+        private static string? EditNote(IMapEdit edit, string heading, bool reversed = false) {
+            if (edit is not IMapEditArea area)
+                return null;
+
+            string[] lines = DescribeEdit(edit, area, reversed);
+            if (lines.Length == 0)
+                return null;
+
+            string indent = new string(' ', heading.Length + 2);
+            var sb = new StringBuilder();
+
+            sb.AppendLine(heading + "  " + lines[0]);
+            for (int i = 1; i < lines.Length; i++)
+                sb.AppendLine(indent + lines[i]);
+
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        ///     What an edit did, one array entry per line.
+        /// </summary>
+        /// <remarks>
+        ///     A height edit gets three lines and everything else gets one, which is the whole
+        ///     asymmetry this feature is about: the other tools change something the map draws
+        ///     directly, while a height change is only ever visible as a shading difference and has
+        ///     to be spelled out in numbers to be checkable at all.
+        /// </remarks>
+        /// <param name="edit">The edit.</param>
+        /// <param name="area">Its tile area.</param>
+        /// <param name="reversed">
+        ///     <c>true</c> when the edit was undone, which swaps every before and after. A note that
+        ///     read "-960 -> -992" after an undo would name the height the tile no longer has.
+        /// </param>
+        /// <returns>The lines.</returns>
+        private static string[] DescribeEdit(IMapEdit edit, IMapEditArea area, bool reversed) {
+            string where = $"at {area.LocalX},{area.LocalY}";
+
+            switch (edit) {
+                case SetHeightEdit height: {
+                    int steps = reversed ? -height.StepDelta : height.StepDelta;
+                    int from = reversed ? height.NewHeight : height.OldHeight;
+                    int to = reversed ? height.OldHeight : height.NewHeight;
+                    string verb = steps > 0 ? "raised" : steps < 0 ? "lowered" : "left";
+
+                    return new[] {
+                        $"{verb} the SW vertex of tile {area.LocalX},{area.LocalY}",
+                        $"{from} -> {to} units"
+                        + $"  ({steps:+0;-0;0} step of {MapRegion.HEIGHT_UNITS_PER_STEP}, negative is up)",
+                        "4 tiles share that vertex, so the surface bends - the tile does not lift"
+                    };
+                }
+
+                case SetUnderlayEdit underlay:
+                    return new[] {
+                        reversed
+                            ? $"underlay {underlay.NewId} -> {underlay.OldId} {where}"
+                            : $"underlay {underlay.OldId} -> {underlay.NewId} {where}"
+                    };
+
+                case SetOverlayEdit overlay:
+                    return new[] {
+                        reversed
+                            ? $"overlay {overlay.NewId} -> {overlay.OldId} {where}"
+                            : $"overlay {overlay.OldId} -> {overlay.NewId} {where}"
+                              + $"  shape {overlay.NewShape}  rot {overlay.NewRotation}"
+                    };
+
+                case SetTileFlagsEdit flags:
+                    return new[] {
+                        reversed
+                            ? $"flags 0x{flags.NewFlags:X2} -> 0x{flags.OldFlags:X2} {where}"
+                            : $"flags 0x{flags.OldFlags:X2} -> 0x{flags.NewFlags:X2} {where}"
+                    };
+
+                case AddLocationEdit add:
+                    return new[] {
+                        reversed
+                            ? $"removed object {add.Location.Id} {where}"
+                            : $"placed object {add.Location.Id} {where}"
+                              + $"  footprint {area.TilesWide}x{area.TilesHigh}"
+                    };
+
+                case RemoveLocationEdit remove:
+                    return new[] {
+                        reversed
+                            ? $"restored object {remove.Location.Id} {where}"
+                            : $"deleted object {remove.Location.Id} {where}"
+                    };
+
+                case ReplaceLocationEdit replace: {
+                    Location shown = reversed ? replace.Original : replace.Replacement;
+                    return new[] {
+                        $"object {shown.Id} {where}  shape {shown.Shape}  rot {shown.Orientation}"
+                    };
+                }
+
+                default:
+                    return new[] { edit.Description };
+            }
+        }
+
+        /// <summary>
+        ///     Undoes or redoes a step, and reports it the same way an edit is reported.
+        /// </summary>
+        /// <remarks>
+        ///     Undo used to be the quietest thing in the panel: the button ran, the map changed
+        ///     somewhere, and the status line still held whatever the last edit had put there. It
+        ///     now flashes the tiles it touched and names the step, which matters most when the
+        ///     reverted edit is off screen.
+        /// </remarks>
+        /// <param name="operation">The history operation.</param>
+        /// <param name="heading">What to call it in the inspector.</param>
+        /// <param name="reversed">
+        ///     <c>true</c> for undo, which runs the edit backwards. Redo re-applies it forwards and
+        ///     so reports exactly as the original edit did.
+        /// </param>
+        private void StepHistory(Func<IMapEdit> operation, string heading, bool reversed) {
+            IMapEdit edit = UnderStoreLock(operation);
+            if (edit == null)
+                return;
+
+            lastEditNote = EditNote(edit, heading, reversed);
+            InvalidateFor(edit, reversed);
+            ShowMessage($"{heading}: {edit.Description}");
         }
 
         /// <summary>
@@ -468,36 +689,79 @@ namespace FlashEditor.Map {
                     return new SetTileFlagsEdit(square, p, x, y,
                         (byte) (square.GetRenderRule(p, x, y) ^ 0x1));
 
-                case MapTool.PlaceLocation:
+                case MapTool.PlaceLocation: {
+                    (int wide, int high) = Footprint(value, 0);
                     return new AddLocationEdit(square,
-                        NewLocation(square, value, PlacedLocationShape, 0, p, x, y));
+                        NewLocation(square, value, PlacedLocationShape, 0, p, x, y), wide, high);
+                }
 
                 case MapTool.RotateTopLocation: {
                     Location? target = TopLocation(square, p, x, y);
-                    return target == null
-                        ? null
-                        : new ReplaceLocationEdit(square, target,
-                            NewLocation(square, target.Id, target.Shape,
-                                (target.Orientation + 1) & 3, p, x, y));
+                    if (target == null)
+                        return null;
+
+                    int rotated = (target.Orientation + 1) & 3;
+                    (int wide, int high) = Footprint(target.Id, rotated);
+                    return new ReplaceLocationEdit(square, target,
+                        NewLocation(square, target.Id, target.Shape, rotated, p, x, y), wide, high);
                 }
 
                 case MapTool.CycleTopLocationShape: {
                     Location? target = TopLocation(square, p, x, y);
-                    return target == null
-                        ? null
-                        : new ReplaceLocationEdit(square, target,
-                            NewLocation(square, target.Id, (target.Shape + 1) % LocationShapeCount,
-                                target.Orientation, p, x, y));
+                    if (target == null)
+                        return null;
+
+                    (int wide, int high) = Footprint(target.Id, target.Orientation);
+                    return new ReplaceLocationEdit(square, target,
+                        NewLocation(square, target.Id, (target.Shape + 1) % LocationShapeCount,
+                            target.Orientation, p, x, y), wide, high);
                 }
 
                 case MapTool.DeleteTopLocation: {
                     Location? target = TopLocation(square, p, x, y);
-                    return target == null ? null : new RemoveLocationEdit(square, target);
+                    if (target == null)
+                        return null;
+
+                    (int wide, int high) = Footprint(target.Id, target.Orientation);
+                    return new RemoveLocationEdit(square, target, wide, high);
                 }
 
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        ///     An object's tile footprint after rotation, for the edit highlight.
+        /// </summary>
+        /// <remarks>
+        ///     Rotation swaps the axes on an odd orientation, matching what the rasteriser already
+        ///     does (<c>MapRasteriser</c> line 467). Without it a 3x1 object rotated onto its side
+        ///     would be highlighted across the wrong three tiles, which is worse than not
+        ///     highlighting it - a wrong footprint teaches a wrong mental model of what was placed.
+        ///
+        ///     Eight shipped loc files reference ids that index 16 does not carry, so a missing
+        ///     definition is expected data rather than an error; one tile is the safe read.
+        /// </remarks>
+        /// <param name="objectId">The object definition id.</param>
+        /// <param name="orientation">The rotation, 0..3.</param>
+        /// <returns>Tiles east and north.</returns>
+        private (int Wide, int High) Footprint(int objectId, int orientation) {
+            int sizeX = 1, sizeY = 1;
+
+            try {
+                ObjectDefinition? definition = cache?.GetObjectDefinition(objectId >> 8, objectId & 0xFF);
+                if (definition != null) {
+                    //The size fields are bytes, so widen before Math.Max or the overload is ambiguous.
+                    sizeX = Math.Max(1, (int) definition.sizeX);
+                    sizeY = Math.Max(1, (int) definition.sizeY);
+                }
+            }
+            catch (Exception) {
+                //Left at 1x1.
+            }
+
+            return (orientation & 1) == 0 ? (sizeX, sizeY) : (sizeY, sizeX);
         }
 
         /// <summary>
@@ -584,7 +848,11 @@ namespace FlashEditor.Map {
         ///     because the blend and the relief both reach across a boundary.
         /// </remarks>
         /// <param name="edit">The edit applied, undone or redone, or <c>null</c> for none.</param>
-        private void InvalidateFor(IMapEdit edit) {
+        /// <param name="reversed">
+        ///     <c>true</c> when the edit was undone rather than applied, so the feedback reports the
+        ///     direction the terrain actually moved.
+        /// </param>
+        private void InvalidateFor(IMapEdit edit, bool reversed = false) {
             if (edit == null)
                 return;
 
@@ -600,9 +868,107 @@ namespace FlashEditor.Map {
                 view.InvalidateSquare(MapSquareNames.RegionX(id), MapSquareNames.RegionY(id));
             }
 
+            //Raised here rather than at the click, so that undo and redo flash exactly as an edit
+            //does. An undo that silently reverts something is the same "did anything happen"
+            //problem running backwards.
+            FlashFor(edit, reversed);
+
             InvalidateInspectorScene();
             UpdateInspector(lastHit, loadMissing: true);
             UpdateStatus();
+        }
+
+        /// <summary>
+        ///     Marks on the canvas what an edit changed.
+        /// </summary>
+        /// <remarks>
+        ///     Purely an overlay - it does not touch the tile cache, which
+        ///     <see cref="InvalidateFor"/> has already dealt with separately.
+        ///
+        ///     A height edit raises two marks. The amber one is the tile that was clicked; the cyan
+        ///     one is the two-by-two block of tiles that share the vertex the click moved, which is
+        ///     the part nobody can guess from the tool's name. Everything else is one mark over its
+        ///     own footprint.
+        /// </remarks>
+        /// <param name="edit">The edit applied, undone or redone.</param>
+        /// <param name="reversed"><c>true</c> when the edit was undone.</param>
+        private void FlashFor(IMapEdit edit, bool reversed) {
+            if (edit is not IMapEditArea area || edit.Target == null)
+                return;
+
+            int id = edit.Target.GetRegionID();
+            int worldX = MapSquareNames.RegionX(id) * MapRegion.WIDTH + area.LocalX;
+            int worldY = MapSquareNames.RegionY(id) * MapRegion.HEIGHT + area.LocalY;
+
+            if (edit is SetHeightEdit height) {
+                int steps = reversed ? -height.StepDelta : height.StepDelta;
+                int landed = reversed ? height.OldHeight : height.NewHeight;
+
+                //The block whose surface bends: the clicked tile is its north-east quarter.
+                view.Flash(worldX - 1, worldY - 1, 2, 2, area.Plane, MapFlashKind.Vertex);
+                view.Flash(worldX, worldY, 1, 1, area.Plane, MapFlashKind.Edit,
+                    $"{steps:+0;-0;0} step   h {landed}");
+                return;
+            }
+
+            view.Flash(worldX, worldY, area.TilesWide, area.TilesHigh, area.Plane,
+                FlashKindOf(edit, reversed), FlashLabel(edit, reversed));
+        }
+
+        /// <summary>
+        ///     Whether a flash should read as a write or as a deletion.
+        /// </summary>
+        /// <remarks>
+        ///     Undo swaps the two for the location tools: undoing a placement removes an object, and
+        ///     undoing a deletion puts one back. Colouring by the edit's own type would show a red
+        ///     "removed" mark at the exact moment an object reappeared.
+        /// </remarks>
+        private static MapFlashKind FlashKindOf(IMapEdit edit, bool reversed) {
+            switch (edit) {
+                case RemoveLocationEdit:
+                    return reversed ? MapFlashKind.Edit : MapFlashKind.Removal;
+                case AddLocationEdit:
+                    return reversed ? MapFlashKind.Removal : MapFlashKind.Edit;
+                default:
+                    return MapFlashKind.Edit;
+            }
+        }
+
+        /// <summary>
+        ///     The caption drawn over a flash.
+        /// </summary>
+        /// <remarks>
+        ///     Deliberately not <c>edit.Description</c>, which is written for an undo menu and reads
+        ///     as "Underlay 40 to 12 at 33,17" - the coordinates are the one thing the mark on the
+        ///     map has already said, and the length pushes the plate wider than the tile it points
+        ///     at.
+        ///
+        ///     Every case reports the value that is now on the tile, which on an undo is the edit's
+        ///     <em>old</em> one. A label naming the value that has just been thrown away would be
+        ///     worse than no label.
+        /// </remarks>
+        /// <param name="edit">The edit.</param>
+        /// <param name="reversed"><c>true</c> when the edit was undone.</param>
+        /// <returns>The caption, or <c>null</c> for none.</returns>
+        private static string? FlashLabel(IMapEdit edit, bool reversed) {
+            switch (edit) {
+                case SetUnderlayEdit underlay:
+                    return $"underlay {(reversed ? underlay.OldId : underlay.NewId)}";
+                case SetOverlayEdit overlay:
+                    return $"overlay {(reversed ? overlay.OldId : overlay.NewId)}";
+                case SetTileFlagsEdit flags:
+                    return $"flags 0x{(reversed ? flags.OldFlags : flags.NewFlags):X2}";
+                case AddLocationEdit add:
+                    return reversed ? $"removed {add.Location.Id}" : $"object {add.Location.Id}";
+                case RemoveLocationEdit remove:
+                    return reversed ? $"object {remove.Location.Id}" : $"deleted {remove.Location.Id}";
+                case ReplaceLocationEdit replace: {
+                    Location shown = reversed ? replace.Original : replace.Replacement;
+                    return $"object {shown.Id}  shape {shown.Shape}  rot {shown.Orientation}";
+                }
+                default:
+                    return null;
+            }
         }
 
         /// <summary>
@@ -1009,6 +1375,9 @@ namespace FlashEditor.Map {
             InvalidateInspectorScene();
             history.Clear();
 
+            //Names a tile in a cache that is no longer the one on screen.
+            lastEditNote = null;
+
             if (cache == null) {
                 loader = null;
                 navigator.Build(null);
@@ -1133,10 +1502,17 @@ namespace FlashEditor.Map {
             if (hit == null)
                 return;
 
-            inspector.Text =
-                $"world {hit.WorldX}, {hit.WorldY}   plane {hit.Plane}" + Environment.NewLine +
-                $"square m{hit.RegionX}_{hit.RegionY}" + Environment.NewLine +
-                $"zoom to {WorldMapViewControl.MinimumEditingPixelsPerTile:0} px/tile or closer for tile detail";
+            var sb = new StringBuilder();
+            sb.AppendLine($"world {hit.WorldX}, {hit.WorldY}   plane {hit.Plane}");
+            sb.AppendLine($"square m{hit.RegionX}_{hit.RegionY}");
+            sb.AppendLine($"zoom to {WorldMapViewControl.MinimumEditingPixelsPerTile:0} px/tile"
+                          + " or closer for tile detail");
+
+            //Carried at this zoom too: zooming out is the obvious thing to do after an edit to see
+            //what moved, and dropping the record exactly then would be perverse.
+            AppendLastEdit(sb);
+
+            inspector.Text = sb.ToString();
         }
 
         private void UpdateInspector(TileHit? hit, bool loadMissing = false) {
@@ -1160,23 +1536,18 @@ namespace FlashEditor.Map {
                 //the sweep. Saying "no square here" for it would report empty water where there is
                 //terrain the user is about to see appear.
                 sb.AppendLine(store.Exists(hit.RegionX, hit.RegionY) ? "(decoding...)" : "(no square here)");
+                AppendLastEdit(sb);
                 inspector.Text = sb.ToString();
                 return;
             }
 
-            sb.AppendLine($"height    {square.GetTileHeight(hit.Plane, hit.LocalX, hit.LocalY)}");
+            AppendHeight(sb, scene, square, hit, sceneX, sceneY);
+
             sb.AppendLine($"underlay  {scene.UnderlayId(hit.Plane, sceneX, sceneY)}");
             sb.AppendLine($"overlay   {scene.OverlayId(hit.Plane, sceneX, sceneY)}" +
                           $"  shape {scene.OverlayShape(hit.Plane, sceneX, sceneY)}" +
                           $"  rot {scene.OverlayRotation(hit.Plane, sceneX, sceneY)}");
             sb.AppendLine($"flags     0x{scene.TileFlags(hit.Plane, sceneX, sceneY):X2}");
-
-            //The tile's four corner vertices. On a square boundary these come from the neighbouring
-            //square, so they are also the quickest way to see the vertex resolution working.
-            sb.AppendLine($"corners   sw {scene.VertexHeight(hit.Plane, sceneX, sceneY)}" +
-                          $"  se {scene.VertexHeight(hit.Plane, sceneX + 1, sceneY)}" +
-                          $"  nw {scene.VertexHeight(hit.Plane, sceneX, sceneY + 1)}" +
-                          $"  ne {scene.VertexHeight(hit.Plane, sceneX + 1, sceneY + 1)}");
 
             int shown = 0;
             foreach (Location loc in square.GetLocations()) {
@@ -1187,7 +1558,63 @@ namespace FlashEditor.Map {
                 sb.AppendLine($"  id {loc.Id}  shape {loc.Shape} ({LocGroups.Of(loc.Shape)})  rot {loc.Orientation}");
             }
 
+            AppendLastEdit(sb);
             inspector.Text = sb.ToString();
+        }
+
+        /// <summary>
+        ///     Writes the height block: the stored value, what it means, and the four corners.
+        /// </summary>
+        /// <remarks>
+        ///     The old block was two bare numbers - <c>height -960</c> and a row of corner values -
+        ///     and neither said the two things a reader has to know to interpret them. Heights are
+        ///     stored <b>negative-up</b> in steps of <c>Region.HEIGHT_UNITS_PER_STEP</c>, so -960
+        ///     is thirty steps of ground <em>above</em> the plane's base and not a depth. And the
+        ///     stored value belongs to the tile's <b>south-west corner vertex</b>, not to the tile:
+        ///     that vertex is the sw entry of the corner row, and the other three belong to
+        ///     neighbouring tiles. That is why a raise appears to move the neighbours too, and it
+        ///     is the confusion the whole feature exists to clear up, so it is stated here in
+        ///     writing as well as drawn on the canvas.
+        ///
+        ///     On a square boundary the corners come from the neighbouring square, so this doubles
+        ///     as the quickest way to see the shared-vertex resolution working.
+        /// </remarks>
+        private static void AppendHeight(StringBuilder sb, MapScene scene, MapRegion square, TileHit hit,
+            int sceneX, int sceneY) {
+            //The 900 shipped underwater squares decode a single plane, and Region.GetTileHeight
+            //indexes its array unguarded - so hovering plane 1 over one of them threw out of a
+            //mouse handler, which takes the form down rather than showing a blank line.
+            if (hit.Plane < 0 || hit.Plane >= square.PlaneCount) {
+                sb.AppendLine($"height    (this square carries {square.PlaneCount} plane(s), not plane {hit.Plane})");
+                return;
+            }
+
+            int height = square.GetTileHeight(hit.Plane, hit.LocalX, hit.LocalY);
+
+            //Plane 0 measures from sea level; every plane above measures from the one below it,
+            //which is what the encoder writes and therefore what a step count has to agree with.
+            int reference = hit.Plane == 0 ? 0 : square.GetTileHeight(hit.Plane - 1, hit.LocalX, hit.LocalY);
+            int steps = (reference - height) / MapRegion.HEIGHT_UNITS_PER_STEP;
+
+            sb.AppendLine($"height    {height} units = {steps} step(s) up"
+                          + $"  ({MapRegion.HEIGHT_UNITS_PER_STEP} units a step, negative is up)");
+            sb.AppendLine("          this is the SW corner VERTEX of the tile, shared by 4 tiles");
+
+            sb.AppendLine($"vertices  sw {scene.VertexHeight(hit.Plane, sceneX, sceneY)}" +
+                          $"  se {scene.VertexHeight(hit.Plane, sceneX + 1, sceneY)}" +
+                          $"  nw {scene.VertexHeight(hit.Plane, sceneX, sceneY + 1)}" +
+                          $"  ne {scene.VertexHeight(hit.Plane, sceneX + 1, sceneY + 1)}");
+            sb.AppendLine("          a height edit here moves sw only; se, nw and ne belong to"
+                          + " the neighbouring tiles");
+        }
+
+        /// <summary>Appends the standing record of the most recent edit, if there is one.</summary>
+        private void AppendLastEdit(StringBuilder sb) {
+            if (lastEditNote == null)
+                return;
+
+            sb.AppendLine();
+            sb.AppendLine(lastEditNote);
         }
 
         /// <summary>

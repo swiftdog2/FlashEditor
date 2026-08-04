@@ -78,6 +78,26 @@ namespace FlashEditor.Map {
         private readonly System.Windows.Forms.Timer repaintTimer = new System.Windows.Forms.Timer { Interval = 33 };
         private readonly List<MapTileKey> misses = new List<MapTileKey>();
 
+        /// <summary>
+        ///     The cursor highlight and the post-edit flashes.
+        /// </summary>
+        /// <remarks>
+        ///     Drawn in <see cref="OnPaint"/> over the blitted tiles and never through the tile
+        ///     cache. A highlight routed through the cache would invalidate a square, which costs a
+        ///     decode, a blend and a relief pass - once per mouse move.
+        /// </remarks>
+        private readonly MapEditOverlay overlay = new MapEditOverlay();
+
+        /// <summary>
+        ///     What the overlay covered at the last paint, so the next change can erase it.
+        /// </summary>
+        /// <remarks>
+        ///     Invalidating only the new highlight leaves the old one on screen: nothing else
+        ///     repaints the tile the cursor has just left. Every overlay change therefore
+        ///     invalidates the union of where it was and where it is going.
+        /// </remarks>
+        private Rectangle overlayPainted;
+
         private MapSquareStore store;
         private MapTileRenderService service;
 
@@ -135,7 +155,20 @@ namespace FlashEditor.Map {
             Camera.SetPixelsPerTile(InitialPixelsPerTile);
 
             repaintTimer.Tick += (_, _) => {
-                if (service == null || IsDisposed)
+                if (IsDisposed)
+                    return;
+
+                //Flashes fade on a clock of their own: between the edit and the fade finishing
+                //nothing else moves, so without this the flash would freeze at full brightness
+                //until the next pan. Retired here rather than left to the paint, because on a tab
+                //the user has switched away from no paint ever arrives and the list would never
+                //empty.
+                if (overlay.FlashCount > 0) {
+                    RefreshOverlay();
+                    overlay.PruneExpired();
+                }
+
+                if (service == null)
                     return;
 
                 int ready = service.ReadyCount;
@@ -178,6 +211,13 @@ namespace FlashEditor.Map {
                     return;
 
                 plane = clamped;
+
+                //A flash belongs to the plane it was raised on and stays hidden on any other. The
+                //cursor highlight is re-taken instead: it carries the plane it was hit on, so
+                //without this a Ctrl+wheel plane step blanks the highlight until the mouse moves.
+                RetakeHover();
+                RefreshOverlay();
+
                 BumpSignature();
                 PlaneChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -232,6 +272,72 @@ namespace FlashEditor.Map {
         public Color VoidColour { get; set; } = Color.FromArgb(255, 12, 12, 16);
 
         /// <summary>
+        ///     Whether the hover highlight also shows which height vertex a click would move.
+        /// </summary>
+        /// <remarks>
+        ///     Set by the panel while a height tool is selected. The stored height of a tile is the
+        ///     elevation of its south-west corner vertex, shared with three neighbours, so the
+        ///     affordance is what makes "raise this tile" legible as a deformation of the surface
+        ///     rather than as the tile taking off.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool ShowVertexAffordance {
+            get => overlay.ShowVertexAffordance;
+            set {
+                if (value == overlay.ShowVertexAffordance)
+                    return;
+
+                overlay.ShowVertexAffordance = value;
+                RefreshOverlay();
+            }
+        }
+
+        /// <summary>
+        ///     Briefly highlights a block of world tiles, to say what an edit just changed.
+        /// </summary>
+        /// <remarks>
+        ///     Purely an overlay: it does not invalidate a tile and so cannot re-rasterise anything.
+        ///     A caller that also changed the terrain still has to call
+        ///     <see cref="InvalidateSquare"/>.
+        /// </remarks>
+        /// <param name="worldX">World X of the block's south-west tile.</param>
+        /// <param name="worldY">World Y of the block's south-west tile.</param>
+        /// <param name="tilesWide">Tiles east.</param>
+        /// <param name="tilesHigh">Tiles north.</param>
+        /// <param name="editPlane">The plane the change is on.</param>
+        /// <param name="kind">What the flash is saying.</param>
+        /// <param name="label">A short caption drawn above it, or <c>null</c>.</param>
+        public void Flash(int worldX, int worldY, int tilesWide, int tilesHigh, int editPlane,
+            MapFlashKind kind, string? label = null) {
+            overlay.Add(worldX, worldY, tilesWide, tilesHigh, editPlane, kind, label);
+            RefreshOverlay();
+        }
+
+        /// <summary>
+        ///     Invalidates where the overlay was and where it now is.
+        /// </summary>
+        /// <remarks>
+        ///     A rectangle rather than the whole control. A full invalidate on every mouse move runs
+        ///     the visible-square loop and the missing-tile request pass sixty times a second, which
+        ///     is exactly the cost this overlay exists to avoid paying.
+        /// </remarks>
+        private void RefreshOverlay() {
+            Camera.ViewportWidth = Width;
+            Camera.ViewportHeight = Height;
+
+            Rectangle now = overlay.Bounds(Camera, plane, EditingEnabled);
+            Rectangle dirty = overlayPainted.IsEmpty
+                ? now
+                : now.IsEmpty ? overlayPainted : Rectangle.Union(overlayPainted, now);
+
+            overlayPainted = now;
+
+            if (!dirty.IsEmpty)
+                Invalidate(dirty);
+        }
+
+        /// <summary>
         ///     Binds the view to a store and a render service, or clears it.
         /// </summary>
         /// <param name="newStore">The square store, or <c>null</c> to unbind.</param>
@@ -240,6 +346,11 @@ namespace FlashEditor.Map {
             store = newStore;
             service = newService;
             lastReadyCount = -1;
+
+            //A flash names a world tile in a cache that is about to stop being the one on screen.
+            overlay.ClearFlashes();
+            overlay.Hover = null;
+            overlayPainted = Rectangle.Empty;
 
             if (service != null)
                 BumpSignature();
@@ -378,6 +489,10 @@ namespace FlashEditor.Map {
                 }
             }
 
+            //Last, and over the top of everything: the highlight has to be legible against the
+            //terrain, not composited under the next square's bitmap.
+            overlayPainted = overlay.Paint(e.Graphics, Camera, plane, EditingEnabled, Font);
+
             if (misses.Count > 0) {
                 //Nearest first, so the square being looked at is drawn before the ring around it.
                 PointF centre = new PointF(Width / 2f, Height / 2f);
@@ -426,6 +541,7 @@ namespace FlashEditor.Map {
                 pressCentreX = Camera.CentreWorldX;
                 pressCentreY = Camera.CentreWorldY;
                 Cursor = Cursors.SizeAll;
+                ClearHover();
                 return;
             }
 
@@ -457,6 +573,11 @@ namespace FlashEditor.Map {
                 if (!dragExceeded && (Math.Abs(dx) > DragThreshold || Math.Abs(dy) > DragThreshold)) {
                     dragExceeded = true;
                     Cursor = Cursors.SizeAll;
+
+                    //A pan moves the world under a stationary cursor, so the highlighted tile is no
+                    //longer the tile being pointed at. It comes back on the first move after the
+                    //drag ends.
+                    ClearHover();
                 }
 
                 if (dragExceeded)
@@ -466,8 +587,10 @@ namespace FlashEditor.Map {
             }
 
             TileHit hit = HitTest(e.Location);
-            if (hit == null)
+            if (hit == null) {
+                ClearHover();
                 return;
+            }
 
             //Only when the tile actually changed: the inspector rebuilds a scene per notification.
             if (lastHover != null && lastHover.WorldX == hit.WorldX && lastHover.WorldY == hit.WorldY
@@ -475,7 +598,42 @@ namespace FlashEditor.Map {
                 return;
 
             lastHover = hit;
+            overlay.Hover = hit;
+            RefreshOverlay();
+
             TileHovered?.Invoke(this, hit);
+        }
+
+        /// <summary>
+        ///     Re-hit-tests under the cursor, for a change that invalidates the current hit.
+        /// </summary>
+        /// <remarks>
+        ///     Reads the live cursor position rather than a stored one, because the last mouse event
+        ///     may predate whatever moved the world - a plane step, in the only case that uses this.
+        /// </remarks>
+        private void RetakeHover() {
+            if (!IsHandleCreated || overlay.Hover == null)
+                return;
+
+            Point local = PointToClient(MousePosition);
+            overlay.Hover = ClientRectangle.Contains(local) ? HitTest(local) : null;
+        }
+
+        /// <summary>Drops the cursor highlight and repaints where it was.</summary>
+        private void ClearHover() {
+            lastHover = null;
+
+            if (overlay.Hover == null)
+                return;
+
+            overlay.Hover = null;
+            RefreshOverlay();
+        }
+
+        /// <inheritdoc/>
+        protected override void OnMouseLeave(EventArgs e) {
+            base.OnMouseLeave(e);
+            ClearHover();
         }
 
         /// <inheritdoc/>

@@ -328,6 +328,28 @@ namespace FlashEditor.cache {
                 case RSConstants.DEFAULTS:
                 case RSConstants.SPRITES_INDEX:
                 case RSConstants.FONTS_INDEX:
+                //Index 14 the same, from both ends: Node_Sub13.method1137 (Node_Sub13.java:76)
+                //fetches a sound effect through that single-file accessor with the raw id off the
+                //ambient-sound config (Class280.java:206), and method1133 (:32) fetches the shared
+                //Vorbis setup header as getChildFromFolder(0, 0). Every group declares one file in
+                //both caches.
+                case RSConstants.SFX2_INDEX:
+                //Index 32 is the same accessor once more, reached by two different decoders.
+                //Class237_Sub1.java:13-32 fetches a loading image through method2733 and
+                //Class324.method3684 fetches a glyph sheet from the same archive through it, so a
+                //group holding anything but one file would throw before either decoder ran. All 26
+                //groups in both caches declare exactly one file, id 0. Class84.java:20-31 also
+                //resolves three of them by name, the way index 8 is reached - a name lookup and a
+                //group-per-id split are not alternatives here, the client uses both.
+                case RSConstants.LOADING_SPRITES:
+                //Index 7 is stated by the only loader that reaches it. Node_Sub6.method981
+                //(Node_Sub6.java:59-66) is getChildFromFolder(i_16_, i) followed by new Model(...),
+                //and every call site passes the model id as the group with file 0 -
+                //Class66.java:38, Node_Sub10_Sub16.java:29. The id is load bearing rather than
+                //incidental: Model.<init>:84 selects the new-protocol layout from the id alone, so
+                //a model decoded under the wrong group id is decoded with the wrong format. Both
+                //caches declare exactly one file per group across the whole index.
+                case RSConstants.MODELS_INDEX:
                     addressing = GroupPerId;
                     return true;
 

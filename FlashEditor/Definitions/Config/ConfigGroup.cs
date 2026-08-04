@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using FlashEditor.cache;
 
 namespace FlashEditor.Definitions.Config {
@@ -22,6 +23,9 @@ namespace FlashEditor.Definitions.Config {
         /// <summary>Floor underlays. Already modelled by <see cref="FloorUnderlayDefinition"/>.</summary>
         public const int FloorUnderlay = RSConstants.FLOOR_UNDERLAY_GROUP;
 
+        /// <summary>Player body-part models the appearance is built from. Class83.java:158.</summary>
+        public const int IdentityKit = 3;
+
         /// <summary>Item containers, sized by capacity. Class8.java:163.</summary>
         public const int Container = 5;
 
@@ -37,8 +41,20 @@ namespace FlashEditor.Definitions.Config {
         /// <summary>Client variables. Class132.java:117.</summary>
         public const int ClientVariable = 19;
 
+        /// <summary>Parameter-only records CS2 reads by id, the "struct" table. Class264.java:67.</summary>
+        public const int Struct = 26;
+
+        /// <summary>Light intensity modulation curves. Class269.java:161.</summary>
+        public const int LightIntensity = 31;
+
+        /// <summary>Per-mobile movement animation sets. Class257.java:82.</summary>
+        public const int RenderAnimation = 32;
+
         /// <summary>Cursors. Class11.java:33.</summary>
         public const int Cursor = 33;
+
+        /// <summary>Quests. Class13.java:123.</summary>
+        public const int Quest = 35;
 
         /// <summary>Floor overlays. Already modelled by <see cref="FloorOverlayDefinition"/>.</summary>
         public const int FloorOverlay = RSConstants.FLOOR_OVERLAY_GROUP;
@@ -51,5 +67,31 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Damage marks. Class121.java:102.</summary>
         public const int DamageMark = 46;
+
+        /// <summary>
+        ///     The groups no class in the 637 client opens, every file of which is a bare terminator.
+        /// </summary>
+        /// <remarks>
+        ///     Nineteen of index 2's thirty-five groups. Eighteen classes are constructed with
+        ///     <c>client.BIT_CONFIG</c> (InterfaceSettings.java:247-293) and two of them name groups
+        ///     29 and 30, which this cache does not contain, so sixteen of the thirty-five have a
+        ///     provider and these nineteen do not.
+        ///     <para>
+        ///     <b>Their opcode sets cannot be recovered from 639 data.</b> Measured over every file of
+        ///     every one of them in both caches: each is exactly one <c>0x00</c> byte, so a record is
+        ///     opcode-terminated and terminates immediately, and there is no byte to reverse engineer.
+        ///     No field in any of them can be named. They take <see cref="EmptyConfigDefinition"/>,
+        ///     which refuses any opcode, so a future cache that fills one fails loudly rather than
+        ///     being read against a guessed table.
+        ///     </para>
+        ///     <para>
+        ///     <see cref="ClientString"/> belongs with them by content - it is equally empty - but is
+        ///     listed separately because it does have a provider, one that reads no file and exists
+        ///     only to publish the group's child count.
+        ///     </para>
+        /// </remarks>
+        public static readonly IReadOnlyList<int> EmptyProviderless = new[] {
+            2, 7, 18, 20, 21, 22, 23, 24, 25, 37, 38, 39, 40, 41, 42, 43, 44, 45, 48
+        };
     }
 }
