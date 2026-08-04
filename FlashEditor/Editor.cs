@@ -72,20 +72,41 @@ namespace FlashEditor {
         /// </summary>
         /// <remarks>
         ///     A record per tab rather than a positional array. The array this replaced had to be
-        ///     kept in the same order as the tab strip - it was read as
+        ///     kept in the same order as the pages - it was read as
         ///     <c>editorTypes[EditorTabControl.SelectedIndex]</c> - so inserting a page anywhere but
         ///     the end silently pointed every tab after it at the wrong index, and the only thing
         ///     standing between the editor and that was a comment. Keyed by the page object, a tab
-        ///     can be moved, reordered or hidden and still name its own index.
+        ///     can be moved, reordered or hidden and still name its own index. That is what made it
+        ///     safe to reorder the pages into navigation order when the tab strip was replaced.
         /// </remarks>
         private sealed class EditorTabBinding {
-            internal EditorTabBinding(int indexId, Action<RSCache>? bind) {
+            internal EditorTabBinding(int indexId, EditorCategory category, Action<RSCache>? bind, int[] alsoIndexes) {
                 IndexId = indexId;
+                Category = category;
                 Bind = bind;
+
+                //The routing index first, then whatever else the tab happens to show. Only the
+                //first one addresses anything; the rest are here to be read.
+                IndexLabel = string.Join(", ", new[] { indexId }.Concat(alsoIndexes));
             }
 
             /// <summary>The cache index this tab edits.</summary>
             internal int IndexId { get; }
+
+            /// <summary>Which navigation group the tab is filed under.</summary>
+            internal EditorCategory Category { get; }
+
+            /// <summary>
+            ///     Every index the tab puts on screen, for the navigation entry to show.
+            /// </summary>
+            /// <remarks>
+            ///     Display only, and deliberately separate from <see cref="IndexId"/>: three tabs
+            ///     present two indexes each because neither half reads without the other, but
+            ///     exactly one of the two is what the tab is routed to. Folding them into one field
+            ///     would put the routing decision back into a list, which is the failure the
+            ///     positional array made.
+            /// </remarks>
+            internal string IndexLabel { get; }
 
             /// <summary>
             ///     Hands the tab's own panel the open cache, for a tab built as a self-contained
@@ -98,6 +119,81 @@ namespace FlashEditor {
             ///     index before it.
             /// </remarks>
             internal Action<RSCache>? Bind { get; }
+        }
+
+        /// <summary>
+        ///     The navigation groups, in the order they appear down the left.
+        /// </summary>
+        /// <remarks>
+        ///     Grouped by what someone is doing rather than by index number, because the index
+        ///     order is an accident of how the cache grew: models are 7, the frames that animate
+        ///     them are 0 and 1, and the animations that sequence those frames are 20. Naming a
+        ///     group is required of every tab, so a new editor cannot arrive without a home.
+        /// </remarks>
+        private enum EditorCategory {
+            /// <summary>The cache as a whole - reference tables and containers rather than content.</summary>
+            Cache,
+
+            /// <summary>The three definition families a player interacts with directly.</summary>
+            Entities,
+
+            /// <summary>Terrain and the effects placed on it.</summary>
+            World,
+
+            /// <summary>Geometry and everything that moves it.</summary>
+            ModelsAndAnimation,
+
+            /// <summary>Authored assets - pictures, sound and the screens built from them.</summary>
+            Media,
+
+            /// <summary>Tables the client reads to configure itself, and the codecs they need.</summary>
+            ConfigAndScripts
+        }
+
+        /// <summary>
+        ///     The heading each <see cref="EditorCategory"/> is drawn with, in navigation order.
+        /// </summary>
+        /// <remarks>
+        ///     Order lives here rather than in the enum's numeric values so that regrouping is one
+        ///     edit. Every constant must appear exactly once - checked when the tree is built, for
+        ///     the same reason an unregistered page is refused.
+        /// </remarks>
+        private static readonly (EditorCategory Category, string Caption)[] navCategories = {
+            (EditorCategory.Cache, "Cache"),
+            (EditorCategory.Entities, "Entities"),
+            (EditorCategory.World, "World"),
+            (EditorCategory.ModelsAndAnimation, "Models and animation"),
+            (EditorCategory.Media, "Media"),
+            (EditorCategory.ConfigAndScripts, "Config and scripts")
+        };
+
+        /// <summary>
+        ///     Holds the editor pages and shows one of them, with no tab strip of its own.
+        /// </summary>
+        /// <remarks>
+        ///     Two dozen editors overflowed a single strip into scroll arrows, so navigation moved
+        ///     to a tree down the left. The pages stay <see cref="TabPage"/>s inside a
+        ///     <see cref="TabControl"/> anyway: that keeps the registration guard enumerating the
+        ///     one collection every editor is in, and keeps lazy loading hanging off
+        ///     SelectedIndexChanged, so this change is navigation only and touches no load path.
+        ///     <para>
+        ///     TCM_ADJUSTRECT is how the control asks itself to reserve room for the strip. Leaving
+        ///     it unanswered hands the page the entire client area, which covers the buttons. The
+        ///     usual <c>ItemSize</c> and <c>Appearance</c> alternative leaves a sliver whose height
+        ///     depends on the active visual style, so it looks right on one machine only.
+        ///     </para>
+        /// </remarks>
+        private sealed class PageDeck : TabControl {
+            private const int TCM_ADJUSTRECT = 0x1328;
+
+            protected override void WndProc(ref Message m) {
+                if (m.Msg == TCM_ADJUSTRECT && !DesignMode) {
+                    m.Result = (IntPtr) 1;
+                    return;
+                }
+
+                base.WndProc(ref m);
+            }
         }
 
         /// <summary>Every editor tab, keyed by the page itself so its position cannot matter.</summary>
@@ -127,10 +223,23 @@ namespace FlashEditor {
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
 
+        /// <summary>Which navigation node shows which page, so the two can be kept in step.</summary>
+        private readonly Dictionary<TabPage, TreeNode> navNodes = new Dictionary<TabPage, TreeNode>();
+
+        /// <summary>
+        ///     Set while the tree and the page deck are being pushed into agreement.
+        /// </summary>
+        /// <remarks>
+        ///     Each drives the other - picking a node selects a page, and selecting a page moves the
+        ///     highlight - so without this the two bounce a selection back and forth.
+        /// </remarks>
+        private bool navSyncing;
+
         List<BackgroundWorker> workers = new List<BackgroundWorker>();
         public Editor() {
             InitializeComponent();
             RegisterEditorTabs();
+            BuildNavigationTree();
 
             //Added here rather than in the designer so the generated file stays untouched
             ToolStripMenuItem saveAsItem = new ToolStripMenuItem("Save As...");
@@ -589,12 +698,11 @@ namespace FlashEditor {
         /// <remarks>
         ///     A <see cref="ProgressBar"/> cannot auto-size, so it is the one control in those strips
         ///     whose height has to be stated at all. Derived from the font rather than written into
-        ///     the designer because the form is <c>AutoScaleMode.Font</c> against
-        ///     <c>AutoScaleDimensions(9, 20)</c> and its own font measures about two thirds of that:
-        ///     every literal size in the designer is multiplied down at runtime while the fonts stated
-        ///     on the controls are not, which is what left the buttons shorter than their captions and
-        ///     the status labels wider than the box around them. <c>DefinitionListPanel</c> sizes its
-        ///     bar the same way and for the same reason.
+        ///     the designer so that it stays right at any font size or DPI: a literal is only correct
+        ///     at the one it was drawn on, and a designer literal that no longer matched its control's
+        ///     font is what left the buttons shorter than their captions and the status labels wider
+        ///     than the box around them. <c>DefinitionListPanel</c> sizes its bar the same way and for
+        ///     the same reason.
         /// </remarks>
         private void SizeProgressBars() {
             foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar, NPCProgressBar })
@@ -602,126 +710,246 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        ///     States which cache index each tab edits, and how the self-contained ones are bound.
+        ///     States which cache index each tab edits, where it is filed in the navigation tree,
+        ///     and how the self-contained ones are bound.
         /// </summary>
         /// <remarks>
         ///     Called once, from the constructor, after <c>InitializeComponent</c> has created the
-        ///     pages. Adding a tab means adding a line here; getting that wrong is caught on the
+        ///     pages. Adding an editor means adding a line here; getting that wrong is caught on the
         ///     next launch rather than by a tab quietly showing another index's contents.
         /// </remarks>
         private void RegisterEditorTabs() {
             //The console describes the cache as a whole rather than one index, so it takes the
             //meta index - which is also what the loader reads to rebuild it on every visit.
-            Register(Console, RSConstants.META_INDEX);
+            Register(Console, RSConstants.META_INDEX, EditorCategory.Cache);
 
-            Register(ItemEditorTab, RSConstants.ITEM_DEFINITIONS_INDEX);
-            Register(SpriteEditorTab, RSConstants.SPRITES_INDEX);
-            Register(NPCEditorTab, RSConstants.NPC_DEFINITIONS_INDEX);
-            Register(ObjectEditorTab, RSConstants.OBJECTS_DEFINITIONS_INDEX);
-            Register(ModelViewerTab, RSConstants.MODELS_INDEX);
-            Register(TextureViewerTab, RSConstants.TEXTURES);
+            Register(ItemEditorTab, RSConstants.ITEM_DEFINITIONS_INDEX, EditorCategory.Entities);
+            Register(NPCEditorTab, RSConstants.NPC_DEFINITIONS_INDEX, EditorCategory.Entities);
+            Register(ObjectEditorTab, RSConstants.OBJECTS_DEFINITIONS_INDEX, EditorCategory.Entities);
+            Register(ModelViewerTab, RSConstants.MODELS_INDEX, EditorCategory.ModelsAndAnimation);
+            Register(SpriteEditorTab, RSConstants.SPRITES_INDEX, EditorCategory.Media);
+            Register(TextureViewerTab, RSConstants.TEXTURES, EditorCategory.Media);
 
             //The self-contained tabs. Each owns its worker and its layout, so all the form does is
             //hand it the cache.
             /* Index 3 has two real levels - a group is one interface and a file is one component -
                so the tab lists interfaces and loads a single interface's components on selection.
                A flat listing of all 42,256 files hid the level that matters. */
-            Register(InterfaceEditorTab, RSConstants.INTERFACE_DEFINITIONS_INDEX,
+            Register(InterfaceEditorTab, RSConstants.INTERFACE_DEFINITIONS_INDEX, EditorCategory.ConfigAndScripts,
                 openCache => InterfacePanel.Bind(openCache));
             /* Index 2 is thirty-five unrelated config families sharing one index, so the tab is one
                grid with a group selector: the group is the record type, not a page of ids. */
-            Register(ConfigEditorTab, RSConstants.CONFIG,
+            Register(ConfigEditorTab, RSConstants.CONFIG, EditorCategory.ConfigAndScripts,
                 openCache => ConfigPanel.Bind(openCache));
-            Register(MapEditorTab, RSConstants.MAPS_INDEX,
+            Register(MapEditorTab, RSConstants.MAPS_INDEX, EditorCategory.World,
                 openCache => MapEditorPanel.Bind(openCache, GetCacheDir()));
             //The tracks tab lists index 11 alongside index 6; 6 is what identifies the tab
-            Register(TrackEditorTab, RSConstants.MUSIC_INDEX,
-                openCache => TrackEditorPanel.Bind(openCache));
+            Register(TrackEditorTab, RSConstants.MUSIC_INDEX, EditorCategory.Media,
+                openCache => TrackEditorPanel.Bind(openCache), RSConstants.MUSIC_2);
             /* Indexes 0 and 1 share one tab because neither can be read without the other: a frame
                addresses its bones positionally and the bone's transform type is what decides how the
                frame's numbers are read. Index 0 is what identifies the tab, since a row is a frame
                set and index 1 is joined onto it. */
-            Register(AnimationEditorTab, RSConstants.FRAMES_INDEX,
-                openCache => AnimationPanel.Bind(openCache));
+            Register(AnimationEditorTab, RSConstants.FRAMES_INDEX, EditorCategory.ModelsAndAnimation,
+                openCache => AnimationPanel.Bind(openCache), RSConstants.SKINS);
             /* Index 4 is one file per group and the group id is the effect id, so the tab is a list
                of records rather than of files. The panel nests three grids under that list because a
                record does: ten tone slots, each with its envelopes and a filter cascade. */
-            Register(SoundEffectEditorTab, RSConstants.SOUND_EFFECTS,
+            Register(SoundEffectEditorTab, RSConstants.SOUND_EFFECTS, EditorCategory.Media,
                 openCache => SoundEffectPanel.Bind(openCache));
             /* Index 10 is one group holding one file, so there is nothing to list: the tab shows the
                256 records inside that file and runs text through them, which is the only place in
-               the editor where a codec can be watched working rather than trusted. */
-            Register(HuffmanEditorTab, RSConstants.HUFFMAN_INDEX,
+               the editor where a codec can be watched working rather than trusted. Filed next to
+               Quick Chat because quick-chat text is what this table compresses. */
+            Register(HuffmanEditorTab, RSConstants.HUFFMAN_INDEX, EditorCategory.ConfigAndScripts,
                 openCache => HuffmanPanel.Bind(openCache));
             /* Index 17 is the enum table whatever its constant is called. An enum is a keyed table,
                so the tab lists the enums and shows the selected one's pairs beside them. */
-            Register(EnumEditorTab, RSConstants.CLIENTSCRIPT_SETTINGS,
+            Register(EnumEditorTab, RSConstants.CLIENTSCRIPT_SETTINGS, EditorCategory.ConfigAndScripts,
                 openCache => EnumPanel.Bind(openCache));
             /* Index 22 is one bit range of one varplayer per file. The second level is the varp: a
                range on its own is three numbers, and against its siblings it is one field of a
                packed variable. */
-            Register(VarBitEditorTab, RSConstants.SCRIPT_CONFIGS,
+            Register(VarBitEditorTab, RSConstants.SCRIPT_CONFIGS, EditorCategory.ConfigAndScripts,
                 openCache => VarBitPanel.Bind(openCache));
             /* Index 28 is two unrelated config blobs sharing an index, so the tab selects between
                them by group in the same shape the Config tab uses on index 2. */
-            Register(DefaultsEditorTab, RSConstants.DEFAULTS,
+            Register(DefaultsEditorTab, RSConstants.DEFAULTS, EditorCategory.ConfigAndScripts,
                 openCache => DefaultsPanel.Bind(openCache));
             /* Index 29 is a single group of records addressed by file id, so there is no second
                level and the shared list panel is the whole tab. */
-            Register(BillboardEditorTab, RSConstants.CONFIG_BILLBOARD,
+            Register(BillboardEditorTab, RSConstants.CONFIG_BILLBOARD, EditorCategory.World,
                 openCache => BillboardPanel.Bind(openCache, billboards));
             /* Index 20, joined to index 0. An animation names its frames as a packed
                (frameSet << 16) | frame id, and index 0 has no name hashes, so that id is the only
                route from an animation to the frames the Animation tab already presents. */
-            Register(AnimationDefinitionsTab, RSConstants.ANIMATIONS_INDEX,
+            Register(AnimationDefinitionsTab, RSConstants.ANIMATIONS_INDEX, EditorCategory.ModelsAndAnimation,
                 openCache => AnimationDefinitionPanel.Bind(openCache));
             /* Index 21 is a flat paged index whose editable opcodes each carry one value, so like
                index 29 the shared list panel is the whole tab. */
-            Register(SpotAnimEditorTab, RSConstants.GRAPHICS_INDEX,
+            Register(SpotAnimEditorTab, RSConstants.GRAPHICS_INDEX, EditorCategory.ModelsAndAnimation,
                 openCache => SpotAnimPanel.Bind(openCache, spotAnims));
             /* Indexes 24 and 25 share this tab: each is a complete quick-chat bank holding both
                menus and messages, split by group rather than by index, so the panel selects the bank
                and the family. Registered against 24 the way the Tracks tab is registered against 6
                while listing 11 beside it. */
-            Register(QuickChatEditorTab, RSConstants.QUICK_CHAT_MESSAGES,
-                openCache => QuickChatPanel.Bind(openCache));
+            Register(QuickChatEditorTab, RSConstants.QUICK_CHAT_MESSAGES, EditorCategory.ConfigAndScripts,
+                openCache => QuickChatPanel.Bind(openCache), RSConstants.QUICK_CHAT_MENU);
             /* Index 27 holds emitters in group 0 and the effectors they name in group 1, two formats
                with no opcode in common, so the tab selects the family. */
-            Register(ParticleEditorTab, RSConstants.CONFIG_PARTICLES,
+            Register(ParticleEditorTab, RSConstants.CONFIG_PARTICLES, EditorCategory.World,
                 openCache => ParticlePanel.Bind(openCache));
             /* Index 33's two groups are two formats with two codecs - a versioned manifest and the
                screens it categorises - so the tab selects the group. */
-            Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS,
+            Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS, EditorCategory.Media,
                 openCache => LoadingScreenPanel.Bind(openCache));
 
-            /* Every page in the strip has to have named its index. An unregistered page is the
+            /* Every page in the deck has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
                sit at its position, or run off the end of the array - so it is refused loudly here,
-               at construction, rather than left to surface as a tab showing the wrong contents. */
+               at construction, rather than left to surface as an editor showing the wrong contents.
+               Hiding the tab strip makes this more load-bearing, not less: a page nothing routes to
+               is now a page with no way to reach it at all. */
             foreach (TabPage page in EditorTabControl.TabPages)
                 if (!editorTabs.ContainsKey(page))
                     throw new InvalidOperationException(
-                        "Editor tab '" + page.Name + "' is in the tab strip but names no cache index." +
+                        "Editor tab '" + page.Name + "' is in the page deck but names no cache index." +
                         " Add a Register call for it in RegisterEditorTabs.");
         }
 
         /// <summary>
-        ///     Records what one tab edits.
+        ///     Records what one editor edits and where it is reached from.
         /// </summary>
-        /// <param name="page">The page, which is the key - so its position in the strip is free to change.</param>
-        /// <param name="indexId">The cache index the tab edits.</param>
+        /// <param name="page">The page, which is the key - so its position in the deck is free to change.</param>
+        /// <param name="indexId">The cache index the editor is routed to.</param>
+        /// <param name="category">Which navigation group it appears under.</param>
         /// <param name="bind">
         ///     Hands the tab's own panel the open cache, for a tab that owns its loading. Null for a
         ///     tab still driven by the loader in <see cref="LoadEditorTab"/>.
         /// </param>
-        private void Register(TabPage page, int indexId, Action<RSCache>? bind = null) {
+        /// <param name="alsoIndexes">
+        ///     Any further indexes the editor puts on screen. Shown in the navigation entry and
+        ///     nowhere else - <paramref name="indexId"/> alone decides what is loaded.
+        /// </param>
+        private void Register(TabPage page, int indexId, EditorCategory category,
+            Action<RSCache>? bind = null, params int[] alsoIndexes) {
             if (page == null)
                 throw new ArgumentNullException(nameof(page));
 
             if (editorTabs.ContainsKey(page))
                 throw new InvalidOperationException("Editor tab '" + page.Name + "' is registered twice.");
 
-            editorTabs.Add(page, new EditorTabBinding(indexId, bind));
+            editorTabs.Add(page, new EditorTabBinding(indexId, category, bind, alsoIndexes));
+        }
+
+        /// <summary>
+        ///     Fills the left-hand navigation tree from the registrations.
+        /// </summary>
+        /// <remarks>
+        ///     Built from <see cref="editorTabs"/> rather than written out a second time, so an
+        ///     editor cannot be registered and then be unreachable, or appear twice, or drift out of
+        ///     step with the index it is routed to. The counts are checked at the end for the same
+        ///     reason <see cref="RegisterEditorTabs"/> checks the deck: a navigation tree missing an
+        ///     entry hides a whole editor and nothing else would say so.
+        ///     <para>
+        ///     Each entry carries its cache index because this is a cache editor and the index is how
+        ///     content is addressed - it is what a user types into every other tool. The two columns
+        ///     are padded rather than owner-drawn: the tree is Consolas, so padding is what lines the
+        ///     numbers up, and the widths come from the longest entry so a new one cannot break it.
+        ///     </para>
+        /// </remarks>
+        private void BuildNavigationTree() {
+            /* Checked for duplicates as well as for count: listing one constant twice and omitting
+               another keeps the length right, and would otherwise surface as a duplicate-key throw
+               naming a page rather than the table that is actually wrong. */
+            EditorCategory[] declared = navCategories.Select(entry => entry.Category).ToArray();
+            if (declared.Length != declared.Distinct().Count() ||
+                declared.Length != Enum.GetValues<EditorCategory>().Length)
+                throw new InvalidOperationException(
+                    "Every EditorCategory needs a heading in navCategories, and each exactly once.");
+
+            //Sized from the entries themselves, so a longer caption widens the column rather than
+            //pushing the index out of alignment
+            int nameWidth = editorTabs.Keys.Max(page => page.Text.Length) + 2;
+            int indexWidth = editorTabs.Values.Max(binding => binding.IndexLabel.Length);
+
+            //One font shared by every heading rather than one each, in the designer's own style of
+            //letting control fonts live as long as the form
+            Font headingFont = new Font(EditorNavTree.Font, FontStyle.Bold);
+
+            EditorNavTree.BeginUpdate();
+            EditorNavTree.Nodes.Clear();
+            navNodes.Clear();
+
+            foreach ((EditorCategory category, string caption) in navCategories) {
+                TreeNode group = EditorNavTree.Nodes.Add(caption);
+                group.NodeFont = headingFont;
+
+                /* Deck order, not dictionary order: the deck is what the designer states, so the
+                   arrow keys inside it walk the editors in the same order the tree lists them. */
+                foreach (TabPage page in EditorTabControl.TabPages) {
+                    EditorTabBinding binding = editorTabs[page];
+                    if (binding.Category != category)
+                        continue;
+
+                    TreeNode node = group.Nodes.Add(
+                        page.Text.PadRight(nameWidth) + binding.IndexLabel.PadLeft(indexWidth));
+                    node.Tag = page;
+                    node.Name = page.Name;
+                    navNodes.Add(page, node);
+                }
+
+                if (group.Nodes.Count == 0)
+                    throw new InvalidOperationException(
+                        "Navigation group '" + caption + "' has no editors in it. Remove the group or file one under it.");
+            }
+
+            EditorNavTree.ExpandAll();
+            EditorNavTree.EndUpdate();
+
+            if (navNodes.Count != editorTabs.Count)
+                throw new InvalidOperationException(
+                    "The navigation tree lists " + navNodes.Count + " editors but " + editorTabs.Count +
+                    " are registered, so at least one cannot be reached.");
+
+            SyncNavigationToDeck();
+        }
+
+        /// <summary>
+        ///     Shows the page a navigation entry names.
+        /// </summary>
+        /// <remarks>
+        ///     Assigning <c>SelectedTab</c> rather than loading anything here: that raises
+        ///     SelectedIndexChanged, which stays the one route into <see cref="LoadEditorTab"/> and
+        ///     so into the already-loaded guard. Lazy loading is therefore unchanged by the move to
+        ///     a tree.
+        ///     <para>
+        ///     A group heading carries no page and deliberately does not expand or collapse on
+        ///     selection: arrowing down the tree passes over every heading, and collapsing one under
+        ///     the cursor would fold away the entries the user is arrowing towards. The glyph,
+        ///     double-click and the left and right arrows already toggle it.
+        ///     </para>
+        /// </remarks>
+        private void EditorNavTree_AfterSelect(object sender, TreeViewEventArgs e) {
+            if (navSyncing || e.Node?.Tag is not TabPage page)
+                return;
+
+            EditorTabControl.SelectedTab = page;
+        }
+
+        /// <summary>Moves the navigation highlight onto whatever page the deck is showing.</summary>
+        private void SyncNavigationToDeck() {
+            TabPage? page = EditorTabControl.SelectedTab;
+            if (page == null || !navNodes.TryGetValue(page, out TreeNode? node))
+                return;
+
+            navSyncing = true;
+            try {
+                EditorNavTree.SelectedNode = node;
+            }
+            finally {
+                navSyncing = false;
+            }
         }
 
         /// <summary>
@@ -790,32 +1018,32 @@ namespace FlashEditor {
 
             switch (type) {
                 case RSConstants.META_INDEX:
-                    bgw.DoWork += delegate {
+                    /* Only the gathering runs on the worker. Populating the two list views used to
+                       run here as well, and touching a WinForms control off the UI thread paints it
+                       outside any invalidation the form knows about: the reference-table grid stayed
+                       drawn over whichever editor was opened next, most visibly on the Models tab,
+                       which leaves most of its page uncovered. Hand the results back through
+                       RunWorkerCompleted, which is raised on the thread that started the worker. */
+                    bgw.DoWork += delegate (object? _, DoWorkEventArgs args) {
                         List<RSReferenceTable> refTables = new List<RSReferenceTable>();
                         for (int k = 0 ; k < cache.referenceTables.Length ; k++)
                             if (cache.referenceTables[k] != null)
                                 refTables.Add(cache.referenceTables[k]);
 
                         List<RSContainer> containers = new List<RSContainer>();
-                        foreach (KeyValuePair<int, SortedDictionary<int, RSContainer>> types in cache.containers) {
-                            int containerType = types.Key;
-                            foreach (KeyValuePair<int, RSContainer> container in types.Value) {
-                                RSContainer c = container.Value;
-                                containers.Add(c);
-                            }
-                        }
+                        foreach (KeyValuePair<int, SortedDictionary<int, RSContainer>> types in cache.containers)
+                            foreach (KeyValuePair<int, RSContainer> container in types.Value)
+                                containers.Add(container.Value);
 
-                        /*
-                        RefTableListView.ChildrenGetter = delegate (object x) {
-                            //Reference table object
-                            RSReferenceTable tbl = (RSReferenceTable) x;
+                        args.Result = (refTables, containers);
+                    };
 
-                            //List of archive IDs to be set as the childs
-                            List<int> idList = new List<int>();
-                            idList.AddRange(tbl.validArchiveIds);
+                    bgw.RunWorkerCompleted += delegate (object? _, RunWorkerCompletedEventArgs args) {
+                        if (args.Error != null || args.Cancelled || args.Result == null)
+                            return;
 
-                            return idList;
-                        };*/
+                        (List<RSReferenceTable> refTables, List<RSContainer> containers) =
+                            ((List<RSReferenceTable>, List<RSContainer>)) args.Result;
 
                         CompressCol.AspectGetter = (x) => ((RSContainer) x).GetCompressionString();
 
@@ -1149,11 +1377,15 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        /// When you flick to a different editor page
+        ///     When you flick to a different editor page.
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+        /// <remarks>
+        ///     Still the only place a page load is triggered from, whether the page was reached from
+        ///     the navigation tree or by the deck's own arrow keys, so the highlight is moved from
+        ///     here rather than from the tree's handler.
+        /// </remarks>
         private void EditorTabControl_SelectedIndexChanged(object sender, EventArgs e) {
+            SyncNavigationToDeck();
             LoadEditorTab(EditorTabControl.SelectedTab);
         }
 

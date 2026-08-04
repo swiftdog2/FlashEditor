@@ -36,7 +36,9 @@ namespace FlashEditor {
             openDirectoryToolStripMenuItem = new ToolStripMenuItem();
             viewToolStripMenuItem = new ToolStripMenuItem();
             alternateRowsToolStripMenuItem = new ToolStripMenuItem();
-            EditorTabControl = new TabControl();
+            EditorNavSplit = new SplitContainer();
+            EditorNavTree = new TreeView();
+            EditorTabControl = new PageDeck();
             Console = new TabPage();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
@@ -58,6 +60,7 @@ namespace FlashEditor {
             olvColumn3 = new OLVColumn();
             olvColumn6 = new OLVColumn();
             groupBox1 = new GroupBox();
+            MetaControlsLayout = new TableLayoutPanel();
             button6 = new Button();
             button5 = new Button();
             button4 = new Button();
@@ -169,6 +172,10 @@ namespace FlashEditor {
             colorDialog1 = new ColorDialog();
             EditButton = new OLVColumn();
             menuStrip1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize) EditorNavSplit).BeginInit();
+            EditorNavSplit.Panel1.SuspendLayout();
+            EditorNavSplit.Panel2.SuspendLayout();
+            EditorNavSplit.SuspendLayout();
             EditorTabControl.SuspendLayout();
             Console.SuspendLayout();
             tabControl1.SuspendLayout();
@@ -177,6 +184,7 @@ namespace FlashEditor {
             tabPage2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ContainerListView).BeginInit();
             groupBox1.SuspendLayout();
+            MetaControlsLayout.SuspendLayout();
             ItemEditorTab.SuspendLayout();
             groupBox4.SuspendLayout();
             ItemControlsLayout.SuspendLayout();
@@ -213,7 +221,7 @@ namespace FlashEditor {
             menuStrip1.Items.AddRange(new ToolStripItem[] { openToolStripMenuItem, viewToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
-            menuStrip1.Size = new Size(1145, 42);
+            menuStrip1.Size = new Size(1424, 42);
             menuStrip1.TabIndex = 1;
             menuStrip1.Text = "menuStrip1";
             // 
@@ -260,41 +268,81 @@ namespace FlashEditor {
             alternateRowsToolStripMenuItem.Size = new Size(456, 42);
             alternateRowsToolStripMenuItem.Text = "Alternate Row Colours";
             alternateRowsToolStripMenuItem.Click += alternateRowsToolStripMenuItem_Click;
-            // 
+            //
+            // EditorNavSplit
+            //
+            // The navigation tree and the editor it shows, side by side. FixedPanel.Panel1 keeps the
+            // tree at its width when the window is resized, so growing the window grows the editor -
+            // the tree's width is set by its longest entry and does not benefit from more.
+            EditorNavSplit.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            EditorNavSplit.FixedPanel = FixedPanel.Panel1;
+            EditorNavSplit.Location = new Point(12, 41);
+            EditorNavSplit.Name = "EditorNavSplit";
+            EditorNavSplit.Panel1.Controls.Add(EditorNavTree);
+            EditorNavSplit.Panel1MinSize = 200;
+            EditorNavSplit.Panel2.Controls.Add(EditorTabControl);
+            EditorNavSplit.Size = new Size(1400, 595);
+            EditorNavSplit.SplitterDistance = 275;
+            EditorNavSplit.SplitterWidth = 4;
+            EditorNavSplit.TabIndex = 3;
+            //
+            // EditorNavTree
+            //
+            // Consolas because the entries are two padded columns - the editor's name and the cache
+            // index it addresses - and a proportional font would leave the numbers ragged.
+            // FullRowSelect needs ShowLines off; WinForms ignores it otherwise.
+            EditorNavTree.BorderStyle = BorderStyle.None;
+            EditorNavTree.Dock = DockStyle.Fill;
+            EditorNavTree.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
+            EditorNavTree.FullRowSelect = true;
+            EditorNavTree.HideSelection = false;
+            EditorNavTree.HotTracking = true;
+            EditorNavTree.Indent = 20;
+            EditorNavTree.Location = new Point(0, 0);
+            EditorNavTree.Name = "EditorNavTree";
+            EditorNavTree.ShowLines = false;
+            EditorNavTree.ShowRootLines = true;
+            EditorNavTree.Size = new Size(275, 595);
+            EditorNavTree.TabIndex = 0;
+            EditorNavTree.AfterSelect += EditorNavTree_AfterSelect;
+            //
             // EditorTabControl
-            // 
-            EditorTabControl.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            //
+            // A PageDeck, so it holds the pages without drawing a tab strip. The order below is the
+            // order the navigation tree lists them in, because the tree is built by walking this
+            // collection - so the deck's own arrow keys and the tree agree.
             EditorTabControl.Controls.Add(Console);
             EditorTabControl.Controls.Add(ItemEditorTab);
-            EditorTabControl.Controls.Add(SpriteEditorTab);
             EditorTabControl.Controls.Add(NPCEditorTab);
             EditorTabControl.Controls.Add(ObjectEditorTab);
-            EditorTabControl.Controls.Add(InterfaceEditorTab);
-            EditorTabControl.Controls.Add(ModelViewerTab);
-            EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Controls.Add(MapEditorTab);
-            EditorTabControl.Controls.Add(TrackEditorTab);
+            EditorTabControl.Controls.Add(ParticleEditorTab);
+            EditorTabControl.Controls.Add(BillboardEditorTab);
+            EditorTabControl.Controls.Add(ModelViewerTab);
             EditorTabControl.Controls.Add(AnimationEditorTab);
+            EditorTabControl.Controls.Add(AnimationDefinitionsTab);
+            EditorTabControl.Controls.Add(SpotAnimEditorTab);
+            EditorTabControl.Controls.Add(SpriteEditorTab);
+            EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
+            EditorTabControl.Controls.Add(TrackEditorTab);
+            EditorTabControl.Controls.Add(LoadingScreenEditorTab);
             EditorTabControl.Controls.Add(ConfigEditorTab);
-            EditorTabControl.Controls.Add(HuffmanEditorTab);
             EditorTabControl.Controls.Add(EnumEditorTab);
             EditorTabControl.Controls.Add(VarBitEditorTab);
             EditorTabControl.Controls.Add(DefaultsEditorTab);
-            EditorTabControl.Controls.Add(BillboardEditorTab);
-            EditorTabControl.Controls.Add(AnimationDefinitionsTab);
-            EditorTabControl.Controls.Add(SpotAnimEditorTab);
+            EditorTabControl.Controls.Add(InterfaceEditorTab);
             EditorTabControl.Controls.Add(QuickChatEditorTab);
-            EditorTabControl.Controls.Add(ParticleEditorTab);
-            EditorTabControl.Controls.Add(LoadingScreenEditorTab);
+            EditorTabControl.Controls.Add(HuffmanEditorTab);
+            EditorTabControl.Dock = DockStyle.Fill;
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            EditorTabControl.Location = new Point(12, 41);
+            EditorTabControl.Location = new Point(0, 0);
             EditorTabControl.Name = "EditorTabControl";
             EditorTabControl.SelectedIndex = 0;
             EditorTabControl.Size = new Size(1121, 595);
-            EditorTabControl.TabIndex = 3;
+            EditorTabControl.TabIndex = 0;
             EditorTabControl.SelectedIndexChanged += EditorTabControl_SelectedIndexChanged;
-            // 
+            //
             // Console
             // 
             Console.BackColor = Color.White;
@@ -354,7 +402,9 @@ namespace FlashEditor {
             // 
             // typeCol
             // 
-            typeCol.AspectName = "type";
+            //RSReferenceTable has no "type" member, so the column resolved to nothing and every row
+            //showed a blank index. indexId is the field RSCache fills for this list.
+            typeCol.AspectName = "indexId";
             typeCol.Text = "Type";
             typeCol.Width = 80;
             // 
@@ -440,7 +490,8 @@ namespace FlashEditor {
             // 
             // olvColumn1
             // 
-            olvColumn1.AspectName = "type";
+            //Blank for the same reason typeCol was: RSContainer names the index indexId, not type.
+            olvColumn1.AspectName = "indexId";
             olvColumn1.IsEditable = false;
             olvColumn1.Text = "Type";
             olvColumn1.Width = 67;
@@ -487,47 +538,72 @@ namespace FlashEditor {
             // 
             groupBox1.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupBox1.BackColor = Color.White;
-            groupBox1.Controls.Add(button6);
-            groupBox1.Controls.Add(button5);
-            groupBox1.Controls.Add(button4);
+            groupBox1.Controls.Add(MetaControlsLayout);
             groupBox1.FlatStyle = FlatStyle.Popup;
             groupBox1.Font = new Font("Consolas", 12.25F);
             groupBox1.Location = new Point(875, 3);
             groupBox1.Name = "groupBox1";
-            groupBox1.Size = new Size(243, 532);
+            // Right edge was at 1118 inside a 1113-wide page, and the Right anchor preserves that
+            // negative margin at every size, so the box hung off the page however the form was
+            // resized. Narrowed rather than moved left, which would have put it over tabControl1.
+            groupBox1.Size = new Size(235, 532);
             groupBox1.TabIndex = 5;
             groupBox1.TabStop = false;
             groupBox1.Text = "Cache Tools";
-            // 
+            //
+            // MetaControlsLayout
+            //
+            // Same rebuild as ItemControlsLayout, and for the same defect - see the note there. The
+            // three buttons stated a 35-pixel height that the form's broken scale factor cut to 22,
+            // which is less than the 12.25pt font they inherit needs, so "Compare to Output" and
+            // "Reload Original" lost their descenders. Nothing here states a pixel: the rows measure
+            // their buttons and the spacer row takes the slack.
+            MetaControlsLayout.ColumnCount = 1;
+            MetaControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            MetaControlsLayout.Controls.Add(button4, 0, 0);
+            MetaControlsLayout.Controls.Add(button5, 0, 1);
+            MetaControlsLayout.Controls.Add(button6, 0, 2);
+            MetaControlsLayout.Dock = DockStyle.Fill;
+            MetaControlsLayout.Name = "MetaControlsLayout";
+            MetaControlsLayout.RowCount = 4;
+            MetaControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            MetaControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            MetaControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            MetaControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            MetaControlsLayout.TabIndex = 0;
+            //
             // button6
-            // 
+            //
+            button6.AutoSize = true;
+            button6.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button6.BackColor = Color.White;
-            button6.Location = new Point(6, 111);
+            button6.Dock = DockStyle.Fill;
             button6.Name = "button6";
-            button6.Size = new Size(231, 35);
-            button6.TabIndex = 4;
+            button6.TabIndex = 2;
             button6.Text = "Reload Output";
             button6.UseVisualStyleBackColor = false;
             button6.Click += button6_Click;
-            // 
+            //
             // button5
-            // 
+            //
+            button5.AutoSize = true;
+            button5.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button5.BackColor = Color.White;
-            button5.Location = new Point(6, 70);
+            button5.Dock = DockStyle.Fill;
             button5.Name = "button5";
-            button5.Size = new Size(231, 35);
-            button5.TabIndex = 3;
+            button5.TabIndex = 1;
             button5.Text = "Reload Original";
             button5.UseVisualStyleBackColor = false;
             button5.Click += button5_Click;
-            // 
+            //
             // button4
-            // 
+            //
+            button4.AutoSize = true;
+            button4.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             button4.BackColor = Color.White;
-            button4.Location = new Point(6, 29);
+            button4.Dock = DockStyle.Fill;
             button4.Name = "button4";
-            button4.Size = new Size(231, 35);
-            button4.TabIndex = 2;
+            button4.TabIndex = 0;
             button4.Text = "Compare to Output";
             button4.UseVisualStyleBackColor = false;
             button4.Click += button4_Click;
@@ -559,13 +635,14 @@ namespace FlashEditor {
             //
             // ItemControlsLayout
             //
-            // Every control in this strip used to state its own Location and Size, and the form is
-            // AutoScaleMode.Font against AutoScaleDimensions(9, 20) while its own font measures about
-            // two thirds of that - so each literal was multiplied down at runtime while the fonts
-            // stated on the controls were not. The buttons ended up shorter than the text they hold
-            // and the status label wider than the box around it. Nothing here states a pixel: the
-            // rows measure their contents, the spacer row takes the slack, and the whole strip is
-            // correct at any font or DPI rather than at the one it was drawn on.
+            // Every control in this strip used to state its own Location and Size, and the form used
+            // to scale those literals down by a third (see the AutoScaleMode note on the form) while
+            // the fonts stated on the controls were not scaled at all. The buttons ended up shorter
+            // than the text they hold and the status label wider than the box around it. The scale
+            // factor is fixed now, but a literal would still only be right at one font size, so
+            // nothing here states a pixel: the rows measure their contents, the spacer row takes the
+            // slack, and the strip is correct at any font or DPI rather than at the one it was drawn
+            // on.
             ItemControlsLayout.ColumnCount = 1;
             ItemControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             ItemControlsLayout.Controls.Add(button9, 0, 0);
@@ -954,11 +1031,9 @@ namespace FlashEditor {
             // NPCControlsLayout
             //
             // Same rebuild as ItemControlsLayout, and for the same defect - see the note there. This
-            // strip was the last one still stating a Size on its buttons, which is what cut the tops
-            // and bottoms off "Import NPC" and "Export Selected": the form is AutoScaleMode.Font
-            // against AutoScaleDimensions(9, 20) and its own font measures about two thirds of that,
-            // so the stated 35-pixel height was scaled down while the 12pt font on the button was
-            // not. Nothing here states a pixel.
+            // is what cut the tops and bottoms off "Import NPC" and "Export Selected": the stated
+            // 35-pixel height was scaled down by the form while the 12pt font on the button was not.
+            // Nothing here states a pixel.
             NPCControlsLayout.ColumnCount = 1;
             NPCControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             NPCControlsLayout.Controls.Add(button3, 0, 0);
@@ -1645,11 +1720,29 @@ namespace FlashEditor {
             // 
             // Editor
             // 
-            AutoScaleDimensions = new SizeF(9F, 20F);
-            AutoScaleMode = AutoScaleMode.Font;
+            // Font autoscaling exists to absorb a different *system* font, and this form never uses
+            // one: the form and every control on it name Consolas outright, so the system font
+            // cannot move this layout and the only thing that varies between machines is DPI.
+            //
+            // Worse, the dimensions it measured against had stopped describing the form. (9, 20) is
+            // Consolas 12.25pt; the form's own font is 8.25pt and measures (6, 13), so the runtime
+            // scale factor was 0.67 wide by 0.65 tall. Every designer literal and every
+            // SizeType.Absolute row shrank by a third while the fonts stated on the controls did
+            // not, which is what repeatedly sliced the tops and bottoms off button captions and cut
+            // combo boxes down to two glyphs. It also cost the tab strip a third of its width, which
+            // is why two dozen tabs overflow into scroll arrows.
+            //
+            // Dpi mode is exact where font mode is only approximate. Text metrics are integers, so
+            // the font ratio quantises: at 125% Consolas 8.25pt goes (6, 13) -> (8, 17), a factor of
+            // 1.33 wide by 1.31 tall against a true 1.25, distorting the two axes by different
+            // amounts. Dpi mode computes 120/96 exactly and identically on both.
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.White;
-            ClientSize = new Size(1145, 648);
-            Controls.Add(EditorTabControl);
+            // Widened by exactly the navigation column plus its splitter, so every page still gets
+            // the 1113px it was laid out against rather than being squeezed by the tree.
+            ClientSize = new Size(1424, 648);
+            Controls.Add(EditorNavSplit);
             Controls.Add(menuStrip1);
             DoubleBuffered = true;
             Font = new Font("Consolas", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
@@ -1661,6 +1754,10 @@ namespace FlashEditor {
             Resize += Editor_Resize;
             menuStrip1.ResumeLayout(false);
             menuStrip1.PerformLayout();
+            EditorNavSplit.Panel1.ResumeLayout(false);
+            EditorNavSplit.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize) EditorNavSplit).EndInit();
+            EditorNavSplit.ResumeLayout(false);
             EditorTabControl.ResumeLayout(false);
             Console.ResumeLayout(false);
             tabControl1.ResumeLayout(false);
@@ -1669,6 +1766,8 @@ namespace FlashEditor {
             tabPage2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) ContainerListView).EndInit();
             groupBox1.ResumeLayout(false);
+            MetaControlsLayout.ResumeLayout(false);
+            MetaControlsLayout.PerformLayout();
             ItemEditorTab.ResumeLayout(false);
             ItemControlsLayout.ResumeLayout(false);
             ItemControlsLayout.PerformLayout();
@@ -1711,12 +1810,15 @@ namespace FlashEditor {
         private System.Windows.Forms.FolderBrowserDialog folderBrowserDialog1;
         private System.Windows.Forms.MenuStrip menuStrip1;
         private System.Windows.Forms.ToolStripMenuItem openToolStripMenuItem;
-        private System.Windows.Forms.TabControl EditorTabControl;
+        private System.Windows.Forms.SplitContainer EditorNavSplit;
+        private System.Windows.Forms.TreeView EditorNavTree;
+        private PageDeck EditorTabControl;
         private System.Windows.Forms.TabPage ItemEditorTab;
         private System.Windows.Forms.TabPage SpriteEditorTab;
         private System.Windows.Forms.TabPage Console;
         private System.Diagnostics.EventLog eventLog1;
         private System.Windows.Forms.GroupBox groupBox1;
+        private System.Windows.Forms.TableLayoutPanel MetaControlsLayout;
         private BrightIdeasSoftware.TreeListView SpriteListView;
         private BrightIdeasSoftware.OLVColumn ID;
         private BrightIdeasSoftware.OLVColumn Frames;
