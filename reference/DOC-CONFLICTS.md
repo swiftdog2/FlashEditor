@@ -18,6 +18,10 @@ Two rules this log exists to enforce:
 | Where | Claim | Problem |
 |---|---|---|
 | `STATE_OF_THE_EDITOR.md` | Assessment header dated 2026-07-31; sections 1, 2 and 7 describe a build and suite that no longer exist | Already flagged in `CLAUDE.md`, still unresolved. Sections 7a-7f are worth keeping; the rest is a historical write-up presented as current fact. |
+| `Texture.cs:522-526` | Comment says two type-12 opcodes are swallowed | There are four: `(12,2)`, `(12,4)`, `(12,5)`, `(12,6)`. Both type-12 nodes in the cache are affected. |
+| `TextureGraphEvaluator.cs:1660` | `EvalBlur`, headed "TYPE 17: Blur" | Dead code, and the same file's live type-17 arm is headed "NOT blur". The client settles it as an HSL adjust. Three further mono arms (types 10, 20, 33) are unreachable by the same mono-flag rule. Type 21 is a three-input lerp with no numeric parameter, not an emboss, and both files say emboss. |
+| `Texture.cs` decoder comments | Type labels for 9, 22, 30 and 35 | Wrong; 9 and 22 are labelled as each other's job. The evaluator has all four right, so the two files disagree with each other. This is the trap `CLAUDE.md` already records - settle a type from the dispatch and the client, never from a method's own header. |
+| `index-survey/index-009-TEXTURES.md` | 946 groups, table version 443, 3784 trailing bytes, 507 uncompressed, index 26 declaring 1408 textures | All repack residue. Build 639 is 915, 440, 0, 476, and index 26 declaring 915 - index 26 and index 9 are 1:1 in the vanilla capture. |
 | `TextureGraphConformanceTests.EveryTexture_ProducesAThumbnail` | Iterates textures declared by index 26 but carrying no graph in index 9 | The repack has 462 of those; the vanilla capture has none, so on the default cache that loop body never runs. The test is not silently green - it reports the population - but the branch needs either a synthetic case or an explicit statement that it only exercises on the repack. |
 
 ## Corrected
