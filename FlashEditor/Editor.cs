@@ -183,9 +183,25 @@ namespace FlashEditor {
         ///     usual <c>ItemSize</c> and <c>Appearance</c> alternative leaves a sliver whose height
         ///     depends on the active visual style, so it looks right on one machine only.
         ///     </para>
+        ///     <para>
+        ///     Multiline is what removes the scroll arrows, and it is not cosmetic. A single-line
+        ///     tab control whose tabs are wider than itself creates a real <c>msctls_updown32</c>
+        ///     child to scroll them, and TCM_ADJUSTRECT does not touch it: that only reshapes the
+        ///     display rectangle, so the spinner kept drawing over the top-right of every page and
+        ///     could not be clicked, because navigation no longer went through the strip. A
+        ///     multiline tab control wraps instead of scrolling and never creates one. The rows it
+        ///     wraps onto cost nothing here, since the strip's area is already reclaimed above.
+        ///     </para>
         /// </remarks>
         private sealed class PageDeck : TabControl {
             private const int TCM_ADJUSTRECT = 0x1328;
+
+            /// <summary>Creates the deck with the strip suppressed.</summary>
+            public PageDeck() {
+                //Set here rather than in the designer so a regenerated form cannot drop it and
+                //bring the scroll arrows back.
+                Multiline = true;
+            }
 
             protected override void WndProc(ref Message m) {
                 if (m.Msg == TCM_ADJUSTRECT && !DesignMode) {
