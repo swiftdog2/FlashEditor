@@ -1,9 +1,13 @@
 ﻿using BrightIdeasSoftware;
 using FlashEditor.cache;
 using FlashEditor.cache.sprites;
+//RSBufferedImage lives here and derives from SpriteDefinition, so the sprite tab has to be able to
+//tell a rendered frame apart from a set before it writes anything back.
+using FlashEditor.cache.util;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
@@ -109,6 +113,16 @@ namespace FlashEditor {
         ///     on every visit to the tab and throw away the sort and the selection with it.
         /// </remarks>
         private readonly IDefinitionListDescriptor billboards = new BillboardListDescriptor();
+
+        /// <summary>
+        ///     What the spot-animations tab shows, held for the reason <see cref="billboards"/> is.
+        /// </summary>
+        /// <remarks>
+        ///     Index 21 is the other new tab that is a flat list with no wrapper panel of its own, so
+        ///     its descriptor has nowhere else to live. Building one per bind would reload the index on
+        ///     every visit to the tab and throw away the sort and the selection with it.
+        /// </remarks>
+        private readonly IDefinitionListDescriptor spotAnims = new GraphicListDescriptor();
 
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
@@ -656,6 +670,29 @@ namespace FlashEditor {
                level and the shared list panel is the whole tab. */
             Register(BillboardEditorTab, RSConstants.CONFIG_BILLBOARD,
                 openCache => BillboardPanel.Bind(openCache, billboards));
+            /* Index 20, joined to index 0. An animation names its frames as a packed
+               (frameSet << 16) | frame id, and index 0 has no name hashes, so that id is the only
+               route from an animation to the frames the Animation tab already presents. */
+            Register(AnimationDefinitionsTab, RSConstants.ANIMATIONS_INDEX,
+                openCache => AnimationDefinitionPanel.Bind(openCache));
+            /* Index 21 is a flat paged index whose editable opcodes each carry one value, so like
+               index 29 the shared list panel is the whole tab. */
+            Register(SpotAnimEditorTab, RSConstants.GRAPHICS_INDEX,
+                openCache => SpotAnimPanel.Bind(openCache, spotAnims));
+            /* Indexes 24 and 25 share this tab: each is a complete quick-chat bank holding both
+               menus and messages, split by group rather than by index, so the panel selects the bank
+               and the family. Registered against 24 the way the Tracks tab is registered against 6
+               while listing 11 beside it. */
+            Register(QuickChatEditorTab, RSConstants.QUICK_CHAT_MESSAGES,
+                openCache => QuickChatPanel.Bind(openCache));
+            /* Index 27 holds emitters in group 0 and the effectors they name in group 1, two formats
+               with no opcode in common, so the tab selects the family. */
+            Register(ParticleEditorTab, RSConstants.CONFIG_PARTICLES,
+                openCache => ParticlePanel.Bind(openCache));
+            /* Index 33's two groups are two formats with two codecs - a versioned manifest and the
+               screens it categorises - so the tab selects the group. */
+            Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS,
+                openCache => LoadingScreenPanel.Bind(openCache));
 
             /* Every page in the strip has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -801,8 +838,16 @@ namespace FlashEditor {
                     });
 
                     bgw.DoWork += delegate {
+                        /* The declared files, not the slot space. A page is 256 ids wide and index 19
+                           is sparse, so groupCount * 256 counts slots that were never allocated -
+                           it reported 20,480 items where the table declares 20,427, and every one of
+                           the difference cost a caught FileNotFoundException on the way past. */
+                        List<(int Group, int File)> addresses =
+                            cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX).ToList();
+                        CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+
                         int done = 0;
-                        int total = referenceTable!.GetArchiveCount() * 256;
+                        int total = addresses.Count;
                         int percentile = Math.Max(1, total / 100);
 
                         Debug(@"  _                     _ _               _ _                     ");
@@ -815,27 +860,22 @@ namespace FlashEditor {
                         Debug(@"                                  |___/                           ");
                         Debug(@"Loading Items");
 
-                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
-                            int archiveId = archive.Key;
+                        foreach ((int archiveId, int file) in addresses) {
+                            try {
+                                ItemDefinition item = cache.GetItemDefinition(archiveId, file);
+                                int itemId = addressing.DefinitionId(archiveId, file);
+                                item.SetId(itemId); //Set the item ID
+                                cache.items.Add(itemId, item);
+                            }
+                            catch (Exception ex) {
+                                Debug(ex.Message);
+                            }
+                            finally {
+                                done++;
 
-                            Debug("Loading archive " + archive.Key);
-                            for (int file = 0 ; file < 256 ; file++) {
-                                try {
-                                    ItemDefinition item = cache.GetItemDefinition(archiveId, file);
-                                    int itemId = archiveId * 256 + file;
-                                    item.SetId(itemId); //Set the item ID
-                                    cache.items.Add(itemId, item);
-                                }
-                                catch (Exception ex) {
-                                    Debug(ex.Message);
-                                }
-                                finally {
-                                    done++;
-
-                                    //Only update the progress bar for each 1% completed
-                                    if (done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
-                                }
+                                //Only update the progress bar for each 1% completed
+                                if (done % percentile == 0 || done == total)
+                                    bgw.ReportProgress(done * 100 / total, "Loaded " + done + "/" + total + " (" + done * 100 / total + "%)");
                             }
                         }
 
@@ -935,35 +975,38 @@ namespace FlashEditor {
                     bgw.DoWork += async delegate {
                         List<NPCDefinition> npcs = new List<NPCDefinition>();
 
+                        /* The declared files, not the slot space. This walked 106 groups x 128 and
+                           reported "Loaded 13568/13568" where index 18 declares 13,359 - 209 empty
+                           slots counted as NPCs, each one a caught FileNotFoundException that also
+                           made the count look like the truth. */
+                        List<(int Group, int File)> addresses =
+                            cache.EnumerateFiles(RSConstants.NPC_DEFINITIONS_INDEX).ToList();
+                        CacheAddressing addressing = CacheAddressing.For(RSConstants.NPC_DEFINITIONS_INDEX);
+
                         int done = 0;
-                        int total = referenceTable!.GetArchiveCount() * 128;
+                        int total = addresses.Count;
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading NPCs");
 
                         Debug("Loading NPC data");
 
-                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
-                            int archiveId = archive.Key;
+                        foreach ((int archiveId, int file) in addresses) {
+                            try {
+                                NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
+                                npc.SetId(addressing.DefinitionId(archiveId, file)); //Set the NPC ID
+                                cache.npcs[npc.id] = npc;
+                                npcs.Add(npc);
+                            }
+                            catch (Exception ex) {
+                                Debug(ex.Message);
+                            }
+                            finally {
+                                done++;
 
-                            Debug("Loading archive " + archiveId);
-                            for (int file = 0 ; file < 128 ; file++) {
-                                try {
-                                    NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
-                                    npc.SetId(archiveId * 128 + file); //Set the NPC ID
-                                    cache.npcs[npc.id] = npc;
-                                    npcs.Add(npc);
-                                }
-                                catch (Exception ex) {
-                                    Debug(ex.Message);
-                                }
-                                finally {
-                                    done++;
-
-                                    //Only update the progress bar for each 1% completed
-                                    if (done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
-                                }
+                                //Only update the progress bar for each 1% completed
+                                if (done % percentile == 0 || done == total)
+                                    bgw.ReportProgress(done * 100 / total, "Loaded " + done + "/" + total + " (" + done * 100 / total + "%)");
                             }
                         }
 
@@ -985,30 +1028,36 @@ namespace FlashEditor {
                     bgw.DoWork += delegate {
                         List<ObjectDefinition> objects = new List<ObjectDefinition>();
 
-                        int filesPerArchive = referenceTable!.GetArchiveEntry(referenceTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
-                        int total = referenceTable.GetArchiveCount() * filesPerArchive;
+                        /* The declared files, not a page size read off group 0. Deriving the page
+                           size from the first group's file count is right only while that group
+                           happens to be full, and 64 of index 16's 224 groups are not - so the id
+                           arithmetic below it named the wrong definition for every group after the
+                           first short one, and the total was the same slot-space overcount the item
+                           and NPC tabs had. */
+                        List<(int Group, int File)> addresses =
+                            cache.EnumerateFiles(RSConstants.OBJECTS_DEFINITIONS_INDEX).ToList();
+                        CacheAddressing addressing = CacheAddressing.For(RSConstants.OBJECTS_DEFINITIONS_INDEX);
+
+                        int total = addresses.Count;
                         int done = 0;
                         int percentile = Math.Max(1, total / 100);
 
                         bgw.ReportProgress(0, "Loading Objects");
 
-                        foreach (KeyValuePair<int, RSArchiveEntry> archive in referenceTable.GetArchiveEntries()) {
-                            int archiveId = archive.Key;
-                            for (int file = 0 ; file < filesPerArchive ; file++) {
-                                try {
-                                    ObjectDefinition obj = cache.GetObjectDefinition(archiveId, file);
-                                    obj.id = archiveId * filesPerArchive + file;
-                                    cache.objects[obj.id] = obj;
-                                    objects.Add(obj);
-                                }
-                                catch (Exception ex) {
-                                    Debug(ex.Message);
-                                }
-                                finally {
-                                    done++;
-                                    if (done % percentile == 0 || done == total)
-                                        bgw.ReportProgress((done + 1) * 100 / total, $"Loaded {done}/{total} {(done + 1) * 100 / total}%");
-                                }
+                        foreach ((int archiveId, int file) in addresses) {
+                            try {
+                                ObjectDefinition obj = cache.GetObjectDefinition(archiveId, file);
+                                obj.id = addressing.DefinitionId(archiveId, file);
+                                cache.objects[obj.id] = obj;
+                                objects.Add(obj);
+                            }
+                            catch (Exception ex) {
+                                Debug(ex.Message);
+                            }
+                            finally {
+                                done++;
+                                if (done % percentile == 0 || done == total)
+                                    bgw.ReportProgress(done * 100 / total, $"Loaded {done}/{total} {done * 100 / total}%");
                             }
                         }
 
@@ -1135,9 +1184,160 @@ namespace FlashEditor {
                 Process.Start(GetCacheDir());
         }
 
+        /// <summary>
+        ///     Writes the stored bytes of every selected sprite set out as a <c>.dat</c> file.
+        /// </summary>
+        /// <remarks>
+        ///     The <b>stored</b> bytes, read straight back out of the cache, rather than a re-encode
+        ///     of the decoded set. The two agree for every group in both caches, but an export is what
+        ///     an import is later checked against, so it has to be the file rather than our opinion of
+        ///     the file - a codec defect would otherwise be exported and imported without ever being
+        ///     visible.
+        ///     <para>
+        ///     Frame rows are skipped. The tree's children are <see cref="RSBufferedImage"/> instances
+        ///     wrapped as sprite sets for display; a frame is not separately addressable in the cache
+        ///     and has no bytes of its own to write.
+        ///     </para>
+        /// </remarks>
         private void ExportSpriteDatBtn_Click(object sender, EventArgs e) {
-            //Nothing yet bro
-            MessageBox.Show("Sorry doesn't work");
+            if (cache == null)
+                return;
+
+            List<SpriteDefinition> sets = SelectedSpriteSets();
+            if (sets.Count == 0) {
+                SpriteLoadingLabel.Text = "Select a sprite set to export";
+                return;
+            }
+
+            string directory = Path.Combine(RSConstants.CACHE_OUTPUT_DIRECTORY, "sprites");
+
+            try {
+                Directory.CreateDirectory(directory);
+
+                int written = 0;
+                foreach (SpriteDefinition set in sets) {
+                    byte[] stored = cache.ReadFileBytes(RSConstants.SPRITES_INDEX, set.index, SpriteFileId(set.index));
+                    File.WriteAllBytes(Path.Combine(directory, set.index + ".dat"), stored);
+                    written++;
+                }
+
+                SpriteLoadingLabel.Text = "Exported " + written + " sprite set(s)";
+                Debug("Exported " + written + " sprite sets to " + directory);
+            }
+            catch (Exception ex) {
+                //Reported rather than thrown: a failed export must cost the export and nothing else
+                SpriteLoadingLabel.Text = "Export failed";
+                Debug("Sprite export failed: " + ex);
+                MessageBox.Show(this,
+                    "Could not export to:" + Environment.NewLine + directory +
+                    Environment.NewLine + Environment.NewLine + ex.Message,
+                    "Export sprites", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        ///     Replaces the selected sprite set with the bytes of a sprite file on disk.
+        /// </summary>
+        /// <remarks>
+        ///     The button existed with no handler attached at all, so index 8 was read-only in the
+        ///     editor whatever the codec beneath it could do - the same shape index 18's write path
+        ///     was in.
+        ///     <para>
+        ///     The file is decoded before anything is staged. A sprite set is located from the end of
+        ///     the file backwards, so a wrong length is not a truncated set but a set whose palette and
+        ///     frame metadata are read out of the pixel planes; <c>SpriteDefinition.Decode</c> refuses
+        ///     that rather than producing a plausible picture, which is what makes the check worth
+        ///     something. The file's own bytes are then what gets stored, not a re-encode of what was
+        ///     decoded, so the import does not depend on our encoder agreeing with whatever wrote the
+        ///     file.
+        ///     </para>
+        ///     <para>
+        ///     Nothing is written when the cache already holds those bytes. The comparison is against
+        ///     the <b>decompressed</b> file - a GZip re-encode is never byte-identical in this cache,
+        ///     so comparing containers would report a difference every time and rewrite the group, its
+        ///     CRC, and the reference-table entry of every group packed beside it.
+        ///     </para>
+        /// </remarks>
+        private void ImportSpriteBtn_Click(object sender, EventArgs e) {
+            if (cache == null || SpriteListView.SelectedObject is not SpriteDefinition target ||
+                target is RSBufferedImage) {
+                MessageBox.Show(this, "Select the sprite set to overwrite first.", "Import sprite",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using OpenFileDialog picker = new OpenFileDialog {
+                Title = "Import sprite set " + target.index,
+                Filter = "Sprite set (*.dat)|*.dat|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            try {
+                byte[] imported = File.ReadAllBytes(picker.FileName);
+
+                //Decoded into a throwaway first, so a file that will not parse costs nothing at all.
+                //The selected row is only touched once the file is known to be readable and the
+                //write has been staged.
+                SpriteDefinition validated = SpriteDefinition.DecodeFromStream(new JagStream(imported));
+
+                int fileId = SpriteFileId(target.index);
+
+                if (cache.ReadFileBytes(RSConstants.SPRITES_INDEX, target.index, fileId).AsSpan().SequenceEqual(imported)) {
+                    SpriteLoadingLabel.Text = "Sprite " + target.index + " already holds those bytes";
+                    return;
+                }
+
+                cache.WriteFile(RSConstants.SPRITES_INDEX, target.index, fileId, new JagStream(imported));
+
+                /* The selected instance is re-decoded in place rather than swapped for another. It is
+                   a node of a TreeListView whose children are its own rasterised frames, so replacing
+                   the object means rebuilding that branch; disposing it drops the frames and the
+                   thumbnail, which describe the bytes that were there before this, and the next paint
+                   rasterises the new ones lazily. */
+                target.Dispose();
+                target.Decode(new JagStream(imported));
+                SpriteListView.RefreshObject(target);
+                SpriteLoadingLabel.Text = "Imported sprite " + target.index + " (" + validated.GetFrameCount() + " frames)";
+            }
+            catch (Exception ex) {
+                //Reported rather than thrown: a malformed file must cost the import and nothing else
+                Debug("Sprite import failed: " + ex);
+                MessageBox.Show(this,
+                    "Could not import that file as a sprite set:" + Environment.NewLine + ex.Message,
+                    "Import sprite", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>The selected rows that are sprite sets rather than rendered frames.</summary>
+        /// <returns>The selected sets, which may be empty.</returns>
+        private List<SpriteDefinition> SelectedSpriteSets() {
+            var sets = new List<SpriteDefinition>();
+            foreach (object row in SpriteListView.SelectedObjects)
+                if (row is SpriteDefinition set && row is not RSBufferedImage)
+                    sets.Add(set);
+            return sets;
+        }
+
+        /// <summary>
+        ///     The file id a sprite group holds, read off the reference table rather than assumed.
+        /// </summary>
+        /// <remarks>
+        ///     Every group in both caches holds exactly one file and its id is 0, but the id is
+        ///     declared rather than derived - <c>CacheAddressing.FileOf</c> refuses to answer for a
+        ///     <c>GroupPerId</c> index for exactly this reason, and index 23 is the case that proves a
+        ///     single-file group's id is not always 0.
+        /// </remarks>
+        /// <param name="groupId">The sprite set's group id in index 8.</param>
+        /// <returns>The file id within that group.</returns>
+        /// <exception cref="InvalidOperationException">The group declares no file.</exception>
+        private int SpriteFileId(int groupId) {
+            int[] fileIds = cache.GetFileIds(RSConstants.SPRITES_INDEX, groupId);
+            if (fileIds.Length == 0)
+                throw new InvalidOperationException(
+                    "Index " + RSConstants.SPRITES_INDEX + " group " + groupId + " declares no file.");
+            return fileIds[0];
         }
 
         //Finished editing a definition
@@ -1176,24 +1376,24 @@ namespace FlashEditor {
             PrintDifferences(newDefinition, currentItem);
         }
 
+        /// <summary>
+        ///     Stages an edited object definition.
+        /// </summary>
+        /// <remarks>
+        ///     The address comes from <see cref="CacheAddressing"/> through
+        ///     <see cref="DefinitionWriter.Save"/> rather than from a page size read off group 0. That
+        ///     derivation is right only while group 0 is full, and 64 of index 16's 224 groups are
+        ///     not, so a short group anywhere before the edited one made this write into a slot
+        ///     belonging to a different object and report success.
+        /// </remarks>
         private void ObjectListView_CellEditFinished(object sender, CellEditEventArgs e) {
             ObjectDefinition newDef = (ObjectDefinition) e.RowObject;
 
-            //Skip write if nothing actually changed
-            byte[] newBytes = newDef.Encode().ToArray();
-            byte[] oldBytes = currentObject.Encode().ToArray();
-            if (newBytes.AsSpan().SequenceEqual(oldBytes))
+            if (!DefinitionWriter.Save(cache, RSConstants.OBJECTS_DEFINITIONS_INDEX, newDef.id,
+                                       newDef.Encode().ToArray()))
                 return;
 
             cache.objects[newDef.id] = newDef;
-
-            var refTable = cache.GetReferenceTable(RSConstants.OBJECTS_DEFINITIONS_INDEX);
-            int filesPerArchive = refTable.GetArchiveEntry(refTable.GetArchiveEntries().Keys.First()).GetValidFileIds().Length;
-            int archiveId = newDef.id / filesPerArchive;
-            int entryId = newDef.id % filesPerArchive;
-
-            JagStream data = new JagStream(newBytes);
-            cache.WriteFile(RSConstants.OBJECTS_DEFINITIONS_INDEX, archiveId, entryId, data);
 
             PrintDifferences(newDef, currentObject);
         }
@@ -1880,6 +2080,16 @@ namespace FlashEditor {
             VarBitPanel.Bind(null);
             DefaultsPanel.Bind(null);
             BillboardPanel.Bind(null);
+
+            //And the five newest, on exactly the same terms. Index 20 is the one that matters here -
+            //15,260 records - but every one of them owns a DefinitionListPanel whose worker walks a
+            //group or a whole index, so a reload started from any other tab would otherwise leave a
+            //sweep reading out of a file store that is about to be disposed.
+            AnimationDefinitionPanel.Bind(null);
+            SpotAnimPanel.Bind(null);
+            QuickChatPanel.Bind(null);
+            ParticlePanel.Bind(null);
+            LoadingScreenPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {

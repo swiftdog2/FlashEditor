@@ -246,7 +246,53 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["sprite.framesStoredColumnMajorWithAnUnrecoverableOrder"] = 0,
                     ["sprite.setsWithAPixelPlaneTrailer"] = 0,
                     ["sprite.pixelPlaneTrailerBytes"] = 0,
-                    ["sprite.framesOverflowingTheCanvas"] = 0
+                    ["sprite.framesOverflowingTheCanvas"] = 0,
+
+                    //Index 27. Emitter opcodes 5 and 31 are aliases for the same pair of size
+                    //bounds and every emitter carries exactly one of them, so the two sum to the
+                    //group's file count - which is one of the six that move between the caches.
+                    //Measured by a scratchpad reader that walks the sector chains and the container
+                    //and archive layers itself, so neither figure came through this project's
+                    //decoders.
+                    ["particles.emittersStoringOneSizeValue"] = 14,
+                    ["particles.emittersStoringASizePair"] = 255,
+
+                    //Indexes 20 and 21. Every record of both is byte-identical between the two
+                    //caches, so these figures are the same on either - which is why the repack
+                    //profile below repeats them rather than carrying its own. They are still scoped
+                    //here rather than written into an assertion, because a third 639 cache would be
+                    //free to differ and would then fail on a number measured somewhere else.
+                    ["animation.recordsOutOfAscendingOpcodeOrder"] = 7940,
+                    ["animation.recordsRepeatingAnOpcode"] = 202,
+                    ["animation.distinctOpcodeSequences"] = 517,
+                    ["animation.recordsWithOpcode16"] = 2,
+                    ["animation.frameSetsNamed"] = 3249,
+                    ["animation.secondaryFrameReferencesNotDeclared"] = 31,
+                    ["graphic.recordsOutOfAscendingOpcodeOrder"] = 442,
+                    ["graphic.recordsRepeatingAnOpcode"] = 0,
+                    ["graphic.distinctOpcodeSequences"] = 47,
+                    ["graphic.recordsWithAnEffectOpcode"] = 0,
+                    ["graphic.recordsWithRecolours"] = 488,
+                    ["graphic.recordsRespectingMovement"] = 158,
+
+                    //Index 12. Identical in both caches over the groups the reference table
+                    //declares, which is what the sweep enumerates: the repack's only difference on
+                    //this index is the two undeclared groups, and they are reported separately
+                    //rather than counted. Every figure below was measured by a scratchpad reader
+                    //that walks the sector chains and the container layer itself, and validated by
+                    //requiring the repack to reproduce it exactly once its two orphans were
+                    //excluded - which it did, for every one.
+                    ["clientscript.instructions"] = 335158,
+                    ["clientscript.operand.integer"] = 226840,
+                    ["clientscript.operand.byte"] = 62699,
+                    ["clientscript.operand.text"] = 45619,
+                    ["clientscript.emptyTextOperands"] = 1833,
+                    ["clientscript.highTextBytes"] = 82,
+                    ["clientscript.scriptsWithASwitchBlock"] = 485,
+                    ["clientscript.switchBlocks"] = 831,
+                    ["clientscript.switchCases"] = 11962,
+                    ["clientscript.distinctOpcodes"] = 582,
+                    ["clientscript.maxOpcode"] = 7314
                 });
         }
 
@@ -332,7 +378,48 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["sprite.framesStoredColumnMajorWithAnUnrecoverableOrder"] = 0,
                     ["sprite.setsWithAPixelPlaneTrailer"] = 13,
                     ["sprite.pixelPlaneTrailerBytes"] = 39,
-                    ["sprite.framesOverflowingTheCanvas"] = 11
+                    ["sprite.framesOverflowingTheCanvas"] = 11,
+
+                    //Index 27. Both moved against the vanilla capture, because this cache holds 403
+                    //emitters to its 269 - the two still sum to the group's declared file count, so
+                    //every emitter carries exactly one of the two size encodings here too.
+                    ["particles.emittersStoringOneSizeValue"] = 16,
+                    ["particles.emittersStoringASizePair"] = 387,
+
+                    //Indexes 20 and 21. Identical to the vanilla capture's, and measured against
+                    //this cache rather than copied across: every one of the 15,260 animation
+                    //records and 2,956 spot-animation records holds the same bytes in both caches,
+                    //so these are two of the indexes the repack left alone.
+                    ["animation.recordsOutOfAscendingOpcodeOrder"] = 7940,
+                    ["animation.recordsRepeatingAnOpcode"] = 202,
+                    ["animation.distinctOpcodeSequences"] = 517,
+                    ["animation.recordsWithOpcode16"] = 2,
+                    ["animation.frameSetsNamed"] = 3249,
+                    ["animation.secondaryFrameReferencesNotDeclared"] = 31,
+                    ["graphic.recordsOutOfAscendingOpcodeOrder"] = 442,
+                    ["graphic.recordsRepeatingAnOpcode"] = 0,
+                    ["graphic.distinctOpcodeSequences"] = 47,
+                    ["graphic.recordsWithAnEffectOpcode"] = 0,
+                    ["graphic.recordsWithRecolours"] = 488,
+                    ["graphic.recordsRespectingMovement"] = 158,
+
+                    //Index 12. The same figures as the vanilla capture and measured against this
+                    //cache rather than copied across: the 4149 declared scripts hold identical
+                    //bytes in both, and this cache's whole delta on the index is groups 699 and
+                    //700, which no reference table declares. They contribute 121 instructions and
+                    //no opcode that does not already occur elsewhere, so excluding them lands on
+                    //the vanilla figure exactly.
+                    ["clientscript.instructions"] = 335158,
+                    ["clientscript.operand.integer"] = 226840,
+                    ["clientscript.operand.byte"] = 62699,
+                    ["clientscript.operand.text"] = 45619,
+                    ["clientscript.emptyTextOperands"] = 1833,
+                    ["clientscript.highTextBytes"] = 82,
+                    ["clientscript.scriptsWithASwitchBlock"] = 485,
+                    ["clientscript.switchBlocks"] = 831,
+                    ["clientscript.switchCases"] = 11962,
+                    ["clientscript.distinctOpcodes"] = 582,
+                    ["clientscript.maxOpcode"] = 7314
                 });
         }
 

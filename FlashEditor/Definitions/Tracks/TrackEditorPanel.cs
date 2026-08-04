@@ -21,8 +21,13 @@ namespace FlashEditor.Definitions.Tracks {
     ///     1404 tracks takes a few seconds and the definition tabs already established what that
     ///     should look like.
     ///
-    ///     Read only. Nothing here writes to the cache, and <see cref="Track"/> has no encoder, so
-    ///     there is no repack path and no byte-identity sweep to go with one.
+    ///     <b>Export is MIDI; replace is not.</b> <see cref="Track"/> now re-encodes the packed format
+    ///     byte for byte, so a track can be replaced with the bytes of another packed file - which is
+    ///     what "Replace..." does. It deliberately does <b>not</b> accept a MIDI file. The decoder is a
+    ///     projection: it takes the packed runs apart into a standard MIDI file and every field of the
+    ///     packed form has more than one encoding that projects to the same MIDI, so going the other
+    ///     way is a re-authoring problem rather than an inverse, and one this codec does not solve.
+    ///     Offering it would produce plausible files that are not what the client reads.
     /// </remarks>
     public sealed class TrackEditorPanel : UserControl {
         /// <summary>
@@ -68,6 +73,17 @@ namespace FlashEditor.Definitions.Tracks {
             Enabled = false
         };
 
+        /* Docked Top like the export button and added before it, so the two stack in the order they
+           are declared. Disabled until a single row is selected: replacing takes one target, and a
+           multi-row selection has no single track to write the chosen file into. */
+        private readonly Button replaceButton = new Button {
+            Text = "Replace (.dat)...",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Font = new Font("Consolas", 9F),
+            Enabled = false
+        };
+
         private readonly ProgressBar progress = new ProgressBar { Dock = DockStyle.Bottom, Height = 20 };
 
         private readonly Label status = new Label {
@@ -90,6 +106,7 @@ namespace FlashEditor.Definitions.Tracks {
 
             list.SelectedIndexChanged += (_, _) => ShowDetails(list.SelectedObject as Track);
             exportButton.Click += (_, _) => ExportSelected();
+            replaceButton.Click += (_, _) => ReplaceSelected();
         }
 
         /// <summary>
@@ -112,6 +129,7 @@ namespace FlashEditor.Definitions.Tracks {
             list.ClearObjects();
             details.Clear();
             exportButton.Enabled = false;
+            replaceButton.Enabled = false;
 
             if (cache == null) {
                 status.Text = "No cache loaded";
@@ -151,6 +169,7 @@ namespace FlashEditor.Definitions.Tracks {
             detailGroup.Controls.Add(details);
             side.Controls.Add(detailGroup);
             side.Controls.Add(exportButton);
+            side.Controls.Add(replaceButton);
 
             split.Panel1.Controls.Add(list);
             split.Panel2.Controls.Add(side);
@@ -262,6 +281,7 @@ namespace FlashEditor.Definitions.Tracks {
 
         private void ShowDetails(Track? track) {
             exportButton.Enabled = list.SelectedObjects.Count > 0;
+            replaceButton.Enabled = cache != null && list.SelectedObjects.Count == 1 && track != null;
 
             if (track == null) {
                 details.Clear();
@@ -351,6 +371,98 @@ namespace FlashEditor.Definitions.Tracks {
                 status.Text = "Export failed: " + ex.Message;
                 Debug("Track export failed: " + ex);
             }
+        }
+
+        /// <summary>
+        ///     Replaces the selected track's stored file with the bytes of a packed file on disk.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Packed bytes, not MIDI.</b> The picker's filter says so and the decode below is what
+        ///     enforces it: a MIDI file starts <c>MThd</c>, and <c>Track.Decode</c> reads the track
+        ///     count and division from the <i>last</i> three bytes and then walks an opcode stream the
+        ///     client has a case for, so it refuses one long before anything is staged.
+        ///     <para>
+        ///     The file's own bytes are what gets stored rather than a re-encode of the decoded track.
+        ///     They are the same thing for a file this decoder accepts - the codec is a concatenation
+        ///     - but writing what was decoded rather than what was read would make the import depend on
+        ///     our encoder agreeing with whatever produced the file, and there is no need for it to.
+        ///     </para>
+        ///     <para>
+        ///     Nothing is written when the cache already holds those bytes. The comparison is against
+        ///     the <b>decompressed</b> file, which is what <c>RSCache.ReadFileBytes</c> returns: a GZip
+        ///     re-encode is never byte-identical in this cache, so comparing containers would report a
+        ///     difference for every track and rewrite the group, its CRC and the reference-table entry
+        ///     of every group packed beside it.
+        ///     </para>
+        /// </remarks>
+        private void ReplaceSelected() {
+            if (cache == null || list.SelectedObjects.Count != 1 || list.SelectedObject is not Track target) {
+                status.Text = "Select a single track to replace";
+                return;
+            }
+
+            using var picker = new OpenFileDialog {
+                Title = "Replace " + LabelFor(target.IndexId).ToLowerInvariant() + " track " + target.Id,
+                Filter = "Packed track (*.dat)|*.dat|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            try {
+                byte[] imported = File.ReadAllBytes(picker.FileName);
+
+                //Decoded to validate. The packed format is self-describing only from its trailer
+                //outwards, so "our decoder walks it to the end" is the whole of the check available
+                //- and it is worth something, because the decoder throws on an opcode the client has
+                //no case for rather than skipping it.
+                Track decoded = new Track { Id = target.Id, IndexId = target.IndexId, NameHash = target.NameHash }
+                    .Decode(new JagStream(imported));
+
+                int fileId = FileIdOf(cache, target);
+
+                if (cache.ReadFileBytes(target.IndexId, target.Id, fileId).AsSpan().SequenceEqual(imported)) {
+                    status.Text = "Track " + target.Id + " already holds those bytes";
+                    return;
+                }
+
+                cache.WriteFile(target.IndexId, target.Id, fileId, new JagStream(imported));
+
+                decoded.Name = target.Name;
+                list.RemoveObject(target);
+                list.AddObject(decoded);
+                list.SelectedObject = decoded;
+                status.Text = "Staged " + imported.Length.ToString("N0") + " bytes into track " + target.Id;
+            }
+            catch (Exception ex) {
+                //Reported rather than thrown: a malformed file must cost the replace and nothing else
+                status.Text = "Replace failed: " + ex.Message;
+                Debug("Track replace failed: " + ex);
+                MessageBox.Show(this,
+                    "Could not read that file as a packed track:" + Environment.NewLine + ex.Message,
+                    "Replace track", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        ///     The file id a track's group holds, read off the reference table rather than assumed.
+        /// </summary>
+        /// <remarks>
+        ///     Every group in both track indexes holds exactly one file, but the id of that file is
+        ///     declared rather than derived - <c>CacheAddressing.FileOf</c> refuses to answer for a
+        ///     <c>GroupPerId</c> index for exactly this reason, and index 23 is the case that proves
+        ///     it is not always 0.
+        /// </remarks>
+        /// <param name="open">The open cache.</param>
+        /// <param name="track">The track being replaced.</param>
+        /// <returns>The file id within the track's group.</returns>
+        /// <exception cref="InvalidOperationException">The group declares no file.</exception>
+        private static int FileIdOf(RSCache open, Track track) {
+            int[] fileIds = open.GetFileIds(track.IndexId, track.Id);
+            if (fileIds.Length == 0)
+                throw new InvalidOperationException(
+                    "Index " + track.IndexId + " group " + track.Id + " declares no file to replace.");
+            return fileIds[0];
         }
 
         /// <summary>Builds an export file name that is unique and says what the track is.</summary>

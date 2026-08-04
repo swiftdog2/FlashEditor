@@ -1,8 +1,13 @@
 # Index 13 - FONTS
 
 **Format:** fully-understood  
-**Capability:** none  
+**Capability:** codec, no tab  
 **Effort:** small
+
+> **Not sprite format.** `00-WORKLIST.md` files index 13 as sprite-adjacent behind index 8. The
+> dependency is real - the glyphs are in index 8 at the same id - but the format claim is not:
+> index 13 holds `Class197` metrics, and none of its 25 groups parses as a sprite set. Recorded in
+> `reference/DOC-CONFLICTS.md`, re-verified against the client and both caches on 2026-08-04.
 
 ## What it is
 
@@ -25,9 +30,18 @@ Names are recoverable (index 13 sets the identifiers flag). Java `String.hashCod
 
 ## Current capability
 
-No font support whatsoever. `RSConstants.FONTS_INDEX = 13` is declared at `FlashEditor/Cache/RSConstants.cs:28` and referenced nowhere else in the solution - a repo-wide grep for `FONTS_INDEX` returns that one declaration line and nothing more. There is no `FontDefinition`, no `RSCache.GetFont`, no font decode or encode anywhere (`FlashEditor/Definitions/` holds Item, NPC, Object, Model, FloorUnderlay, FloorOverlay, MapSceneIcon, Sprites/, Tracks/ and nothing font-shaped). Index 13 is absent from `Editor.editorTypes` (`FlashEditor/Editor.cs:62-75`), so there is no tab and `LoadEditorTab`'s switch (`Editor.cs:524`) has no case for it. No test in `FlashEditor.Tests` names index 13. Every `Font` hit in `Editor.cs`, `Editor.Designer.cs` and `FlashEditor/Map/*.cs` is `System.Drawing.Font`.
+`FlashEditor/Definitions/Fonts/` holds the codec: `FontDefinition` (decode, encode, the derived
+kerning matrix, `Load`), `FontNames` (hash-verified name recovery) and `FontListDescriptor` (a
+tab-ready definition list). Index 13 has a row in `CacheAddressing.TryGetFor` as `GroupPerId`.
+`FlashEditor.Tests/Definitions/FontDefinitionCodecTests.cs` pins both record shapes against bytes
+stated literally, and `RealCacheFontTests.cs` sweeps every declared group.
 
-What DOES exist is index-agnostic plumbing that already covers index 13 byte-for-byte, which is the substrate an implementer starts from:
+**There is still no tab.** Index 13 is absent from `Editor.editorTypes` (`FlashEditor/Editor.cs:62-75`)
+and `LoadEditorTab`'s switch has no case for it, so nothing in the UI reaches the descriptor. Every
+`Font` hit in `Editor.cs`, `Editor.Designer.cs` and `FlashEditor/Map/*.cs` is `System.Drawing.Font`.
+
+Index-agnostic plumbing that already covered index 13 byte-for-byte before any of the above, and
+still does:
 - `RSCache.LoadReferenceTables` (`FlashEditor/Cache/RSCache.cs:542-551`) decodes index 13's table at startup, so it shows up as a row in the CRC-table tab (`Editor.cs:526-560`) - metadata only, no payload view.
 - `RSCache.ReadFile(13, groupId, 0)` and `RSCache.WriteFile` work generically; the payload is opaque bytes.
 - `RealCacheFixture.SampleArchivesPerIndex = 250` (`FlashEditor.Tests/Cache/RealCache/RealCacheFixture.cs:24`) and index 13 has 25 archives, so `ArchivesToExamine` returns ALL of them (`:125-126`) in sampled and full runs alike. That means `RealCacheConformanceTests.ArchiveCrcs_MatchTheCapturedContainerBytes` (`:119`), `Containers_PreserveTheirPayloadAndHeaderAcrossReEncode` (`:169`), `Archives_ReEncodeToTheCapturedPayloadBytes` (`:218`), `UnchangedArchives_SurviveTheEditPathWithTheirPayloadIntact` (`:295`) and `SingleFileArchives_CarryNoTrailerInTheCapturedBytes` (`:365`) already sweep all 25 font groups.
@@ -39,12 +53,9 @@ The glyph half is nearer: the Sprites tab enumerates every index-8 group via `ca
 
 ## Gaps
 
-- A `FontDefinition` class in `FlashEditor/Definitions/` implementing `IDefinition` with `Decode(JagStream)`/`Encode()` over the 263-byte record: version byte, kerning flag, `byte[256]` advance widths, line height, the two discarded bytes kept verbatim, ascent, descent. Plus the kerning branch (`Class197.java:33-84`): two `byte[256]` tables then two delta-encoded per-character arrays sized by the first table, then the 256x256 kern matrix derived via `Class378.method4003`. Dead in this cache but must be implemented and must round-trip, same reasoning as the format-7 reference-table branches in AGENTS.md.
-- `RSCache.GetFont(int groupId)` alongside `GetSprite`, reading `ReadFile(RSConstants.FONTS_INDEX, groupId, 0)`.
-- A codec test against captured bytes - not a round trip. Capture one of the 25 payloads into `FlashEditor.Tests/Fixtures/RealCache/` the way the existing archive fixtures are, and assert the decoded field values against the client's read order.
-- A byte-identity sweep over all 25 groups, comparing the DECOMPRESSED 263-byte payload (never the container - one of the 25 is BZip2 and the other 24 are GZip, which never re-encodes identically). Assert exact 263-byte consumption and 263-byte re-emission, no `or` in the assertion.
-- A Fonts tab: add `RSConstants.FONTS_INDEX` to `Editor.editorTypes` (`Editor.cs:62-75`), a `case` in the `LoadEditorTab` switch following the `SPRITES_INDEX` pattern (`Editor.cs:624`), a designer tab plus loading label and progress bar matching `Editor.Designer.cs`, and a list view keyed on the 25 groups.
-- Name recovery for the 14 groups whose hash has not been cracked, so the tab lists fonts by name rather than by id.
+- A Fonts tab: add `RSConstants.FONTS_INDEX` to `Editor.editorTypes` (`Editor.cs:62-75`), a `case` in the `LoadEditorTab` switch following the `SPRITES_INDEX` pattern (`Editor.cs:624`), a designer tab plus loading label and progress bar matching `Editor.Designer.cs`, and a `DefinitionListPanel` bound to `new FontListDescriptor()`.
+- A per-character advance editor. The list descriptor deliberately shows the scalars only; 256 widths are not columns, and an edited width cannot be judged without the glyph beside it.
+- Name recovery for the 14 groups whose hash has not been cracked. Only 11 of 25 fall to any wordlist tried, and `FontNames` ships nothing it cannot prove by hash.
 - A glyph preview that joins index 13 metrics to the index-8 sheet at the same group id - the only way to see whether an edited width is right. This is the bulk of the work; everything above it is mechanical.
 
 ## Notes and traps

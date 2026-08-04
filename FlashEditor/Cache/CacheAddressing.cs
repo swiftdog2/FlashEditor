@@ -315,6 +315,11 @@ namespace FlashEditor.cache {
                 //method3684 both fetch a sprite set through method2733, so a group holding anything
                 //other than one file would throw before the decoder ever ran. Every group in both
                 //caches holds exactly one file, id 0.
+                //
+                //Index 13 is index 8's partner and shares its id space. Class119_Sub1.java:42 fetches
+                //a font's metrics with the same single-file accessor, and Class114.java:82,89 passes
+                //one id i to both archives - method3684(spritesArchive, i) for the glyph sheet and
+                //method2182(fontsArchive, i) for the metrics - so a font id is a group id on both.
                 case RSConstants.SKINS:
                 case RSConstants.SOUND_EFFECTS:
                 case RSConstants.MUSIC_INDEX:
@@ -322,6 +327,7 @@ namespace FlashEditor.cache {
                 case RSConstants.CLIENT_SCRIPTS_INDEX:
                 case RSConstants.DEFAULTS:
                 case RSConstants.SPRITES_INDEX:
+                case RSConstants.FONTS_INDEX:
                     addressing = GroupPerId;
                     return true;
 

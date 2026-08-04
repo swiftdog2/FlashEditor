@@ -157,6 +157,11 @@ namespace FlashEditor {
             VarBitEditorTab = new TabPage();
             DefaultsEditorTab = new TabPage();
             BillboardEditorTab = new TabPage();
+            AnimationDefinitionsTab = new TabPage();
+            SpotAnimEditorTab = new TabPage();
+            QuickChatEditorTab = new TabPage();
+            ParticleEditorTab = new TabPage();
+            LoadingScreenEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -277,6 +282,11 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(VarBitEditorTab);
             EditorTabControl.Controls.Add(DefaultsEditorTab);
             EditorTabControl.Controls.Add(BillboardEditorTab);
+            EditorTabControl.Controls.Add(AnimationDefinitionsTab);
+            EditorTabControl.Controls.Add(SpotAnimEditorTab);
+            EditorTabControl.Controls.Add(QuickChatEditorTab);
+            EditorTabControl.Controls.Add(ParticleEditorTab);
+            EditorTabControl.Controls.Add(LoadingScreenEditorTab);
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(12, 41);
             EditorTabControl.Name = "EditorTabControl";
@@ -851,6 +861,8 @@ namespace FlashEditor {
             ImportSpriteBtn.TabIndex = 0;
             ImportSpriteBtn.Text = "Import Sprite";
             ImportSpriteBtn.UseVisualStyleBackColor = false;
+            //The button shipped with no handler attached, so it did nothing at all when clicked
+            ImportSpriteBtn.Click += ImportSpriteBtn_Click;
             // 
             // SpriteListView
             // 
@@ -1549,6 +1561,56 @@ namespace FlashEditor {
             BillboardEditorTab.Text = "Billboards";
             BillboardEditorTab.UseVisualStyleBackColor = true;
             //
+            // AnimationDefinitionsTab
+            //
+            AnimationDefinitionsTab.Controls.Add(AnimationDefinitionPanel);
+            AnimationDefinitionsTab.Location = new Point(4, 37);
+            AnimationDefinitionsTab.Name = "AnimationDefinitionsTab";
+            AnimationDefinitionsTab.Size = new Size(1113, 554);
+            AnimationDefinitionsTab.TabIndex = 18;
+            AnimationDefinitionsTab.Text = "Animations";
+            AnimationDefinitionsTab.UseVisualStyleBackColor = true;
+            //
+            // SpotAnimEditorTab
+            //
+            SpotAnimEditorTab.Controls.Add(SpotAnimPanel);
+            SpotAnimEditorTab.Location = new Point(4, 37);
+            SpotAnimEditorTab.Name = "SpotAnimEditorTab";
+            SpotAnimEditorTab.Size = new Size(1113, 554);
+            SpotAnimEditorTab.TabIndex = 19;
+            SpotAnimEditorTab.Text = "Spot Anims";
+            SpotAnimEditorTab.UseVisualStyleBackColor = true;
+            //
+            // QuickChatEditorTab
+            //
+            QuickChatEditorTab.Controls.Add(QuickChatPanel);
+            QuickChatEditorTab.Location = new Point(4, 37);
+            QuickChatEditorTab.Name = "QuickChatEditorTab";
+            QuickChatEditorTab.Size = new Size(1113, 554);
+            QuickChatEditorTab.TabIndex = 20;
+            QuickChatEditorTab.Text = "Quick Chat";
+            QuickChatEditorTab.UseVisualStyleBackColor = true;
+            //
+            // ParticleEditorTab
+            //
+            ParticleEditorTab.Controls.Add(ParticlePanel);
+            ParticleEditorTab.Location = new Point(4, 37);
+            ParticleEditorTab.Name = "ParticleEditorTab";
+            ParticleEditorTab.Size = new Size(1113, 554);
+            ParticleEditorTab.TabIndex = 21;
+            ParticleEditorTab.Text = "Particles";
+            ParticleEditorTab.UseVisualStyleBackColor = true;
+            //
+            // LoadingScreenEditorTab
+            //
+            LoadingScreenEditorTab.Controls.Add(LoadingScreenPanel);
+            LoadingScreenEditorTab.Location = new Point(4, 37);
+            LoadingScreenEditorTab.Name = "LoadingScreenEditorTab";
+            LoadingScreenEditorTab.Size = new Size(1113, 554);
+            LoadingScreenEditorTab.TabIndex = 22;
+            LoadingScreenEditorTab.Text = "Loading Screens";
+            LoadingScreenEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1797,6 +1859,28 @@ namespace FlashEditor {
         //panel with nothing wrapped around it.
         private TabPage BillboardEditorTab;
         private FlashEditor.Definitions.Editing.DefinitionListPanel BillboardPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        //Index 20, and the index-0 frames it names. The packed id inside an animation's opcode 1 is
+        //the only statement anywhere in the cache of which frame set plays for which animation, so
+        //the panel puts the resolved frames beside the list rather than showing the packed number.
+        private TabPage AnimationDefinitionsTab;
+        private FlashEditor.Definitions.Animation.AnimationDefinitionEditorPanel AnimationDefinitionPanel = new FlashEditor.Definitions.Animation.AnimationDefinitionEditorPanel();
+        //Index 21, a flat paged index of independent single-value opcodes, so the shared list panel
+        //is the whole tab the way it is for index 29.
+        private TabPage SpotAnimEditorTab;
+        private FlashEditor.Definitions.Editing.DefinitionListPanel SpotAnimPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        //Indexes 24 and 25 in one tab. They are two id namespaces of one format rather than a menu
+        //index and a message index, so the panel selects the bank and the record family instead of
+        //the tab strip pretending they are unrelated.
+        private TabPage QuickChatEditorTab;
+        private FlashEditor.Definitions.QuickChat.QuickChatEditorPanel QuickChatPanel = new FlashEditor.Definitions.QuickChat.QuickChatEditorPanel();
+        //Index 27, which holds emitters and effectors in two groups with no opcode in common, so the
+        //panel selects between them the way the Config and Defaults tabs select a family.
+        private TabPage ParticleEditorTab;
+        private FlashEditor.Definitions.Particles.ParticleEditorPanel ParticlePanel = new FlashEditor.Definitions.Particles.ParticleEditorPanel();
+        //Index 33, whose two groups are two formats with two codecs - a versioned manifest and the
+        //screens it categorises - so the panel selects the group and shows a record's fields below.
+        private TabPage LoadingScreenEditorTab;
+        private FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel LoadingScreenPanel = new FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.
