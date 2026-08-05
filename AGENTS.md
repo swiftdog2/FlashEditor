@@ -37,6 +37,27 @@ number 639 appears nowhere in its 854 source files. Client and cache are a misma
 which matters if you use that client as a reference for decoder behaviour - notably
 `reference/hydra-model-decoding/`, which was taken from it.
 
+## Committing, and never deleting to undo
+
+**Commit each wave of work before the next one starts, and always before a verification pass.**
+A verify phase mutates production code on purpose - that is how it proves a test would fail if
+the code were wrong - so the tree must be recoverable before it begins.
+
+Nineteen files of new rendering source were lost exactly here. They had been written across
+several waves and never committed. An agent ran `git status` over them, saw `??` on every line,
+and ran `rm -rf` regardless. Untracked means there is nothing to revert to. The behaviour was
+recovered only by decompiling the built assembly, which cannot bring back a doc comment, a
+client citation, or a local variable's name.
+
+Rules that follow from it:
+
+- Commit after each wave. Untracked work is unrecoverable work.
+- To undo a deliberate change, use `git stash`, a copy, or reverse the edit.
+- **Never** `rm -rf`, `git checkout --`, `git reset --hard`, or any force operation, on any path
+  in this repository.
+- A task that asks for mutation testing must state which safe method to use, rather than leaving
+  it to improvisation.
+
 ## Where the work list lives
 
 `TODO.md` at the repository root is the running work list: what is in flight, what is queued,

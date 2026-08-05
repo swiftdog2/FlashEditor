@@ -225,6 +225,18 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 
 ## Traps that have already cost real work
 
+- **Commit before anything deliberately breaks the tree, and never delete to undo.** A
+  verification pass mutates production code on purpose - that is how you prove a test would fail
+  if the maths were wrong - so the tree has to be recoverable before it starts. Nineteen files of
+  new rendering source were lost exactly here: they had been written across several waves and
+  never committed, an agent ran `git status` on them, saw `??` on every line, and ran
+  `rm -rf` anyway. Untracked means there is nothing to revert to, and the behaviour was only
+  recovered by decompiling the built assembly, which cannot recover a comment, a client citation
+  or a local variable's name.
+  So: **commit each wave before the next one starts**, and in particular before any verify phase.
+  To undo a deliberate mutation, use `git stash`, a copy, or reverse the edit - never
+  `rm -rf`, `git checkout --`, `git reset --hard`, or any force operation. A task that asks for
+  mutation testing must say which of those to use.
 - **Never record a count of our own tests here, and distrust any you find.** It is stale by the
   next commit and it invites a reader to treat a number as a target. Measure instead.
 - **A count of the cache is only worth writing down once the cache is named**, because there are
