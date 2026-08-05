@@ -205,6 +205,11 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   `RSFileStore.SaveTo` are `internal`. A read through the same `RSCache` after a write returns the
   new bytes whether or not it was committed, so **verify persistence by reopening the store**, not
   by reading back through the cache that wrote it.
+## UI conventions
+
+**This is the reference for anything with a user interface. Follow it rather than copying whatever
+the nearest tab happens to do - four of the tabs predate it.**
+
 - **A tab states its own cache index; its position states nothing.** `Editor.RegisterEditorTabs`
   maps each `TabPage` to an index and, for the self-contained tabs, to the delegate that binds their
   panel. It replaced a `static int[] editorTypes` read as `editorTypes[SelectedIndex]`, where
@@ -222,6 +227,45 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   while nothing is selected, so that it keeps its column headings rather than reading as broken -
   set `EmptyMessage` when you do that, or the pane claims no cache is loaded while the list beside
   it is full of rows from that cache.
+
+- **Layout measures itself; it does not state pixels.** The form is `AutoScaleMode.Dpi` against
+  `AutoScaleDimensions(96F, 96F)`. It was `Font` against `(9F, 20F)` - dimensions for a font the
+  form had stopped using - so every literal `Width`/`Height` and every `SizeType.Absolute` row was
+  multiplied by about two thirds at runtime. Widths mostly survived; heights did not, because a
+  `ComboBox` keeps the height its font needs while the row shrinks around it. That clipped a tool
+  panel's buttons, rendered a combo as "Pl", and turned captions into `Tmnort NPC`, and it was
+  re-tuned three times before the cause was found. Prefer `AutoSize` rows and docking, and do not
+  reintroduce fixed sizes on anything holding text. One further consequence worth knowing: a list
+  view column's width does **not** scale while the list view around it does, so under a bad factor
+  every grid shrinks while its columns keep full width and overflow.
+- **A public property on a `Control` subclass needs `[Browsable(false)]` and
+  `[DesignerSerializationVisibility(Hidden)]`** if it is runtime-only, or analyzer `WFO1000`
+  fails the build. Attach them to the declaration, not to a doc comment above a same-named
+  property elsewhere in the file.
+- **`Region` is ambiguous in any file that touches WinForms.** `System.Drawing.Region` arrives
+  through the implicit usings and collides with `Cache.Region.Region`. Alias it
+  (`using MapRegion = FlashEditor.Cache.Region.Region;`) rather than fully qualifying it
+  everywhere. Cost three separate build breaks before it was worth a note.
+- **The UI thread owns the controls; the worker owns the bytes.** Decode off-thread, mutate
+  `ObjectListView` and `ImageList` only on the UI thread, and populate in `RunWorkerCompleted`
+  rather than from inside `DoWork` - the older tabs call `SetObjects` from the worker, which is
+  cross-thread access that happens to survive. Report progress on percent boundaries, not per item:
+  `ReportProgress` marshals to the UI thread on every call.
+- **A long load shows something immediately.** Seed the list before the expensive work starts and
+  replace entries in place as results arrive, rather than adding rows or calling `SetObjects` again.
+  Adding reorders and rebuilds; replacing does not. An empty grid for two minutes reads as a broken
+  tab, which is what the Textures editor looked like before it seeded placeholder tiles.
+- **`ObjectListView` hands a null row to an aspect getter.** It evaluates aspects for rows being
+  recycled during a scroll and for cells measured before a model is attached. Render an empty cell.
+  A row of the **wrong type** should still throw, because that can only mean a descriptor wired its
+  columns to a different row type than it produces.
+- **Say what the editor cannot do.** The map rasteriser is deliberately not the client's minimap,
+  the 3D viewer omits things the client draws, and a user comparing either against the game has no
+  way to tell a defect from a documented choice unless the UI says so. Where a view diverges from
+  the client on purpose, state it in the view.
+- **Mark what an edit will cost.** Some edits are expensive for reasons invisible on screen - a
+  height change rebuilds relief shading, a lighting change rebuilds baked vertex colours. Where an
+  edit triggers a rebuild rather than a repaint, say so next to the control.
 
 ## Traps that have already cost real work
 
@@ -277,14 +321,6 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   five. What settles an obfuscated array's meaning is what the client *does* with it
   (`aByteArray1414` gates the draw list on `!= 2`, so it is the render type), never its position
   and never the name someone attached to it. Corrected 2026-08-02; the rows now cite that usage.
-- **`Region` is ambiguous in any file that touches WinForms.** `System.Drawing.Region` arrives
-  through the implicit usings and collides with `Cache.Region.Region`. Alias it
-  (`using MapRegion = FlashEditor.Cache.Region.Region;`) rather than fully qualifying it
-  everywhere. Cost three separate build breaks before it was worth a note.
-- **A public property on a `Control` subclass needs `[Browsable(false)]` and
-  `[DesignerSerializationVisibility(Hidden)]`** if it is runtime-only, or analyzer `WFO1000`
-  fails the build. Attach them to the declaration, not to a doc comment above a same-named
-  property elsewhere in the file.
 - **Nothing in the suite covers the renderer or WinForms.** `ModelRenderer` and the shaders are
   OpenGL, so a render-path defect passes every test in the suite. Faces the client refuses to draw
   were being drawn for as long as the viewer has existed and the sweeps never saw it. Check render
@@ -297,13 +333,6 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   repo. That rectangle shows whatever GDI last blitted into it, which reads convincingly as the
   previous page bleeding through and is not. One investigation was spent on that phantom. The
   3D viewer is judged on the monitor, or with Desktop Duplication.
-- **Every literal pixel size in `Editor.Designer.cs` is scaled at runtime.** It sets
-  `AutoScaleMode.Font` with `AutoScaleDimensions(9F, 20F)`, so each hardcoded `Width`/`Height` and
-  each `SizeType.Absolute` row is multiplied by the font ratio, about two thirds on the development
-  machine. Widths mostly survive it; heights do not, because a `ComboBox` or `NumericUpDown` keeps
-  the height its font needs while the row shrinks around it. That is how the map tab's 110px tool
-  row drew at 76 and sliced its own button row in half, and how a 60px combo rendered as "Pl".
-  Prefer `AutoSize` rows and docking. Re-tuning the number is treating the symptom.
 - **Never take a test's expected constant from a document.** `reference/index-survey/` and
   `reference/index-architect-*.md` are good and heavily evidenced, and their counts have still been
   wrong three times: the index-0 empty-frame count was out by five, the orphan-group note named two
@@ -392,7 +421,8 @@ measurement here confirms it.
 | `reference/hydra-637-definitions/` | De-obfuscated 637 opcode tables, every claim citing a `file:line` |
 | `reference/hydra-637-maps/` | The map path end to end: index-5 addressing and XTEA, the `m` and `l` byte formats, floor definitions, the colour model, and how to read the obfuscated client |
 | `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
-| `TODO.md` | **The running work list.** What is in flight, what is next, and the backlog including everything that is not a codec. Update it at milestones - a finished index, a shipped feature, a direction change - not on every commit, or it becomes noise and stops being read |
+| `TODO.md` | **The running work list**, and where each open item carries the prompt that resumes it. Prompts cite the rules here rather than repeating them, so a rule changed in this file changes every prompt at once. Update it at milestones, not per commit |
+| `CLAUDE.md` UI conventions | The single reference for anything with a surface. Four tabs predate it; copy it rather than the nearest tab |
 | `reference/index-survey/` | Per-index capability and format survey. `00-WORKLIST.md` is the ordered plan for the indexes that still need an editor, and its section 4 lists the shared abstractions to build before writing more of them |
 | `reference/DOC-CONFLICTS.md` | Claims in our own documents that turned out wrong, with how each was settled. Read it before trusting a figure from `reference/` |
 | `STATE_OF_THE_EDITOR.md` | What has been found and fixed, plus the roadmap |

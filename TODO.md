@@ -34,46 +34,348 @@ whole-index byte-identity sweep, verified against both caches, sampled and full.
 
 ## Next
 
-Ordered. The first three are small; the rest are features.
+Each item is independently resumable. **The prompt is the whole brief** - paste it and go.
 
-1. **Tabs for the six newest indexes.** 7, 14, 23, 32, the remaining index-2 families and 26
-   all landed as codecs with no GUI, by design, so none is reachable from the application.
-   Index 7 wants the Entities page below rather than a list of its own.
-2. **Record index 26's census.** Both runs print `UNRECORDED` for its declared and present
-   texture counts, so a change in that population passes silently. Measured independently:
-   915 in the vanilla capture, 1,408 in the repack. Small, and it closes a real hole.
-3. **The editor half of the JS5 handshake.** The server half is written and pushed; without
-   this the loop cannot be proven at all. See the JS5 section below.
-4. **Interface name recovery.** Apply `HydraScape/docs/cache-format/Leanbow Interface Names.txt`
-   (467 entries, keyed by group id). The hash is **djb2** (`h * 31 + c`), confirmed against the
-   real cache; the `h * 61 + (c - 32)` variant is wrong and matched nothing. Every entry must
-   re-hash and match before it is shown, so a bad row reads as unnamed rather than as a false
-   name.
-5. **Entities page.** One page hosting Items, NPCs, Objects and Models with a type selector and a
-   single persistent viewport. Fixes the current tab dance, where seeing an item's model means
-   visiting Models first. One GL context, never reparented - reparenting a `GLControl` destroys
-   its handle and its context.
-6. **Skinning and animation playback.** The renderer has none: `VertSkins` and `FaceSkin` are
-   parsed but never uploaded, and the shader has no bone attributes. Port the client's CPU-side
-   transform application rather than inventing GPU skinning. Viewport runs at 30fps; the
-   animation advances on its own stored frame durations, which is a different thing.
-7. **Model export and import via OBJ.** Import must be **geometry replacement, not file
-   replacement**: OBJ cannot express face render types, priority and alpha arrays, textured
-   triangle types, vertex skins or particle attachment points, so everything except vertices and
-   faces is preserved from the original and an unmappable face count is refused.
-8. **Wireframe and vertex index overlay.** Hover a face, see its edges and its vertex indices, so
-   particle attachment points can be chosen. CPU ray-triangle pick, then draw the indices as 2D
-   text over the viewport rather than rendering text in GL.
-9. **Particle rendering.** Decode lands with index 7; the simulation and draw path are new work.
-   Index 27 supplies the emitters and effectors.
-10. **Sprite import.** PNG, JPG and BMP into the sprite editor. Three real problems: palette
-   quantisation to 255 colours with index 0 reserved transparent, the black remap (a stored
-   `0x000000` decodes as `0x000001`, so pure black must be written as the latter or it
-   disappears), and whether to emit an alpha plane for a fully opaque frame. Both spellings and
-   both alpha choices occur in shipped data.
-11. **Client background import.** Probably a separate path: the background lives in index 32,
-   which is mostly JPEG rather than sprite format. Storing the supplied file is likely correct;
-   transcoding is not.
+Prompts deliberately do not repeat the standing rules. Those live in `CLAUDE.md` and `AGENTS.md`,
+every prompt opens by requiring them, and duplicating them here would let the two drift apart.
+A prompt carries only what is specific to its item.
+
+The rules a prompt relies on, so you can see they are covered: commit before anything
+deliberately breaks the tree; test against both caches; assert relationships rather than counts;
+settle behaviour from what the client does; separate stored from derived state; capture
+non-canonical encodings; follow the **UI conventions** section of `CLAUDE.md` for anything with a
+surface; and remember no capture on this machine can see the OpenGL viewport.
+
+---
+
+### 1. Index 26 materials - record the census
+
+Smallest open item. Both runs print `UNRECORDED` for index 26's texture counts, so a change in
+that population passes silently.
+
+```
+Read CLAUDE.md and AGENTS.md first; they carry the standing rules.
+
+Index 26's sweep prints UNRECORDED for materials.declaredTextures and
+materials.presentRecords, so those figures are asserted by nothing and a change in the
+population would pass silently. Measured independently by walking the dat2 sector chain
+outside our decoder: 915 declared and present in the vanilla b639 capture, 1,408 in the
+repack.
+
+Record them in FlashEditor.Tests/Cache/RealCache/RealCacheProfile.cs, the sanctioned home for
+a measurement that genuinely differs between the two caches, and make the sweep assert them.
+Re-measure rather than trusting the numbers above.
+
+Run the suite against both caches. Commit.
+```
+
+---
+
+### 2. Index 12 client scripts - a tab
+
+Codec and sweep are done. A raw grid of numeric opcodes is barely better than hex, so be honest
+about how far this goes.
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Index 12 has a decoder, an encoder and a whole-index byte-identity sweep, and no tab. Give it
+one via DefinitionListPanel and a descriptor.
+
+Size it for the shape: 4,149 scripts, 335,158 instructions, largest script 7,084 instructions
+and 106 KB decompressed. Decode on selection, not on load - a grid that materialises every
+instruction of every script on tab load builds over a third of a million rows.
+
+The identifier column must NOT be called a name hash. Index 12 sets the identifiers flag, but
+the identifier is partly a packed interface hook and roughly 3,800 of the 4,149 are
+unexplained 32-bit values. Label it "identifier".
+
+A disassembler is OUT of scope here - it is its own item. Ship the raw instruction view and
+say in the UI that opcodes are unnamed.
+
+Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches.
+Commit.
+```
+
+---
+
+### 3. Index 14 SFX2 - a tab
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Index 14 has a codec and a whole-index sweep and no tab. Give it one via DefinitionListPanel:
+3,657 groups, one Vorbis setup header plus 3,656 samples, 431,558 packets in total.
+
+A sample is a header - sample rate, PCM byte count, loop start, loop end - plus a packet list.
+Show those, the packet count and total packet bytes. Group 0 is structurally different from
+the rest; present it as what it is rather than as a broken sample.
+
+Playback is out of scope: the setup header has no magic, no channel count and no framing bit,
+so no off-the-shelf decoder takes it, and a hand-written Vorbis decoder is a far larger job
+than this tab. Say so in the UI rather than leaving a dead play button.
+
+Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches.
+Commit.
+```
+
+---
+
+### 4. Index 23 world map - a tab
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Index 23 has a codec and a whole-index sweep and no tab. Three record families: area details,
+the area raster tile stream, and fixed-size static elements, addressed by name hash at both
+group and file level.
+
+The interesting view is the raster: it is the world map the client draws, so render it rather
+than tabulate it. Its icons resolve through index 2 group 36, which is implemented - prove
+that join resolves rather than assuming it, the way object opcode 107 into group 36 was proven
+by decoding every object.
+
+Note the addressing trap already recorded: the area file is id 4 in most groups and id 0 in
+the rest, so a reader assuming a fixed file id fails on a subset.
+
+Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches.
+Commit.
+```
+
+---
+
+### 5. Index 32 loading sprites - a tab
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Index 32 has a codec and a whole-index sweep and no tab. It is MIXED: of its 26 groups, 21 are
+JPEG and 5 are 256-frame Jagex glyph sheets. The tab has to present both and say which a group
+is.
+
+The JPEGs are 4-component, non-JFIF, with no Adobe marker. Every standard decoder renders them
+as CMYK and produces a plausible, wrong image. The codec already carries a proven colour path
+- use it, and do not substitute a library decoder because it looks easier.
+
+Byte identity on the JPEG half is by construction: the encoder returns stored bytes. That
+means an import replaces the file rather than transcoding it, and the UI should say so.
+
+Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches.
+Commit.
+```
+
+---
+
+### 6. Index 2 - surface the remaining families
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+The Config tab presents some of index 2's families. Five more landed with codecs and sweeps
+and are not in it: identity kits, structs, light curves, render animations and quests. Add
+them to the existing group selector rather than building a second tab.
+
+Nineteen further groups are empty across every one of their files - a single 0x00 byte. They
+must read as empty rather than as a blank grid that looks broken; that is roughly half of
+index 2 by file count and it is a fact about the cache, not a gap.
+
+The light curves deserve better than a field grid: they define how a point light flickers, and
+an animated preview driven by the client's own formula shows in a second what four integers
+cannot. Optional, but the highest-value view in this item.
+
+Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches.
+Commit.
+```
+
+---
+
+### 7. Wire the renderer into a tab
+
+The engines exist, are mutation-tested and documented. **Nothing references them**, so none of it
+is reachable. Highest-value item here.
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+FlashEditor/Rendering/ holds skeletal animation, a playback loop, ray-triangle picking with a
+face and vertex index overlay, and a bounded particle simulation. All tested, all documented.
+Editor.cs references none of it, so none of it is reachable from the application.
+
+Wire it into the Models editor:
+ - an animation selector, playing at a fixed render rate while advancing frames on the
+   animation's own stored durations - those are different things and conflating them makes
+   every animation play at the wrong speed
+ - the wireframe and index overlay on hover, showing BOTH the face index and the vertex
+   indices, because emitters anchor to a face and effectors to a vertex
+ - particles for models carrying emitters or effectors
+ - readable numbers beside the viewport: current frame, frame id, elapsed time, live particle
+   count, active emitters
+
+THE VIEWPORT CANNOT BE VERIFIED BY SCREENSHOT. No BitBlt capture on this machine sees the GL
+surface - a control clearing to magenta captures blank. Verify everything AROUND it normally,
+and for the picture produce a checklist naming specific model ids that carry skins and
+particles, what correct looks like, and what a plausible wrong result looks like. Do not claim
+the rendering works.
+
+Run the suite against both caches. Commit.
+```
+
+---
+
+### 8. Entities page
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Seeing an item's model currently means opening Models first, then Items, then Models again.
+Replace that with one Entities page: a type selector for Items, NPCs, Objects and Models, the
+grid for the selected type, and a single persistent 3D viewport beside it.
+
+ONE GL CONTEXT, NEVER REPARENTED. Moving a GLControl between parents destroys its window
+handle and its context with it. The viewport stays put and the grid swaps.
+
+For NPCs, list the animations the definition names and let them be cycled - that is the
+feature this page exists for, and it depends on the renderer wiring item being done first.
+
+Items, NPCs and Objects predate DefinitionListPanel and each re-implement the worker, progress
+and edit commit. Migrating them is part of this item; do not leave three implementations
+behind a new shell.
+
+Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
+```
+
+---
+
+### 9. Interface name recovery
+
+```
+Read CLAUDE.md and AGENTS.md first.
+
+Index 3's tab shows raw 32-bit identifiers where names would be far more useful. 27 group
+names are recovered today; a verified list of 467 exists at
+HydraScape/docs/cache-format/Leanbow Interface Names.txt, keyed by group id.
+
+The hash is djb2 - h = h * 31 + c, no lowercasing, no offset. Confirmed against this cache;
+the h * 61 + (c - 32) variant matched nothing. Verify that before relying on it.
+
+Every entry must re-hash and match the stored identifier before it is displayed, so a wrong
+row reads as unnamed rather than as a false name. Ship no unverified name.
+
+Then extend coverage the cheap way: grep the 637 client and the HydraScape server for every
+string literal, hash each, keep the matches. The client already asks index 3 for names
+directly, so there will be more.
+
+Do NOT brute force. djb2 is 32 bits and real names are twenty characters or more, so the
+number of strings hashing to any given value is effectively unbounded and a cracked candidate
+is a guess wearing a name.
+
+Run the suite against both caches. Commit.
+```
+
+---
+
+### 10. The editor half of the JS5 handshake
+
+Without this the live-reload loop cannot be proven at all. The server half is written, compiles,
+and has never run.
+
+```
+Read CLAUDE.md, AGENTS.md and the JS5 section of this file first.
+
+HydraScape's update server can now rebuild its master index when the cache changes and release
+its file handles so the cache can be replaced underneath it. The editor half does not exist,
+so the loop has never run.
+
+In the save path, behind a setting that is off by default because it must only fire when
+pointed at a live server's cache:
+ 1. write reload.request into the cache directory
+ 2. wait for reload.released to appear, with a timeout and a clear failure message
+ 3. save the cache
+ 4. delete reload.request
+
+The ordering is the whole point. The server holds read handles without FILE_SHARE_DELETE, so
+on Windows the save FAILS while it runs - the release has to happen before the write, not
+after.
+
+Then prove it end to end: start the server with test_mode and load_js5 true and cache_path
+pointed at the cache being edited, log in with any credentials (test mode grants rights 11
+with no database), edit something visible, reconnect, and confirm the change is in game.
+Report what actually happened rather than what should have.
+```
+
+---
+
+### 11. Sprite import
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+Index 8 decodes to its stored form and encodes back, so import is now possible. Accept PNG,
+JPG and BMP into the sprite editor. The existing ImportSpriteBtn has no handler.
+
+Three real problems, each measured in shipped data:
+ - Palette quantisation. Sprites are indexed, at most 255 colours, index 0 reserved for
+   transparency. Decide whether to quantise or refuse an image with too many colours.
+ - The black trap. A stored 0x000000 decodes as 0x000001 because index 0 is the transparent
+   slot, and BOTH spellings occur in shipped palettes. Pure black must be written as 0x000001
+   or it disappears.
+ - The alpha plane is optional, and frames exist carrying a fully opaque one. Choose
+   deliberately whether to emit one, and say why.
+
+Traversal order is the trap no sweep catches: 2,767 frames are ambiguous between row-major and
+column-major, and not one sets the column-major flag, so an encoder recomputing that flag
+would sweep clean on both caches and corrupt the first sprite edited. Keep the stored flag.
+
+Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
+```
+
+---
+
+### 12. Client background import
+
+```
+Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+
+The client background lives in index 32, which is mostly JPEG rather than sprite format, so
+this is a different path from sprite import and should not be folded into it.
+
+A JPEG re-encode is no more reproducible than a GZip one, so import means STORING THE SUPPLIED
+FILE, not transcoding it. Validate that what the user supplies is a JPEG the client can read -
+4-component, non-JFIF - and refuse with a clear message rather than storing something that
+renders as CMYK garbage in game.
+
+Confirm from the client which group is actually the background before writing to one.
+
+Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
+```
+
+---
+
+### 13. Index 12 disassembler
+
+Deliberately separate from item 2. The codec is small and done; this is what makes a script tab
+worth opening.
+
+```
+Read CLAUDE.md and AGENTS.md first.
+
+Index 12's instructions are raw u16 opcodes. A grid reading "opcode 2426, byte 0" is barely
+better than hex. This item gives them names and structure.
+
+The bill is measured: 582 distinct opcodes across three client dispatchers, but 32 of them
+carry 86 percent of all instructions - so a first pass covering the common ones is tractable
+and immediately useful.
+
+RuneStar on GitHub carries clientscript opcode definitions and decompilation work and is worth
+consulting. CHECK ITS BUILD COVERAGE FIRST: it is oriented at later revisions, and an opcode
+table from the wrong build is exactly the kind of plausible mapping this cache confirms by
+accident. Anything taken from it must be verified against the 637 client before it ships.
+
+Control flow reconstruction - the switch blocks and jump deltas the codec already decodes -
+turns a linear listing into something readable. That is the second half and can be split off.
+
+Run the suite against both caches. Commit.
+```
 
 ---
 
