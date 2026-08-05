@@ -3,127 +3,241 @@ using FlashEditor.Definitions;
 
 namespace FlashEditor.Rendering
 {
+    /// <summary>
+    ///     Recomputes lighting normals for a posed mesh, the way the client does when it rebuilds one.
+    /// </summary>
+    /// <remarks>
+    ///     A transcription of <c>Renderable_Sub2.java:591-650</c>. It exists because a pose moves
+    ///     vertices and the normals uploaded with the rest model are then wrong: a limb that has
+    ///     rotated 90 degrees is still lit as though it had not, which reads as a flat, plastic
+    ///     patch on an otherwise shaded model rather than as an obvious defect.
+    ///     <para>
+    ///     The output is per <b>face-vertex</b> rather than per vertex - nine floats for each face,
+    ///     three corners of three components. That is deliberate: a flat-shaded face needs one normal
+    ///     repeated across its corners while a smooth-shaded one needs each corner's averaged normal,
+    ///     and a face's neighbours may be shaded the other way. Splitting the vertex is the standard
+    ///     answer and it is what lets one buffer carry both kinds.
+    ///     </para>
+    /// </remarks>
     public static class PosedNormals
     {
+        /// <summary>
+        ///     Largest magnitude a raw cross-product component may reach before it is halved.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Renderable_Sub2.java:605-610</c>. The cross product of two edge vectors of a large
+        ///     face overflows a 32-bit int when it is then squared for the length, so the client
+        ///     halves all three components together until each fits. Halving them together is what
+        ///     keeps the direction; scaling them independently would not.
+        /// </remarks>
         private const int ComponentLimit = 8192;
 
+        /// <summary>Length the client normalises a face normal to, before this converts to a unit float.</summary>
         private const int NormalLength = 256;
 
+        /// <summary>Face render type 1: flat shaded, one normal for the whole face.</summary>
         private const int FlatRenderType = 1;
 
+        /// <summary>Face render type 0: Gouraud shaded, normals averaged at the shared vertices.</summary>
         private const int SmoothRenderType = 0;
 
+        /// <summary>
+        ///     Computes a normal for each corner of each face of a posed mesh.
+        /// </summary>
+        /// <remarks>
+        ///     Render type 2 contributes nothing - not to its own face and not to the vertex averages.
+        ///     That falls out of the client's structure (<c>:622-649</c> handles 1 and 0 and lets
+        ///     everything else through), and it is right: type 2 faces are stray geometry the client
+        ///     never draws, frequently unattached to the mesh, and letting one into a vertex average
+        ///     would tilt the shading of the real faces around it.
+        /// </remarks>
+        /// <param name="mesh">The posed mesh. Its vertex arrays must be in model units, so after
+        ///     <see cref="PosedMesh.Finish"/>.</param>
+        /// <returns>
+        ///     One array of nine floats per face - corner A xyz, corner B xyz, corner C xyz - in the
+        ///     viewport's world orientation, so already y- and z-flipped.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="mesh"/> is null.</exception>
         public static float[][] ComputeFaceVertexNormals(PosedMesh mesh)
         {
             if (mesh == null)
             {
-                throw new ArgumentNullException("mesh");
+                throw new ArgumentNullException(nameof(mesh));
             }
+
             ModelDefinition model = mesh.Skin.Model;
-            int num = model.faceIndices1.Length;
-            int num2 = mesh.VertexX.Length;
-            int[] array = new int[num2];
-            int[] array2 = new int[num2];
-            int[] array3 = new int[num2];
-            int[] array4 = new int[num];
-            int[] array5 = new int[num];
-            int[] array6 = new int[num];
-            bool[] array7 = new bool[num];
-            for (int i = 0; i < num; i++)
+            int faceCount = model.faceIndices1.Length;
+            int vertexCount = mesh.VertexX.Length;
+
+            //Running sums per vertex, for the smooth-shaded faces. Kept as integers because the
+            //client does and because the per-face normals being summed are already quantised to a
+            //length of 256, so there is no precision to be had from floats here.
+            int[] smoothSumX = new int[vertexCount];
+            int[] smoothSumY = new int[vertexCount];
+            int[] smoothSumZ = new int[vertexCount];
+
+            //One normal per flat-shaded face, kept apart from the vertex sums so that a flat face
+            //neither contributes to nor reads from its neighbours.
+            int[] flatNormalX = new int[faceCount];
+            int[] flatNormalY = new int[faceCount];
+            int[] flatNormalZ = new int[faceCount];
+            bool[] isFlat = new bool[faceCount];
+
+            for (int face = 0; face < faceCount; face++)
             {
-                int num3 = model.faceIndices1[i];
-                int num4 = model.faceIndices2[i];
-                int num5 = model.faceIndices3[i];
-                if ((uint)num3 < (uint)num2 && (uint)num4 < (uint)num2 && (uint)num5 < (uint)num2)
+                int cornerA = model.faceIndices1[face];
+                int cornerB = model.faceIndices2[face];
+                int cornerC = model.faceIndices3[face];
+
+                //A face naming a vertex the model does not have contributes nothing. Index 7 holds
+                //them, and reading past the array to light one is not worth doing.
+                if ((uint)cornerA >= (uint)vertexCount
+                    || (uint)cornerB >= (uint)vertexCount
+                    || (uint)cornerC >= (uint)vertexCount)
                 {
-                    int num6 = mesh.VertexX[num4] - mesh.VertexX[num3];
-                    int num7 = mesh.VertexY[num4] - mesh.VertexY[num3];
-                    int num8 = mesh.VertexZ[num4] - mesh.VertexZ[num3];
-                    int num9 = mesh.VertexX[num5] - mesh.VertexX[num3];
-                    int num10 = mesh.VertexY[num5] - mesh.VertexY[num3];
-                    int num11 = mesh.VertexZ[num5] - mesh.VertexZ[num3];
-                    int num12 = num7 * num11 - num10 * num8;
-                    int num13 = num8 * num9 - num11 * num6;
-                    int num14 = num6 * num10 - num9 * num7;
-                    while (num12 > 8192 || num13 > 8192 || num14 > 8192 || num12 < -8192 || num13 < -8192 || num14 < -8192)
-                    {
-                        num12 >>= 1;
-                        num13 >>= 1;
-                        num14 >>= 1;
-                    }
-                    int num15 = (int)Math.Sqrt((double)num12 * (double)num12 + (double)num13 * (double)num13 + (double)num14 * (double)num14);
-                    if (num15 <= 0)
-                    {
-                        num15 = 1;
-                    }
-                    num12 = num12 * 256 / num15;
-                    num13 = num13 * 256 / num15;
-                    num14 = num14 * 256 / num15;
-                    switch ((model.FaceRenderType != null && i < model.FaceRenderType.Length) ? model.FaceRenderType[i] : 0)
-                    {
-                    case 1:
-                        array7[i] = true;
-                        array4[i] = num12;
-                        array5[i] = num13;
-                        array6[i] = num14;
-                        break;
-                    case 0:
-                        array[num3] += num12;
-                        array2[num3] += num13;
-                        array3[num3] += num14;
-                        array[num4] += num12;
-                        array2[num4] += num13;
-                        array3[num4] += num14;
-                        array[num5] += num12;
-                        array2[num5] += num13;
-                        array3[num5] += num14;
-                        break;
-                    }
-                }
-            }
-            float[][] array8 = new float[num][];
-            Span<int> span = stackalloc int[3];
-            for (int j = 0; j < num; j++)
-            {
-                int num16 = model.faceIndices1[j];
-                int num17 = model.faceIndices2[j];
-                int num18 = model.faceIndices3[j];
-                if ((uint)num16 >= (uint)num2 || (uint)num17 >= (uint)num2 || (uint)num18 >= (uint)num2)
-                {
-                    array8[j] = new float[9] { 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f };
                     continue;
                 }
-                if (array7[j])
+
+                int abX = mesh.VertexX[cornerB] - mesh.VertexX[cornerA];
+                int abY = mesh.VertexY[cornerB] - mesh.VertexY[cornerA];
+                int abZ = mesh.VertexZ[cornerB] - mesh.VertexZ[cornerA];
+                int acX = mesh.VertexX[cornerC] - mesh.VertexX[cornerA];
+                int acY = mesh.VertexY[cornerC] - mesh.VertexY[cornerA];
+                int acZ = mesh.VertexZ[cornerC] - mesh.VertexZ[cornerA];
+
+                int normalX = abY * acZ - acY * abZ;
+                int normalY = abZ * acX - acZ * abX;
+                int normalZ = abX * acY - acX * abY;
+
+                //Halve all three together until each fits, so the squares below cannot overflow.
+                while (normalX > ComponentLimit || normalY > ComponentLimit || normalZ > ComponentLimit
+                    || normalX < -ComponentLimit || normalY < -ComponentLimit || normalZ < -ComponentLimit)
                 {
-                    var (num19, num20, num21) = Normalise(array4[j], array5[j], array6[j]);
-                    array8[j] = new float[9] { num19, num20, num21, num19, num20, num21, num19, num20, num21 };
+                    normalX >>= 1;
+                    normalY >>= 1;
+                    normalZ >>= 1;
+                }
+
+                //Computed in double precision because the components are still up to 8192 and the
+                //sum of their squares is beyond an int.
+                int length = (int)Math.Sqrt(
+                    (double)normalX * normalX + (double)normalY * normalY + (double)normalZ * normalZ);
+
+                //A degenerate face has no direction. One rather than a skip, so the arithmetic below
+                //produces a zero vector instead of dividing by zero.
+                if (length <= 0)
+                {
+                    length = 1;
+                }
+
+                normalX = normalX * NormalLength / length;
+                normalY = normalY * NormalLength / length;
+                normalZ = normalZ * NormalLength / length;
+
+                //A missing render-type array means every face is type 0 - the legacy model format
+                //cannot express anything else, and 10.6 million faces in this cache are in it.
+                int renderType = model.FaceRenderType != null && face < model.FaceRenderType.Length
+                    ? model.FaceRenderType[face]
+                    : SmoothRenderType;
+
+                switch (renderType)
+                {
+                    case FlatRenderType:
+                        isFlat[face] = true;
+                        flatNormalX[face] = normalX;
+                        flatNormalY[face] = normalY;
+                        flatNormalZ[face] = normalZ;
+                        break;
+
+                    case SmoothRenderType:
+                        smoothSumX[cornerA] += normalX;
+                        smoothSumY[cornerA] += normalY;
+                        smoothSumZ[cornerA] += normalZ;
+                        smoothSumX[cornerB] += normalX;
+                        smoothSumY[cornerB] += normalY;
+                        smoothSumZ[cornerB] += normalZ;
+                        smoothSumX[cornerC] += normalX;
+                        smoothSumY[cornerC] += normalY;
+                        smoothSumZ[cornerC] += normalZ;
+                        break;
+
+                    //Type 2 is not drawn, so it neither carries a normal nor tilts its neighbours'.
+                }
+            }
+
+            float[][] perFace = new float[faceCount][];
+            Span<int> corners = stackalloc int[3];
+
+            for (int face = 0; face < faceCount; face++)
+            {
+                int cornerA = model.faceIndices1[face];
+                int cornerB = model.faceIndices2[face];
+                int cornerC = model.faceIndices3[face];
+
+                if ((uint)cornerA >= (uint)vertexCount
+                    || (uint)cornerB >= (uint)vertexCount
+                    || (uint)cornerC >= (uint)vertexCount)
+                {
+                    //Straight up, so a malformed face is lit consistently rather than left with a
+                    //zero normal the shader would divide by.
+                    perFace[face] = new float[9] { 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f };
                     continue;
                 }
-                span[0] = num16;
-                span[1] = num17;
-                span[2] = num18;
-                float[] array9 = new float[9];
-                for (int k = 0; k < 3; k++)
+
+                if (isFlat[face])
                 {
-                    int num22 = span[k];
-                    var (num23, num24, num25) = Normalise(array[num22], array2[num22], array3[num22]);
-                    array9[k * 3] = num23;
-                    array9[k * 3 + 1] = num24;
-                    array9[k * 3 + 2] = num25;
+                    (float x, float y, float z) = Normalise(flatNormalX[face], flatNormalY[face], flatNormalZ[face]);
+                    perFace[face] = new float[9] { x, y, z, x, y, z, x, y, z };
+                    continue;
                 }
-                array8[j] = array9;
+
+                corners[0] = cornerA;
+                corners[1] = cornerB;
+                corners[2] = cornerC;
+
+                float[] smooth = new float[9];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int vertex = corners[corner];
+                    (float x, float y, float z) = Normalise(smoothSumX[vertex], smoothSumY[vertex], smoothSumZ[vertex]);
+                    smooth[corner * 3] = x;
+                    smooth[corner * 3 + 1] = y;
+                    smooth[corner * 3 + 2] = z;
+                }
+
+                perFace[face] = smooth;
             }
-            return array8;
+
+            return perFace;
         }
 
+        /// <summary>Scales an integer normal to unit length and into the viewport's orientation.</summary>
+        /// <remarks>
+        ///     The y and z negations are <see cref="RenderSpace"/>'s, applied here rather than by
+        ///     calling it because a normal is a direction and must not be divided by
+        ///     <see cref="RenderSpace.ModelUnitsPerWorldUnit"/> - a scale would come straight back out
+        ///     in the normalisation, but routing a direction through a position conversion is the kind
+        ///     of thing that stops being harmless the moment the conversion gains a translation.
+        ///     <para>
+        ///     A vertex that only ever belonged to type-1 or type-2 faces has a zero sum. Clamping the
+        ///     length to one leaves it as a zero vector, which the shader treats as unlit, rather than
+        ///     producing an infinity that turns the face black.
+        ///     </para>
+        /// </remarks>
+        /// <param name="x">Accumulated x.</param>
+        /// <param name="y">Accumulated y.</param>
+        /// <param name="z">Accumulated z.</param>
+        /// <returns>The unit-length normal in world orientation.</returns>
         private static (float, float, float) Normalise(int x, int y, int z)
         {
-            float num = MathF.Sqrt((float)x * (float)x + (float)y * (float)y + (float)z * (float)z);
-            if (num < 1f)
+            float length = MathF.Sqrt((float)x * x + (float)y * y + (float)z * z);
+
+            if (length < 1f)
             {
-                num = 1f;
+                length = 1f;
             }
-            return ((float)x / num, (float)(-y) / num, (float)(-z) / num);
+
+            return (x / length, -y / length, -z / length);
         }
     }
 }
