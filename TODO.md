@@ -79,6 +79,68 @@ Ordered. The first three are small; the rest are features.
 
 ## Backlog
 
+### An unpacked working tree, packed on deploy
+
+**The strongest idea seen elsewhere, and it addresses a real weakness in how this editor works.**
+
+Today we edit the packed cache in place. Every save rewrites the dat2 and the reference table of
+every archive packed alongside, so version control sees one enormous binary change and cannot say
+what actually altered. Git LFS makes that storable, not reviewable.
+
+The alternative: dump every index to readable files on disk, treat THAT as the source of truth
+under version control, and pack to a cache only when deploying. Changing one item definition then
+shows up as a diff on one file. Models, sprites and audio stay in their native formats because
+there is nothing more readable to convert them to, but their boundaries are still per-file rather
+than per-cache.
+
+**We are unusually well placed to do this, and should say why.** A dump-and-repack pipeline is
+only safe if repacking reproduces what was dumped, and this project has already proved exactly
+that for every index that holds content: decode, re-encode, compare against the stored bytes,
+over both caches. Building this on top of an unproven codec would silently corrupt a cache; on
+top of these sweeps it is mostly plumbing. The sweeps ARE the prerequisite and they are done.
+
+Design notes to settle before starting:
+- What is readable per index. Definitions want a text format; models, sprites, audio and JPEG
+  payloads stay binary.
+- Non-canonical encodings are the hazard. The dumped form has to carry every encoding choice the
+  decoder records - opcode order, repetition, aliased values, absent-versus-default, smart widths
+  - or a repack produces different bytes for an untouched record. Every one of those cases is
+  already documented per index.
+- Whether the packed cache is a build artefact (gitignored) or committed alongside.
+- How this composes with the JS5 reload handshake: pack, then signal, then reload.
+
+### Ideas worth taking from other editors
+
+Seen in a 727-targeted editor. The formats will not transfer - that is a different build - but
+these are presentation and workflow ideas, and several land on indexes we already decode.
+
+- **A first-person walk mode.** WASD and mouse look through the region, with ctrl-scroll changing
+  plane. For a map editor this is the difference between arranging tiles and seeing what a player
+  sees. Sits on the same scene the 3D view would use.
+- **A region environment editor** - sun colour, ambient, light, backlight and direction, fog
+  colour and depth, the six cube-map texture faces, bloom, skybox. Two things worth copying
+  exactly: it marks which fields force a scene REBUILD because the sun's direction and ambient
+  are baked into vertex colours rather than applied at draw, and it states that an untouched
+  region repacks to identical bytes.
+- **A client graphics settings mirror that is honest about divergence.** A panel listing each of
+  the client's graphics options, what we do about it, and a badge reading applied, partial or not
+  applicable - with a note saying what is not built. An editor that quietly renders differently
+  from the client teaches the user wrong things; one that says "shadows: static grid only, no
+  projected shadows" does not.
+- **A font editor** over index 13: the glyph grid with each glyph's advance width editable
+  in place, a live text preview, and import from a TTF or OTF. We decode index 13 already and it
+  has no editor at all.
+- **A light intensity editor** over index 2's light curves: an animated waveform preview showing
+  how the brightness flickers, driven by the client's own formula, alongside the raw duration,
+  amplitude and base fields. We decode these already.
+- **A loading screen simulator** over index 33: play the real timings, crossfade between tips as
+  the client does, and show the master rotation as thumbnails. Editing a timing restarts the
+  simulation. We decode index 33 already.
+- **Composite previews with per-component anchors.** The tip editor shows the composed screen at
+  the true client size with a component list underneath - sprite id, anchor, offset, reorder
+  arrows. That is the shape the interface editor below should take, and it is worth building the
+  simpler index-33 version first as a rehearsal for the harder index-3 one.
+
 ### A real interface editor
 
 The current Interfaces tab shows decoded fields. That is a viewer, not an editor. The goal is to
