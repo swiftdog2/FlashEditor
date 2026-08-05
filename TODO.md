@@ -79,9 +79,16 @@ Ordered. The first three are small; the rest are features.
 
 ## Backlog
 
-### An unpacked working tree, packed on deploy
+### An unpacked working tree, packed on deploy - PARKED
 
-**The strongest idea seen elsewhere, and it addresses a real weakness in how this editor works.**
+**Deliberately not scheduled. Revisit when there is appetite for an architectural change, not
+before.** The reasoning below is kept because it is durable and because the prerequisite is
+already paid for, so picking it up later costs nothing to rediscover.
+
+Why parked rather than dropped: it is the only idea on this page that is better architecture
+rather than a missing feature, but it is also a cutover that touches how every index is stored,
+landing on a codebase that has just reached the point where every index sweeps green. The value
+is real and the timing is bad.
 
 Today we edit the packed cache in place. Every save rewrites the dat2 and the reference table of
 every archive packed alongside, so version control sees one enormous binary change and cannot say
@@ -113,6 +120,21 @@ Design notes to settle before starting:
 
 Seen in a 727-targeted editor. The formats will not transfer - that is a different build - but
 these are presentation and workflow ideas, and several land on indexes we already decode.
+
+**Judged rather than collected, because most of this is ordinary feature work and two items are
+worth declining.** The unpacked working tree above is the only idea here that is better
+*architecture* than what we have, and it is parked; everything below is either a gap we have not
+filled or polish.
+
+| Idea | Verdict |
+|---|---|
+| Divergence panel | **Take it.** Cheap, and we have a worse version of the problem with no answer: the map rasteriser deliberately is not the client's minimap, and nothing says so, so a user comparing them cannot tell a bug from a documented choice |
+| Rebuild badges | **Take it.** Effectively free, and it generalises - several edits here are expensive for reasons invisible to the user |
+| Environment editor | Real data we decode and do not surface. A gap, not a better design |
+| Composite preview | Not a new idea - it is what the interface editor has to be anyway. The useful part is the sequencing: build the index-33 version first as a rehearsal for the harder index-3 one |
+| Font, light-curve editors | Fill eventually. You would open them roughly never |
+| Loading-screen simulator | **Decline.** A live crossfading playback engine for content tuned once. Impressive, poor value |
+| First-person walk mode | **Decline for now.** Genuinely good, but it is a camera sitting on top of a 3D region renderer we have not built. The easy part of a hard job, and it reads as higher value than it is |
 
 - **A first-person walk mode.** WASD and mouse look through the region, with ctrl-scroll changing
   plane. For a map editor this is the difference between arranging tiles and seeing what a player
