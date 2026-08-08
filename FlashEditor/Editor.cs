@@ -84,6 +84,114 @@ namespace FlashEditor {
         /// </remarks>
         private const int TextureTileBatchIntervalMs = 250;
 
+        /// <summary>
+        ///     The tile drawn in the sprite grid for each sprite set, keyed by its group id.
+        /// </summary>
+        /// <remarks>
+        ///     Held rather than rebuilt per paint because the aspect getter is called for every
+        ///     visible row on every scroll. A row with no entry here draws
+        ///     <see cref="_spritePendingTile"/>, so the grid is complete and scrollable before the
+        ///     first group has been read and a finished tile replaces a placeholder without touching
+        ///     the row - the same reason the texture grid seeds its slots.
+        ///     There is no <see cref="ImageList"/> behind this one: ObjectListView draws an
+        ///     <see cref="Image"/> returned from an image getter directly, and an ImageList would
+        ///     force every tile through one more resize before the letterboxing had a chance to say
+        ///     anything.
+        /// </remarks>
+        private readonly Dictionary<int, Bitmap> _spriteTiles = new();
+
+        /// <summary>
+        ///     The one tile every row that has not been read yet is drawn with.
+        /// </summary>
+        /// <remarks>
+        ///     Shared rather than one per row: 4,593 identical placeholders would be 60MB of grey.
+        ///     Flat rather than a checkerboard, because a checkerboard says "these pixels are
+        ///     transparent" and a row that has not been read has no pixels to be transparent.
+        /// </remarks>
+        private Bitmap? _spritePendingTile;
+
+        /// <summary>Whether the sprite grid's columns and tree getters have been wired.</summary>
+        /// <remarks>
+        ///     Once per form rather than once per load: they are bound to the control, not to the
+        ///     cache, and rebinding them on every cache open would leak a font per open.
+        /// </remarks>
+        private bool _spriteColumnsBound;
+
+        /// <summary>Whether the user has moved the sprite page's splitter themselves.</summary>
+        /// <remarks>
+        ///     Until they do, the splitter follows the width the grid's columns need, re-measured on
+        ///     every resize. Placing it once was not enough: the page is first loaded at the size the
+        ///     designer laid it out for and the form is usually maximised afterwards, so a distance
+        ///     computed on the first visit left the grid two thirds of the width it wanted for the
+        ///     rest of the session.
+        /// </remarks>
+        private bool _spriteSplitMovedByHand;
+
+        /// <summary>What the sprite grid needs to show every one of its columns in full.</summary>
+        private int _spriteGridWidth;
+
+        /// <summary>What each sprite row is showing, keyed by group id.</summary>
+        /// <remarks>
+        ///     Kept beside the rows rather than on them. A row is a <c>SpriteDefinition</c>, and the
+        ///     three states that are not "a picture" - not read yet, no pixels stored, would not
+        ///     decode - are facts about this tab's load rather than about the file, so putting them
+        ///     on the definition would be putting presentation state into the codec's model.
+        /// </remarks>
+        private readonly Dictionary<int, SpriteRowStatus> _spriteRowStatus = new();
+
+        /// <summary>The seeded row for each sprite group id.</summary>
+        private readonly Dictionary<int, SpriteDefinition> _spriteRows = new();
+
+        /// <summary>Which set and frame index each expanded frame row came from.</summary>
+        /// <remarks>
+        ///     A rendered frame is an <c>RSBufferedImage</c>, which derives from
+        ///     <c>SpriteDefinition</c> and carries the frame's position in its set as <c>index</c> -
+        ///     but nothing that says which set, and nothing about the stored offset the frame sits at
+        ///     within the canvas. Both are needed to describe the row, so they are recorded when the
+        ///     children are handed to the tree, which is the only way a frame row can appear.
+        /// </remarks>
+        private readonly Dictionary<RSBufferedImage, (SpriteDefinition Set, int Frame)> _spriteFrameOwners = new();
+
+        /// <summary>Tiles for expanded frame rows, keyed by set id and frame index.</summary>
+        /// <remarks>
+        ///     Built on demand rather than during the load. Only 44 of the vanilla capture's sets
+        ///     hold more than one frame, so rendering every frame's tile up front would be 11,177
+        ///     tiles to show 4,593 rows.
+        /// </remarks>
+        private readonly Dictionary<(int Set, int Frame), Bitmap> _spriteFrameTiles = new();
+
+        /// <summary>The bitmap currently on the sprite detail pane, owned here.</summary>
+        private Bitmap? _spriteDetailPicture;
+
+        /// <summary>The font the empty and failed markers inside a sprite tile are drawn in.</summary>
+        /// <remarks>
+        ///     One font for the whole tab rather than one per tile: a tile is built on the load
+        ///     worker, and creating a font there per sprite would be 4,593 GDI objects. Sized from
+        ///     the tile so the marker still fits when the grid's font, and so the tile, is larger.
+        /// </remarks>
+        private Font? _spriteMarkerFont;
+
+        /// <summary>The side of one sprite tile in pixels.</summary>
+        /// <remarks>
+        ///     Measured from the grid's font rather than written down. A list view's row height is a
+        ///     pixel count the form's DPI scaling does not touch, so a literal is correct only at the
+        ///     DPI it was chosen at - which is the defect that shrank every row on this form while
+        ///     the fonts inside them stayed the size they were.
+        /// </remarks>
+        private int _spriteTileSide;
+
+        /// <summary>How many decoded sprite sets the loader hands to the grid at a time.</summary>
+        /// <remarks>
+        ///     Same trade as the texture grid's batch: a publish costs a dictionary write and a
+        ///     decode per set and the invalidate that follows is one repaint, so the batch size
+        ///     trades stall length against repaint count. 48 keeps a publish inside a frame while
+        ///     turning 4,593 repaints into about 96.
+        /// </remarks>
+        private const int SpriteBatchSize = 48;
+
+        /// <summary>The longest a decoded set waits for its batch to fill before being published.</summary>
+        private const int SpriteBatchIntervalMs = 250;
+
         private readonly Timer _fpsTimer = new();
         private readonly ToolTip _modelTooltip = new() { InitialDelay = 300, AutoPopDelay = 30000, ReshowDelay = 100 };
         private int _program;
@@ -667,7 +775,7 @@ namespace FlashEditor {
                 LoadCache(Properties.Settings.Default.cacheDir);
             NPCListView.AlwaysGroupByColumn = npcIdColumn;
             ItemListView.AlwaysGroupByColumn = ItemID;
-            SpriteListView.AlwaysGroupByColumn = ID;
+            SpriteListView.AlwaysGroupByColumn = SpriteIdColumn;
             GameObjectListView.AlwaysGroupByColumn = objectIdColumn;
             ModelListView.AlwaysGroupByColumn = ModelID;
 
@@ -1167,11 +1275,11 @@ namespace FlashEditor {
             //This enables us to load multiple tabs at once
             workers.Add(bgw);
 
-            RSReferenceTable? referenceTable = null; //Only the META_INDEX branch leaves this null, and that branch never reads the local
-
-            //Set the reference table to the one we need for the index
-            if (type != RSConstants.META_INDEX)
-                referenceTable = cache.GetReferenceTable(type);
+            /* The sprite arm was the last reader of a reference table fetched here for every tab.
+               It enumerated the table's archive entries directly; it now goes through
+               RSCache.EnumerateFiles, which snapshots under the cache lock and is the same route
+               every other loader takes. Fetching the table up front also meant an index with no
+               table threw out of this method before the switch, for tabs that never wanted one. */
 
             switch (type) {
                 case RSConstants.META_INDEX:
@@ -1275,15 +1383,7 @@ namespace FlashEditor {
 
                     bgw.RunWorkerAsync();
                     break;
-                case RSConstants.SPRITES_INDEX:
-
-                    //When a sprite is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
-                        SpriteProgressBar.Value = e.ProgressPercentage;
-                        SpriteLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
-                    });
-
-                    bgw.DoWork += delegate {
+                case RSConstants.SPRITES_INDEX: {
                         Debug(@" _                     _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
                         Debug(@"| |     ___   __ _  __| |_ _ __   __ _  | (___  _ __  _ __ _| |_ ___ ___ ");
@@ -1294,52 +1394,84 @@ namespace FlashEditor {
                         Debug(@"                                 |___/         |_|                       ");
                         Debug(@"Loading Sprites");
 
-                        List<SpriteDefinition> sprites = new List<SpriteDefinition>();
+                        /* One address per group. Index 8 declares exactly one file per group in both
+                           caches, and a sprite set is a group rather than a file, so the row is the
+                           group and the file id is read off the table rather than assumed to be 0 -
+                           the same rule SpriteFileId states for the import and export paths. */
+                        List<(int Group, int File)> addresses = cache.EnumerateFiles(RSConstants.SPRITES_INDEX)
+                            .GroupBy(address => address.Group)
+                            .Select(group => (Group: group.Key, File: group.First().File))
+                            .ToList();
 
-                        int done = 0;
-                        int total = referenceTable!.GetArchiveCount();
-                        int percentile = Math.Max(1, total / 100);
+                        BindSpriteColumns();
+                        SeedSpriteGrid(addresses);
+                        PlaceSpriteSplitter();
 
-                        bgw.ReportProgress(0, "Loading " + total + " Sprites");
-                        Debug("Loading " + total + " Sprites");
-                        foreach (KeyValuePair<int, RSArchiveEntry> entry in referenceTable.GetArchiveEntries()) {
-                            try {
-                                Debug("Loading sprite: " + entry.Key, LOG_DETAIL.ADVANCED);
+                        int tileSide = _spriteTileSide;
+                        Font markerFont = _spriteMarkerFont!; //Assigned by BindSpriteColumns, which ran above
+                        RSCache open = cache;
 
-                                SpriteDefinition sprite = cache.GetSprite(entry.Key);
-                                sprite.SetIndex(entry.Key);
-                                sprites.Add(sprite);
-
-                                done++;
-
-                                //Only update the progress bar for each 1% completed
-                                if (done % percentile == 0 || done == total)
-                                    bgw.ReportProgress((done + 1) * 100 / total, "Loaded " + done + "/" + total + " (" + (done + 1) * 100 / total + "%)");
+                        bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
+                            /* Two payloads share this worker, a batch of decoded sets and a status
+                               line, and they are told apart by type rather than by the percentage -
+                               so a burst of batches cannot make the progress bar jump about. */
+                            if (e.UserState is SpriteSetBatch batch) {
+                                ApplySpriteSets(batch);
+                                return;
                             }
-                            catch (Exception ex) {
-                                Debug(ex.Message);
-                            }
-                        }
 
-                        //Set the root objects for the tree
-                        SpriteListView.SetObjects(sprites);
+                            SpriteProgressBar.Value = Math.Clamp(e.ProgressPercentage, 0, 100);
+                            SpriteLoadingLabel.Text = e.UserState!.ToString(); //Every other ReportProgress call in this worker passes a status string
+                        });
 
-                        SpriteListView.CanExpandGetter = delegate (object x) {
-                            if (x is SpriteDefinition definition)
-                                if (definition.GetFrameCount() > 1)
-                                    return true;
-                            return false;
+                        bgw.DoWork += (object? s, DoWorkEventArgs args) => {
+                            args.Result = ReadSpriteSets(bgw, open, addresses, tileSide, markerFont, args);
                         };
 
-                        SpriteListView.ChildrenGetter = delegate (object x) {
-                            //Basically this rewraps the RSBufferedImage (frames) as SpriteDefinitions
-                            return ((SpriteDefinition) x).GetFrames().ConvertAll(y => ((SpriteDefinition) y));
+                        bgw.RunWorkerCompleted += (_, e) => {
+                            /* A hidden TabPage is not resized until it is shown, and this page is
+                               shown by the same selection that starts this load - so the width the
+                               splitter was measured against on the way in can be the designer's
+                               rather than the window's. Re-placed here, by which time the page has
+                               certainly been laid out. */
+                            PlaceSpriteSplitter();
+
+                            //And the detail pane, which may be showing "not read yet" for a row this
+                            //load has since filled in.
+                            ShowSelectedSprite();
+
+                            /* Reading e.Result throws when the worker cancelled or faulted, so both
+                               are checked first. LoadEditorTab marks the tab loaded before any work
+                               starts, so a fault has to clear that flag or the tab keeps its seeded
+                               placeholders for the rest of the session with no way to retry. The
+                               rows survive either way, because they were bound before the worker
+                               started. */
+                            if (e.Cancelled) {
+                                loadedTabs.Remove(page);
+                                SpriteLoadingLabel.Text = "Sprite load cancelled";
+                                return;
+                            }
+
+                            if (e.Error != null) {
+                                loadedTabs.Remove(page);
+                                SpriteLoadingLabel.Text = "Sprite load failed";
+                                Debug($"Loading sprites failed: {e.Error.GetType().Name}: {e.Error.Message}", LOG_DETAIL.BASIC);
+                                return;
+                            }
+
+                            var outcome = (SpriteLoadOutcome) e.Result!; //DoWork assigns Result on every path that is not cancelled or faulted
+                            SpriteProgressBar.Value = 100;
+                            SpriteLoadingLabel.Text = outcome.Describe();
+                            Debug("Sprites loaded: " + outcome.Describe(), LOG_DETAIL.BASIC);
                         };
 
-                        //SpriteListView.TreeModel.ExpandAll();
-                    };
-                    bgw.RunWorkerAsync();
-                    break;
+                        bgw.Disposed += delegate {
+                            workers.Remove(bgw);
+                        };
+
+                        bgw.RunWorkerAsync();
+                        break;
+                    }
                 case RSConstants.NPC_DEFINITIONS_INDEX:
                     Debug(@" _                     _ _               _   _ _____   _____     ");
                     Debug(@"| |                   | (_)             | \ | |  __ \ / ____|    ");
@@ -1580,13 +1712,54 @@ namespace FlashEditor {
                 : -1;
         }
 
+        /// <summary>
+        ///     Writes the selected rows out as PNG files.
+        /// </summary>
+        /// <remarks>
+        ///     Through <see cref="SpritePainter.ToDisplayBitmap"/> rather than by saving the
+        ///     rasteriser's own bitmap. That bitmap is declared premultiplied and holds straight
+        ///     ARGB, so saving it directly encodes every frame carrying an alpha plane wrongly - the
+        ///     same mislabelling the tab's own drawing has to work around, and one that only shows on
+        ///     the 180 frames of the vanilla capture that store a plane at all.
+        ///     <para>
+        ///     A frame row is named for the set it came from as well as its own position, because a
+        ///     frame's <c>index</c> is its place in the set and would otherwise collide with the file
+        ///     written for the sprite set of the same number.
+        ///     </para>
+        /// </remarks>
+        /// <param name="sender">The button.</param>
+        /// <param name="e">The event data.</param>
         private void ExportSpriteBmpBtn_Click(object sender, EventArgs e) {
             string dir = GetCacheDir() + "\\sprites";
             Directory.CreateDirectory(dir);
 
-            foreach (SpriteDefinition sprite in SpriteListView.SelectedObjects)
-                if (sprite.thumb != null)
-                    sprite.thumb.Save(dir + "\\" + sprite.index + ".png");
+            int written = 0;
+            foreach (object row in SpriteListView.SelectedObjects) {
+                if (row is not SpriteDefinition sprite)
+                    continue;
+
+                RSBufferedImage? frame;
+                string name;
+                if (row is RSBufferedImage frameRow) {
+                    SpriteDefinition? owner = SpriteSetBehind(frameRow);
+                    frame = frameRow;
+                    name = (owner == null ? "frame" : owner.index.ToString()) + "_" + frameRow.index;
+                } else {
+                    if (!SpritePainter.CanRasterise(sprite))
+                        continue;
+                    frame = sprite.GetFrame(0);
+                    name = sprite.index.ToString();
+                }
+
+                using Bitmap? picture = SpritePainter.ToDisplayBitmap(frame);
+                if (picture == null)
+                    continue;
+
+                picture.Save(Path.Combine(dir, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                written++;
+            }
+
+            SpriteLoadingLabel.Text = "Exported " + written + " picture(s)";
         }
 
         private void SetDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
@@ -1713,6 +1886,11 @@ namespace FlashEditor {
                    rasterises the new ones lazily. */
                 target.Dispose();
                 target.Decode(new JagStream(imported));
+
+                //The grid draws from a tile built when the set was loaded, so the row would otherwise
+                //keep showing the picture the file held before the import.
+                RedrawSpriteRow(target);
+
                 SpriteListView.RefreshObject(target);
                 SpriteLoadingLabel.Text = "Imported sprite " + target.index + " (" + validated.GetFrameCount() + " frames)";
             }
@@ -2133,8 +2311,18 @@ namespace FlashEditor {
 
         }
 
-        private void numericUpDown1_ValueChanged_1(object sender, EventArgs e) {
-            SpriteListView.RowHeight = (int) numericUpDown1.Value;
+        /// <summary>Redraws the sprite detail pane at the magnification the user asked for.</summary>
+        /// <param name="sender">The zoom control.</param>
+        /// <param name="e">The event data.</param>
+        private void SpriteZoom_ValueChanged(object sender, EventArgs e) {
+            SpritePreview.Zoom = (int) SpriteZoom.Value;
+        }
+
+        /// <summary>Shows or hides the outline marking the frame's own pixels within the canvas.</summary>
+        /// <param name="sender">The check box.</param>
+        /// <param name="e">The event data.</param>
+        private void SpriteFrameOutline_CheckedChanged(object sender, EventArgs e) {
+            SpritePreview.OutlineFrame = SpriteFrameOutline.Checked;
         }
 
         private void ModelListView_SelectedIndexChanged(object sender, EventArgs e) {
@@ -2540,6 +2728,12 @@ namespace FlashEditor {
                         sprite.Dispose();
                 }
             }
+
+            //And the tiles drawn from those sets, which are GDI bitmaps this form owns rather than
+            //anything the definitions hold: one per sprite set, plus one per frame row ever expanded.
+            ReleaseSpriteTiles();
+            _spriteRows.Clear();
+            _spriteRowStatus.Clear();
             TextureManager.Clear();
             _textureImageList.Images.Clear();
 
@@ -2559,6 +2753,14 @@ namespace FlashEditor {
         protected override void OnFormClosed(FormClosedEventArgs e) {
             _fpsTimer.Stop();
             DisposeOldResources();
+
+            /* The sprite placeholder and its marker font outlive a cache: the grid's columns are
+               bound once for the form, so releasing them with the rest of the tiles would leave the
+               next cache's rows drawing a disposed bitmap. They belong to the form, so they go here. */
+            _spritePendingTile?.Dispose();
+            _spritePendingTile = null;
+            _spriteMarkerFont?.Dispose();
+            _spriteMarkerFont = null;
             _modelRenderer.Dispose();
 
             //Before the context goes, and on this thread. Every handle it holds is a GL object, and
@@ -2866,6 +3068,850 @@ namespace FlashEditor {
 
             Debug($"LoadTextures: {published} tiles published, {solidFallbacks} from the material colour", LOG_DETAIL.BASIC);
             return published;
+        }
+
+        // ===================================================================
+        //  The sprite grid: index 8 presented as pictures rather than rows
+        // ===================================================================
+
+        /// <summary>
+        ///     Wires the sprite grid's columns, its tile size and the tree beneath it.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Every column is an <c>AspectGetter</c> rather than an <c>AspectName</c>, because the
+        ///     tree holds two row types. A set is a <c>SpriteDefinition</c> and its children are the
+        ///     <c>RSBufferedImage</c> frames it rasterises, which derive from it - so a name like
+        ///     <c>index</c> reads a frame's position in its set as though it were a sprite id, and
+        ///     <c>width</c> reads a field a frame never populates. That relationship is what makes
+        ///     the tree legal and is deliberately kept; only the presentation changed.
+        ///     </para>
+        ///     <para>
+        ///     The tile side and every column width are measured from the grid's own font. A list
+        ///     view's row height and column widths are pixel counts that the form's DPI scaling does
+        ///     not touch, so a literal is right only at the DPI it was picked at - which is the
+        ///     defect that left this page's rows 20 pixels tall with an 11.25pt font in them.
+        ///     </para>
+        /// </remarks>
+        private void BindSpriteColumns() {
+            if (_spriteColumnsBound)
+                return;
+            _spriteColumnsBound = true;
+
+            //Four rows of text tall. Big enough that a 16x16 icon is magnified three times and a
+            //400x200 banner still reads as a banner, small enough that the grid is a list.
+            _spriteTileSide = Math.Clamp(SpriteListView.Font.Height * 4, 48, 96);
+            _spriteMarkerFont = new Font(SpriteListView.Font.FontFamily, Math.Max(7f, _spriteTileSide / 6f),
+                FontStyle.Regular, GraphicsUnit.Pixel);
+            _spritePendingTile = SpritePainter.RenderTile(null, _spriteTileSide, SpriteTileContent.Pending, _spriteMarkerFont);
+
+            SpriteListView.RowHeight = _spriteTileSide + 2;
+
+            //One character's width in the grid's font, so the columns hold what they claim to at any
+            //DPI. Measured over ten characters because MeasureText pads a single one.
+            int cell = Math.Max(1, TextRenderer.MeasureText(new string('0', 10), SpriteListView.Font).Width / 10);
+
+            //Wide enough for the tile and the cell padding around it. Stated rather than filled: a
+            //filling column is the one ObjectListView narrows when the others do not leave it room,
+            //and a narrowed picture column crops the picture.
+            int[] widths = {
+                cell * 9,  //ID, holding a four digit id and the tree glyph drawn beside it
+                cell * 9,  //Frames
+                cell * 10, //Canvas
+                cell * 18, //Frame at
+                cell * 15, //Stored, widened to whatever is left over, being the filling column
+                cell * 6,  //Tile
+                _spriteTileSide + cell
+            };
+
+            SpriteIdColumn.Width = widths[0];
+            SpriteFrameCountColumn.Width = widths[1];
+            SpriteCanvasColumn.Width = widths[2];
+            SpritePlacementColumn.Width = widths[3];
+            SpriteStoredColumn.Width = widths[4];
+            SpriteScaleColumn.Width = widths[5];
+            SpriteImageColumn.Width = widths[6];
+
+            /* What the grid needs to show every column in full: its own columns, plus the tree indent
+               and the vertical scrollbar, neither of which is a column. The splitter is placed from
+               this rather than from a fraction of the page, because a fraction that suited one window
+               left the filling column too narrow to hold "column-major" in another.
+               Summed from what was assigned rather than read back off the columns: a space-filling
+               column answers with the width ObjectListView has currently given it, which before the
+               grid has been laid out is zero - so reading them back measured the page 105 pixels
+               short and put the splitter exactly one column too far left. */
+            _spriteGridWidth = cell * 4 + SystemInformation.VerticalScrollBarWidth;
+            foreach (int width in widths)
+                _spriteGridWidth += width;
+
+            //Measured from the same character width, so the strip holds its widest button caption at
+            //any DPI without either clipping it or reserving a third of the page for it.
+            groupBox3.Width = cell * 30;
+
+            /* Every getter answers an empty cell for a null row. ObjectListView evaluates aspects
+               for rows being recycled during a scroll and for cells measured before a model is
+               attached. A row of the wrong type still throws, because that can only mean the columns
+               were wired to something this tab does not produce. */
+            SpriteIdColumn.AspectGetter = row => row == null ? null : (object) ((SpriteDefinition) row).index;
+
+            SpriteFrameCountColumn.AspectGetter = row => {
+                if (row == null)
+                    return string.Empty;
+                if (row is RSBufferedImage frame)
+                    return "frame " + frame.index;
+                SpriteDefinition set = (SpriteDefinition) row;
+                return SpriteStatusOf(set).Content == SpriteTileContent.Pending
+                    ? string.Empty
+                    : set.GetFrameCount().ToString();
+            };
+
+            SpriteCanvasColumn.AspectGetter = row => {
+                if (row == null)
+                    return string.Empty;
+                if (row is RSBufferedImage frame)
+                    return frame.GetWidth() + "x" + frame.GetHeight();
+                SpriteDefinition set = (SpriteDefinition) row;
+                return SpriteStatusOf(set).Content == SpriteTileContent.Pending
+                    ? string.Empty
+                    : set.width + "x" + set.height;
+            };
+
+            SpritePlacementColumn.AspectGetter = row => {
+                if (row == null)
+                    return string.Empty;
+                SpriteFrame? frame = SpriteFrameBehind(row);
+                return frame == null
+                    ? string.Empty
+                    : frame.SubWidth + "x" + frame.SubHeight + " at " + frame.OffsetX + "," + frame.OffsetY;
+            };
+
+            SpriteStoredColumn.AspectGetter = row => {
+                if (row == null)
+                    return string.Empty;
+                if (row is not RSBufferedImage) {
+                    SpriteRowStatus status = SpriteStatusOf((SpriteDefinition) row);
+                    if (status.Failure != null)
+                        return status.Failure;
+                    if (status.Content == SpriteTileContent.Pending)
+                        return string.Empty;
+                }
+                return DescribeSpriteStorage(row);
+            };
+
+            SpriteScaleColumn.AspectGetter = row => {
+                if (row == null)
+                    return string.Empty;
+                if (row is not RSBufferedImage)
+                    return SpriteStatusOf((SpriteDefinition) row).Scale;
+
+                SpriteFrame? stored = SpriteFrameBehind(row);
+                if (stored == null || stored.Area == 0)
+                    return "-";
+                var frame = (RSBufferedImage) row;
+                return SpriteTileFit.Fit(frame.GetWidth(), frame.GetHeight(), _spriteTileSide, _spriteTileSide).ToString();
+            };
+
+            SpriteImageColumn.AspectGetter = row => null; //The picture is the cell; there is no text under it
+            SpriteImageColumn.ImageGetter = row => {
+                if (row == null)
+                    return null;
+                return row is RSBufferedImage frame
+                    ? SpriteFrameTileFor(frame)
+                    : SpriteTileFor((SpriteDefinition) row);
+            };
+
+            SpriteListView.CanExpandGetter = row =>
+                row is SpriteDefinition set && row is not RSBufferedImage && set.GetFrameCount() > 1;
+            SpriteListView.ChildrenGetter = row => SpriteFrameRows((SpriteDefinition) row);
+
+            SpritePreview.Zoom = (int) SpriteZoom.Value;
+            SpritePreview.OutlineFrame = SpriteFrameOutline.Checked;
+
+            //An AutoSize label docked to an edge grows sideways and is clipped by its container: it
+            //wraps only once its MaximumSize states a width. Re-measured on resize, because that
+            //width is the page's and the page follows the form.
+            SpriteEditorTab.SizeChanged += (_, _) => {
+                WrapSpriteNotice();
+                PlaceSpriteSplitter();
+            };
+            WrapSpriteNotice();
+
+            /* Re-placed on every resize rather than once. SplitterMoving is raised only for a drag,
+               so the moment the user states a preference the measurement stops overriding it. */
+            SpriteSplit.SizeChanged += (_, _) => PlaceSpriteSplitter();
+            SpriteSplit.SplitterMoving += (_, _) => _spriteSplitMovedByHand = true;
+        }
+
+        /// <summary>Gives the sprite notice a width to wrap against.</summary>
+        private void WrapSpriteNotice() {
+            int width = SpriteEditorTab.ClientSize.Width;
+            //Written only when it changes: assigning a maximum size lays the page out again, and a
+            //layout is what raises the event this is called from.
+            if (width > 0 && SpriteNoticeLabel.MaximumSize.Width != width)
+                SpriteNoticeLabel.MaximumSize = new Size(width, 0);
+        }
+
+        /// <summary>
+        ///     Divides the sprite page between the list and the preview, once it has a width worth
+        ///     dividing.
+        /// </summary>
+        /// <remarks>
+        ///     A <see cref="SplitContainer"/> defaults to a splitter distance of 50 <i>pixels</i>
+        ///     rather than half, so the distance has to be set - and setting it in the designer would
+        ///     make it one more literal the form's DPI scaling multiplies.
+        /// </remarks>
+        private void PlaceSpriteSplitter() {
+            if (_spriteSplitMovedByHand || SpriteSplit.Width < 400)
+                return;
+
+            try {
+                //As much as the grid's own columns need, and never more than three quarters of the
+                //page - the preview is what an edit is judged against and cannot be squeezed out of
+                //existence, and it scrolls, so it does not need the width of the largest sprite.
+                SpriteSplit.SplitterDistance = Math.Clamp(_spriteGridWidth,
+                    SpriteSplit.Panel1MinSize, Math.Max(SpriteSplit.Panel1MinSize, SpriteSplit.Width * 3 / 4));
+            }
+            catch (InvalidOperationException ex) {
+                //A distance the panels' minimum sizes will not allow at the current width. Left
+                //where it is; the next resize tries again.
+                Debug("Sprite splitter not placed yet: " + ex.Message, LOG_DETAIL.ADVANCED);
+            }
+        }
+
+        /// <summary>
+        ///     Binds one row per declared sprite group before a single group has been read.
+        /// </summary>
+        /// <remarks>
+        ///     The tab used to bind nothing until the whole index had been decoded, so it showed an
+        ///     empty grid for the length of the load and read as broken. Every group id is known from
+        ///     the reference table at no cost, so the complete list is available immediately and the
+        ///     load only fills it in.
+        ///     <para>
+        ///     The rows are empty <c>SpriteDefinition</c> instances that the load decodes into, which
+        ///     is what lets a finished set replace a placeholder without adding a row: adding
+        ///     reorders and rebuilds the tree, replacing does not.
+        ///     </para>
+        /// </remarks>
+        /// <param name="addresses">One (group, file) pair per sprite set, in table order.</param>
+        private void SeedSpriteGrid(List<(int Group, int File)> addresses) {
+            ReleaseSpriteTiles();
+            _spriteRows.Clear();
+            _spriteRowStatus.Clear();
+
+            var rows = new List<SpriteDefinition>(addresses.Count);
+            foreach ((int group, int _) in addresses) {
+                var row = new SpriteDefinition();
+                row.SetIndex(group);
+                _spriteRows[group] = row;
+                _spriteRowStatus[group] = SpriteRowStatus.Pending;
+                rows.Add(row);
+            }
+
+            SpriteListView.SetObjects(rows);
+            ShowSelectedSprite();
+
+            SpriteProgressBar.Value = 0;
+            SpriteLoadingLabel.Text = "Reading " + rows.Count + " sprite sets";
+        }
+
+        /// <summary>
+        ///     Fills in a batch of decoded sets and swaps their tiles into the grid.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Each set is decoded twice on purpose, once on the worker and once here. The worker's
+        ///     decode is what its tile is rasterised from; this one fills the row the grid is already
+        ///     holding. The alternatives are worse: rasterising on the UI thread puts the expensive
+        ///     half of the load back on the message loop, and writing into a bound row from the
+        ///     worker is a control-visible object being mutated off the UI thread. A sprite decode is
+        ///     a walk over the stored bytes with no rasterising in it, and index 8 is under fifteen
+        ///     megabytes decompressed, so the second pass is paid in ones of milliseconds per batch.
+        ///     </para>
+        ///     <para>
+        ///     Nothing here rebuilds a row or grows the list. The tile is swapped in the dictionary
+        ///     the image getter reads, so a plain <c>Invalidate</c> is all the grid needs.
+        ///     </para>
+        /// </remarks>
+        /// <param name="batch">The sets the worker has finished with.</param>
+        private void ApplySpriteSets(SpriteSetBatch batch) {
+            bool selectionFilled = false;
+
+            foreach (SpriteSetResult result in batch.Sets) {
+                if (!_spriteRows.TryGetValue(result.GroupId, out SpriteDefinition? row)) {
+                    //No row means this group was not in the list the grid was seeded from, so there
+                    //is nothing to draw it in and the tile is ours to release.
+                    result.Tile?.Dispose();
+                    continue;
+                }
+
+                SpriteRowStatus status = result.Status;
+
+                if (result.Stored != null) {
+                    try {
+                        row.Decode(new JagStream(result.Stored));
+                    }
+                    catch (Exception ex) {
+                        //The worker decoded these same bytes, so this can only be a defect rather
+                        //than a bad file - but it must cost the row and not the load.
+                        status = SpriteRowStatus.Failed(ex.Message);
+                        Debug("Sprite " + result.GroupId + " decoded on the worker and not on the UI thread: " + ex);
+                    }
+                }
+
+                if (_spriteTiles.Remove(result.GroupId, out Bitmap? previous))
+                    previous.Dispose();
+                if (result.Tile != null)
+                    _spriteTiles[result.GroupId] = result.Tile;
+
+                _spriteRowStatus[result.GroupId] = status;
+
+                //The pane is bound to a row, not to a batch, so a set that arrives while it is
+                //selected has to redraw it - otherwise it keeps saying the row has not been read.
+                object? selected = SpriteListView.SelectedObject;
+                if (selected != null && ReferenceEquals(SpriteSetBehind(selected), row))
+                    selectionFilled = true;
+            }
+
+            SpriteListView.Invalidate();
+
+            if (selectionFilled)
+                ShowSelectedSprite();
+        }
+
+        /// <summary>
+        ///     Reads and rasterises every sprite set, entirely off the UI thread, publishing them in
+        ///     batches as they finish.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing here touches a control. The bitmaps are unattached and owned by this thread
+        ///     until <see cref="ApplySpriteSets"/> takes them, and the definitions decoded here are
+        ///     thrown away once their tile exists - the rows the grid holds are decoded on the UI
+        ///     thread from the same bytes.
+        ///     <para>
+        ///     Sequential rather than parallel, unlike the texture sweep. The work here is dominated
+        ///     by reading and inflating containers, which every thread would take the cache's own
+        ///     lock to do.
+        ///     </para>
+        /// </remarks>
+        /// <param name="bgw">The worker driving this pass, for progress and cancellation.</param>
+        /// <param name="open">The cache to read from, passed rather than read off the field so a reload cannot swap it mid-sweep.</param>
+        /// <param name="addresses">One (group, file) pair per sprite set.</param>
+        /// <param name="tileSide">The tile side in pixels, measured on the UI thread.</param>
+        /// <param name="markerFont">The font for the empty and failed markers.</param>
+        /// <param name="args">The <see cref="DoWorkEventArgs"/> to flag when cancellation wins the race.</param>
+        /// <returns>What the sweep found.</returns>
+        private static SpriteLoadOutcome ReadSpriteSets(BackgroundWorker bgw, RSCache open,
+            List<(int Group, int File)> addresses, int tileSide, Font markerFont, DoWorkEventArgs args) {
+            var outcome = new SpriteLoadOutcome();
+            int total = addresses.Count;
+            if (total == 0)
+                return outcome;
+
+            int percentile = Math.Max(1, total / 100);
+            int done = 0;
+            var pending = new List<SpriteSetResult>(SpriteBatchSize);
+            Stopwatch sinceFlush = Stopwatch.StartNew();
+
+            void Flush(bool force) {
+                if (pending.Count == 0)
+                    return;
+                if (!force && pending.Count < SpriteBatchSize && sinceFlush.ElapsedMilliseconds < SpriteBatchIntervalMs)
+                    return;
+
+                var ready = new List<SpriteSetResult>(pending);
+                pending.Clear();
+                sinceFlush.Restart();
+
+                //ReportProgress posts rather than sends, so the sweep never waits on the UI thread.
+                //The percentage is ignored for a batch payload; it is passed so a handler that only
+                //looks at the number still sees a sane one.
+                bgw.ReportProgress(Math.Clamp(done * 100 / total, 0, 100), new SpriteSetBatch(ready));
+            }
+
+            foreach ((int group, int file) in addresses) {
+                if (bgw.CancellationPending) {
+                    args.Cancel = true;
+
+                    //Whatever the last batch collected is never going to be published, and the UI
+                    //thread never took ownership of it.
+                    foreach (SpriteSetResult abandoned in pending)
+                        abandoned.Tile?.Dispose();
+                    pending.Clear();
+                    return outcome;
+                }
+
+                pending.Add(ReadOneSpriteSet(open, group, file, tileSide, markerFont, outcome));
+                done++;
+
+                //Reported on one-percent boundaries only. ReportProgress marshals to the UI thread
+                //on every call, so one post per set would be 4,593 of them.
+                if (done % percentile == 0 || done == total)
+                    bgw.ReportProgress(done * 100 / total,
+                        "Read " + done + "/" + total + " sprite sets (" + done * 100 / total + "%)");
+
+                Flush(false);
+            }
+
+            Flush(true);
+            return outcome;
+        }
+
+        /// <summary>Reads one sprite set and builds the tile the grid will show for it.</summary>
+        /// <param name="open">The cache to read from.</param>
+        /// <param name="group">The group id, which is the sprite id on index 8.</param>
+        /// <param name="file">The file id the reference table declares for that group.</param>
+        /// <param name="tileSide">The tile side in pixels.</param>
+        /// <param name="markerFont">The font for the empty and failed markers.</param>
+        /// <param name="outcome">The running tally, which this adds one set to.</param>
+        /// <returns>The finished row, tile included.</returns>
+        private static SpriteSetResult ReadOneSpriteSet(RSCache open, int group, int file, int tileSide,
+            Font markerFont, SpriteLoadOutcome outcome) {
+            var probe = new SpriteDefinition();
+            Bitmap? picture = null;
+
+            try {
+                byte[] stored = open.ReadFileBytes(RSConstants.SPRITES_INDEX, group, file);
+                probe.Decode(new JagStream(stored));
+
+                /* The tile shows frame 0, so the tile's state is frame 0's. A frame with a zero-area
+                   plane reads as empty rather than as a failed draw - 2,377 of the vanilla capture's
+                   11,177 frames store one, and they are legitimate records. Note that such a frame
+                   can still have a positive canvas, so this cannot be decided from the canvas. */
+                SpriteTileContent content = SpritePainter.ContentOf(probe, 0);
+                if (content == SpriteTileContent.Picture) {
+                    picture = SpritePainter.ToDisplayBitmap(probe.GetFrame(0));
+                    if (picture == null)
+                        content = SpriteTileContent.Empty;
+                }
+
+                Bitmap tile = SpritePainter.RenderTile(picture, tileSide, content, markerFont);
+                string scale = picture == null
+                    ? "-"
+                    : SpriteTileFit.Fit(picture.Width, picture.Height, tileSide, tileSide).ToString();
+
+                outcome.Loaded++;
+                if (content != SpriteTileContent.Picture)
+                    outcome.Empty++;
+
+                return new SpriteSetResult(group, stored, tile, new SpriteRowStatus(content, scale, null));
+            }
+            catch (Exception ex) {
+                outcome.Failed++;
+                Debug("Sprite group " + group + " could not be read: " + ex.GetType().Name + ": " + ex.Message);
+                return new SpriteSetResult(group, null,
+                    SpritePainter.RenderTile(null, tileSide, SpriteTileContent.Failed, markerFont),
+                    SpriteRowStatus.Failed(ex.Message));
+            }
+            finally {
+                picture?.Dispose();
+
+                //The rendered frames are a pinned pixel buffer and a GDI bitmap each, and the tile
+                //has already taken the only copy that is wanted.
+                probe.Dispose();
+            }
+        }
+
+        /// <summary>The frames of one set, recorded so a frame row can name where it came from.</summary>
+        /// <param name="set">The set being expanded.</param>
+        /// <returns>The rendered frames, or nothing when the set cannot be rasterised.</returns>
+        private IEnumerable<object> SpriteFrameRows(SpriteDefinition set) {
+            if (!SpritePainter.CanRasterise(set))
+                return Array.Empty<object>();
+
+            List<RSBufferedImage>? frames;
+            try {
+                frames = set.GetFrames();
+            }
+            catch (Exception ex) {
+                //Costs the branch rather than the tab: expanding a row must not take the form down.
+                Debug("Sprite " + set.index + " could not be rasterised: " + ex.Message);
+                return Array.Empty<object>();
+            }
+
+            if (frames == null)
+                return Array.Empty<object>();
+
+            var rows = new List<object>(frames.Count);
+            for (int id = 0; id < frames.Count; id++) {
+                _spriteFrameOwners[frames[id]] = (set, id);
+                rows.Add(frames[id]);
+            }
+
+            return rows;
+        }
+
+        /// <summary>The tile for a sprite set, which is the placeholder until its load lands.</summary>
+        /// <param name="set">The set row.</param>
+        /// <returns>The tile.</returns>
+        private Bitmap? SpriteTileFor(SpriteDefinition set) {
+            return _spriteTiles.TryGetValue(set.index, out Bitmap? tile) ? tile : _spritePendingTile;
+        }
+
+        /// <summary>
+        ///     The tile for one expanded frame row, built the first time the row is drawn.
+        /// </summary>
+        /// <remarks>
+        ///     On demand rather than during the load: only 44 of the vanilla capture's 4,593 sets
+        ///     hold more than one frame, so building every frame's tile up front would be 11,177
+        ///     tiles rendered to show 4,593 rows. This runs on the UI thread, which is affordable
+        ///     only because of that.
+        /// </remarks>
+        /// <param name="frame">The frame row.</param>
+        /// <returns>The tile.</returns>
+        private Bitmap? SpriteFrameTileFor(RSBufferedImage frame) {
+            if (!_spriteFrameOwners.TryGetValue(frame, out (SpriteDefinition Set, int Frame) owner))
+                return _spritePendingTile;
+
+            (int, int) key = (owner.Set.index, owner.Frame);
+            if (_spriteFrameTiles.TryGetValue(key, out Bitmap? cached))
+                return cached;
+
+            Bitmap? picture = SpritePainter.ContentOf(owner.Set, owner.Frame) == SpriteTileContent.Picture
+                ? SpritePainter.ToDisplayBitmap(frame)
+                : null;
+            Bitmap tile = SpritePainter.RenderTile(picture, _spriteTileSide,
+                picture == null ? SpriteTileContent.Empty : SpriteTileContent.Picture, _spriteMarkerFont!);
+            picture?.Dispose();
+
+            _spriteFrameTiles[key] = tile;
+            return tile;
+        }
+
+        /// <summary>The stored frame a row describes, which for a set is its first.</summary>
+        /// <param name="row">A set row or a frame row.</param>
+        /// <returns>The stored frame, or null when the row has none.</returns>
+        private SpriteFrame? SpriteFrameBehind(object row) {
+            if (row is RSBufferedImage frame) {
+                if (!_spriteFrameOwners.TryGetValue(frame, out (SpriteDefinition Set, int Frame) owner))
+                    return null;
+                List<SpriteFrame>? stored = owner.Set.Frames;
+                return stored != null && owner.Frame < stored.Count ? stored[owner.Frame] : null;
+            }
+
+            List<SpriteFrame>? frames = ((SpriteDefinition) row).Frames;
+            return frames != null && frames.Count > 0 ? frames[0] : null;
+        }
+
+        /// <summary>The set a row belongs to, which for a frame row is the set it was expanded from.</summary>
+        /// <param name="row">A set row or a frame row.</param>
+        /// <returns>The set, or null when a frame row's owner is no longer known.</returns>
+        private SpriteDefinition? SpriteSetBehind(object row) {
+            if (row is not RSBufferedImage frame)
+                return (SpriteDefinition) row;
+
+            return _spriteFrameOwners.TryGetValue(frame, out (SpriteDefinition Set, int Frame) owner) ? owner.Set : null;
+        }
+
+        /// <summary>What a row's stored frame carries beyond its pixels.</summary>
+        /// <remarks>
+        ///     Every one of these is a stored choice that the drawn picture cannot express: an alpha
+        ///     plane that leaves everything opaque draws like no plane at all, the traversal flag is
+        ///     unrecoverable on a frame one pixel wide, and a frame reaching outside its canvas is
+        ///     something the client would refuse to draw at all.
+        /// </remarks>
+        /// <param name="row">A set row or a frame row.</param>
+        /// <returns>The summary, or a dash when there is nothing to say.</returns>
+        private string DescribeSpriteStorage(object row) {
+            SpriteFrame? frame = SpriteFrameBehind(row);
+            SpriteDefinition? owner = SpriteSetBehind(row);
+            return frame == null || owner == null ? "-" : DescribeSpriteStorage(owner, frame);
+        }
+
+        /// <summary>What one stored frame carries beyond its pixels.</summary>
+        /// <param name="owner">The set the frame belongs to, which owns the palette.</param>
+        /// <param name="frame">The stored frame.</param>
+        /// <returns>The summary.</returns>
+        private static string DescribeSpriteStorage(SpriteDefinition owner, SpriteFrame frame) {
+            /* The palette size is deliberately not here. It belongs to the set rather than to the
+               frame, the detail pane states it for whatever is selected, and putting it in front of
+               the three flags cost the column the width it needed to show them - "pal 28, ..." on
+               every row said less than "column-major" on the rows that have it. */
+            var parts = new List<string>();
+            if (frame.HasAlphaPlane)
+                parts.Add(frame.AlphaPlaneIsRedundant ? "alpha (opaque)" : "alpha");
+            if (frame.IsColumnMajor)
+                parts.Add("column-major");
+            if (owner.Overflows(frame))
+                parts.Add("overflows canvas");
+
+            return parts.Count == 0 ? "-" : string.Join(", ", parts);
+        }
+
+        /// <summary>What the grid knows about one sprite row.</summary>
+        /// <param name="set">The set row.</param>
+        /// <returns>Its status, which is pending for a row no load has reached.</returns>
+        private SpriteRowStatus SpriteStatusOf(SpriteDefinition set) {
+            return _spriteRowStatus.TryGetValue(set.index, out SpriteRowStatus? status) ? status : SpriteRowStatus.Pending;
+        }
+
+        /// <summary>Shows the selected sprite in the detail pane.</summary>
+        /// <param name="sender">The grid.</param>
+        /// <param name="e">The event data.</param>
+        private void SpriteListView_SelectedIndexChanged(object sender, EventArgs e) {
+            ShowSelectedSprite();
+        }
+
+        /// <summary>
+        ///     Draws the selected row at 1:1 in the detail pane and describes what it is.
+        /// </summary>
+        /// <remarks>
+        ///     The pane shows the frame on its canvas rather than cropped to its own pixels: the
+        ///     offset a frame is placed at is a stored field, and cropping to the sub-rectangle hides
+        ///     it. The dashed outline is where the frame's own pixels are.
+        /// </remarks>
+        private void ShowSelectedSprite() {
+            //Cleared first, so a failure below leaves an empty pane rather than the previous sprite.
+            SpritePreview.ShowFrame(null, Rectangle.Empty);
+            _spriteDetailPicture?.Dispose();
+            _spriteDetailPicture = null;
+
+            object? row = SpriteListView.SelectedObject;
+            if (row == null) {
+                SpritePreview.EmptyText = "No sprite selected";
+                SpriteDetailLabel.Text = "Select a sprite set to see its frames at full size.";
+                return;
+            }
+
+            SpriteDefinition set;
+            int frameId;
+            if (row is RSBufferedImage frameRow) {
+                if (!_spriteFrameOwners.TryGetValue(frameRow, out (SpriteDefinition Set, int Frame) owner)) {
+                    SpritePreview.EmptyText = "That frame's set is no longer loaded";
+                    SpriteDetailLabel.Text = string.Empty;
+                    return;
+                }
+                set = owner.Set;
+                frameId = owner.Frame;
+            } else {
+                set = (SpriteDefinition) row;
+                frameId = 0;
+            }
+
+            SpriteRowStatus status = SpriteStatusOf(set);
+            if (status.Failure != null) {
+                SpritePreview.EmptyText = "This set would not decode";
+                SpriteDetailLabel.Text = "Sprite " + set.index + " could not be decoded: " + status.Failure;
+                return;
+            }
+
+            if (status.Content == SpriteTileContent.Pending) {
+                SpritePreview.EmptyText = "Not read yet";
+                SpriteDetailLabel.Text = "Sprite " + set.index + " has not been read yet.";
+                return;
+            }
+
+            SpriteFrame? frame = set.Frames != null && frameId < set.Frames.Count ? set.Frames[frameId] : null;
+            if (frame == null) {
+                SpritePreview.EmptyText = "This set stores no frames";
+                SpriteDetailLabel.Text = "Sprite " + set.index + " stores no frames at all.";
+                return;
+            }
+
+            SpriteDetailLabel.Text = DescribeSelectedSprite(set, frame, frameId);
+
+            if (frame.Area == 0) {
+                SpritePreview.EmptyText = "This frame stores no pixels";
+                return;
+            }
+
+            if (!SpritePainter.CanRasterise(set)) {
+                SpritePreview.EmptyText = "This set cannot be drawn: its canvas is empty";
+                return;
+            }
+
+            try {
+                _spriteDetailPicture = SpritePainter.ToDisplayBitmap(set.GetFrame(frameId));
+            }
+            catch (Exception ex) {
+                //Costs the preview rather than the tab
+                Debug("Sprite " + set.index + " frame " + frameId + " could not be drawn: " + ex.Message);
+                SpritePreview.EmptyText = "This frame could not be drawn";
+                return;
+            }
+
+            SpritePreview.ShowFrame(_spriteDetailPicture,
+                new Rectangle(frame.OffsetX, frame.OffsetY, frame.SubWidth, frame.SubHeight));
+        }
+
+        /// <summary>The sentence above the detail pane.</summary>
+        /// <remarks>
+        ///     It ends by saying what this pane is not. The colour rule is the client's - palette
+        ///     entry 0 transparent, an alpha plane blended - but nothing above it is: the client
+        ///     draws a sprite through whatever the interface asked for, and a user comparing this
+        ///     against the game has no other way to tell a documented difference from a defect.
+        /// </remarks>
+        /// <param name="set">The selected set.</param>
+        /// <param name="frame">The frame on show.</param>
+        /// <param name="frameId">Its position in the set.</param>
+        /// <returns>The description.</returns>
+        private string DescribeSelectedSprite(SpriteDefinition set, SpriteFrame frame, int frameId) {
+            string placement = frame.SubWidth + "x" + frame.SubHeight + " at " + frame.OffsetX + "," + frame.OffsetY;
+            string canvas = set.width + "x" + set.height;
+
+            return "Sprite " + set.index + ", frame " + frameId + " of " + set.GetFrameCount() +
+                   ". Canvas " + canvas + ", frame " + placement + ", " + DescribeSpriteStorage(set, frame) +
+                   ", palette " + Math.Max(0, set.PaletteStored.Length - 1) + ", " +
+                   set.StoredLength + " bytes stored." + Environment.NewLine +
+                   "Drawn at " + SpritePreview.Zoom + ":1 with the client's colour rule - palette entry 0 is " +
+                   "transparent and an alpha plane is blended - over a checkerboard, so a fully transparent " +
+                   "sprite is checkerboard rather than a blank box. This is not the client's renderer: it " +
+                   "applies none of the tinting, team colour or transparency an interface can ask for.";
+        }
+
+        /// <summary>
+        ///     Rebuilds one row's tile from the definition it now holds.
+        /// </summary>
+        /// <remarks>
+        ///     For after an import: the row is decoded in place, and everything the grid draws for it
+        ///     comes from a tile and a status recorded when the set was first read. Both are rebuilt
+        ///     here rather than left to a repaint, which would show the previous file's picture over
+        ///     the new file's bytes.
+        /// </remarks>
+        /// <param name="set">The row whose stored form has just changed.</param>
+        private void RedrawSpriteRow(SpriteDefinition set) {
+            //Any expanded frame rows belong to the bytes that were there before this.
+            var stale = new List<(int Set, int Frame)>();
+            foreach ((int Set, int Frame) key in _spriteFrameTiles.Keys)
+                if (key.Set == set.index)
+                    stale.Add(key);
+            foreach ((int Set, int Frame) key in stale) {
+                _spriteFrameTiles[key].Dispose();
+                _spriteFrameTiles.Remove(key);
+            }
+
+            SpriteTileContent content = SpritePainter.ContentOf(set, 0);
+            Bitmap? picture = null;
+
+            try {
+                if (content == SpriteTileContent.Picture) {
+                    picture = SpritePainter.ToDisplayBitmap(set.GetFrame(0));
+                    if (picture == null)
+                        content = SpriteTileContent.Empty;
+                }
+
+                if (_spriteTiles.Remove(set.index, out Bitmap? previous))
+                    previous.Dispose();
+
+                _spriteTiles[set.index] = SpritePainter.RenderTile(picture, _spriteTileSide, content, _spriteMarkerFont!);
+                _spriteRowStatus[set.index] = new SpriteRowStatus(content,
+                    picture == null ? "-" : SpriteTileFit.Fit(picture.Width, picture.Height, _spriteTileSide, _spriteTileSide).ToString(),
+                    null);
+            }
+            finally {
+                picture?.Dispose();
+            }
+
+            ShowSelectedSprite();
+        }
+
+        /// <summary>Releases every bitmap the sprite grid and its preview are holding.</summary>
+        private void ReleaseSpriteTiles() {
+            SpritePreview.ShowFrame(null, Rectangle.Empty);
+            _spriteDetailPicture?.Dispose();
+            _spriteDetailPicture = null;
+
+            foreach (Bitmap tile in _spriteTiles.Values)
+                tile.Dispose();
+            _spriteTiles.Clear();
+
+            foreach (Bitmap tile in _spriteFrameTiles.Values)
+                tile.Dispose();
+            _spriteFrameTiles.Clear();
+
+            _spriteFrameOwners.Clear();
+        }
+
+        /// <summary>What the sprite grid knows about one row beyond the definition itself.</summary>
+        private sealed class SpriteRowStatus {
+            internal SpriteRowStatus(SpriteTileContent content, string scale, string? failure) {
+                Content = content;
+                Scale = scale;
+                Failure = failure;
+            }
+
+            /// <summary>The row every seeded set starts as.</summary>
+            internal static SpriteRowStatus Pending { get; } =
+                new SpriteRowStatus(SpriteTileContent.Pending, string.Empty, null);
+
+            /// <summary>A row whose group would not read or would not decode.</summary>
+            /// <param name="reason">What went wrong, shown in the grid rather than only logged.</param>
+            /// <returns>The status.</returns>
+            internal static SpriteRowStatus Failed(string reason) {
+                return new SpriteRowStatus(SpriteTileContent.Failed, "-", reason);
+            }
+
+            internal SpriteTileContent Content { get; }
+
+            /// <summary>How the tile is scaled, as the tile itself was drawn.</summary>
+            internal string Scale { get; }
+
+            /// <summary>Why the row has no picture, or null when it has one.</summary>
+            internal string? Failure { get; }
+        }
+
+        /// <summary>One decoded sprite set on its way from the loader to the grid.</summary>
+        private sealed class SpriteSetResult {
+            internal SpriteSetResult(int groupId, byte[]? stored, Bitmap? tile, SpriteRowStatus status) {
+                GroupId = groupId;
+                Stored = stored;
+                Tile = tile;
+                Status = status;
+            }
+
+            internal int GroupId { get; }
+
+            /// <summary>The stored bytes, for the UI thread to decode into the bound row.</summary>
+            /// <remarks>Null when the group could not be read, so there is nothing to decode.</remarks>
+            internal byte[]? Stored { get; }
+
+            /// <summary>The finished tile, owned by the grid from the moment it is applied.</summary>
+            internal Bitmap? Tile { get; }
+
+            internal SpriteRowStatus Status { get; }
+        }
+
+        /// <summary>
+        ///     One instalment of decoded sprite sets, on its way from the loader to the grid.
+        /// </summary>
+        /// <remarks>
+        ///     A type of its own rather than a bare list so the <c>ProgressChanged</c> handler can
+        ///     tell a batch from the status string the same worker reports.
+        /// </remarks>
+        private sealed class SpriteSetBatch {
+            internal SpriteSetBatch(List<SpriteSetResult> sets) {
+                Sets = sets;
+            }
+
+            internal List<SpriteSetResult> Sets { get; }
+        }
+
+        /// <summary>What one sweep of index 8 found.</summary>
+        /// <remarks>
+        ///     Empty sets are counted apart from failures because they are not failures: a set whose
+        ///     first frame stores no pixels is a legitimate record and thousands of frames in this
+        ///     index are exactly that. Folding the two together would let a decoder regression hide
+        ///     inside a number that already had a benign reason to be large.
+        /// </remarks>
+        private sealed class SpriteLoadOutcome {
+            /// <summary>Sets that decoded.</summary>
+            internal int Loaded { get; set; }
+
+            /// <summary>Of those, the ones whose first frame stores no pixels.</summary>
+            internal int Empty { get; set; }
+
+            /// <summary>Groups that would not read or would not decode.</summary>
+            internal int Failed { get; set; }
+
+            /// <summary>The status line.</summary>
+            /// <returns>The description.</returns>
+            internal string Describe() {
+                string text = Loaded.ToString("N0") + " sprite sets";
+                if (Empty > 0)
+                    text += ", " + Empty.ToString("N0") + " with no pixels in frame 0";
+                if (Failed > 0)
+                    text += ", " + Failed.ToString("N0") + " failed";
+                return text;
+            }
         }
 
         /// <summary>
