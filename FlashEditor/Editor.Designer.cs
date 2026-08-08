@@ -166,6 +166,7 @@ namespace FlashEditor {
             ParticleEditorTab = new TabPage();
             LoadingScreenEditorTab = new TabPage();
             FontEditorTab = new TabPage();
+            ClientScriptEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -344,6 +345,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(InterfaceEditorTab);
             EditorTabControl.Controls.Add(QuickChatEditorTab);
             EditorTabControl.Controls.Add(HuffmanEditorTab);
+            EditorTabControl.Controls.Add(ClientScriptEditorTab);
             EditorTabControl.Dock = DockStyle.Fill;
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(0, 0);
@@ -1706,6 +1708,16 @@ namespace FlashEditor {
             FontEditorTab.Text = "Fonts";
             FontEditorTab.UseVisualStyleBackColor = true;
             //
+            // ClientScriptEditorTab
+            //
+            ClientScriptEditorTab.Controls.Add(ClientScriptPanel);
+            ClientScriptEditorTab.Location = new Point(4, 37);
+            ClientScriptEditorTab.Name = "ClientScriptEditorTab";
+            ClientScriptEditorTab.Size = new Size(1113, 554);
+            ClientScriptEditorTab.TabIndex = 24;
+            ClientScriptEditorTab.Text = "Client Scripts";
+            ClientScriptEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -2008,6 +2020,11 @@ namespace FlashEditor {
         //not columns: they belong beside the index-8 glyph sheet, where an edited width can be seen.
         private TabPage FontEditorTab;
         private FlashEditor.Definitions.Editing.DefinitionListPanel FontPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        //Index 12, one compiled CS2 script per group and one file per group. The panel owns a
+        //DefinitionListPanel for the scripts and the instruction and switch grids beside it, because
+        //the index holds a third of a million instructions and only the selected script's are rows.
+        private TabPage ClientScriptEditorTab;
+        private FlashEditor.Definitions.ClientScripts.ClientScriptEditorPanel ClientScriptPanel = new FlashEditor.Definitions.ClientScripts.ClientScriptEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

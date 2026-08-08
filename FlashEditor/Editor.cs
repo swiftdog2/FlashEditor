@@ -889,6 +889,13 @@ namespace FlashEditor {
                and the pixels there are one asset split across two indexes. */
             Register(FontEditorTab, RSConstants.FONTS_INDEX, EditorCategory.Media,
                 openCache => FontPanel.Bind(openCache, fonts));
+            /* Index 12 is one compiled CS2 script per group and one file per group, so a script id is
+               a group id. Two levels, because a script is an instruction stream: the list is the
+               scripts and the panes beside it hold the selected script's instructions and switch
+               tables. A flat grid of every instruction in the index would be a third of a million
+               rows with nothing to say where one script ends. */
+            Register(ClientScriptEditorTab, RSConstants.CLIENT_SCRIPTS_INDEX, EditorCategory.ConfigAndScripts,
+                openCache => ClientScriptPanel.Bind(openCache));
 
             /* Every page in the deck has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
@@ -2428,6 +2435,11 @@ namespace FlashEditor {
             //And index 13, on the same terms: its sweep decodes every group in the index, so a reload
             //started from another tab would otherwise leave it reading out of a disposed file store.
             FontPanel.Bind(null);
+
+            //And index 12, which is the largest sweep of the three-grid tabs at 4,149 groups: a
+            //reload started from another tab would otherwise leave it decoding scripts out of a file
+            //store that is about to be disposed.
+            ClientScriptPanel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {
