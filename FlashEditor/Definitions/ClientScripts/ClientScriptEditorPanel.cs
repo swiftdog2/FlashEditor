@@ -340,22 +340,47 @@ namespace FlashEditor.Definitions.ClientScripts {
            a wrong name is one glance from being caught.
 
            Ordered so the seven columns that make the stream readable - through Flow - fit the pane
-           at its default half-width split, because a control flow edge that needs a horizontal
-           scroll to see is one nobody sees. Stored width, Effect and the client citation are the
-           ones to scroll for: they answer a question about a particular instruction rather than
-           carrying the listing. Widths are in the grid's own pinned Consolas 9, and the widest
-           mnemonic the table holds is branch_greater_or_equal. */
+           at its default split, because a control flow edge that needs a horizontal scroll to see
+           is one nobody sees. Stored width, Effect and the client citation are the ones to scroll
+           for: they answer a question about a particular instruction rather than carrying the
+           listing. */
         private void BuildInstructionColumns() {
             AddColumn(instructions, "#", 45, row => Instruction(row).Position);
             AddColumn(instructions, "In", 34, row => Instruction(row).LabelMark);
             AddColumn(instructions, "Offset", 62, row => Instruction(row).Offset);
             AddColumn(instructions, "Opcode", 62, row => Instruction(row).Opcode);
-            AddColumn(instructions, "Mnemonic", 172, row => Instruction(row).Mnemonic);
+            AddColumn(instructions, "Mnemonic", MnemonicColumnWidth(), row => Instruction(row).Mnemonic);
             AddColumn(instructions, "Value", 150, row => Instruction(row).Value);
             AddColumn(instructions, "Flow", 88, row => Instruction(row).Flow);
             AddColumn(instructions, "Stored as", 80, row => Instruction(row).OperandWidth);
             AddColumn(instructions, "Effect", 520, row => Instruction(row).Effect);
             AddColumn(instructions, "Client", 150, row => Instruction(row).Citation);
+        }
+
+        /// <summary>
+        ///     Measures the mnemonic column from the widest name the table actually holds.
+        /// </summary>
+        /// <remarks>
+        ///     The one column here whose content this project controls and will keep adding to, so a
+        ///     written-down width would be right until the next opcode is named and silently wrong
+        ///     afterwards - a clipped mnemonic reads as a different mnemonic, which is the one
+        ///     failure this whole tab is built to avoid. Measured in the grid's own pinned font
+        ///     rather than the form's, since that is what will render it, which also means the width
+        ///     survives the DPI scaling that the UI conventions warn about.
+        /// </remarks>
+        /// <returns>The column width in pixels.</returns>
+        private static int MnemonicColumnWidth() {
+            int widest = TextRenderer.MeasureText("Mnemonic", GridFont).Width;
+
+            foreach (int opcode in ClientScriptOpcodes.NamedOpcodes) {
+                int width = TextRenderer.MeasureText(ClientScriptOpcodes.MnemonicOf(opcode), GridFont).Width;
+                if (width > widest)
+                    widest = width;
+            }
+
+            //MeasureText excludes the cell's own padding, and a name flush against the next column
+            //boundary reads as truncated even when it is whole.
+            return widest + 12;
         }
 
         private void BuildSwitchColumns() {

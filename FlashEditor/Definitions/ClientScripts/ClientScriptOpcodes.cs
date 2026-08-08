@@ -105,7 +105,7 @@ namespace FlashEditor.Definitions.ClientScripts {
         /// <param name="opcode">The stored opcode.</param>
         /// <returns>The opcode's entry, synthesised when the table has no row for it.</returns>
         public static ClientScriptOpcodeInfo Describe(int opcode) {
-            if (Table.TryGetValue(opcode, out ClientScriptOpcodeInfo known))
+            if (Table.TryGetValue(opcode, out ClientScriptOpcodeInfo? known))
                 return known;
 
             if (TryResolveComponentAlias(opcode, out int twin)) {
@@ -139,7 +139,7 @@ namespace FlashEditor.Definitions.ClientScripts {
         /// <param name="opcode">The stored opcode.</param>
         /// <returns>The mnemonic or null.</returns>
         public static string? MnemonicOf(int opcode) {
-            return Table.TryGetValue(opcode, out ClientScriptOpcodeInfo known) ? known.Mnemonic : null;
+            return Table.TryGetValue(opcode, out ClientScriptOpcodeInfo? known) ? known.Mnemonic : null;
         }
 
         /// <summary>Whether the opcode's operand is a program-counter delta in instructions.</summary>
