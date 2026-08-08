@@ -350,6 +350,81 @@ namespace FlashEditor.cache.sprites {
         }
 
         /// <summary>
+        ///     Builds a set in stored form from frames that came from somewhere other than a file.
+        /// </summary>
+        /// <remarks>
+        ///     The one way to construct a set the encoder will write, and the reason the import path
+        ///     does not lay out the format itself: <see cref="Encode"/> stays the only code that
+        ///     knows the byte order, so an import cannot drift away from what a decode expects.
+        ///     <para>
+        ///     Everything the format cannot express is rejected here rather than at the point the
+        ///     bytes are stored. A palette index past the end of the palette is the one that matters:
+        ///     the client indexes its palette array with the raw byte
+        ///     (<c>Class324.method3686</c>), so an out-of-range index is an exception in the game
+        ///     rather than a wrong colour, and <c>RealCacheSpriteTests</c> asserts no shipped file
+        ///     holds one.
+        ///     </para>
+        /// </remarks>
+        /// <param name="canvasWidth">The canvas width to store.</param>
+        /// <param name="canvasHeight">The canvas height to store.</param>
+        /// <param name="paletteStored">The palette as stored, entry 0 reserved and never written.</param>
+        /// <param name="frames">The frames, in the order they are to be stored.</param>
+        /// <returns>The set.</returns>
+        /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+        /// <exception cref="ArgumentException">The set cannot be expressed by the format.</exception>
+        public static SpriteDefinition FromFrames(int canvasWidth, int canvasHeight, int[] paletteStored,
+                                                  IReadOnlyList<SpriteFrame> frames) {
+            if (paletteStored == null)
+                throw new ArgumentNullException(nameof(paletteStored));
+            if (frames == null)
+                throw new ArgumentNullException(nameof(frames));
+
+            if (canvasWidth < 0 || canvasWidth > 0xFFFF || canvasHeight < 0 || canvasHeight > 0xFFFF)
+                throw new ArgumentException(
+                    $"A canvas of {canvasWidth}x{canvasHeight} does not fit the unsigned shorts the format stores it in.");
+            if (paletteStored.Length < 1 || paletteStored.Length > 256)
+                throw new ArgumentException(
+                    $"A palette holds 1 to 256 entries including the reserved entry 0, not {paletteStored.Length}.");
+            if (frames.Count < 1 || frames.Count > 0xFFFF)
+                throw new ArgumentException($"A set holds 1 to 65535 frames, not {frames.Count}.");
+
+            var sprite = new SpriteDefinition(canvasWidth, canvasHeight, frames.Count);
+            sprite.PaletteStored = (int[]) paletteStored.Clone();
+            sprite.RenderPalette = new int[paletteStored.Length];
+            //Entry 0 stays zero on both, which is what "transparent" is; every other entry takes the
+            //client's own promotion so a stored black still draws.
+            for (int entry = 1; entry < paletteStored.Length; entry++)
+                sprite.RenderPalette[entry] = paletteStored[entry] == 0 ? 1 : paletteStored[entry];
+
+            foreach (SpriteFrame frame in frames) {
+                if (frame == null)
+                    throw new ArgumentException("A set cannot hold a null frame.", nameof(frames));
+                if (frame.OffsetX < 0 || frame.OffsetY < 0 || frame.SubWidth < 0 || frame.SubHeight < 0 ||
+                    frame.OffsetX > 0xFFFF || frame.OffsetY > 0xFFFF ||
+                    frame.SubWidth > 0xFFFF || frame.SubHeight > 0xFFFF)
+                    throw new ArgumentException("A frame's geometry does not fit the unsigned shorts it is stored in.");
+                if (frame.PaletteIndices == null || frame.PaletteIndices.Length != frame.Area)
+                    throw new ArgumentException(
+                        $"A {frame.SubWidth}x{frame.SubHeight} frame needs a {frame.Area} byte plane.");
+                if (frame.HasAlphaPlane != (frame.Alpha != null))
+                    throw new ArgumentException(
+                        "A frame's alpha flag and its alpha plane disagree, so the file would not read back.");
+                if (frame.Alpha != null && frame.Alpha.Length != frame.Area)
+                    throw new ArgumentException(
+                        $"A {frame.SubWidth}x{frame.SubHeight} frame needs a {frame.Area} byte alpha plane.");
+
+                foreach (byte index in frame.PaletteIndices)
+                    if (index >= paletteStored.Length)
+                        throw new ArgumentException(
+                            $"A pixel addresses palette entry {index} of a {paletteStored.Length} entry palette.");
+
+                sprite.Frames.Add(frame);
+            }
+
+            return sprite;
+        }
+
+        /// <summary>
         /// Creates a <see cref="SpriteDefinition"/> from an encoded stream.
         /// </summary>
         /// <param name="stream">Stream containing the sprite set.</param>

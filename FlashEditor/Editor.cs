@@ -1824,26 +1824,28 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        ///     Replaces the selected sprite set with the bytes of a sprite file on disk.
+        ///     Replaces the selected sprite set with a sprite file, a PNG, a JPEG or a BMP.
         /// </summary>
         /// <remarks>
         ///     The button existed with no handler attached at all, so index 8 was read-only in the
         ///     editor whatever the codec beneath it could do - the same shape index 18's write path
         ///     was in.
         ///     <para>
-        ///     The file is decoded before anything is staged. A sprite set is located from the end of
-        ///     the file backwards, so a wrong length is not a truncated set but a set whose palette and
-        ///     frame metadata are read out of the pixel planes; <c>SpriteDefinition.Decode</c> refuses
-        ///     that rather than producing a plausible picture, which is what makes the check worth
-        ///     something. The file's own bytes are then what gets stored, not a re-encode of what was
-        ///     decoded, so the import does not depend on our encoder agreeing with whatever wrote the
-        ///     file.
+        ///     Two paths, chosen on the extension rather than on the contents. A sprite set has no
+        ///     magic number - it is located from the end of the file backwards - so "does this parse
+        ///     as a sprite set" cannot separate the two, and a wrong guess either quantises a cache
+        ///     file or stores a PNG as one. A <c>.dat</c> is stored verbatim; a picture is converted
+        ///     by <see cref="SpriteImageImporter"/>, which owns the palette, black and alpha rules
+        ///     and states what each of them cost.
         ///     </para>
         ///     <para>
-        ///     Nothing is written when the cache already holds those bytes. The comparison is against
-        ///     the <b>decompressed</b> file - a GZip re-encode is never byte-identical in this cache,
-        ///     so comparing containers would report a difference every time and rewrite the group, its
-        ///     CRC, and the reference-table entry of every group packed beside it.
+        ///     Both paths converge on the same staging: whatever the bytes came from, they are decoded
+        ///     into a throwaway before anything is touched. A sprite set with a wrong length is not a
+        ///     truncated set but a set whose palette and frame metadata are read out of the pixel
+        ///     planes, and <c>SpriteDefinition.Decode</c> refuses that rather than producing a
+        ///     plausible picture. On the picture path the same decode is the check that our own
+        ///     encoder wrote something a decoder will read back, which is worth more than it sounds:
+        ///     an import is entirely new bytes, so no byte-identity sweep over the cache defends it.
         ///     </para>
         /// </remarks>
         private void ImportSpriteBtn_Click(object sender, EventArgs e) {
@@ -1855,44 +1857,18 @@ namespace FlashEditor {
             }
 
             using OpenFileDialog picker = new OpenFileDialog {
-                Title = "Import sprite set " + target.index,
-                Filter = "Sprite set (*.dat)|*.dat|All files (*.*)|*.*"
+                Title = "Import into sprite set " + target.index,
+                Filter = SpriteImageImporter.FileFilter
             };
 
             if (picker.ShowDialog(this) != DialogResult.OK)
                 return;
 
             try {
-                byte[] imported = File.ReadAllBytes(picker.FileName);
-
-                //Decoded into a throwaway first, so a file that will not parse costs nothing at all.
-                //The selected row is only touched once the file is known to be readable and the
-                //write has been staged.
-                SpriteDefinition validated = SpriteDefinition.DecodeFromStream(new JagStream(imported));
-
-                int fileId = SpriteFileId(target.index);
-
-                if (cache.ReadFileBytes(RSConstants.SPRITES_INDEX, target.index, fileId).AsSpan().SequenceEqual(imported)) {
-                    SpriteLoadingLabel.Text = "Sprite " + target.index + " already holds those bytes";
-                    return;
-                }
-
-                cache.WriteFile(RSConstants.SPRITES_INDEX, target.index, fileId, new JagStream(imported));
-
-                /* The selected instance is re-decoded in place rather than swapped for another. It is
-                   a node of a TreeListView whose children are its own rasterised frames, so replacing
-                   the object means rebuilding that branch; disposing it drops the frames and the
-                   thumbnail, which describe the bytes that were there before this, and the next paint
-                   rasterises the new ones lazily. */
-                target.Dispose();
-                target.Decode(new JagStream(imported));
-
-                //The grid draws from a tile built when the set was loaded, so the row would otherwise
-                //keep showing the picture the file held before the import.
-                RedrawSpriteRow(target);
-
-                SpriteListView.RefreshObject(target);
-                SpriteLoadingLabel.Text = "Imported sprite " + target.index + " (" + validated.GetFrameCount() + " frames)";
+                if (SpriteImageImporter.LooksLikeAPicture(picker.FileName))
+                    ImportSpriteFromPicture(target, picker.FileName);
+                else
+                    StageSpriteBytes(target, File.ReadAllBytes(picker.FileName), null);
             }
             catch (Exception ex) {
                 //Reported rather than thrown: a malformed file must cost the import and nothing else
@@ -1901,6 +1877,98 @@ namespace FlashEditor {
                     "Could not import that file as a sprite set:" + Environment.NewLine + ex.Message,
                     "Import sprite", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        ///     Converts a picture into a sprite set, after saying what the conversion will cost.
+        /// </summary>
+        /// <remarks>
+        ///     The confirmation is the point of this method rather than an afterthought. Two of the
+        ///     three things a conversion does are invisible in the result - colours merged to fit a
+        ///     255 entry palette, and a multi-frame set collapsing to the one frame a picture can
+        ///     describe - and a user who is not told is left comparing the tile against their own
+        ///     memory of the file. Nothing is asked when the picture fits exactly and the target
+        ///     holds one frame, because then there is nothing to warn about.
+        /// </remarks>
+        /// <param name="target">The selected set, which is replaced.</param>
+        /// <param name="path">The chosen picture.</param>
+        private void ImportSpriteFromPicture(SpriteDefinition target, string path) {
+            SpriteImageImport converted;
+            //Loaded through a stream that is closed immediately: Image.FromFile keeps the file
+            //locked for the lifetime of the image, so a user could not overwrite their own PNG and
+            //import it again without restarting the editor.
+            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read))
+            using (Image picture = Image.FromStream(file))
+                converted = SpriteImageImporter.FromImage(picture);
+
+            var warnings = new List<string>();
+            if (converted.Quantised)
+                warnings.Add($"That picture holds {converted.SourceColours} colours and a sprite frame can " +
+                             $"address {SpriteImageImporter.MaxColours}. It will be quantised to " +
+                             $"{converted.PaletteColours} by median cut, with a worst per-channel error of " +
+                             $"{converted.WorstChannelError} out of 255.");
+            if (target.GetFrameCount() > 1)
+                warnings.Add($"Sprite {target.index} holds {target.GetFrameCount()} frames and a picture " +
+                             "describes one, so the other frames are discarded.");
+            if (target.width != converted.Set.width || target.height != converted.Set.height)
+                warnings.Add($"The canvas changes from {target.width}x{target.height} to " +
+                             $"{converted.Set.width}x{converted.Set.height}.");
+
+            if (warnings.Count > 0 &&
+                MessageBox.Show(this,
+                    string.Join(Environment.NewLine + Environment.NewLine, warnings) +
+                    Environment.NewLine + Environment.NewLine + "Import anyway?",
+                    "Import sprite " + target.index, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            StageSpriteBytes(target, converted.Set.Encode().ToArray(), converted.Describe());
+        }
+
+        /// <summary>
+        ///     Validates, stages and redraws one sprite set's replacement bytes.
+        /// </summary>
+        /// <remarks>
+        ///     The tail both import paths share, so the conversion cannot acquire a weaker check than
+        ///     a file import has.
+        ///     <para>
+        ///     Nothing is written when the cache already holds those bytes. The comparison is against
+        ///     the <b>decompressed</b> file - a GZip re-encode is never byte-identical in this cache,
+        ///     so comparing containers would report a difference every time and rewrite the group, its
+        ///     CRC, and the reference-table entry of every group packed beside it.
+        ///     </para>
+        /// </remarks>
+        /// <param name="target">The selected set, re-decoded in place from the new bytes.</param>
+        /// <param name="imported">The bytes to store.</param>
+        /// <param name="note">What the conversion cost, or null when the bytes came off disk as they are.</param>
+        private void StageSpriteBytes(SpriteDefinition target, byte[] imported, string? note) {
+            //Decoded into a throwaway first, so a file that will not parse costs nothing at all. The
+            //selected row is only touched once the bytes are known to be readable.
+            SpriteDefinition validated = SpriteDefinition.DecodeFromStream(new JagStream(imported));
+
+            int fileId = SpriteFileId(target.index);
+
+            if (cache.ReadFileBytes(RSConstants.SPRITES_INDEX, target.index, fileId).AsSpan().SequenceEqual(imported)) {
+                SpriteLoadingLabel.Text = "Sprite " + target.index + " already holds those bytes";
+                return;
+            }
+
+            cache.WriteFile(RSConstants.SPRITES_INDEX, target.index, fileId, new JagStream(imported));
+
+            /* The selected instance is re-decoded in place rather than swapped for another. It is
+               a node of a TreeListView whose children are its own rasterised frames, so replacing
+               the object means rebuilding that branch; disposing it drops the frames and the
+               thumbnail, which describe the bytes that were there before this, and the next paint
+               rasterises the new ones lazily. */
+            target.Dispose();
+            target.Decode(new JagStream(imported));
+
+            //The grid draws from a tile built when the set was loaded, so the row would otherwise
+            //keep showing the picture the file held before the import.
+            RedrawSpriteRow(target);
+
+            SpriteListView.RefreshObject(target);
+            SpriteLoadingLabel.Text = "Imported sprite " + target.index + " (" + validated.GetFrameCount() +
+                                      " frames)" + (note == null ? string.Empty : " - " + note);
         }
 
         /// <summary>The selected rows that are sprite sets rather than rendered frames.</summary>
