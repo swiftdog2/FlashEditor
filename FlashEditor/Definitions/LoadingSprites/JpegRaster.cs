@@ -64,11 +64,20 @@ namespace FlashEditor.Definitions.LoadingSprites {
         ///     Whether a component's plane holds one value everywhere.
         /// </summary>
         /// <remarks>
-        ///     This is what licenses discarding the fourth component of an index-32 image. It holds
-        ///     for every one of the twenty-one in both caches, and for the client's own probe blob,
-        ///     so the plane carries no picture in any of them - but it is measured per file rather
-        ///     than assumed, because a plane that did vary would be information and dropping it
-        ///     would be a silent edit.
+        ///     <para>
+        ///     True of every one of the twenty-one images each cache's reference table declares, and
+        ///     of the client's own probe blob, so the plane carries no picture in any file the client
+        ///     can reach.
+        ///     </para>
+        ///     <para>
+        ///     <b>It is not what licenses discarding the plane, which this used to claim.</b> The
+        ///     JVM discards it whether or not it is flat: the repack holds one undeclared orphan
+        ///     group, 498, whose fourth plane genuinely varies, and JDK 8's <c>PixelGrabber</c> still
+        ///     returns the planes-0-2 YCbCr reading of it, within two levels on every channel. So
+        ///     <see cref="ToArgb"/> refusing a varying plane is this editor choosing to stop rather
+        ///     than silently drop something, and is deliberately stricter than the client. Keep the
+        ///     check for that reason, not for the retired one.
+        ///     </para>
         /// </remarks>
         /// <param name="component">The component index.</param>
         /// <returns>Whether every sample is the same.</returns>
@@ -85,11 +94,11 @@ namespace FlashEditor.Definitions.LoadingSprites {
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///     <b>Three planes are read as Y, Cb and Cr, and a fourth is discarded.</b> Nothing in
-        ///     the 637 client says so - it hands the bytes to
+        ///     <b>Three planes are read as Y, Cb and Cr, and a fourth is discarded.</b> No line of
+        ///     the 637 client states it - the client hands the bytes to
         ///     <c>Toolkit.getDefaultToolkit().createImage</c> and takes whatever the JVM returns
-        ///     (<c>Class271.java:29-65</c>) - so the reading is settled by the file's own tables
-        ///     instead, and every part of it is checkable in seconds:
+        ///     (<c>Class271.java:29-65</c>) - so the reading is settled by the file's own tables,
+        ///     and every part of it is checkable in seconds:
         ///     </para>
         ///     <list type="bullet">
         ///     <item>The two quantisation tables are the ITU T.81 Annex K <b>luminance</b> and
@@ -110,6 +119,17 @@ namespace FlashEditor.Definitions.LoadingSprites {
         ///     <c>Adobe APP14</c>, so a four-component file makes every standard decoder fall back
         ///     to CMYK. The result is a recognisable, plausible, wrong image - which is the failure
         ///     that gets accepted because it looks like an image.
+        ///     </para>
+        ///     <para>
+        ///     <b>And the JVM was asked directly, which is the only evidence that settles it.</b>
+        ///     Replaying <c>Class271.method3277</c> on JDK 8 over every shipped index-32 payload -
+        ///     twenty-one in the vanilla b639 capture, twenty-three in the repack - puts
+        ///     <c>PixelGrabber</c>'s pixels within three levels of this method on every channel of
+        ///     every pixel, and exactly equal on 97.7% of them; the residue is the difference
+        ///     between libjpeg's inverse DCT and chroma upsampling and ours, not a difference of
+        ///     colour model. The CMYK alternative sits 53.8 levels away per channel on average and
+        ///     matches 4 pixels out of 1,176,093. So the two candidate readings are not close, and
+        ///     this is the one the client draws.
         ///     </para>
         /// </remarks>
         /// <returns>Opaque ARGB pixels, row-major.</returns>
@@ -133,9 +153,10 @@ namespace FlashEditor.Definitions.LoadingSprites {
 
             if (ComponentCount == 4 && !IsConstant(3))
                 throw new InvalidDataException(
-                    "The fourth component varies, so it carries picture information. Discarding it is only " +
-                    "justified while it is a constant filler plane, which it is in every index-32 image; " +
-                    "establish what a varying one means before rendering it.");
+                    "The fourth component varies, so it may carry picture information. It is flat in every " +
+                    "image either cache's reference table declares, and this editor stops rather than drop a " +
+                    "plane that is not - deliberately stricter than the client's JVM, which discards the " +
+                    "fourth plane either way. Establish what a varying one means before rendering it.");
 
             byte[] luma = _planes[0];
             byte[] blueChroma = _planes[1];

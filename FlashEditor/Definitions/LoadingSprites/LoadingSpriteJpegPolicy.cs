@@ -20,8 +20,19 @@ namespace FlashEditor.Definitions.LoadingSprites {
     ///     reads planes 0, 1 and 2 as Y, Cb and Cr for a three-component file exactly as it does for
     ///     a four-component one, so an ordinary three-component JFIF - which is what every ordinary
     ///     tool emits - previews as a perfectly good picture here and would be stored with nothing
-    ///     said. Whether the client's AWT path would then draw it is untested and untestable from
-    ///     this side.
+    ///     said.
+    ///     </para>
+    ///     <para>
+    ///     <b>What the client's AWT path does was measured, not assumed.</b> This remark used to end
+    ///     "untested and untestable from this side", which was wrong on both counts: the question is
+    ///     "what does a JVM do with these bytes", and a JVM can simply be asked. Replaying
+    ///     <c>Class271.method3277</c> - <c>Toolkit.createImage</c>, <c>MediaTracker.waitForAll</c>,
+    ///     <c>PixelGrabber</c> - over every shipped index-32 payload on JDK 8 reproduces
+    ///     <see cref="JpegRaster.ToArgb"/> to within three levels on any channel, so the inference
+    ///     above is the client's reading and not merely a defensible one. An ordinary three-component
+    ///     JFIF decodes on that path too. It is still refused below, because the rule is the shape
+    ///     the client demonstrated rather than the set of files a JVM happens to accept, but the
+    ///     refusal rests on that choice and no longer on an untested worry.
     ///     </para>
     ///     <para>
     ///     <b>The rule is "the shape the client demonstrated it can decode", not "a JPEG".</b> The
