@@ -52,6 +52,7 @@ namespace FlashEditor.Tests.Definitions
             public int ArchiveId;
             public long Consumed;
             public long Length;
+            public int Trailer;
             public int UnhandledNodeType;
             public int UnhandledOpcode;
         }
@@ -88,8 +89,12 @@ namespace FlashEditor.Tests.Definitions
                     results.Add(new GraphResult
                     {
                         ArchiveId = archiveId,
-                        Consumed = stream.Position,
+                        //The decoder now consumes the trailer as well, so the read head lands on
+                        //the end of the file whatever the parse did. The claim below is about
+                        //where the graph proper stopped, which is what the record states.
+                        Consumed = texture.Record.BodyLength,
                         Length = length,
+                        Trailer = texture.Record.Trailer.Length,
                         UnhandledNodeType = texture.UnhandledNodeType,
                         UnhandledOpcode = texture.UnhandledOpcode,
                     });
@@ -104,6 +109,13 @@ namespace FlashEditor.Tests.Definitions
         /// <summary>
         ///     Every graph must consume all of its file bar the fixed trailer.
         /// </summary>
+        /// <remarks>
+        ///     This is the measurement the <c>Texture.TrailerBytes</c> constant rests on, so it
+        ///     checks both halves of it: the graph proper ends this far from the end of every file,
+        ///     and the trailer the decoder captured is that many bytes wide. Asserting only the
+        ///     second would pass on a decoder that read the width it was told to read whatever the
+        ///     file held.
+        /// </remarks>
         [RealCacheFact]
         public void EveryTextureGraph_ConsumesItsFileExactlyBarTheTrailer()
         {
@@ -111,14 +123,15 @@ namespace FlashEditor.Tests.Definitions
             Assert.NotEmpty(results);
 
             var wrong = results
-                .Where(r => r.Length - r.Consumed != TrailerBytes)
+                .Where(r => r.Length - r.Consumed != TrailerBytes || r.Trailer != TrailerBytes)
                 .Take(10)
-                .Select(r => $"archive {r.ArchiveId}: consumed {r.Consumed} of {r.Length}")
+                .Select(r => $"archive {r.ArchiveId}: consumed {r.Consumed} of {r.Length}, " +
+                             $"captured a {r.Trailer}-byte trailer")
                 .ToList();
 
             Assert.True(wrong.Count == 0,
-                $"{results.Count(r => r.Length - r.Consumed != TrailerBytes)} of {results.Count} " +
-                $"texture graphs did not leave exactly {TrailerBytes} trailing bytes. " +
+                $"{results.Count(r => r.Length - r.Consumed != TrailerBytes || r.Trailer != TrailerBytes)} " +
+                $"of {results.Count} texture graphs did not leave exactly {TrailerBytes} trailing bytes. " +
                 $"First few: {string.Join(" | ", wrong)}");
         }
 
@@ -408,8 +421,11 @@ namespace FlashEditor.Tests.Definitions
                     results[i] = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
                 });
 
+                //Null rather than different is the shape a render that ran out of its time budget
+                //takes, and SequenceEqual throws on it rather than reporting it, so it is checked
+                //here instead of surfacing as an ArgumentNullException from inside LINQ.
                 for (int i = 0; i < results.Length; i++)
-                    Assert.True(expected.SequenceEqual(results[i]),
+                    Assert.True(results[i] != null && expected.SequenceEqual(results[i]),
                         $"Texture {def.id} rendered differently on thread {i} than it did serially.");
             }
         }

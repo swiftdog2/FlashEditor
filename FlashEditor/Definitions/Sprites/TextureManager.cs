@@ -139,6 +139,10 @@ namespace FlashEditor.Definitions.Sprites {
 
                             // Store graph for lazy rendering (don't render at load time)
                             def.graph = tex.Graph;
+                            //Carried alongside it because the graph is lossy by design - see
+                            //TextureDefinition.graphRecord. Without this a texture can be shown
+                            //and never written back.
+                            def.graphRecord = tex.Record;
 
                             Textures[textureId] = def;
                             loaded++;

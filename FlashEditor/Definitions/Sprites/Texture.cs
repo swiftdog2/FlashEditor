@@ -14,6 +14,21 @@ namespace FlashEditor.Definitions.Sprites
     {
         private int[] _spriteIds = Array.Empty<int>();
         private TextureGraph _graph;
+        private TextureGraphRecord _record;
+
+        /// <summary>
+        /// Bytes every graph file carries after the three output-node indices.
+        /// </summary>
+        /// <remarks>
+        /// The 637 client stops reading at the output indices, so this is 639-era data it was
+        /// never built to see. The width is measured rather than declared anywhere: every graph
+        /// in both supported caches leaves exactly this many bytes, which is what
+        /// <c>TextureGraphConformanceTests.EveryTextureGraph_ConsumesItsFileExactlyBarTheTrailer</c>
+        /// asserts over the whole index. Reading them here rather than leaving them in the stream
+        /// is what lets the encoder put them back; a decoder that stopped short would have nothing
+        /// to write and would shorten every file in the index on its first save.
+        /// </remarks>
+        internal const int TrailerBytes = 10;
 
         /// <summary>
         /// Node type of the first opcode this decoder had no case for, or -1 when every opcode
@@ -33,6 +48,25 @@ namespace FlashEditor.Definitions.Sprites
 
         /// <summary>The parsed texture graph for evaluation.</summary>
         public TextureGraph Graph => _graph;
+
+        /// <summary>
+        /// The file exactly as it was stored, which is what an edit is applied to and what
+        /// <see cref="Encode"/> writes back.
+        /// </summary>
+        /// <remarks>
+        /// Kept alongside <see cref="Graph"/> rather than folded into it because the two answer
+        /// different questions. The graph is what the evaluator renders and is deliberately lossy -
+        /// the post-decode hooks overwrite decoded parameters with derived ones, so
+        /// <c>InitFractalNoise</c> replaces the octave count opcode 1 wrote with the trimmed one.
+        /// The record is what the cache holds.
+        /// </remarks>
+        public TextureGraphRecord Record => _record;
+
+        /// <summary>
+        /// Writes this graph back out as the bytes the cache stores for it.
+        /// </summary>
+        /// <returns>The encoded file, positioned at the start.</returns>
+        public JagStream Encode() => _record.Encode();
 
         /// <summary>Returns the sprite file ID at the specified index.</summary>
         public int GetFileId(int index) => _spriteIds[index];
@@ -119,6 +153,12 @@ namespace FlashEditor.Definitions.Sprites
                     node.IntParam0 = 409;
                     node.IntParam1 = node.IntParam2 = node.IntParam3 = 4096;
                     break;
+                //Node_Sub10_Sub20: slope scale anInt5637 = 4096, and aBoolean5636 = true, which
+                //folds each normal axis into the upper half of the range. Zero-initialised the
+                //scale would flatten every normal to (0, 0, 4096) and the node would emit one
+                //constant colour, which is the opposite of what a node carrying no opcode asks
+                //for.
+                case 33: node.IntParam0 = 4096; node.IntParam1 = 1; break;
                 //Node_Sub10_Sub26: 5/5 cells, seed 0, jitter 2048, output mode 2, metric 1.
                 case 15:
                     node.IntParam0 = node.IntParam1 = 5;
@@ -312,6 +352,8 @@ namespace FlashEditor.Definitions.Sprites
         {
             var tex = new Texture();
             var spriteIds = new List<int>();
+            var record = new TextureGraphRecord();
+            tex._record = record;
 
             int nodeCount = buffer.ReadUnsignedByte();
             var nodes = new TextureNode[nodeCount];
@@ -320,19 +362,28 @@ namespace FlashEditor.Definitions.Sprites
             {
                 var node = new TextureNode();
                 nodes[n] = node;
+                var nodeRecord = new TextureNodeRecord();
+                record.Nodes.Add(nodeRecord);
 
                 // Node header (Node_Sub46_Sub11.method1581)
-                buffer.ReadUnsignedByte(); // version byte (discarded)
+                nodeRecord.Version = buffer.ReadUnsignedByte(); // read and discarded by the client
                 int nodeType = buffer.ReadUnsignedByte();
                 node.Type = nodeType;
+                nodeRecord.Type = nodeType;
                 InitNodeDefaults(node, nodeType);
-                buffer.ReadUnsignedByte(); // output size (anInt3860)
+                nodeRecord.OutputSize = buffer.ReadUnsignedByte(); // anInt3860
                 int opcodeCount = buffer.ReadUnsignedByte();
 
                 // Decode each opcode into config fields.
                 for (int op = 0; op < opcodeCount; op++)
                 {
                     int opcode = buffer.ReadUnsignedByte();
+
+                    //Captured either side of the payload rather than derived from the opcode,
+                    //because several opcodes read a variable number of bytes and two of them read
+                    //bytes nothing decodes - a type 29 shape record is skipped by width, and type
+                    //12's opcodes 2 and 4 are recognised while consuming nothing.
+                    long payloadStart = buffer.Position;
 
                     //A few opcodes do not configure the node at all - they overwrite its
                     //monochrome flag, which decides whether the evaluator asks it for one
@@ -342,10 +393,8 @@ namespace FlashEditor.Definitions.Sprites
                         MonoOverrideOpcode[nodeType] == opcode)
                     {
                         node.MonoOverride = buffer.ReadUnsignedByte() == 1;
-                        continue;
                     }
-
-                    if (!DecodeNodeOpcode(node, nodeType, opcode, buffer))
+                    else if (!DecodeNodeOpcode(node, nodeType, opcode, buffer))
                     {
                         //Node_Sub10.method991 is an empty method, so the client consumes no
                         //bytes for an opcode the node does not recognise and carries on. Doing
@@ -358,6 +407,9 @@ namespace FlashEditor.Definitions.Sprites
                             tex.UnhandledOpcode = opcode;
                         }
                     }
+
+                    nodeRecord.Opcodes.Add(new TextureOpcodeRecord(opcode,
+                        Span(buffer, payloadStart, buffer.Position)));
                 }
 
                 PostInitNode(node, nodeType);
@@ -365,8 +417,12 @@ namespace FlashEditor.Definitions.Sprites
                 // Read child connection indices
                 int childCount = nodeType < ChildCounts.Length ? ChildCounts[nodeType] : 0;
                 node.ChildIndices = new int[childCount];
+                nodeRecord.ChildIndices = new byte[childCount];
                 for (int c = 0; c < childCount; c++)
+                {
                     node.ChildIndices[c] = buffer.ReadUnsignedByte();
+                    nodeRecord.ChildIndices[c] = (byte) node.ChildIndices[c];
+                }
 
                 // Collect sprite IDs
                 if (node.SpriteId >= 0)
@@ -380,7 +436,19 @@ namespace FlashEditor.Definitions.Sprites
                 colourIdx = buffer.ReadUnsignedByte();
                 alphaIdx = buffer.ReadUnsignedByte();
                 brightnessIdx = buffer.ReadUnsignedByte();
+                record.HasOutputIndices = true;
+                record.ColourOutputIndex = colourIdx;
+                record.AlphaOutputIndex = alphaIdx;
+                record.BrightnessOutputIndex = brightnessIdx;
             }
+
+            //Everything the client parses is behind us; what is left is the trailer it never
+            //reads. Taken at a fixed width rather than as "whatever remains" so that a file
+            //carrying more or fewer trailing bytes than the index is measured to have fails here
+            //instead of being absorbed silently - the same reason the exact-consumption sweeps
+            //decode against a padded buffer.
+            record.BodyLength = buffer.Position;
+            record.Trailer = buffer.ReadBytes(TrailerBytes);
 
             // Wire up child references (second pass)
             for (int n = 0; n < nodeCount; n++)
@@ -656,7 +724,11 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 2) { node.IntParam2 = buf.ReadUnsignedShort(); return true; }
                     return false;
 
-                case 33: // Offset/Scroll (Sub20)
+                case 33: // SurfaceNormal (Sub20)
+                    //Not an offset or a scroll, whatever this arm used to be labelled:
+                    //Node_Sub10_Sub20.method997 reads its child as a height field and emits a
+                    //surface normal. IntParam0 is anInt5637, the slope scale; IntParam1 is
+                    //aBoolean5636, the signed-to-unsigned remap.
                     if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort(); return true; }
                     if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
                     return false;
@@ -715,6 +787,31 @@ namespace FlashEditor.Definitions.Sprites
 
             // Unknown node type or opcode
             return false;
+        }
+
+        /// <summary>
+        /// Copies the bytes a decode step consumed, without disturbing the read head.
+        /// </summary>
+        /// <remarks>
+        /// Taken from the stream's own positions rather than from a per-opcode width table, so it
+        /// stays correct for the opcodes whose payload length depends on data - a type 8 curve, a
+        /// type 10 gradient, a type 29 shape list and type 34's explicit amplitude run all size
+        /// themselves from a count they carry.
+        /// </remarks>
+        /// <param name="buffer">The stream being decoded.</param>
+        /// <param name="from">Offset the step started at.</param>
+        /// <param name="to">Offset it ended at.</param>
+        /// <returns>The consumed bytes, empty when the step read none.</returns>
+        private static byte[] Span(JagStream buffer, long from, long to)
+        {
+            int length = (int) (to - from);
+            if (length <= 0)
+                return Array.Empty<byte>();
+
+            var bytes = new byte[length];
+            for (int i = 0; i < length; i++)
+                bytes[i] = buffer.Get((int) from + i);
+            return bytes;
         }
 
         private static void SetIntParam(TextureNode node, int index, int value)
