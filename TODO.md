@@ -54,6 +54,18 @@ deliverable, and it was reported as one.
   decodes it. The fix and that explanation live at `ObjectDefinition.cs:405-417`. Two consequences
   worth carrying: a filtered run is a development aid and never a merge gate, and static mutable
   state in a decode path is a defect whether or not anything today calls it on two threads.
+- **Run the merge sweep with a logger that names failures, because `-v:q` reports only counts and a
+  transient does not come back on request.** On 2026-08-09 a repack sweep reported 1 failed of 1826
+  while the vanilla sweep of the same tree was clean. The name was lost to `-v:q`; three later repack
+  sweeps of the same commit passed, and the five most timing-sensitive new classes passed five runs
+  of five in isolation, so it did not reproduce and remains **unexplained**. What is known: the
+  failing run was competing with a merge and a build on the same machine and the clean ones were not,
+  which points at load sensitivity rather than at a defect in any one test. Use
+  `--logger "console;verbosity=normal"` for a gate run. Note that verbosity prints
+  `Test Run Successful` rather than `Passed!`, so a script grepping for the wrong one reports an
+  empty result and reads exactly like a silent pass - which also happened here.
+  **And gate the push on the test command itself.** `tail <log> && git push` pushes whenever `tail`
+  succeeds, which is always; that is how this commit reached origin before its repack gate was read.
 - **Toggling a flag is an edit the byte-identity sweeps cannot see.** They prove an **unedited**
   record re-encodes to what it was read from, which is a different claim from "an edit that nets
   nothing writes nothing". Four real defects lived in that gap, all found the week the Entities page
