@@ -54,13 +54,23 @@ namespace FlashEditor.Definitions {
     public sealed class OpcodeStream : IReadOnlyList<OpcodeRecord> {
         private readonly List<OpcodeRecord> _records;
 
+        /// <summary>
+        ///     Opcodes the definition has turned off, kept apart from the records themselves.
+        /// </summary>
+        /// <remarks>
+        ///     See <see cref="Suppress"/> for why this is a mark rather than a deletion.
+        /// </remarks>
+        private readonly HashSet<int> _suppressed;
+
         /// <summary>Creates an empty stream, as a definition built from nothing has.</summary>
         public OpcodeStream() {
             _records = new List<OpcodeRecord>();
+            _suppressed = new HashSet<int>();
         }
 
-        private OpcodeStream(List<OpcodeRecord> records) {
+        private OpcodeStream(List<OpcodeRecord> records, HashSet<int> suppressed) {
             _records = records;
+            _suppressed = suppressed;
         }
 
         /// <summary>How many opcode occurrences were recorded.</summary>
@@ -119,15 +129,48 @@ namespace FlashEditor.Definitions {
         /// <returns>How many occurrences were removed.</returns>
         public int Remove(int opcode) => _records.RemoveAll(record => record.Opcode == opcode);
 
+        /// <summary>
+        ///     Turns an opcode off without forgetting where it was.
+        /// </summary>
+        /// <remarks>
+        ///     This is what a bare flag's setter wants and <see cref="Remove"/> is not.
+        ///     <para>
+        ///     A bare flag exists in the file only as the presence of its opcode, so turning it off
+        ///     has to keep <see cref="Replay"/> from writing the stored occurrence back. Removing
+        ///     the record does that, and it also throws the occurrence's <b>position</b> away - so
+        ///     turning the flag on again re-emits the opcode at the end of the record instead of
+        ///     where it was. That is an asymmetry, not a cosmetic one: ticking a box and unticking
+        ///     it produced a definition of the right length with a byte moved, which
+        ///     <c>DefinitionListPanel.CommitEdit</c> then staged as a real change. The archive CRC
+        ///     covers the stored bytes, so that drags in the reference-table entry of every archive
+        ///     packed alongside it - for an edit that netted nothing.
+        ///     </para>
+        ///     <para>
+        ///     Marking instead keeps the position. <see cref="Replay"/> skips a suppressed opcode
+        ///     only while the caller declines to re-encode it, so a setter that turns the flag back
+        ///     on needs no matching un-suppress: asking for the opcode again is what restores it,
+        ///     and it lands where it was read from.
+        ///     </para>
+        /// </remarks>
+        /// <param name="opcode">The opcode to turn off.</param>
+        public void Suppress(int opcode) => _suppressed.Add(opcode);
+
+        /// <summary>Whether <paramref name="opcode"/> has been turned off by <see cref="Suppress"/>.</summary>
+        /// <param name="opcode">The opcode to test.</param>
+        /// <returns>Whether it is suppressed.</returns>
+        public bool IsSuppressed(int opcode) => _suppressed.Contains(opcode);
+
         /// <summary>Takes a copy no edit through this instance can reach.</summary>
         /// <remarks>
         ///     The editor clones a definition to hold what it looked like before an edit, and the
         ///     two cannot share the recorded stream: dropping an opcode would write through to both
-        ///     and the snapshot would then agree with the edit it exists to remember. The payload
-        ///     arrays themselves are shared, which is safe because nothing mutates one in place.
+        ///     and the snapshot would then agree with the edit it exists to remember. The
+        ///     suppression set goes with it for the same reason. The payload arrays themselves are
+        ///     shared, which is safe because nothing mutates one in place.
         /// </remarks>
         /// <returns>An independent stream holding the same occurrences.</returns>
-        public OpcodeStream Clone() => new OpcodeStream(new List<OpcodeRecord>(_records));
+        public OpcodeStream Clone() =>
+            new OpcodeStream(new List<OpcodeRecord>(_records), new HashSet<int>(_suppressed));
 
         /// <summary>
         ///     Writes the definition back out in the order it was decoded in, taking freshly
@@ -172,6 +215,15 @@ namespace FlashEditor.Definitions {
 
             for (int i = 0; i < _records.Count; i++) {
                 int opcode = _records[i].Opcode;
+                bool wanted = encoded.ContainsKey(opcode);
+
+                /* A suppressed opcode the caller is no longer encoding is dropped, every
+                   occurrence of it. That is a flag the user turned off, and replaying it would put
+                   it straight back - the row changes, the save reports success and the definition
+                   in the cache does not move. Asking for it again un-suppresses it implicitly, so
+                   turning the flag back on writes it where it was rather than at the end. */
+                if (!wanted && _suppressed.Contains(opcode))
+                    continue;
 
                 if (lastOccurrence[opcode] == i && encoded.TryGetValue(opcode, out byte[]? fresh)) {
                     Put(opcode, fresh);

@@ -1023,11 +1023,17 @@ namespace FlashEditor {
         ///     keeps a repeated opcode byte-exact but would also resurrect a flag the user had
         ///     just turned off - the row in the grid changes, the save reports success and the
         ///     definition in the cache is unaltered.
+        ///     <para>
+        ///     Suppressed rather than removed. Removing it forgot <b>where</b> the opcode was, so
+        ///     turning the flag off and straight back on re-emitted it at the end of the record
+        ///     instead of in place - a definition of the right length with a byte moved, which the
+        ///     editor then staged as a real change. See <see cref="OpcodeStream.Suppress"/>.
+        ///     </para>
         /// </remarks>
-        /// <param name="op">The opcode to remove.</param>
+        /// <param name="op">The opcode to turn off.</param>
         private void DropOpcode(int op) {
             decoded[op] = false;
-            Opcodes.Remove(op);
+            Opcodes.Suppress(op);
         }
 
         /// <summary>
