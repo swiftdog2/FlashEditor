@@ -73,7 +73,7 @@ namespace FlashEditor.Tests.Definitions
 
             foreach (WorldMapAreaDefinition area in reader.ReadAreas())
             {
-                WorldMapAreaRaster? raster = reader.ReadRaster(area.InternalName);
+                WorldMapAreaRaster raster = reader.ReadRaster(area.InternalName);
                 Assert.NotNull(raster);
 
                 foreach (WorldMapRasterBlock block in raster.Blocks)
@@ -147,7 +147,7 @@ namespace FlashEditor.Tests.Definitions
 
                 pixels += (long) canvas.Width * canvas.Height;
 
-                WorldMapAreaRaster? raster = reader.ReadRaster(area.InternalName);
+                WorldMapAreaRaster raster = reader.ReadRaster(area.InternalName);
                 Assert.NotNull(raster);
 
                 foreach (WorldMapRasterBlock block in raster.Blocks)

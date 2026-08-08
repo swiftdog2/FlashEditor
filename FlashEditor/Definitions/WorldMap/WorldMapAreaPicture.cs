@@ -387,15 +387,15 @@ namespace FlashEditor.Definitions.WorldMap {
         /// <param name="area">The area being described.</param>
         /// <returns>What the picture is, and what it is not.</returns>
         private static string Describe(WorldMapAreaDefinition area) {
-            return "One pixel per stored tile, coloured through the client's own underlay blend and " +
-                   "palette. Three things the client draws are deliberately absent: an overlay fills " +
-                   "its whole tile rather than the wall, corner or diagonal shape it is masked to; " +
-                   "the objects a decorated tile names are not stamped as map-scene sprites; and an " +
-                   "icon is marked rather than drawn as its index-8 sprite with its label. " +
+            /* Kept to two lines. It sits inside the pane the picture is drawn in, so every line it
+               takes is a line the map does not get, and the tab's other notice already carries the
+               statement that matters most - that this is not the terrain. */
+            return "One pixel per stored tile, through the client's own underlay blend and palette. " +
+                   "Deliberately not drawn: overlay shape masks, object map-scene sprites, and icon " +
+                   "sprites with their labels - icons are marked instead. " +
                    (area.TintColour == -1
-                       ? "Empty tiles take the client's blue checkerboard, because this area stores no " +
-                         "background tint."
-                       : "Empty tiles take this area's stored background tint of #" +
+                       ? "Empty tiles take the client's blue checkerboard; this area stores no tint."
+                       : "Empty tiles take this area's stored tint #" +
                          (area.TintColour & 0xFFFFFF).ToString("X6") + ".");
         }
     }

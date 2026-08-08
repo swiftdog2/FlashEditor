@@ -173,12 +173,12 @@ namespace FlashEditor.Tests.Definitions
 
                 foreach ((WorldMapAreaDefinition host, WorldMapElement element) in placed)
                 {
-                    if (!elements.TryGetValue(element.MapElementId + offset, out MapElementDefinition? definition))
+                    if (!elements.TryGetValue(element.MapElementId + offset, out MapElementDefinition definition))
                         continue;
 
                     string label = Flatten(definition.Label);
                     if (label.Length == 0 ||
-                        !byDisplayName.TryGetValue(label, out WorldMapAreaDefinition? target) ||
+                        !byDisplayName.TryGetValue(label, out WorldMapAreaDefinition target) ||
                         ReferenceEquals(target, host) || target.Zones.Count == 0)
                         continue;
 
@@ -279,7 +279,7 @@ namespace FlashEditor.Tests.Definitions
         /// </remarks>
         /// <param name="label">The stored label, or null.</param>
         /// <returns>The label on one line.</returns>
-        private static string Flatten(string? label)
+        private static string Flatten(string label)
         {
             return label == null ? string.Empty : label.Replace("<br>", " ").Trim();
         }

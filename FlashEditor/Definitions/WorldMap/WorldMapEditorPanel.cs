@@ -71,10 +71,11 @@ namespace FlashEditor.Definitions.WorldMap {
             AutoSize = true,
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = "Index 23 is the world map the client draws in its map window, pre-rendered one record " +
-                   "per tile. It is NOT the terrain: the Map tab edits index 5, which is what the game " +
-                   "world is built from, and this index is derived from it. The two can disagree, and " +
-                   "editing terrain leaves this picture stale."
+            Text = "NOT the Map tab. That one edits index 5, the terrain the game world is built from. " +
+                   "This is the pre-rendered overview a player opens, which the client draws without " +
+                   "reading index 5 at all - so the two can disagree, and editing terrain leaves this " +
+                   "picture stale. Read only for that reason: a change made here would move nothing in " +
+                   "the game and would be lost the moment index 23 was regenerated."
         };
 
         private readonly DefinitionListPanel areas = new DefinitionListPanel {
@@ -128,6 +129,16 @@ namespace FlashEditor.Definitions.WorldMap {
             Text = "Export this map as PNG..."
         };
 
+        /* A switch rather than a fixed choice: the surface area places 556 icons on a picture whose
+           features are one pixel across, and marking all of them buries the terrain underneath. The
+           selected icon stays ringed either way. */
+        private readonly CheckBox markIcons = new CheckBox {
+            AutoSize = true,
+            Checked = true,
+            Font = GridFont,
+            Text = "Mark every icon"
+        };
+
         private readonly Label status = new Label {
             AutoSize = true,
             Font = GridFont,
@@ -159,6 +170,7 @@ namespace FlashEditor.Definitions.WorldMap {
             iconGrid.SelectedIndexChanged += (_, _) =>
                 preview.Highlight(iconGrid.SelectedObject as WorldMapIconPlacement);
             exportPicture.Click += (_, _) => ExportPicture();
+            markIcons.CheckedChanged += (_, _) => preview.ShowMarks(markIcons.Checked);
         }
 
         /// <summary>
@@ -255,10 +267,10 @@ namespace FlashEditor.Definitions.WorldMap {
             splitterPlaced = true;
 
             try {
-                //A third to the area list. There are only 39 rows and the picture is the point of
+                //A quarter to the area list. There are only 39 rows and the picture is the point of
                 //the tab, so the picture gets the rest.
                 listAndPreview.SplitterDistance =
-                    Math.Max(listAndPreview.Panel1MinSize, listAndPreview.Height / 3);
+                    Math.Max(listAndPreview.Panel1MinSize, listAndPreview.Height / 4);
                 previewAndDetail.SplitterDistance =
                     Math.Max(previewAndDetail.Panel1MinSize, previewAndDetail.Width * 3 / 5);
                 iconsAndFields.SplitterDistance =
@@ -273,16 +285,21 @@ namespace FlashEditor.Definitions.WorldMap {
         private void BuildIconColumns() {
             //Delegates rather than aspect names: a name looked up by reflection blanks the column
             //when a property is renamed, where a delegate stops compiling.
-            AddIconColumn("File", 55, icon => icon.Id);
-            AddIconColumn("Element", 70, icon => icon.MapElementId);
-            AddIconColumn("Label", 230, icon => icon.Label);
-            AddIconColumn("Sprite", 60, icon => icon.SpriteId < 0 ? string.Empty : icon.SpriteId);
-            AddIconColumn("Category", 70, icon => icon.CategoryId < 0 ? string.Empty : icon.CategoryId);
-            AddIconColumn("World", 130,
-                icon => icon.Element.X + ", " + icon.Element.Y + " p" + icon.Element.Plane);
-            AddIconColumn("On map", 110,
-                icon => icon.IsPlaced ? icon.CanvasX + ", " + icon.CanvasY : "no zone covers it");
-            AddIconColumn("Members", 70, icon => icon.Element.HiddenOnFreeWorlds ? "yes" : string.Empty);
+            /* Narrow, because this grid shares the pane with the field list. The two ids come first
+               because they are what a user carries to another tab: the file id addresses the
+               placement in this index and the element id addresses the record in config group 36. */
+            AddIconColumn("File", 50, icon => icon.Id);
+            //Wide enough for the heading itself: a list view column does not grow to its header, it
+            //ellipsises it, so "Element" at 60 reads as "Ele...".
+            AddIconColumn("Element", 75, icon => icon.MapElementId);
+            AddIconColumn("Label", 165, icon => icon.Label);
+            AddIconColumn("Sprite", 62, icon => icon.SpriteId < 0 ? string.Empty : icon.SpriteId);
+            AddIconColumn("World", 105,
+                icon => icon.Element.X + "," + icon.Element.Y + " p" + icon.Element.Plane);
+            AddIconColumn("On map", 90,
+                icon => icon.IsPlaced ? icon.CanvasX + "," + icon.CanvasY : "off canvas");
+            AddIconColumn("Cat", 40, icon => icon.CategoryId < 0 ? string.Empty : icon.CategoryId);
+            AddIconColumn("P2P", 40, icon => icon.Element.HiddenOnFreeWorlds ? "yes" : string.Empty);
         }
 
         private void AddIconColumn(string heading, int width, Func<WorldMapIconPlacement, object?> read) {
@@ -305,6 +322,7 @@ namespace FlashEditor.Definitions.WorldMap {
 
         private void BuildLayout() {
             actions.Controls.Add(exportPicture);
+            actions.Controls.Add(markIcons);
             actions.Controls.Add(status);
 
             iconsAndFields.Panel1.Controls.Add(iconGrid);
@@ -411,9 +429,13 @@ namespace FlashEditor.Definitions.WorldMap {
             iconGrid.SetObjects(new List<WorldMapIconPlacement>(picture.Icons));
 
             WorldMapPictureCounts counts = picture.Counts;
+            /* "8x8 block" rather than "zone", though the format calls it one: a zone is also the name
+               of the world rectangles in the details record, and those are listed six inches away in
+               the field grid. Two different things sharing a word on one screen is worse than a
+               slightly long label. */
             status.Text = string.Format(CultureInfo.InvariantCulture,
-                "{0} blocks ({1} whole map squares, {2} zones) holding {3:N0} tiles: {4:N0} terrain, " +
-                "{5:N0} decorated carrying {6:N0} object references, {7:N0} blank.",
+                "{0} blocks ({1} whole map squares, {2} single 8x8 blocks) holding {3:N0} tiles: " +
+                "{4:N0} terrain, {5:N0} decorated carrying {6:N0} object references, {7:N0} blank.",
                 counts.Blocks, counts.MapSquareBlocks, counts.Blocks - counts.MapSquareBlocks,
                 counts.Tiles, counts.Terrain, counts.Decorated, counts.TileElements, counts.Blank);
 
@@ -498,11 +520,13 @@ namespace FlashEditor.Definitions.WorldMap {
         ///     </para>
         /// </remarks>
         private sealed class RasterView : Control {
-            private const int MarkRadius = 3;
+            /// <summary>Screen pixels a mark reaches at most, however far the picture is magnified.</summary>
+            private const float MaxMarkRadius = 4f;
 
             private Bitmap? image;
             private WorldMapAreaPicture? picture;
             private WorldMapIconPlacement? highlighted;
+            private bool marksVisible = true;
 
             /// <summary>Creates an empty view.</summary>
             internal RasterView() {
@@ -526,6 +550,21 @@ namespace FlashEditor.Definitions.WorldMap {
             /// <param name="icon">The icon to ring, or null.</param>
             internal void Highlight(WorldMapIconPlacement? icon) {
                 highlighted = icon;
+                Invalidate();
+            }
+
+            /// <summary>
+            ///     Shows or hides the icon marks, leaving the selected one visible either way.
+            /// </summary>
+            /// <remarks>
+            ///     Worth a switch because the surface area places 556 icons on a picture whose
+            ///     features are one pixel across, so marking them all buries the terrain the marks
+            ///     are meant to sit on. The selected icon keeps its ring regardless, which is what
+            ///     makes the list beside the picture usable as a way of finding one place.
+            /// </remarks>
+            /// <param name="visible">Whether every icon is marked.</param>
+            internal void ShowMarks(bool visible) {
+                marksVisible = visible;
                 Invalidate();
             }
 
@@ -554,6 +593,12 @@ namespace FlashEditor.Definitions.WorldMap {
                 float scaleX = target.Width / image.Width;
                 float scaleY = target.Height / image.Height;
 
+                /* Sized from the zoom rather than fixed. A mark two pixels across is a dot on a
+                   surface map shrunk to a quarter scale and a barely visible speck on an eight
+                   square dungeon blown up to fill the pane, so a constant radius is wrong at both
+                   ends - and at the shrunk end 556 constant marks cover the terrain entirely. */
+                float radius = Math.Clamp(Math.Min(scaleX, scaleY) * 1.5f, 1f, MaxMarkRadius);
+
                 using var pen = new Pen(Color.FromArgb(0xFF, 0xFF, 0xD0, 0x40));
                 using var ring = new Pen(Color.FromArgb(0xFF, 0xFF, 0x40, 0x40), 2f);
 
@@ -561,14 +606,20 @@ namespace FlashEditor.Definitions.WorldMap {
                     if (!icon.IsPlaced)
                         continue;
 
+                    bool selected = ReferenceEquals(icon, highlighted);
+                    if (!marksVisible && !selected)
+                        continue;
+
                     //The canvas counts y northward and the bitmap counts rows downward, the same
                     //flip the renderer applied to the pixels.
                     float cx = target.Left + (icon.CanvasX + 0.5f) * scaleX;
                     float cy = target.Top + (picture.Height - 1 - icon.CanvasY + 0.5f) * scaleY;
 
-                    Pen marker = ReferenceEquals(icon, highlighted) ? ring : pen;
-                    float radius = ReferenceEquals(icon, highlighted) ? MarkRadius * 2 : MarkRadius;
-                    e.Graphics.DrawEllipse(marker, cx - radius, cy - radius, radius * 2, radius * 2);
+                    //The selected one is always findable, whatever the zoom and whatever the switch
+                    //says, because picking a row in the list is how a place is located here.
+                    float drawn = selected ? Math.Max(radius * 2f, 6f) : radius;
+                    e.Graphics.DrawEllipse(selected ? ring : pen,
+                        cx - drawn, cy - drawn, drawn * 2, drawn * 2);
                 }
             }
 
