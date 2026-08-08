@@ -9,44 +9,30 @@ using Xunit.Abstractions;
 namespace FlashEditor.Tests.Cache
 {
     /// <summary>
-    ///     Skips unless a disposable cache copy has been named for the live reload driver.
+    ///     Skips unless a disposable cache copy has been named <b>and</b> an update server is
+    ///     declared to be serving it.
     /// </summary>
     /// <remarks>
     ///     xUnit resolves <see cref="FactAttribute.Skip"/> at discovery, which is what lets the
     ///     decision depend on the machine. The same shape as <c>RealCacheFactAttribute</c>, and for
     ///     the same reason: a run with nothing to point at should say so rather than pass silently.
+    ///     <para>
+    ///     Both tests need the server, in opposite directions. One asserts that a save fails, which
+    ///     is only true while something holds the files open; the other waits for a handshake only
+    ///     a server can answer, and would spend the whole timeout before failing.
+    ///     </para>
     /// </remarks>
     public sealed class LiveReloadFactAttribute : FactAttribute
     {
-        /// <summary>Creates the attribute, skipping when no scratch cache is named.</summary>
-        public LiveReloadFactAttribute()
-        {
-            string reason = JS5LiveReloadEndToEndTests.SkipReason;
-            if (reason != null)
-                Skip = reason;
-        }
-    }
-
-    /// <summary>
-    ///     Skips unless a disposable cache copy is named <b>and</b> a server is declared to be
-    ///     serving it.
-    /// </summary>
-    /// <remarks>
-    ///     The test this gates asserts that a save fails, which is only true while something holds
-    ///     the cache files open. Ungated it would report a perfectly good save as a defect on every
-    ///     machine with no server running.
-    /// </remarks>
-    public sealed class LiveReloadServerFactAttribute : FactAttribute
-    {
         /// <summary>Creates the attribute, skipping when no cache or no server is declared.</summary>
-        public LiveReloadServerFactAttribute()
+        public LiveReloadFactAttribute()
         {
             string reason = JS5LiveReloadEndToEndTests.SkipReason;
 
             if (reason == null && Environment.GetEnvironmentVariable(
                     JS5LiveReloadEndToEndTests.ServerVariable) != "1")
                 reason = JS5LiveReloadEndToEndTests.ServerVariable
-                    + " is not 1, so nothing is declared to be holding the cache files open";
+                    + " is not 1, so no update server is declared to be serving that cache";
 
             if (reason != null)
                 Skip = reason;
@@ -142,7 +128,7 @@ namespace FlashEditor.Tests.Cache
         ///     the editor's own error is a bare sharing violation naming a file the user never
         ///     touched.
         /// </remarks>
-        [LiveReloadServerFact]
+        [LiveReloadFact]
         public void WithoutTheHandshakeTheSaveIsRefusedWhileTheServerHoldsTheFiles()
         {
             string cacheDirectory = ScratchCache;

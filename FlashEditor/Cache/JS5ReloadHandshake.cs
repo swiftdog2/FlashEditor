@@ -32,6 +32,16 @@ namespace FlashEditor.cache {
     ///     enables it is off by default: pointed at a cache no server is serving, every save would
     ///     stall for the whole timeout and then refuse to write.
     ///     </para>
+    ///     <para>
+    ///     What this cannot fix, and what to check first if it appears to do nothing: a handle the
+    ///     server does not release, or does not know it holds. A <b>read-write</b> handle anywhere
+    ///     in that process stops the editor opening the cache at all - <c>StagedDataChannel.Open</c>
+    ///     asks for <c>FileShare.Read</c> - so the failure lands in <c>RSFileStore</c>'s constructor
+    ///     before any edit exists to save, and no handshake can help. Measured against the Hydra
+    ///     update server, where <c>JS5Decoder</c> held an unread <c>FileServer</c> that opened a
+    ///     second copy of the whole cache in mode <c>rw</c> on the first client handshake and never
+    ///     closed it; fixed there rather than here.
+    ///     </para>
     /// </remarks>
     public static class JS5ReloadHandshake {
         /// <summary>The file the editor creates to ask for the handles to be released.</summary>
