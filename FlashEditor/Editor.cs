@@ -837,6 +837,12 @@ namespace FlashEditor {
                record does: ten tone slots, each with its envelopes and a filter cascade. */
             Register(SoundEffectEditorTab, RSConstants.SOUND_EFFECTS, EditorCategory.Media,
                 openCache => SoundEffectPanel.Bind(openCache));
+            /* Index 14 is one file per group like index 4, but it is not one list: group 0 is the
+               Vorbis setup header every other group is decoded against, so the panel carries a
+               detail pane that can describe both shapes and states that the tab does not play
+               audio - which is a documented choice rather than a defect, and invisible otherwise. */
+            Register(Sfx2EditorTab, RSConstants.SFX2_INDEX, EditorCategory.Media,
+                openCache => Sfx2Panel.Bind(openCache));
             /* Index 10 is one group holding one file, so there is nothing to list: the tab shows the
                256 records inside that file and runs text through them, which is the only place in
                the editor where a codec can be watched working rather than trusted. Filed next to
@@ -2428,6 +2434,10 @@ namespace FlashEditor {
             //And index 13, on the same terms: its sweep decodes every group in the index, so a reload
             //started from another tab would otherwise leave it reading out of a disposed file store.
             FontPanel.Bind(null);
+
+            //And index 14, on the same terms again. This one walks 3,657 groups, so a reload started
+            //from another tab has a real window in which its worker is still reading.
+            Sfx2Panel.Bind(null);
 
             if(SpriteListView.Objects != null) {
                 foreach(object obj in SpriteListView.Objects) {

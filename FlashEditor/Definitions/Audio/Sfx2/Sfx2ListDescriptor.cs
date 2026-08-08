@@ -13,7 +13,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
     ///     group 0 would misrepresent the index as 3,656 samples when the reference table declares
     ///     one more group than that. Its sample columns are empty because it has none.
     /// </remarks>
-    public sealed class Sfx2Listing {
+    public sealed class Sfx2Listing : IDetailRow {
         /// <summary>Binds one decoded group to where it came from.</summary>
         /// <param name="address">The group and file, and the sound-effect id they carry.</param>
         /// <param name="record">The decoded group.</param>
@@ -91,6 +91,139 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                 return setup.RawBytes.Length + " bytes, blocksize " + setup.Blocksize0 + "/" +
                        setup.Blocksize1 + ", " + setup.CodebookCount + " codebooks, " + sync;
             }
+        }
+
+        /// <summary>
+        ///     The row in one line, for the header above a detail pane.
+        /// </summary>
+        /// <remarks>
+        ///     Names the setup header as what it is rather than describing it in a sample's
+        ///     vocabulary. A row saying "0 Hz, 0 packets" for group 0 reads as a decode failure, and
+        ///     the whole point of carrying both shapes in one list is that neither looks broken.
+        /// </remarks>
+        public string Summary {
+            get {
+                Sfx2Sample? sample = Sample;
+                if (sample == null)
+                    return "Group " + SoundId + " - the Vorbis setup header and codebooks every " +
+                           "sample on this index is decoded against, not a sound effect";
+
+                return "Sound " + SoundId + " - " + sample.SampleRate.ToString("N0", CultureInfo.InvariantCulture) +
+                       " Hz, " + sample.PcmByteCount.ToString("N0", CultureInfo.InvariantCulture) +
+                       " PCM bytes, " + sample.PacketCount.ToString("N0", CultureInfo.InvariantCulture) +
+                       " packets, " + (sample.IsLooping ? "looping" : "one shot");
+            }
+        }
+
+        /// <summary>
+        ///     Every value the record carries, in the order the format stores them.
+        /// </summary>
+        /// <remarks>
+        ///     Two different field lists rather than one union with blanks in it, because the two
+        ///     record shapes share no field at all: a sample is five int32s and a packet list, and
+        ///     group 0 is a bit-packed setup header. A pane that showed a sample's headings against
+        ///     group 0 would be asserting a shape the client never reads it as.
+        /// </remarks>
+        public IReadOnlyList<DetailField> Fields {
+            get {
+                var fields = new List<DetailField> {
+                    new DetailField("Group (sound id)", SoundId.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("File", Address.FileId.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("Kind", Kind)
+                };
+
+                Sfx2Sample? sample = Sample;
+                if (sample == null) {
+                    AddSetupFields(fields);
+                    return fields;
+                }
+
+                fields.Add(new DetailField("Sample rate", sample.SampleRate.ToString("N0", CultureInfo.InvariantCulture) + " Hz"));
+                fields.Add(new DetailField("PCM bytes when decoded", sample.PcmByteCount.ToString("N0", CultureInfo.InvariantCulture)));
+                fields.Add(new DetailField("Loop start", sample.LoopStart.ToString("N0", CultureInfo.InvariantCulture) + " PCM bytes"));
+                fields.Add(new DetailField("Loop end", sample.LoopEnd.ToString("N0", CultureInfo.InvariantCulture) + " PCM bytes"));
+
+                //Spelled out because the flag is not stored on its own: it is the sign of the stored
+                //loop end, so the pair is one int32 and reading them apart is a decode decision.
+                fields.Add(new DetailField("Looping", sample.IsLooping
+                    ? "yes (stored loop end is the complement, ~" + sample.LoopEnd.ToString(CultureInfo.InvariantCulture) + ")"
+                    : "no (stored loop end is non-negative)"));
+
+                fields.Add(new DetailField("Header bytes", Sfx2Sample.HeaderBytes.ToString(CultureInfo.InvariantCulture) +
+                                                           " (five big-endian int32s)"));
+                fields.Add(new DetailField("Packets", sample.PacketCount.ToString("N0", CultureInfo.InvariantCulture)));
+                fields.Add(new DetailField("Packet bytes", sample.PacketByteCount.ToString("N0", CultureInfo.InvariantCulture) +
+                                                           " (audio only, no length prefixes)"));
+                fields.Add(new DetailField("Packet lengths", DescribePacketLengths(sample)));
+                fields.Add(new DetailField("Record bytes", StoredByteCount(sample).ToString("N0", CultureInfo.InvariantCulture) +
+                                                           " (header + length prefixes + audio)"));
+                fields.Add(new DetailField("Playback", "not decoded here - see the note above the list"));
+                return fields;
+            }
+        }
+
+        /// <summary>Adds the setup header's own fields, which no sample has.</summary>
+        /// <param name="fields">The list being built.</param>
+        private void AddSetupFields(List<DetailField> fields) {
+            Sfx2SetupHeader? setup = Setup;
+            if (setup == null)
+                return;
+
+            fields.Add(new DetailField("Stored bytes", setup.RawBytes.Length.ToString("N0", CultureInfo.InvariantCulture) +
+                                                       " (kept verbatim; only the leading fields are parsed)"));
+            fields.Add(new DetailField("Blocksize 0", setup.Blocksize0.ToString("N0", CultureInfo.InvariantCulture) + " (short window)"));
+            fields.Add(new DetailField("Blocksize 1", setup.Blocksize1.ToString("N0", CultureInfo.InvariantCulture) + " (long window)"));
+            fields.Add(new DetailField("Codebooks", setup.CodebookCount.ToString("N0", CultureInfo.InvariantCulture)));
+
+            //Worth showing as the raw 24 bits as well as as a verdict: a wrong bit order is the
+            //likeliest way this would ever stop matching, and the number says which it was.
+            fields.Add(new DetailField("First codebook sync",
+                "0x" + setup.FirstCodebookSync.ToString("X", CultureInfo.InvariantCulture) +
+                (setup.HasCodebookSyncPattern
+                    ? " (the Vorbis pattern, so these bytes are a setup header)"
+                    : " (NOT the Vorbis pattern 0x" +
+                      Sfx2SetupHeader.VorbisCodebookSyncPattern.ToString("X", CultureInfo.InvariantCulture) + ")")));
+
+            fields.Add(new DetailField("Packets", "none - this group is not a sample"));
+            fields.Add(new DetailField("Playback", "not decoded here - see the note above the list"));
+        }
+
+        /// <summary>
+        ///     How many bytes the record occupies once written back.
+        /// </summary>
+        /// <remarks>
+        ///     Derived from the format rather than by re-encoding, so selecting a row costs nothing.
+        ///     A packet's length prefix is base 255 with a continuation at 255, so a length of
+        ///     <c>n</c> costs <c>n / 255 + 1</c> bytes.
+        /// </remarks>
+        /// <param name="sample">The record.</param>
+        /// <returns>The encoded size in bytes.</returns>
+        private static int StoredByteCount(Sfx2Sample sample) {
+            int prefixes = 0;
+            foreach (int length in sample.PacketLengths)
+                prefixes += length / Sfx2Sample.PacketLengthRadix + 1;
+
+            return Sfx2Sample.HeaderBytes + prefixes + sample.PacketByteCount;
+        }
+
+        /// <summary>The packet-length spread, which is what tells a padded record from a real one.</summary>
+        /// <param name="sample">The record.</param>
+        /// <returns>The shortest, longest and mean length, or a statement that there are none.</returns>
+        private static string DescribePacketLengths(Sfx2Sample sample) {
+            if (sample.PacketCount == 0)
+                return "none";
+
+            int shortest = int.MaxValue;
+            int longest = 0;
+            foreach (int length in sample.PacketLengths) {
+                if (length < shortest)
+                    shortest = length;
+                if (length > longest)
+                    longest = length;
+            }
+
+            return shortest + " to " + longest + " bytes, mean " +
+                   (sample.PacketByteCount / (double) sample.PacketCount).ToString("F1", CultureInfo.InvariantCulture);
         }
     }
 
