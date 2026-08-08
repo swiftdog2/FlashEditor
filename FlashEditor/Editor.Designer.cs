@@ -1045,15 +1045,25 @@ namespace FlashEditor {
             //
             // SpriteCostLabel
             //
-            //Says what an import costs, next to the button that does it: the file is stored verbatim
-            //rather than transcoded, and storing it rewrites the group's CRC and so the
-            //reference-table entry of every archive packed beside it.
+            /* Says what an import costs, next to the button that does it. Three of these are choices
+               the editor makes that a user cannot see in the result - a picture over 255 colours is
+               approximated rather than refused, pure black is stored under the spelling the client
+               promotes it to, and an alpha plane is written only when the picture needs one - and
+               "say what the editor cannot do" means saying them here rather than only in a comment. */
             SpriteCostLabel.AutoSize = true;
             SpriteCostLabel.Dock = DockStyle.Fill;
             SpriteCostLabel.Font = new Font("Consolas", 9F);
             SpriteCostLabel.Name = "SpriteCostLabel";
             SpriteCostLabel.TabIndex = 11;
-            SpriteCostLabel.Text = "Import replaces the selected set with the file's own bytes, after decoding it to check that it parses. It rewrites the group's CRC and the reference-table entry of every archive packed beside it, and only stages the change - nothing reaches disk until the cache is saved.";
+            SpriteCostLabel.Text =
+                "Import replaces the selected set. A .dat is stored as it is, after decoding it to check that it parses.\r\n" +
+                "\r\n" +
+                "A .png, .jpg or .bmp becomes one frame filling its own canvas, replacing every frame the set held:\r\n" +
+                "- over 255 colours is quantised by median cut, not refused. It asks first and reports the worst error.\r\n" +
+                "- pure black is stored as 0x000001, the spelling the client promotes it to. Both are shipped.\r\n" +
+                "- an alpha plane is written only for a picture with partial transparency. Fully opaque or fully clear needs none.\r\n" +
+                "\r\n" +
+                "Either way it rewrites the group's CRC and the reference-table entry of every archive packed beside it, and only stages the change - nothing reaches disk until the cache is saved.";
             //
             // SpriteLoadingLabel
             //
@@ -1110,7 +1120,9 @@ namespace FlashEditor {
             ImportSpriteBtn.Dock = DockStyle.Fill;
             ImportSpriteBtn.Name = "ImportSpriteBtn";
             ImportSpriteBtn.TabIndex = 0;
-            ImportSpriteBtn.Text = "Import Sprite";
+            //Names the formats, because the picker's own filter is the only other place they are
+            //stated and a user has to open the dialog to see it.
+            ImportSpriteBtn.Text = "Import (.png/.dat)";
             ImportSpriteBtn.UseVisualStyleBackColor = false;
             //The button shipped with no handler attached, so it did nothing at all when clicked
             ImportSpriteBtn.Click += ImportSpriteBtn_Click;
