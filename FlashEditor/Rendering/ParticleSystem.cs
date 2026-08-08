@@ -36,15 +36,22 @@ namespace FlashEditor.Rendering
         public const int DefaultMaximumParticles = 2047;
 
         /// <summary>
-        ///     Longest step <see cref="Advance"/> will simulate before giving up on the backlog.
+        ///     Longest step <see cref="Advance"/> will simulate before giving up on the backlog, in
+        ///     client cycles.
         /// </summary>
         /// <remarks>
+        ///     The client's own number (<c>Particle_Sub5.java:147</c> compares <c>l - aLong5101</c>
+        ///     against <c>750L</c>) and, like everything else on that path, it is in cycles - so it is
+        ///     fifteen seconds of simulation rather than three quarters of one. It read as milliseconds
+        ///     here for as long as the step did.
+        ///     <para>
         ///     A UI thread that stalls - loading a model off the cache will do it - must not come back
-        ///     and run ten seconds of emission inside one frame. At a realistic rate that is tens of
-        ///     thousands of spawns the cap immediately throws away, and the frame it lands on is the
-        ///     one the user sees stutter.
+        ///     and run the whole stall's worth of emission inside one frame. At a realistic rate that
+        ///     is thousands of spawns the cap immediately throws away, and the frame it lands on is
+        ///     the one the user sees stutter.
+        ///     </para>
         /// </remarks>
-        public const int MaximumStepMilliseconds = 750;
+        public const int MaximumStepCycles = 750;
 
         /// <summary>Default detail level, which is the client's highest.</summary>
         /// <remarks>
@@ -108,12 +115,25 @@ namespace FlashEditor.Rendering
         /// <summary>Current vertex z per model.</summary>
         private int[][] vertexZ = Array.Empty<int[]>();
 
-        /// <summary>Elapsed time not yet worth a whole millisecond, carried into the next advance.</summary>
+        /// <summary>Elapsed time not yet worth a whole cycle, carried into the next advance.</summary>
         /// <remarks>
-        ///     A 30 fps redraw is 33.33 ms. Dropping the third of a millisecond each time would run
-        ///     every effect one percent slow, which is invisible and wrong.
+        ///     A 30 fps redraw is 33.33 ms, which is one cycle and a third. Dropping the third each
+        ///     time would run every effect two thirds of a cycle slow per redraw - about 40% - and
+        ///     look merely sluggish rather than broken.
         /// </remarks>
-        private double carriedMilliseconds;
+        private double carrySeconds;
+
+        /// <summary>
+        ///     Slack added before the division into whole cycles, in cycles.
+        /// </summary>
+        /// <remarks>
+        ///     Not a fudge factor, and the same one <see cref="AnimationPlayer"/> needs for the same
+        ///     reason: 0.02 has no exact binary representation, so three redraws' worth of
+        ///     <c>seconds / 0.02</c> accumulates to just under five and a bare truncation loses a
+        ///     cycle. A billionth of a cycle is far below any real timer's resolution and far above
+        ///     the representation error being corrected.
+        /// </remarks>
+        private const double CycleEpsilon = 1E-09;
 
         /// <summary>
         ///     The client's three particle caps, one per detail level.
@@ -166,12 +186,16 @@ namespace FlashEditor.Rendering
         /// <summary>How many particles have been spawned since the last reset.</summary>
         public long TotalSpawned { get; private set; }
 
-        /// <summary>Simulated time since the last reset.</summary>
-        /// <remarks>The emitters' duty cycles are measured against this, not against wall time.</remarks>
-        public long ElapsedMilliseconds { get; private set; }
+        /// <summary>Simulated time since the last reset, in client cycles.</summary>
+        /// <remarks>
+        ///     The emitters' duty cycles are measured against this, not against wall time - and
+        ///     because an emitter's stored cycle period is in the same unit as the step, that
+        ///     comparison follows the unit rather than needing its own conversion.
+        /// </remarks>
+        public long ElapsedCycles { get; private set; }
 
-        /// <summary>Simulated time thrown away to <see cref="MaximumStepMilliseconds"/>.</summary>
-        public long DroppedMilliseconds { get; private set; }
+        /// <summary>Simulated time thrown away to <see cref="MaximumStepCycles"/>, in client cycles.</summary>
+        public long DroppedCycles { get; private set; }
 
         /// <summary>The last definition that failed to derive, or null.</summary>
         public string? LastError { get; private set; }
@@ -221,8 +245,8 @@ namespace FlashEditor.Rendering
             new KeyValuePair<string, string>("Effectors", effectors.Count + " attached, " + globalEffectors.Count + " global"),
             new KeyValuePair<string, string>("Spawned", TotalSpawned.ToString()),
             new KeyValuePair<string, string>("Refused by cap", SpawnsRefusedByCap.ToString()),
-            new KeyValuePair<string, string>("Elapsed", ElapsedMilliseconds + " ms"),
-            new KeyValuePair<string, string>("Dropped", DroppedMilliseconds + " ms"),
+            new KeyValuePair<string, string>("Elapsed", ElapsedCycles + " cycles"),
+            new KeyValuePair<string, string>("Dropped", DroppedCycles + " cycles"),
             new KeyValuePair<string, string>("Missing definitions", MissingEmitterCount + " emitter(s), " + MissingEffectorCount + " effector(s)"),
             new KeyValuePair<string, string>("Out of range attachments", OutOfRangeAttachmentCount.ToString()),
             new KeyValuePair<string, string>("Opcode 25 refs skipped", SkippedAttachmentKeyReferences.ToString()),
@@ -239,7 +263,7 @@ namespace FlashEditor.Rendering
         /// <param name="source">Where to read emitter and effector definitions from.</param>
         /// <param name="maximumParticles">
         ///     The cap. Not optional: an uncapped system stalls the viewport, because a spawn rate is
-        ///     per millisecond and nothing in the format bounds it.
+        ///     per cycle and nothing in the format bounds it.
         /// </param>
         /// <param name="seed">
         ///     Random seed. Fixed by default so a preview replays identically, which is what lets a
@@ -358,19 +382,24 @@ namespace FlashEditor.Rendering
             ActiveEmitterCount = 0;
             SpawnsRefusedByCap = 0L;
             TotalSpawned = 0L;
-            ElapsedMilliseconds = 0L;
-            DroppedMilliseconds = 0L;
-            carriedMilliseconds = 0.0;
+            ElapsedCycles = 0L;
+            DroppedCycles = 0L;
+            carrySeconds = 0.0;
         }
 
-        /// <summary>Runs however many whole milliseconds the elapsed wall-clock time is worth.</summary>
+        /// <summary>Runs however many whole client cycles the elapsed wall-clock time is worth.</summary>
         /// <remarks>
-        ///     One step of <paramref name="seconds"/> worth, not a loop of one-millisecond steps. The
+        ///     One step of <paramref name="seconds"/> worth, not a loop of single-cycle steps. The
         ///     client does the same - every rate in the simulation is multiplied by the step count
         ///     (<c>Particle_Sub4_Sub2_Sub1.method3109</c> takes it as an argument and scales by it) -
         ///     which makes a long step cheap but also means a particle can pass through an effector's
         ///     radius within one step without being deflected. That is the client's behaviour and the
-        ///     reason the cap above is in milliseconds rather than in steps.
+        ///     reason the cap above is in cycles rather than in advances.
+        ///     <para>
+        ///     A cycle is 20 ms, not a millisecond, and <see cref="ParticleUnits.MillisecondsPerCycle"/>
+        ///     carries the evidence for that. A conversion of <c>seconds * 1000</c> here ran every
+        ///     emitter twenty times too fast and drew each particle once, near the end of its life.
+        ///     </para>
         /// </remarks>
         /// <param name="seconds">Wall-clock time since the last call.</param>
         /// <returns><c>true</c> when the simulation moved.</returns>
@@ -383,24 +412,25 @@ namespace FlashEditor.Rendering
                 return false;
             }
 
-            carriedMilliseconds += seconds * 1000.0;
+            carrySeconds += seconds;
 
-            int steps = (int)carriedMilliseconds;
+            int steps = (int)(carrySeconds / ParticleUnits.SecondsPerCycle + CycleEpsilon);
 
             if (steps <= 0)
             {
                 return false;
             }
 
-            carriedMilliseconds -= steps;
+            //Only whole cycles are consumed; the remainder is carried rather than discarded.
+            carrySeconds -= steps * ParticleUnits.SecondsPerCycle;
 
-            if (steps > MaximumStepMilliseconds)
+            if (steps > MaximumStepCycles)
             {
-                DroppedMilliseconds += steps - MaximumStepMilliseconds;
-                steps = MaximumStepMilliseconds;
+                DroppedCycles += steps - MaximumStepCycles;
+                steps = MaximumStepCycles;
             }
 
-            ElapsedMilliseconds += steps;
+            ElapsedCycles += steps;
 
             //Emitters first, so a particle spawned by this step is also stepped by it - which is what
             //the client does, since its per-particle sweep runs over the whole live list including
@@ -662,11 +692,11 @@ namespace FlashEditor.Rendering
 
         /// <summary>Runs every eligible emitter for one step.</summary>
         /// <remarks>
-        ///     The priming steps are taken as separate one-millisecond emissions rather than as one
+        ///     The priming steps are taken as separate single-cycle emissions rather than as one
         ///     long step, because the spawn rate is drawn afresh per call - a single long step would
         ///     use one random rate for the whole prime and produce a different count.
         /// </remarks>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private void RunEmitters(int steps)
         {
             ActiveEmitterCount = 0;
@@ -676,7 +706,7 @@ namespace FlashEditor.Rendering
                 ParticleEmitterInstance emitter = emitters[slot];
 
                 if (emitter.Runtime.Definition.MinimumDetailLevel > DetailLevel
-                    || !emitter.IsOn(ElapsedMilliseconds))
+                    || !emitter.IsOn(ElapsedCycles))
                 {
                     continue;
                 }
@@ -738,7 +768,7 @@ namespace FlashEditor.Rendering
         ///     so the particle just moved into the gap is examined on the next pass rather than
         ///     skipped. Getting that wrong lets one particle in two survive a step it should not have.
         /// </remarks>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private void UpdateParticles(int steps)
         {
             int index = 0;
@@ -766,7 +796,7 @@ namespace FlashEditor.Rendering
         ///     stage reads what the previous one wrote.
         /// </remarks>
         /// <param name="particle">The particle, by reference so the struct is not copied.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private void StepParticle(ref Particle particle, int steps)
         {
             //A particle whose emitter has gone. Cannot happen while SetModels clears the particles,
@@ -860,7 +890,7 @@ namespace FlashEditor.Rendering
         /// </remarks>
         /// <param name="particle">The particle.</param>
         /// <param name="runtime">Its emitter's derived values.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private static void FadeColour(ref Particle particle, ParticleEmitterRuntime runtime, int steps)
         {
             int red = Clamp16(((particle.Colour >> 8) & 0xFF00) + ((particle.ColourFraction >> 16) & 0xFF)
@@ -884,7 +914,7 @@ namespace FlashEditor.Rendering
         /// </remarks>
         /// <param name="particle">The particle.</param>
         /// <param name="runtime">Its emitter's derived values.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private static void FadeAlpha(ref Particle particle, ParticleEmitterRuntime runtime, int steps)
         {
             int alpha = Clamp16(((particle.Colour >> 16) & 0xFF00) + ((particle.ColourFraction >>> 24) & 0xFF)
@@ -908,7 +938,7 @@ namespace FlashEditor.Rendering
         /// </remarks>
         /// <param name="particle">The particle.</param>
         /// <param name="emitter">The emitter it came from.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         private static void ApplyDrag(ref Particle particle, ParticleEmitterInstance emitter, int steps)
         {
             ParticleEmitterDefinition definition = emitter.Runtime.Definition;
@@ -959,7 +989,7 @@ namespace FlashEditor.Rendering
         /// </remarks>
         /// <param name="particle">The particle.</param>
         /// <param name="runtime">Its emitter's derived values.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         /// <param name="directionX">Accumulating direction x.</param>
         /// <param name="directionY">Accumulating direction y.</param>
         /// <param name="directionZ">Accumulating direction z.</param>
@@ -1018,7 +1048,7 @@ namespace FlashEditor.Rendering
         /// </remarks>
         /// <param name="particle">The particle.</param>
         /// <param name="instance">The effector and where it is.</param>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         /// <param name="directionX">Accumulating direction x.</param>
         /// <param name="directionY">Accumulating direction y.</param>
         /// <param name="directionZ">Accumulating direction z.</param>

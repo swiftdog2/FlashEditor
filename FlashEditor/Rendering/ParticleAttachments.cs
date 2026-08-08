@@ -6,7 +6,7 @@ namespace FlashEditor.Rendering
     /// <summary>One live particle.</summary>
     /// <remarks>
     ///     A mutable struct held in a flat array and stepped by reference. That is unusual enough to
-    ///     be worth stating: the cap is 2047 particles rewritten every millisecond of simulated time,
+    ///     be worth stating: the cap is 2047 particles rewritten on every cycle of simulated time,
     ///     and a class would put every one of them on the heap and chase a pointer per field per step.
     ///     Nothing outside <see cref="ParticleSystem"/> mutates one - <see cref="ParticleSystem.ParticleAt"/>
     ///     hands out a copy.
@@ -49,17 +49,17 @@ namespace FlashEditor.Rendering
         ///     The fractional part of each channel of <see cref="Colour"/>, packed the same way.
         /// </summary>
         /// <remarks>
-        ///     The fade rates are per millisecond and far below one unit of a channel, so without a
+        ///     The fade rates are per cycle and far below one unit of a channel, so without a
         ///     fraction to accumulate into, a slow fade would round to nothing every step and never
         ///     move at all. <c>Particle_Sub4_Sub2_Sub1.java:49-54</c> reassembles the two halves into
         ///     a 16-bit value per channel, adds the rate, and splits them again.
         /// </remarks>
         public int ColourFraction;
 
-        /// <summary>Milliseconds left to live. The particle is removed when this reaches zero.</summary>
+        /// <summary>Client cycles left to live. The particle is removed when this reaches zero.</summary>
         public int Life;
 
-        /// <summary>Milliseconds it was born with, so the ramps know how far through life it is.</summary>
+        /// <summary>Client cycles it was born with, so the ramps know how far through life it is.</summary>
         public int MaxLife;
 
         /// <summary>The index-26 material drawn on the quad, or -1 for untextured.</summary>
@@ -128,7 +128,7 @@ namespace FlashEditor.Rendering
         /// </summary>
         /// <remarks>
         ///     Carried across steps rather than rounded per step, which is what lets a rate below one
-        ///     particle a millisecond produce anything at all.
+        ///     particle a cycle produce anything at all.
         /// </remarks>
         private int accumulator;
 
@@ -293,9 +293,9 @@ namespace FlashEditor.Rendering
         ///     <see cref="ParticleEmitterDefinition.EmitsBeforeThreshold"/> choosing which side of it
         ///     emits. A period of -1 means "always on" and skips all of it.
         /// </remarks>
-        /// <param name="elapsedMilliseconds">How long the system has been running.</param>
+        /// <param name="elapsedCycles">How long the system has been running, in client cycles.</param>
         /// <returns>Whether to run the spawn arithmetic this step.</returns>
-        public bool IsOn(long elapsedMilliseconds)
+        public bool IsOn(long elapsedCycles)
         {
             if (FaceIsDegenerate)
             {
@@ -309,7 +309,7 @@ namespace FlashEditor.Rendering
                 return true;
             }
 
-            long intoCycle = elapsedMilliseconds;
+            long intoCycle = elapsedCycles;
 
             if (!definition.CycleRepeats && intoCycle > definition.CyclePeriod)
             {
@@ -331,13 +331,13 @@ namespace FlashEditor.Rendering
             return true;
         }
 
-        /// <summary>Accumulates the spawn rate over a number of milliseconds and returns whole particles.</summary>
+        /// <summary>Accumulates the spawn rate over a number of client cycles and returns whole particles.</summary>
         /// <remarks>
         ///     <c>Particle_Sub9.java:221-227</c>. The rate is drawn fresh from between its two bounds
         ///     each call rather than once per particle, so an emitter with a wide rate range flickers
         ///     rather than settling on an average.
         /// </remarks>
-        /// <param name="steps">Milliseconds elapsed.</param>
+        /// <param name="steps">Client cycles elapsed.</param>
         /// <returns>How many particles to spawn now.</returns>
         public int Emit(int steps)
         {
@@ -395,7 +395,7 @@ namespace FlashEditor.Rendering
             particle.Speed = Random.NextScaled(definition.SpeedMax - definition.SpeedMin) + definition.SpeedMin;
 
             //Narrowed to a short before it is stored, matching the client's field width - a lifetime
-            //above 32767 milliseconds wraps rather than being clamped.
+            //above 32767 cycles wraps rather than being clamped.
             particle.Life = particle.MaxLife =
                 (short)(Random.NextScaled(definition.LifetimeMax - definition.LifetimeMin) + definition.LifetimeMin);
 

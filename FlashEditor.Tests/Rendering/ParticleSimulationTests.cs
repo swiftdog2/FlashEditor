@@ -341,21 +341,23 @@ namespace FlashEditor.Tests.Rendering
         }
 
         /// <summary>
-        ///     A spawn rate of 64 sixty-fourths produces one particle a millisecond.
+        ///     A spawn rate of 64 sixty-fourths produces one particle a client cycle.
         /// </summary>
         /// <remarks>
-        ///     <c>Particle_Sub9.java:221-227</c>: the rate accumulates per millisecond and one
-        ///     particle costs 64. The emitter also starts with a random phase below 64
-        ///     (<c>:110</c>), which is what stops several emitters sharing a definition from spawning
-        ///     in lockstep - and which cannot change this count, because the phase is always less
-        ///     than the cost of one particle.
+        ///     <c>Particle_Sub9.java:221-227</c>: the rate accumulates per step and one particle
+        ///     costs 64. A step is one 20 ms client cycle, which is why the interval below is stated
+        ///     as ten of them rather than as a number of seconds - see
+        ///     <see cref="ParticleUnits.MillisecondsPerCycle"/>. The emitter also starts with a random
+        ///     phase below 64 (<c>:110</c>), which is what stops several emitters sharing a definition
+        ///     from spawning in lockstep - and which cannot change this count, because the phase is
+        ///     always less than the cost of one particle.
         /// </remarks>
         [Fact]
-        public void Spawning_ProducesOneParticlePerMillisecondAtSixtyFour()
+        public void Spawning_ProducesOneParticlePerCycleAtSixtyFour()
         {
             ParticleSystem system = Build(SteadyEmitterModel());
 
-            Assert.True(system.Advance(0.010));
+            Assert.True(system.Advance(Cycles(10)));
 
             Assert.Equal(10, system.LiveParticleCount);
             Assert.Equal(10L, system.TotalSpawned);
@@ -377,7 +379,7 @@ namespace FlashEditor.Tests.Rendering
         {
             ParticleSystem system = Build(SteadyEmitterModel(), maximumParticles: 4);
 
-            Assert.True(system.Advance(0.010));
+            Assert.True(system.Advance(Cycles(10)));
 
             Assert.Equal(4, system.LiveParticleCount);
             Assert.Equal(4, system.MaximumParticles);
@@ -405,7 +407,7 @@ namespace FlashEditor.Tests.Rendering
             ModelDefinition model = SteadyEmitterModel();
             ParticleSystem system = Build(model);
 
-            Assert.True(system.Advance(0.010));
+            Assert.True(system.Advance(Cycles(10)));
             Assert.Equal(10, system.LiveParticleCount);
             Assert.Equal(100, system.ParticleAt(0).MaxLife);
 
@@ -417,11 +419,11 @@ namespace FlashEditor.Tests.Rendering
             ParticleEmitterDefinition definition = system.Emitters[0].Runtime.Definition;
             definition.SpawnRateMin = definition.SpawnRateMax = 0;
 
-            Assert.True(system.Advance(0.050));
+            Assert.True(system.Advance(Cycles(50)));
             Assert.Equal(10, system.LiveParticleCount);
             Assert.Equal(40, system.ParticleAt(0).Life);
 
-            Assert.True(system.Advance(0.060));
+            Assert.True(system.Advance(Cycles(60)));
             Assert.Equal(0, system.LiveParticleCount);
             Assert.Equal(0, system.ActiveEmitterCount);
         }
@@ -431,7 +433,7 @@ namespace FlashEditor.Tests.Rendering
         public void Particles_SpawnInsideTheAttachedFace()
         {
             ParticleSystem system = Build(SteadyEmitterModel());
-            Assert.True(system.Advance(0.010));
+            Assert.True(system.Advance(Cycles(10)));
 
             for (int i = 0; i < system.LiveParticleCount; i++)
             {
@@ -446,38 +448,47 @@ namespace FlashEditor.Tests.Rendering
             }
         }
 
-        /// <summary>A step longer than the client's give-up window is clamped, and the loss reported.</summary>
+        /// <summary>A stall longer than the client's give-up window is clamped, and the loss reported.</summary>
         /// <remarks>
-        ///     A UI thread that stalls - loading a model, say - must not come back and run ten
-        ///     seconds of emission in one frame. At a realistic rate that is tens of thousands of
-        ///     spawns the cap immediately throws away, and the frame it lands on is the one the user
-        ///     sees stutter.
+        ///     A UI thread that stalls - loading a model, say - must not come back and run the whole
+        ///     stall's worth of emission in one frame. At a realistic rate that is thousands of spawns
+        ///     the cap immediately throws away, and the frame it lands on is the one the user sees
+        ///     stutter.
+        ///     <para>
+        ///     The client's 750 (<c>Particle_Sub5.java:147</c>) is in cycles like everything else on
+        ///     that path, so the window is fifteen seconds of simulation. A thousand cycles is
+        ///     therefore what it takes to overrun it. This test used to pass ten seconds and expect
+        ///     them to be clamped, which was itself a reading of the cap as milliseconds.
+        ///     </para>
         /// </remarks>
         [Fact]
         public void Advance_ClampsALongStallAndReportsTheLoss()
         {
             ParticleSystem system = Build(SteadyEmitterModel(), maximumParticles: 64);
 
-            Assert.True(system.Advance(10.0));
+            Assert.True(system.Advance(Cycles(1000)));
 
-            Assert.Equal((long)ParticleSystem.MaximumStepMilliseconds, system.ElapsedMilliseconds);
-            Assert.Equal(10000L - ParticleSystem.MaximumStepMilliseconds, system.DroppedMilliseconds);
+            Assert.Equal((long)ParticleSystem.MaximumStepCycles, system.ElapsedCycles);
+            Assert.Equal(1000L - ParticleSystem.MaximumStepCycles, system.DroppedCycles);
         }
 
-        /// <summary>Sub-millisecond remainders are carried, not dropped.</summary>
+        /// <summary>Sub-cycle remainders are carried, not dropped.</summary>
         /// <remarks>
-        ///     A 30fps redraw is 33.33ms. Dropping the third of a millisecond each time would run
-        ///     every effect one percent slow, which is invisible and wrong.
+        ///     A 30 fps redraw is 33.33 ms, which is one 20 ms cycle and a third. Dropping the third
+        ///     each time would run every effect two thirds of a cycle slow per redraw, which looks
+        ///     sluggish rather than broken. Three redraws are five whole cycles exactly, and reaching
+        ///     five needs an epsilon: <c>1/30 / 0.02</c> accumulates to just under it in binary
+        ///     floating point, and a bare truncation reports four.
         /// </remarks>
         [Fact]
-        public void Advance_CarriesTheSubMillisecondRemainder()
+        public void Advance_CarriesTheSubCycleRemainder()
         {
             ParticleSystem system = Build(SteadyEmitterModel());
 
             for (int frame = 0; frame < 3; frame++)
                 system.Advance(1.0 / 30.0);
 
-            Assert.Equal(100L, system.ElapsedMilliseconds);
+            Assert.Equal(5L, system.ElapsedCycles);
         }
 
         /// <summary>An attachment naming a definition the cache does not hold is counted, not thrown.</summary>
@@ -542,7 +553,7 @@ namespace FlashEditor.Tests.Rendering
         public void Billboards_AreCameraFacingSquaresOfTheParticlesSize()
         {
             ParticleSystem system = Build(PointEmitterModel());
-            Assert.True(system.Advance(0.001));
+            Assert.True(system.Advance(Cycles(1)));
             Assert.Equal(1, system.LiveParticleCount);
 
             var buffer = new float[ParticleBillboards.FloatsPerParticle];
@@ -584,7 +595,7 @@ namespace FlashEditor.Tests.Rendering
         public void Billboards_CarryTheSpawnColourUnlit()
         {
             ParticleSystem system = Build(PointEmitterModel());
-            Assert.True(system.Advance(0.001));
+            Assert.True(system.Advance(Cycles(1)));
 
             var buffer = new float[ParticleBillboards.FloatsPerParticle];
             ParticleBillboards.Build(system, Vector3.UnitX, Vector3.UnitY, new Vector3(0f, 0f, 1f), buffer);
@@ -618,8 +629,8 @@ namespace FlashEditor.Tests.Rendering
             ParticleSystem first = Build(SteadyEmitterModel(), seed: 12345);
             ParticleSystem second = Build(SteadyEmitterModel(), seed: 12345);
 
-            first.Advance(0.020);
-            second.Advance(0.020);
+            first.Advance(Cycles(20));
+            second.Advance(Cycles(20));
 
             Assert.Equal(first.LiveParticleCount, second.LiveParticleCount);
             for (int i = 0; i < first.LiveParticleCount; i++)
@@ -628,6 +639,20 @@ namespace FlashEditor.Tests.Rendering
                 Assert.Equal(first.ParticleAt(i).Life, second.ParticleAt(i).Life);
             }
         }
+
+        /// <summary>
+        ///     A number of client cycles, as the wall-clock seconds
+        ///     <see cref="ParticleSystem.Advance"/> takes.
+        /// </summary>
+        /// <remarks>
+        ///     Every interval in this file is stated in cycles rather than in seconds, because a
+        ///     particle's lifetimes and rates are all per cycle and a literal number of seconds only
+        ///     means something once the conversion is known. Every one of them was worth 33 times what
+        ///     it read as until the step was corrected from a millisecond to a cycle.
+        /// </remarks>
+        /// <param name="cycles">How many cycles to advance.</param>
+        /// <returns>The equivalent wall-clock seconds.</returns>
+        private static double Cycles(int cycles) => cycles * ParticleUnits.SecondsPerCycle;
 
         /// <summary>Reads one billboard corner's position out of the interleaved buffer.</summary>
         /// <param name="buffer">The buffer.</param>

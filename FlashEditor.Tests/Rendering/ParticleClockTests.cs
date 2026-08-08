@@ -238,6 +238,60 @@ namespace FlashEditor.Tests.Rendering
         }
 
         /// <summary>
+        ///     An emitter's duty cycle is measured in the same unit as the step, so it follows it.
+        /// </summary>
+        /// <remarks>
+        ///     Opcode 16's period is compared against the simulation's own elapsed count
+        ///     (<c>Particle_Sub9.java:153-159</c>), which is the client's cycle counter, so nothing on
+        ///     that path needs a conversion of its own. Asserted rather than assumed because the
+        ///     failure would be silent and periodic: a 100 cycle emitter read as 100 milliseconds
+        ///     switches on and off twenty times a second, which on a viewport nothing can capture
+        ///     reads as an effect that flickers rather than as a clock in the wrong unit.
+        ///     <para>
+        ///     This emitter emits for the first half of each hundred-cycle period. The duty state is
+        ///     read once per advance, from the elapsed count <b>after</b> the step is added, so each
+        ///     advance below is sized to land the count well inside the half it is asserting rather
+        ///     than on the boundary. The third advance is what says the period repeats rather than
+        ///     latching off.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void AnEmittersDutyCycleIsMeasuredInTheSameUnitAsTheStep()
+        {
+            const int Period = 100;
+            const int Threshold = 50;
+
+            ParticleEmitterDefinition definition = SmokeEmitter();
+            definition.CyclePeriod = Period;
+            definition.CycleThreshold = Threshold;
+            definition.SpawnRateMin = definition.SpawnRateMax = ParticleUnits.SpawnAccumulatorPerParticle;
+
+            var source = new InMemoryParticleDataSource().AddEmitter(SmokeEmitterId, definition);
+            var system = new ParticleSystem(source, 2047, 0x5EED);
+            system.SetModels(new[] { SmokeModel() });
+
+            AdvanceCycles(system, 25);
+            Assert.Equal(25L, system.ElapsedCycles);
+            Assert.Equal(1, system.ActiveEmitterCount);
+
+            AdvanceCycles(system, 50);
+            Assert.Equal(75L, system.ElapsedCycles);
+            Assert.Equal(0, system.ActiveEmitterCount);
+
+            AdvanceCycles(system, 50);
+            Assert.Equal(125L, system.ElapsedCycles);
+            Assert.Equal(1, system.ActiveEmitterCount);
+        }
+
+        /// <summary>Advances a system by a number of client cycles stated as such.</summary>
+        /// <param name="system">The system.</param>
+        /// <param name="cycles">How many cycles to advance.</param>
+        private static void AdvanceCycles(ParticleSystem system, int cycles)
+        {
+            Assert.True(system.Advance(cycles * ParticleUnits.SecondsPerCycle));
+        }
+
+        /// <summary>
         ///     The emitter transcribed into this file is still the one the cache holds.
         /// </summary>
         /// <remarks>

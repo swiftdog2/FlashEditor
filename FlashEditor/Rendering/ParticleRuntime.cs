@@ -14,21 +14,52 @@ namespace FlashEditor.Rendering
     public static class ParticleUnits
     {
         /// <summary>
-        ///     The simulation's time step.
+        ///     The simulation's time step, in milliseconds. One step is one client game cycle.
         /// </summary>
         /// <remarks>
-        ///     A millisecond, not a 20 ms client cycle - the particle path is driven by elapsed
-        ///     milliseconds throughout (<c>Particle_Sub9.java:221</c> scales the spawn rate by them and
-        ///     <c>Particle_Sub4_Sub2_Sub1.java:36</c> subtracts them from the lifetime). Every rate and
-        ///     lifetime in an index-27 record is per millisecond, which is why the emitter and the
-        ///     animation player are driven by different units.
+        ///     <b>Not a millisecond.</b> Every rate and lifetime in an index-27 record is per step, and
+        ///     what a step is comes from the clock the client feeds into the particle tick - which is a
+        ///     cycle counter and never a wall clock. <c>Class215.currentTime</c> is declared
+        ///     <c>public static int currentTime = 0</c> (<c>Class215.java:6</c>), incremented once per
+        ///     game loop at <c>client.java:1834</c>, and assigned from
+        ///     <c>System.currentTimeMillis()</c> nowhere in the client. The loop that increments it
+        ///     runs on a 20,000,000 ns interval (<c>Class212.java:13</c>, consumed at
+        ///     <c>Applet_Sub1.java:861-871</c> where <c>method2926</c> returns how many of those
+        ///     periods are due), so one increment is 20 ms. Every call site into the particle tick
+        ///     passes that counter - <c>Class190.java:59</c>, <c>RSFont.java:22</c>,
+        ///     <c>Class359.java:344</c>, <c>Particle_Sub3_Sub4_Sub2.java:673</c> and
+        ///     <c>Projectile.java:511</c> - and it arrives at <c>Particle_Sub5.java:153</c> as
+        ///     <c>int i = (int) (l - aLong5100)</c>, which is a difference of two cycle counts. That
+        ///     difference is what <c>Particle_Sub4_Sub2_Sub1.java:36-39</c> subtracts from the lifetime
+        ///     and what multiplies every ramp at <c>:98-104</c> and <c>:324-326</c>.
+        ///     <para>
+        ///     <b>This comment used to argue for a millisecond</b>, citing
+        ///     <c>Particle_Sub9.java:221</c> and <c>Particle_Sub4_Sub2_Sub1.java:36</c>. Both lines are
+        ///     real and neither can settle the question: they show that the spawn rate scales with the
+        ///     step and that the lifetime is decremented by it, which is true whatever a step is. Only
+        ///     the clock the step is measured from says what the unit is, and that is the chain above.
+        ///     </para>
+        ///     <para>
+        ///     The factor is twenty, so reading a step as a millisecond runs every emitter twenty times
+        ///     too fast. At the viewport's 30 fps that ages a particle 33 steps into a 50 to 60 step
+        ///     life before anything draws it once, which is what made the Dungeoneering cape's smoke a
+        ///     faint sparse smudge trailing well clear of the hem.
+        ///     </para>
+        ///     <para>
+        ///     Taken from <see cref="AnimationPlayer.CycleMilliseconds"/> rather than restated, because
+        ///     it is the same cycle: the animation playhead and the particle step are both driven by
+        ///     that one loop, and two copies of the number could drift apart while both looked right.
+        ///     </para>
         /// </remarks>
-        public const int MillisecondsPerStep = 1;
+        public const int MillisecondsPerCycle = AnimationPlayer.CycleMilliseconds;
+
+        /// <summary>One simulation step in seconds, which is what <see cref="ParticleSystem.Advance"/> converts against.</summary>
+        public const double SecondsPerCycle = AnimationPlayer.CycleSeconds;
 
         /// <summary>Fractional bits in a particle's stored position.</summary>
         /// <remarks>
         ///     Twelfths of a model unit. A particle at speed moves a fraction of a unit per
-        ///     millisecond, so integer positions would quantise slow drift to nothing.
+        ///     cycle, so integer positions would quantise slow drift to nothing.
         /// </remarks>
         public const int PositionFractionBits = 12;
 
@@ -60,7 +91,7 @@ namespace FlashEditor.Rendering
         /// <remarks>
         ///     <c>Particle_Sub9.java:224-226</c>: the accumulator is compared against 64, shifted down
         ///     six for the count and masked back to the remainder. A spawn rate is therefore in
-        ///     sixty-fourths of a particle per millisecond, and 64 means exactly one a millisecond.
+        ///     sixty-fourths of a particle per cycle, and 64 means exactly one a cycle.
         /// </remarks>
         public const int SpawnAccumulatorPerParticle = 64;
 
@@ -220,23 +251,23 @@ namespace FlashEditor.Rendering
         /// </remarks>
         public bool HasColourRamp { get; }
 
-        /// <summary>How many milliseconds of a particle's life the RGB fade spans.</summary>
+        /// <summary>How many cycles of a particle's life the RGB fade spans.</summary>
         public int ColourRampSteps { get; }
 
-        /// <summary>How many milliseconds of a particle's life the alpha fade spans.</summary>
+        /// <summary>How many cycles of a particle's life the alpha fade spans.</summary>
         /// <remarks>Independent of <see cref="ColourRampSteps"/> - they come from different opcodes.</remarks>
         public int AlphaRampSteps { get; }
 
-        /// <summary>Red change per millisecond during the fade, in 1/256ths.</summary>
+        /// <summary>Red change per cycle during the fade, in 1/256ths.</summary>
         public int RedRate { get; }
 
-        /// <summary>Green change per millisecond during the fade, in 1/256ths.</summary>
+        /// <summary>Green change per cycle during the fade, in 1/256ths.</summary>
         public int GreenRate { get; }
 
-        /// <summary>Blue change per millisecond during the fade, in 1/256ths.</summary>
+        /// <summary>Blue change per cycle during the fade, in 1/256ths.</summary>
         public int BlueRate { get; }
 
-        /// <summary>Alpha change per millisecond during the fade, in 1/256ths.</summary>
+        /// <summary>Alpha change per cycle during the fade, in 1/256ths.</summary>
         public int AlphaRate { get; }
 
         /// <summary>Whether the emitter ramps its particles' size.</summary>
@@ -249,19 +280,19 @@ namespace FlashEditor.Rendering
         /// <summary>The size a particle ramps towards, shifted into fixed point.</summary>
         public int EndSize { get; }
 
-        /// <summary>How many milliseconds of a particle's life the size ramp spans.</summary>
+        /// <summary>How many cycles of a particle's life the size ramp spans.</summary>
         public int SizeRampSteps { get; }
 
-        /// <summary>Size change per millisecond during the ramp.</summary>
+        /// <summary>Size change per cycle during the ramp.</summary>
         public int SizeRate { get; }
 
         /// <summary>Whether the emitter ramps its particles' speed.</summary>
         public bool HasSpeedRamp { get; }
 
-        /// <summary>How many milliseconds of a particle's life the speed ramp spans.</summary>
+        /// <summary>How many cycles of a particle's life the speed ramp spans.</summary>
         public int SpeedRampSteps { get; }
 
-        /// <summary>Speed change per millisecond during the ramp.</summary>
+        /// <summary>Speed change per cycle during the ramp.</summary>
         public int SpeedRate { get; }
 
         /// <summary>Lower yaw bound of the spawn cone, shifted and narrowed to a short.</summary>
@@ -322,7 +353,7 @@ namespace FlashEditor.Rendering
                 AlphaRampSteps = AtLeastOne(definition.LifetimeMax * definition.FadeAlphaPercent / 100);
 
                 //Distance from the middle of the spawn range to the fade colour, per channel, shifted
-                //up eight so the per-millisecond rate has fractional resolution. The middle rather
+                //up eight so the per-cycle rate has fractional resolution. The middle rather
                 //than the base, because a particle spawns anywhere in the range and the ramp is
                 //derived once for all of them.
                 RedRate = Bias(((definition.FadeColour >> 16) & 0xFF) - RedBase - RedSpan / 2 << 8, ColourRampSteps);
@@ -376,19 +407,19 @@ namespace FlashEditor.Rendering
         ///     </para>
         /// </remarks>
         /// <param name="numerator">Total change over the ramp, already shifted up eight.</param>
-        /// <param name="steps">Ramp duration in milliseconds, never zero.</param>
-        /// <returns>The per-millisecond rate.</returns>
+        /// <param name="steps">Ramp duration in client cycles, never zero.</param>
+        /// <returns>The per-cycle rate.</returns>
         private static int Bias(int numerator, int steps)
         {
             int rate = numerator / steps;
             return rate + (rate <= 0 ? 4 : -4);
         }
 
-        /// <summary>Floors a ramp duration at one millisecond.</summary>
+        /// <summary>Floors a ramp duration at one cycle.</summary>
         /// <remarks>
         ///     <c>ParticleType.java:699-701</c> and <c>:736-738</c>. It is a divisor, so zero would
         ///     throw; and a ramp declared as zero percent of the lifetime is asking to happen at once,
-        ///     which one millisecond is.
+        ///     which one cycle is.
         /// </remarks>
         /// <param name="steps">The computed duration.</param>
         /// <returns>The duration, at least one.</returns>
