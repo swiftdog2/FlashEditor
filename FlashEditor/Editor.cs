@@ -771,6 +771,11 @@ namespace FlashEditor {
             SizeViewerControls();
             PlaceEntitySplitter();
 
+            //The menu is the only place the handshake is visible, so it has to show the persisted
+            //answer rather than the designer's unticked default - a session that turned it on and
+            //restarted would otherwise be saving through the handshake with the box unticked.
+            js5LiveReloadToolStripMenuItem.Checked = Properties.Settings.Default.js5LiveReload;
+
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
             //all and say nothing about it; asking for a folder here would be worse, because the
             //application can usually see a cache from where it is running.
@@ -1882,6 +1887,21 @@ namespace FlashEditor {
             SaveCache(GetCacheDir());
         }
 
+        /// <summary>
+        ///     Persists the JS5 live reload switch, so a session that turns it on keeps it on.
+        /// </summary>
+        /// <remarks>
+        ///     Off is the only safe default and the only one that survives a fresh profile, because
+        ///     with it on every save against a cache no server is watching waits out the timeout and
+        ///     then refuses to write. It is saved immediately rather than on exit: the failure this
+        ///     guards against involves a server holding files open, and an editor that has to be
+        ///     killed would otherwise lose the setting it was killed with.
+        /// </remarks>
+        private void js5LiveReloadToolStripMenuItem_CheckedChanged(object sender, EventArgs e) {
+            Properties.Settings.Default.js5LiveReload = js5LiveReloadToolStripMenuItem.Checked;
+            Properties.Settings.Default.Save();
+        }
+
         /// <summary>Prompts for a directory and writes a complete copy of the cache there.</summary>
         private void saveAsToolStripMenuItem_Click(object sender, EventArgs e) {
             if(folderBrowserDialog1.ShowDialog() == DialogResult.OK)
@@ -1902,7 +1922,13 @@ namespace FlashEditor {
                 //thread runs for the whole life of the Map tab - a decode overlapping the
                 //replacement used to read a closed memory map. MapEditorPanel.SaveEdits already
                 //takes this gate for its own save; this is the same operation from the File menu.
-                MapEditorPanel.RunExclusive(() => cache.WriteCache(directory));
+                //
+                //Inside the gate rather than around it: while the handshake is on, the server has
+                //its handles shut from the moment it answers until the write is finished, so that
+                //window has to be as short as the write itself and must not include waiting for
+                //another editor thread.
+                MapEditorPanel.RunExclusive(
+                    () => JS5ReloadHandshake.AroundSave(directory, () => cache.WriteCache(directory)));
                 Debug("Saved cache to " + directory);
                 return true;
             }
