@@ -118,6 +118,33 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         public int PacketByteCount => packetData.Length;
 
         /// <summary>
+        ///     How many bytes this record occupies once written back.
+        /// </summary>
+        /// <remarks>
+        ///     Here rather than in the caller that wants to display it. A second implementation of
+        ///     "header plus prefixes plus audio" would be a restatement of the encoder's own layout
+        ///     rule, and since no packet in either cache reaches
+        ///     <see cref="PacketLengthRadix"/> bytes, a byte-identity sweep over the whole index
+        ///     cannot see the two disagree - every prefix in shipped data is one byte, which is what
+        ///     both a correct and a wrong rule produce.
+        ///     <para>
+        ///     <see cref="Encode"/> sizes its buffer from this, so the encoder and the count are the
+        ///     same statement rather than two that happen to agree, and
+        ///     <c>Sfx2CodecTests.StoredByteCount_MatchesWhatEncodeWrites</c> pins them together over
+        ///     hand-built packets that do cross the continuation boundary.
+        ///     </para>
+        /// </remarks>
+        public int StoredByteCount {
+            get {
+                int prefixes = 0;
+                foreach (int length in packetLengths)
+                    prefixes += PacketLengthPrefixBytes(length);
+
+                return HeaderBytes + prefixes + packetData.Length;
+            }
+        }
+
+        /// <summary>
         ///     One packet's bytes, as a view over the record's contiguous payload.
         /// </summary>
         /// <remarks>
@@ -252,7 +279,11 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                     "non-negative int32 and read back as a record that does not loop. Loop end is a " +
                     "PCM byte offset and cannot be negative.");
 
-            var buffer = new JagStream(HeaderBytes + packetLengths.Length * 2 + packetData.Length);
+            /* Sized from StoredByteCount rather than from a per-packet over-estimate, so the
+               encoder and anything asking how big the record is are the same rule with two callers.
+               It was HeaderBytes + count * 2 + payload, which is only an upper bound and left the
+               real width stated in two places. */
+            var buffer = new JagStream(StoredByteCount);
             buffer.WriteInteger(SampleRate);
             buffer.WriteInteger(PcmByteCount);
             buffer.WriteInteger(LoopStart);
@@ -291,11 +322,42 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             if (length < 0)
                 throw new ArgumentOutOfRangeException(nameof(length), length, "A packet length is non-negative.");
 
-            while (length >= PacketLengthRadix) {
+            /* Driven by PacketLengthPrefixBytes rather than by its own `while (length >= radix)`,
+               so the number of bytes this writes and the number anything else predicts cannot
+               drift apart: they are now one expression with two callers. The loop body is
+               unchanged. */
+            int prefixBytes = PacketLengthPrefixBytes(length);
+            for (int i = 1; i < prefixBytes; i++) {
                 buffer.WriteByte((byte) PacketLengthRadix);
                 length -= PacketLengthRadix;
             }
+
             buffer.WriteByte((byte) length);
+        }
+
+        /// <summary>
+        ///     How many bytes the length prefix of a packet of this size costs.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The single statement of the prefix width.</b> The client's reader continues on
+        ///     <c>&gt;= 255</c> (Node_Sub13.java:510-513), so a length of exactly the radix costs two
+        ///     bytes and not one - which is the off-by-one every wrong implementation of this shares,
+        ///     and which no group in either cache would expose, the longest packet in both being 147
+        ///     bytes.
+        ///     <para>
+        ///     Exposed rather than kept private because the editor shows the prefix width per packet,
+        ///     and a display that restated the rule would be a second copy of it that the sweeps
+        ///     could not tell apart from the first.
+        ///     </para>
+        /// </remarks>
+        /// <param name="length">The packet length in bytes.</param>
+        /// <returns>The number of bytes the prefix occupies.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length is negative.</exception>
+        public static int PacketLengthPrefixBytes(int length) {
+            if (length < 0)
+                throw new ArgumentOutOfRangeException(nameof(length), length, "A packet length is non-negative.");
+
+            return length / PacketLengthRadix + 1;
         }
 
         /// <summary>

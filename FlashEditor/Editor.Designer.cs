@@ -154,6 +154,7 @@ namespace FlashEditor {
             TrackEditorTab = new TabPage();
             AnimationEditorTab = new TabPage();
             SoundEffectEditorTab = new TabPage();
+            Sfx2EditorTab = new TabPage();
             ConfigEditorTab = new TabPage();
             HuffmanEditorTab = new TabPage();
             EnumEditorTab = new TabPage();
@@ -336,6 +337,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(TextureViewerTab);
             EditorTabControl.Controls.Add(FontEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
+            EditorTabControl.Controls.Add(Sfx2EditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(LoadingScreenEditorTab);
             EditorTabControl.Controls.Add(LoadingSpriteEditorTab);
@@ -1718,6 +1720,16 @@ namespace FlashEditor {
             LoadingSpriteEditorTab.Text = "Loading Sprites";
             LoadingSpriteEditorTab.UseVisualStyleBackColor = true;
             //
+            // Sfx2EditorTab
+            //
+            Sfx2EditorTab.Controls.Add(Sfx2Panel);
+            Sfx2EditorTab.Location = new Point(4, 37);
+            Sfx2EditorTab.Name = "Sfx2EditorTab";
+            Sfx2EditorTab.Size = new Size(1113, 554);
+            Sfx2EditorTab.TabIndex = 25;
+            Sfx2EditorTab.Text = "SFX2 (Vorbis)";
+            Sfx2EditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -2026,6 +2038,12 @@ namespace FlashEditor {
         //halves are drawn and saved differently and a bare list could say neither.
         private TabPage LoadingSpriteEditorTab;
         private FlashEditor.Definitions.LoadingSprites.LoadingSpriteEditorPanel LoadingSpritePanel = new FlashEditor.Definitions.LoadingSprites.LoadingSpriteEditorPanel();
+        //Index 14, one file per group and the group id is the sound-effect id. Not the bare shared
+        //list panel though: group 0 is the shared Vorbis setup header rather than a sample, so the
+        //tab needs a detail pane that can describe a second record shape, and it needs somewhere to
+        //say that nothing here plays.
+        private TabPage Sfx2EditorTab;
+        private FlashEditor.Definitions.Audio.Sfx2.Sfx2EditorPanel Sfx2Panel = new FlashEditor.Definitions.Audio.Sfx2.Sfx2EditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.
