@@ -196,6 +196,35 @@ namespace FlashEditor.Definitions.LoadingSprites {
         protected override void OnLayout(LayoutEventArgs levent) {
             base.OnLayout(levent);
             PlaceSplitters();
+            WrapNotices();
+        }
+
+        /// <summary>
+        ///     Lets the explanatory labels wrap instead of running off the right edge.
+        /// </summary>
+        /// <remarks>
+        ///     An <c>AutoSize</c> label docked to an edge grows sideways and is clipped by its
+        ///     container; it only wraps once its <see cref="Control.MaximumSize"/> states a width, and
+        ///     then <c>AutoSize</c> gives it the height the wrapped text needs. Measured rather than
+        ///     stated, because these labels carry the sentences that say what the tab cannot do and a
+        ///     sentence cut off half way through is worse than one that was never written. The
+        ///     preview note is bound to its own splitter panel rather than to the form, since that is
+        ///     the width it actually has.
+        ///     <para>
+        ///     Assigning a maximum size lays the panel out again, so each is written only when it
+        ///     changes; without that this recurses until the layout engine gives up.
+        ///     </para>
+        /// </remarks>
+        private void WrapNotices() {
+            Wrap(header, ClientSize.Width);
+            Wrap(notice, ClientSize.Width);
+            Wrap(cost, ClientSize.Width);
+            Wrap(previewNote, previewAndFields.Panel1.ClientSize.Width);
+        }
+
+        private static void Wrap(Label label, int width) {
+            if (width > 0 && label.MaximumSize.Width != width)
+                label.MaximumSize = new Size(width, 0);
         }
 
         /// <summary>
