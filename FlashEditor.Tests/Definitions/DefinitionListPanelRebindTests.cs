@@ -55,6 +55,17 @@ namespace FlashEditor.Tests.Definitions {
         private readonly string _dir;
         private readonly List<RSFileStore> _stores = new List<RSFileStore>();
 
+        /// <summary>
+        ///     What was raised while a message was being dispatched, or null.
+        /// </summary>
+        /// <remarks>
+        ///     The defect surfaces inside <c>RunWorkerCompleted</c>, which runs from the message
+        ///     pump rather than from the test's own call stack, so it has to be caught at the WinForms
+        ///     boundary and re-thrown here. Left to itself it takes the whole test host down and
+        ///     aborts the run, which reports every other test as never having executed.
+        /// </remarks>
+        private volatile Exception? _dispatchFailure;
+
         /// <summary>Builds an empty temp directory for this test's synthetic cache.</summary>
         /// <param name="output">Where the measured numbers are reported.</param>
         public DefinitionListPanelRebindTests(ITestOutputHelper output) {
@@ -181,14 +192,14 @@ namespace FlashEditor.Tests.Definitions {
         /// </remarks>
         /// <param name="panel">The panel being loaded.</param>
         /// <param name="what">What is being waited for, for the failure message.</param>
-        private static void PumpUntilLoaded(DefinitionListPanel panel, string what) {
+        private void PumpUntilLoaded(DefinitionListPanel panel, string what) {
             bool loaded = false;
             void Handler(object? sender, EventArgs e) => loaded = true;
 
             panel.RowsLoaded += Handler;
             try {
                 var clock = Stopwatch.StartNew();
-                while (!loaded && clock.Elapsed < TimeSpan.FromSeconds(30)) {
+                while (!loaded && _dispatchFailure == null && clock.Elapsed < TimeSpan.FromSeconds(30)) {
                     Application.DoEvents();
                     Thread.Sleep(1);
                 }
@@ -196,6 +207,11 @@ namespace FlashEditor.Tests.Definitions {
             finally {
                 panel.RowsLoaded -= Handler;
             }
+
+            //Re-thrown rather than asserted on, so the failure carries the stack that produced it -
+            //which is the whole evidence for which column was handed which row.
+            if (_dispatchFailure != null)
+                ExceptionDispatchInfo.Capture(_dispatchFailure).Throw();
 
             Assert.True(loaded, "The " + what + " load never published its rows.");
         }
@@ -276,22 +292,31 @@ namespace FlashEditor.Tests.Definitions {
         ///     Runs an action on a fresh STA thread, and rethrows what it threw.
         /// </summary>
         /// <remarks>
-        ///     <c>UnhandledExceptionMode.ThrowException</c> so that an exception raised while
-        ///     dispatching a message - which is exactly where this defect surfaces - propagates out
-        ///     of <c>Application.DoEvents</c> instead of raising the dialog WinForms would otherwise
-        ///     show, which would hang the run rather than fail it.
+        ///     An exception raised while a message is being dispatched - which is exactly where this
+        ///     defect surfaces - does not come back up the caller's stack. It is taken at the
+        ///     WinForms boundary through <c>Application.ThreadException</c> and re-thrown from the
+        ///     pump instead. Letting it go unhandled kills the test host and aborts the run, so every
+        ///     other test then reports as not executed rather than as passing.
         /// </remarks>
         /// <param name="action">What to run.</param>
-        private static void OnUiThread(Action action) {
+        private void OnUiThread(Action action) {
             Exception? failure = null;
 
             var thread = new Thread(() => {
+                void OnThreadException(object sender, ThreadExceptionEventArgs e) =>
+                    _dispatchFailure ??= e.Exception;
+
+                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+                Application.ThreadException += OnThreadException;
+
                 try {
-                    Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
                     action();
                 }
                 catch (Exception ex) {
                     failure = ex;
+                }
+                finally {
+                    Application.ThreadException -= OnThreadException;
                 }
             });
 
@@ -301,6 +326,10 @@ namespace FlashEditor.Tests.Definitions {
 
             if (failure != null)
                 ExceptionDispatchInfo.Capture(failure).Throw();
+
+            //A dispatch failure that arrived after the last pump still fails the test.
+            if (_dispatchFailure != null)
+                ExceptionDispatchInfo.Capture(_dispatchFailure).Throw();
         }
     }
 }
