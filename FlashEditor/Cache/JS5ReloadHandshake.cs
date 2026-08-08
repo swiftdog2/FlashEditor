@@ -57,6 +57,27 @@ namespace FlashEditor.cache {
         /// </remarks>
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 
+        /// <summary>The shortest wait the setting can ask for.</summary>
+        /// <remarks>
+        ///     A zero or negative timeout would reduce the wait to a single existence check, which
+        ///     is the stale-marker failure with extra steps: it would find nothing, give up
+        ///     instantly, and report that no server is running when one was half a second away.
+        /// </remarks>
+        private const int MinimumTimeoutSeconds = 1;
+
+        /// <summary>Whether the user has turned the handshake on.</summary>
+        /// <remarks>
+        ///     The single read of the switch. Everything that saves goes through
+        ///     <see cref="AroundSave"/>, so this and <see cref="ConfiguredTimeout"/> are the one
+        ///     line between a working feature and a feature nobody can turn on.
+        /// </remarks>
+        internal static bool Enabled => Properties.Settings.Default.js5LiveReload;
+
+        /// <summary>How long the user has asked to wait for the server, clamped to something usable.</summary>
+        internal static TimeSpan ConfiguredTimeout =>
+            TimeSpan.FromSeconds(Math.Max(MinimumTimeoutSeconds,
+                Properties.Settings.Default.js5LiveReloadTimeoutSeconds));
+
         /// <summary>
         ///     Runs <paramref name="save"/> inside the handshake: request, wait, save, withdraw the
         ///     request.
@@ -77,13 +98,25 @@ namespace FlashEditor.cache {
         ///     sharing violation anyway, and when nothing is serving the directory a silent success
         ///     would teach the user that the handshake works when it has not run at all.
         ///     </para>
+        ///     <para>
+        ///     Cancellation is honoured while waiting and never once the write has started, because
+        ///     there is no point in a half-promoted cache. A cancelled wait withdraws the request
+        ///     like any other exit, so the server reopens and carries on serving what it had.
+        ///     </para>
         /// </remarks>
         /// <param name="cacheDirectory">The cache directory being written, which the server watches.</param>
         /// <param name="timeout">How long to wait for the server to release its handles.</param>
         /// <param name="save">The write to perform once the handles are shut.</param>
+        /// <param name="cancellation">Abandons the wait, leaving the cache untouched.</param>
+        /// <param name="waiting">Called each poll with the time left, for a caller showing a countdown.</param>
+        /// <param name="writing">Called once the handles are shut and the write is starting.</param>
         /// <exception cref="ArgumentNullException">No directory or no save action was given.</exception>
+        /// <exception cref="OperationCanceledException">The wait was cancelled. Nothing was written.</exception>
         /// <exception cref="TimeoutException">The server did not release within <paramref name="timeout"/>.</exception>
-        public static void Run(string cacheDirectory, TimeSpan timeout, Action save) {
+        public static void Run(string cacheDirectory, TimeSpan timeout, Action save,
+                               CancellationToken cancellation = default,
+                               Action<TimeSpan>? waiting = null,
+                               Action? writing = null) {
             if (string.IsNullOrWhiteSpace(cacheDirectory))
                 throw new ArgumentNullException(nameof(cacheDirectory));
             if (save == null)
@@ -98,7 +131,7 @@ namespace FlashEditor.cache {
             File.WriteAllText(request, Signature());
 
             try {
-                if (!WaitForRelease(released, timeout))
+                if (!WaitForRelease(released, timeout, cancellation, waiting))
                     throw new TimeoutException(
                         "No JS5 update server released the cache within " + (int) timeout.TotalSeconds
                         + " seconds." + Environment.NewLine + Environment.NewLine
@@ -111,6 +144,7 @@ namespace FlashEditor.cache {
                         + " watching the directory.");
 
                 Debug("JS5 reload: handles released, writing the cache");
+                writing?.Invoke();
                 save();
             }
             finally {
@@ -134,18 +168,21 @@ namespace FlashEditor.cache {
         /// </remarks>
         /// <param name="cacheDirectory">The directory being written.</param>
         /// <param name="save">The write to perform.</param>
+        /// <param name="cancellation">Abandons the wait, leaving the cache untouched.</param>
+        /// <param name="waiting">Called each poll with the time left, for a caller showing a countdown.</param>
+        /// <param name="writing">Called once the handles are shut and the write is starting.</param>
+        /// <exception cref="OperationCanceledException">The handshake is on and the wait was cancelled.</exception>
         /// <exception cref="TimeoutException">The handshake is on and no server released the cache.</exception>
-        public static void AroundSave(string cacheDirectory, Action save) {
-            if (!Properties.Settings.Default.js5LiveReload) {
+        public static void AroundSave(string cacheDirectory, Action save,
+                                      CancellationToken cancellation = default,
+                                      Action<TimeSpan>? waiting = null,
+                                      Action? writing = null) {
+            if (!Enabled) {
                 save();
                 return;
             }
 
-            //Clamped rather than trusted: the setting is user-editable and a zero or negative
-            //timeout would turn the wait into a single existence check, which is the stale-marker
-            //failure with extra steps.
-            int seconds = Math.Max(1, Properties.Settings.Default.js5LiveReloadTimeoutSeconds);
-            Run(cacheDirectory, TimeSpan.FromSeconds(seconds), save);
+            Run(cacheDirectory, ConfiguredTimeout, save, cancellation, waiting, writing);
         }
 
         /// <summary>
@@ -171,20 +208,36 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>Waits for the server's released marker to appear.</summary>
+        /// <remarks>
+        ///     The marker is checked before the deadline and before cancellation, so a server that
+        ///     answered on the last poll is honoured rather than raced: by that point the handles
+        ///     are already shut and giving up would leave the server down for nothing.
+        /// </remarks>
         /// <param name="released">The full path of the released marker.</param>
         /// <param name="timeout">How long to wait before giving up.</param>
+        /// <param name="cancellation">Abandons the wait.</param>
+        /// <param name="waiting">Called each poll with the time left.</param>
         /// <returns>Whether the marker appeared in time.</returns>
-        private static bool WaitForRelease(string released, TimeSpan timeout) {
+        /// <exception cref="OperationCanceledException">The wait was cancelled.</exception>
+        private static bool WaitForRelease(string released, TimeSpan timeout,
+                                           CancellationToken cancellation, Action<TimeSpan>? waiting) {
             DateTime deadline = DateTime.UtcNow + timeout;
 
             while (true) {
                 if (File.Exists(released))
                     return true;
 
-                if (DateTime.UtcNow >= deadline)
+                cancellation.ThrowIfCancellationRequested();
+
+                TimeSpan remaining = deadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero)
                     return false;
 
-                Thread.Sleep(PollInterval);
+                waiting?.Invoke(remaining);
+
+                //Never sleeping past the deadline, so the countdown a caller is drawing does not
+                //sit on its last value for longer than one poll.
+                Thread.Sleep(remaining < PollInterval ? remaining : PollInterval);
             }
         }
 

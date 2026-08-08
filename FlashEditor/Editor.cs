@@ -12,6 +12,7 @@ using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Rendering;
+using FlashEditor.UI;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
@@ -1923,14 +1924,21 @@ namespace FlashEditor {
                 //replacement used to read a closed memory map. MapEditorPanel.SaveEdits already
                 //takes this gate for its own save; this is the same operation from the File menu.
                 //
-                //Inside the gate rather than around it: while the handshake is on, the server has
-                //its handles shut from the moment it answers until the write is finished, so that
-                //window has to be as short as the write itself and must not include waiting for
-                //another editor thread.
-                MapEditorPanel.RunExclusive(
-                    () => JS5ReloadHandshake.AroundSave(directory, () => cache.WriteCache(directory)));
+                //The gate is around the write and NOT around the handshake's wait. That lock is
+                //taken on the UI thread by anything that touches the map store - the tile
+                //inspector, a click - so holding it for up to the whole timeout would freeze the
+                //window from behind the progress dialog, which is the failure the dialog exists to
+                //remove. The server is down for the gate plus the write, which is short.
+                JS5ReloadProgressDialog.Save(this, directory,
+                    () => MapEditorPanel.RunExclusive(() => cache.WriteCache(directory)));
                 Debug("Saved cache to " + directory);
                 return true;
+            }
+            catch(OperationCanceledException) {
+                //Not a failure and not worth a dialog: the user asked for it, the request has been
+                //withdrawn and the staged edits are still here to save again.
+                Debug("Save cancelled while waiting for the JS5 update server");
+                return false;
             }
             catch(Exception ex) {
                 Debug("Save failed: " + ex.Message);
