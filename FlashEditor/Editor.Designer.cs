@@ -169,6 +169,7 @@ namespace FlashEditor {
             LoadingSpriteEditorTab = new TabPage();
             FontEditorTab = new TabPage();
             ClientScriptEditorTab = new TabPage();
+            WorldMapOverviewTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -328,6 +329,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(NPCEditorTab);
             EditorTabControl.Controls.Add(ObjectEditorTab);
             EditorTabControl.Controls.Add(MapEditorTab);
+            EditorTabControl.Controls.Add(WorldMapOverviewTab);
             EditorTabControl.Controls.Add(ParticleEditorTab);
             EditorTabControl.Controls.Add(BillboardEditorTab);
             EditorTabControl.Controls.Add(ModelViewerTab);
@@ -1742,6 +1744,22 @@ namespace FlashEditor {
             ClientScriptEditorTab.Text = "Client Scripts";
             ClientScriptEditorTab.UseVisualStyleBackColor = true;
             //
+            // WorldMapOverviewTab
+            //
+            WorldMapOverviewTab.Controls.Add(WorldMapPanel);
+            WorldMapOverviewTab.Location = new Point(4, 37);
+            WorldMapOverviewTab.Name = "WorldMapOverviewTab";
+            WorldMapOverviewTab.Size = new Size(1113, 554);
+            WorldMapOverviewTab.TabIndex = 27;
+            /* Not "World Map", and not any other variant of "Map". The tab three places above this
+               one is called "Map" and edits index 5, the terrain the world is built from; this shows
+               index 23, a pre-rendered picture derived from it. Two tabs whose names differ by one
+               word would be picked between by guessing, so this one names the thing it actually
+               shows - the overview a player opens - and the panel repeats the distinction in a line
+               of its own, because a tab caption is not where a user looks for it. */
+            WorldMapOverviewTab.Text = "World Map Overview";
+            WorldMapOverviewTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -2061,6 +2079,11 @@ namespace FlashEditor {
         //the index holds a third of a million instructions and only the selected script's are rows.
         private TabPage ClientScriptEditorTab;
         private FlashEditor.Definitions.ClientScripts.ClientScriptEditorPanel ClientScriptPanel = new FlashEditor.Definitions.ClientScripts.ClientScriptEditorPanel();
+        //Index 23, the world map the client draws over the terrain rather than the terrain itself.
+        //Three unrelated families share the index and only the areas are a list, so the panel owns a
+        //DefinitionListPanel for those and renders the selected area's tile raster beside it.
+        private TabPage WorldMapOverviewTab;
+        private FlashEditor.Definitions.WorldMap.WorldMapEditorPanel WorldMapPanel = new FlashEditor.Definitions.WorldMap.WorldMapEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.
