@@ -142,8 +142,47 @@ namespace FlashEditor.Definitions.Sprites {
         // Runtime buffers
         internal int[] MonoCache;
         internal int[][] ColourCache; // [3][width] for RGB
-        internal int CachedRow = -1;
-        internal bool CachedIsMono;
+
+        /// <summary>Row currently held in <see cref="MonoCache"/>, or -1.</summary>
+        /// <remarks>
+        /// Tracked separately from <see cref="ColourCachedRow"/> because a node is routinely asked
+        /// for both forms of the same row - <see cref="TextureGraphEvaluator.GetMono"/> derives a
+        /// mono row from a colour node's red channel and <see cref="TextureGraphEvaluator.GetColour"/>
+        /// promotes a mono row to three channels, and both write into this node. One row slot with
+        /// a "which form is it" flag beside it made those two requests evict each other, so a node
+        /// reached as mono by one parent and as colour by another was re-evaluated on every
+        /// alternation - and with a chain of such nodes the re-evaluation compounds down the graph.
+        /// The values are unchanged either way; only how often they are recomputed is.
+        /// </remarks>
+        internal int MonoCachedRow = -1;
+
+        /// <summary>Row currently held in <see cref="ColourCache"/>, or -1.</summary>
+        internal int ColourCachedRow = -1;
+
+        /// <summary>
+        /// Rows of this node's child that it has already sampled, for the node types that read a
+        /// different row per pixel.
+        /// </summary>
+        /// <remarks>
+        /// Four evaluators pick their source row from the pixel they are producing - the two polar
+        /// distortions, the turbulence and the polar warp - so within one output row they can ask
+        /// their child for up to <c>width</c> different rows. The row caches above hold one row
+        /// each, so every one of those asks re-evaluated the entire subtree below the child: a
+        /// texture went from <c>nodes x height</c> row evaluations to <c>nodes x height x
+        /// width</c>. Texture 22 in the vanilla capture, which has two polar warps, took nearly
+        /// twelve seconds to render at 64 by 64 and would exceed the render budget outright at the
+        /// 128 by 128 the gallery uses - it would come out as a flat placeholder rather than a
+        /// texture.
+        ///
+        /// Materialising each row once puts it back at one evaluation per node per row. It is held
+        /// on the sampling node rather than on the child because it is that node's private view: a
+        /// child shared with an ordinary parent must keep answering through the normal row cache,
+        /// which is what the top-down pass relies on.
+        /// </remarks>
+        internal int[][] SampledMonoRows;
+
+        /// <summary>The colour counterpart of <see cref="SampledMonoRows"/>, indexed row then channel.</summary>
+        internal int[][][] SampledColourRows;
 
         /// <summary>
         /// True while this node's row evaluator is on the stack, so a graph whose child indices
@@ -177,14 +216,20 @@ namespace FlashEditor.Definitions.Sprites {
             ColourCache[0] = new int[w];
             ColourCache[1] = new int[w];
             ColourCache[2] = new int[w];
-            CachedRow = -1;
+            MonoCachedRow = -1;
+            ColourCachedRow = -1;
+            SampledMonoRows = null;
+            SampledColourRows = null;
             Evaluating = false;
         }
 
         public void Release() {
             MonoCache = null;
             ColourCache = null;
-            CachedRow = -1;
+            MonoCachedRow = -1;
+            ColourCachedRow = -1;
+            SampledMonoRows = null;
+            SampledColourRows = null;
             Evaluating = false;
         }
 
@@ -375,13 +420,33 @@ namespace FlashEditor.Definitions.Sprites {
             Interlocked.Exchange(ref _spriteCacheBytes, 0);
         }
 
+        /// <summary>
+        /// Renders a graph to a bitmap.
+        /// </summary>
+        /// <remarks>
+        /// A transposed render swaps the bitmap's dimensions, because the transpose of a
+        /// <paramref name="width"/> by <paramref name="height"/> image is a
+        /// <paramref name="height"/> by <paramref name="width"/> one. Nothing in production
+        /// notices: every caller renders square, at 32, 64 or 128. It matters anyway, because the
+        /// alternative was writing the transposed pixels into a buffer indexed for the untransposed
+        /// shape, which walked off the end of it for any non-square size.
+        /// </remarks>
+        /// <param name="graph">The decoded graph.</param>
+        /// <param name="width">Width of the sampling grid.</param>
+        /// <param name="height">Height of the sampling grid.</param>
+        /// <param name="cache">The open cache, for sprite and composed-texture nodes.</param>
+        /// <param name="transpose">Whether to mirror the result across its diagonal.</param>
+        /// <param name="textureDefId">The texture id, for the sprite override table and for logs.</param>
+        /// <returns>The rendered bitmap, or null when the graph cannot be evaluated.</returns>
         public static Bitmap Render(TextureGraph graph, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
             int[] pixels = RenderArgb(graph, width, height, cache, transpose, textureDefId);
             if (pixels == null)
                 return null;
 
-            var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-            var data = bmp.LockBits(new Rectangle(0, 0, width, height),
+            int imageWidth = transpose ? height : width;
+            int imageHeight = transpose ? width : height;
+            var bmp = new Bitmap(imageWidth, imageHeight, PixelFormat.Format32bppArgb);
+            var data = bmp.LockBits(new Rectangle(0, 0, imageWidth, imageHeight),
                 ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
             Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
             bmp.UnlockBits(data);
@@ -499,6 +564,11 @@ namespace FlashEditor.Definitions.Sprites {
 
                 int[] alphaMono = alphaNode != null ? GetMono(alphaNode, y) : null;
 
+                //A transposed sample (x, y) lands at column y, row x of an image whose rows are
+                //`height` wide - that being the transposed shape, which Render then builds the
+                //bitmap for. The stride used to be `width` here, which is the untransposed row
+                //length, so any non-square transposed render walked off the end of the buffer and
+                //threw. It survived because production only ever renders square.
                 if (outputIsMono) {
                     int[] mono = GetMono(colourNode, y);
                     for (int x = 0; x < width; x++) {
@@ -508,7 +578,7 @@ namespace FlashEditor.Definitions.Sprites {
                         int alpha = alphaMono != null
                             ? (v == 0 ? 0 : Math.Clamp(alphaMono[x] >> 4, 0, 255))
                             : (v == 0 ? 0 : 0xFF);
-                        int idx = transpose ? x * width + y : y * width + x;
+                        int idx = transpose ? x * height + y : y * width + x;
                         pixels[idx] = (alpha << 24) | (v << 16) | (v << 8) | v;
                     }
                 } else {
@@ -520,7 +590,7 @@ namespace FlashEditor.Definitions.Sprites {
                         bool black = r == 0 && g == 0 && b == 0;
                         int alpha = black ? 0
                             : alphaMono != null ? Math.Clamp(alphaMono[x] >> 4, 0, 255) : 0xFF;
-                        int idx = transpose ? x * width + y : y * width + x;
+                        int idx = transpose ? x * height + y : y * width + x;
                         pixels[idx] = (alpha << 24) | (r << 16) | (g << 8) | b;
                     }
                 }
@@ -718,15 +788,14 @@ namespace FlashEditor.Definitions.Sprites {
         private static int[] GetMono(TextureNode node, int row) {
             ThrowIfBudgetExpired();
 
-            if (node.CachedRow == row && node.CachedIsMono)
+            if (node.MonoCachedRow == row)
                 return node.MonoCache;
 
             if (!IsMonochrome(node)) {
                 // Colour node → take red channel as mono
                 int[][] rgb = GetColour(node, row);
                 Array.Copy(rgb[0], node.MonoCache, node.Width);
-                node.CachedRow = row;
-                node.CachedIsMono = true;
+                node.MonoCachedRow = row;
                 return node.MonoCache;
             }
 
@@ -745,8 +814,7 @@ namespace FlashEditor.Definitions.Sprites {
             } finally {
                 node.Evaluating = false;
             }
-            node.CachedRow = row;
-            node.CachedIsMono = true;
+            node.MonoCachedRow = row;
             return node.MonoCache;
         }
 
@@ -759,7 +827,7 @@ namespace FlashEditor.Definitions.Sprites {
                 return _fallbackColour ??= new int[][] { new int[1], new int[1], new int[1] };
             }
 
-            if (node.CachedRow == row && !node.CachedIsMono)
+            if (node.ColourCachedRow == row)
                 return node.ColourCache;
 
             if (IsMonochrome(node)) {
@@ -768,8 +836,7 @@ namespace FlashEditor.Definitions.Sprites {
                 Array.Copy(mono, node.ColourCache[0], node.Width);
                 Array.Copy(mono, node.ColourCache[1], node.Width);
                 Array.Copy(mono, node.ColourCache[2], node.Width);
-                node.CachedRow = row;
-                node.CachedIsMono = false;
+                node.ColourCachedRow = row;
                 return node.ColourCache;
             }
 
@@ -785,13 +852,61 @@ namespace FlashEditor.Definitions.Sprites {
             } finally {
                 node.Evaluating = false;
             }
-            node.CachedRow = row;
-            node.CachedIsMono = false;
+            node.ColourCachedRow = row;
             return node.ColourCache;
         }
 
         [ThreadStatic]
         private static int[][]? _fallbackColour;
+
+        /// <summary>
+        /// One row of a child, materialised so that sampling it again costs nothing.
+        /// </summary>
+        /// <remarks>
+        /// For the node types that read more than one row of their child per output row.
+        /// <see cref="GetMono"/> hands back the child's own single-row buffer, so asking for
+        /// another row overwrites it and the entire subtree below the child is evaluated again -
+        /// once per pixel on the warps and the distortions, and once per radius step on the blurs.
+        /// The copy is what makes the memo safe: the array this returns must not be the one the
+        /// next call is about to overwrite.
+        /// </remarks>
+        /// <param name="node">The node doing the sampling, which owns the memo.</param>
+        /// <param name="child">The child being sampled.</param>
+        /// <param name="row">The row wanted.</param>
+        /// <returns>The child's mono row, valid for the rest of this render.</returns>
+        private static int[] SampledMono(TextureNode node, TextureNode child, int row) {
+            int[][] rows = node.SampledMonoRows ??= new int[node.Height][];
+            int[] cached = rows[row];
+            if (cached != null)
+                return cached;
+
+            int[] live = GetMono(child, row);
+            cached = new int[node.Width];
+            Array.Copy(live, cached, node.Width);
+            rows[row] = cached;
+            return cached;
+        }
+
+        /// <summary>The colour counterpart of <see cref="SampledMono"/>.</summary>
+        /// <param name="node">The node doing the sampling, which owns the memo.</param>
+        /// <param name="child">The child being sampled.</param>
+        /// <param name="row">The row wanted.</param>
+        /// <returns>The child's three channels for that row, valid for the rest of this render.</returns>
+        private static int[][] SampledColour(TextureNode node, TextureNode child, int row) {
+            int[][][] rows = node.SampledColourRows ??= new int[node.Height][][];
+            int[][] cached = rows[row];
+            if (cached != null)
+                return cached;
+
+            int[][] live = GetColour(child, row);
+            cached = new int[3][];
+            for (int ch = 0; ch < 3; ch++) {
+                cached[ch] = new int[node.Width];
+                Array.Copy(live[ch], cached[ch], node.Width);
+            }
+            rows[row] = cached;
+            return cached;
+        }
 
         private static int Clamp12(int v) {
             if (v < 0) return 0;
@@ -826,9 +941,10 @@ namespace FlashEditor.Definitions.Sprites {
                 case 17: EvalBlur(node, output, w, row); break;
                 case 19: EvalPolarDistortionMono(node, output, w, row); break;
                 case 20: EvalTileMono(node, output, w, row); break;
-                case 21: EvalEmboss(node, output, w, row); break;
+                case 21: EvalMixMono(node, output, w, row); break;
                 case 22: EvalInvertMono(node, output, w, row); break;
                 case 23: EvalFlipV(node, output, w, row); break;
+                case 24: EvalMergeRgbToMono(node, output, w, row); break;
                 //Type 25 has no arm here on purpose: Node_Sub10_Sub14 is constructed
                 //super(1, false) and never overrides Node_Sub10.method990, so asking it for a
                 //monochrome row throws in the client. See EvalColourKeyScale.
@@ -839,7 +955,8 @@ namespace FlashEditor.Definitions.Sprites {
                 case 30: EvalRangeRemapMono(node, output, w, row); break;
                 case 31: EvalSquare(node, output, w, row); break;
                 case 32: EvalPolarWarp(node, output, w, row); break;
-                case 33: EvalOffset(node, output, w, row); break;
+                //Type 33 has no arm here for the same reason type 25 does not: Node_Sub10_Sub20 is
+                //super(1, false) and leaves Node_Sub10.method990 to throw. See EvalNormalMap.
                 case 34: EvalFractalNoise(node, output, w, row); break;
                 case 35: EvalBumpMap(node, output, w, row); break;
                 case 37: EvalAbsMirror(node, output, w, row); break;
@@ -874,13 +991,14 @@ namespace FlashEditor.Definitions.Sprites {
                 case 36: EvalSpriteSource(node, output, w, row); break;
                 case 19: EvalPolarDistortionColour(node, output, w, row); break;
                 case 20: EvalTileColour(node, output, w, row); break;
-                case 21: goto default; // Emboss — no colour variant
+                case 21: EvalMixColour(node, output, w, row); break;
                 case 22: EvalInvertColour(node, output, w, row); break;
                 case 23: EvalFlipVColour(node, output, w, row); break;
-                case 24: EvalMergeRGB(node, output, w, row); break;
+                //Type 24 has no arm here: Node_Sub10_Sub16 is super(1, true), so it is a mono node
+                //and GetColour promotes it from its mono row. See EvalMergeRgbToMono.
                 case 25: EvalColourKeyScale(node, output, w, row); break;
                 case 30: EvalRangeRemapColour(node, output, w, row); break;
-                case 33: goto default; // Offset — no colour variant
+                case 33: EvalNormalMap(node, output, w, row); break;
                 default:
                     // Colour-capable node without dedicated colour eval —
                     // pass through child colour if available, else promote from mono
@@ -984,7 +1102,7 @@ namespace FlashEditor.Definitions.Sprites {
             int vCount = 0;
             for (int dy = -radiusV; dy <= radiusV; dy++) {
                 int sy = ((row + dy) % node.Height + node.Height) % node.Height;
-                int[] childRow = GetMono(node.Children[0], sy);
+                int[] childRow = SampledMono(node, node.Children[0], sy);
                 vCount++;
                 for (int x = 0; x < w; x++)
                     vSum[x] += childRow[x];
@@ -1019,7 +1137,7 @@ namespace FlashEditor.Definitions.Sprites {
             int vCount = 0;
             for (int dy = -radiusV; dy <= radiusV; dy++) {
                 int sy = ((row + dy) % node.Height + node.Height) % node.Height;
-                int[][] childRow = GetColour(node.Children[0], sy);
+                int[][] childRow = SampledColour(node, node.Children[0], sy);
                 vCount++;
                 for (int ch = 0; ch < 3; ch++)
                     for (int x = 0; x < w; x++)
@@ -1678,7 +1796,7 @@ namespace FlashEditor.Definitions.Sprites {
                 int sy = row + dy;
                 if (sy < 0) sy = 0;
                 if (sy >= node.Height) sy = node.Height - 1;
-                int[] childRow = GetMono(node.Children[0], sy);
+                int[] childRow = SampledMono(node, node.Children[0], sy);
                 count++;
                 for (int x = 0; x < w; x++)
                     sum[x] += childRow[x];
@@ -1762,7 +1880,7 @@ namespace FlashEditor.Definitions.Sprites {
                 int dy = (_cosLUT[angle] * mag) >> 12;
                 int sx = ((x + (dx >> 12)) % w + w) % w;
                 int sy = ((row + (dy >> 12)) % node.Height + node.Height) % node.Height;
-                int[] srcRow = GetMono(node.Children[0], sy);
+                int[] srcRow = SampledMono(node, node.Children[0], sy);
                 output[x] = srcRow[sx];
             }
         }
@@ -1786,7 +1904,7 @@ namespace FlashEditor.Definitions.Sprites {
                 int dy = (_cosLUT[angle] * mag) >> 12;
                 int sx = ((x + (dx >> 12)) % w + w) % w;
                 int sy = ((row + (dy >> 12)) % node.Height + node.Height) % node.Height;
-                int[][] srcRow = GetColour(node.Children[0], sy);
+                int[][] srcRow = SampledColour(node, node.Children[0], sy);
                 for (int ch = 0; ch < 3; ch++)
                     output[ch][x] = srcRow[ch][sx];
             }
@@ -1835,26 +1953,83 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 21: Emboss
+        //  TYPE 21: Mix (three inputs - two sources and a blend factor)
         // ===================================================================
-        private static void EvalEmboss(TextureNode node, int[] output, int w, int row) {
-            if (node.Children == null || node.Children.Length < 3) {
+        /// <summary>
+        /// Interpolates between two inputs by a third, per pixel.
+        /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub12</c> is <c>super(3, false)</c> and both of its evaluators - the mono
+        /// <c>method990</c> and the colour <c>method997</c> - do the same thing: child 2's mono row
+        /// is the factor, and the output is child 0 at 4096, child 1 at 0, and a 12-bit lerp
+        /// between them elsewhere. The two endpoint cases are branches in the client rather than a
+        /// consequence of the arithmetic, and reproducing them matters: the lerp would round a
+        /// factor of 4095 to something a shade off child 0, but at exactly 4096 the client copies.
+        ///
+        /// This was implemented as an emboss - a light and ambient pass over a height field - which
+        /// is a different operation on three inputs and reads a strength parameter the node cannot
+        /// carry. Type 21's only opcode is 0, and <c>Texture.MonoOverrideOpcode</c> claims it for
+        /// the monochrome flag before the opcode table sees it, so <c>IntParam0</c> is always zero
+        /// on a type 21 node and the strength was always 1. The colour side had no arm at all, so
+        /// 128 nodes across this index passed their first child straight through.
+        /// </remarks>
+        private static void EvalMixMono(TextureNode node, int[] output, int w, int row) {
+            if (!HasChildren(node, 3)) {
                 Array.Fill(output, 2040, 0, w);
                 return;
             }
-            int[] height0 = GetMono(node.Children[0], row);
-            int[] heightUp = GetMono(node.Children[0], Math.Max(0, row - 1));
-            int[] light = GetMono(node.Children[1], row);
-            int[] ambient = GetMono(node.Children[2], row);
+            int[] a = GetMono(node.Children[0], row);
+            int[] b = GetMono(node.Children[1], row);
+            int[] factor = GetMono(node.Children[2], row);
+            for (int x = 0; x < w; x++)
+                output[x] = Mix(a[x], b[x], factor[x]);
+        }
 
-            int strength = Math.Max(1, node.IntParam0);
-            for (int x = 0; x < w; x++) {
-                int dx = x + 1 < w ? height0[x + 1] - height0[x] : 0;
-                int dy = heightUp[x] - height0[x];
-                int n = (dx + dy) * strength >> 12;
-                int lit = 2048 + n;
-                output[x] = Clamp12(Mul12(light[x], lit) + ambient[x]);
+        /// <summary>The colour half of <see cref="EvalMixMono"/>, channel for channel.</summary>
+        private static void EvalMixColour(TextureNode node, int[][] output, int w, int row) {
+            if (!HasChildren(node, 3)) {
+                for (int ch = 0; ch < 3; ch++)
+                    Array.Fill(output[ch], 2040, 0, w);
+                return;
             }
+            int[][] a = GetColour(node.Children[0], row);
+            int[][] b = GetColour(node.Children[1], row);
+            //The factor is read as a single channel even on the colour path, which is why child 2
+            //is fetched through GetMono here rather than GetColour.
+            int[] factor = GetMono(node.Children[2], row);
+            for (int ch = 0; ch < 3; ch++) {
+                int[] source = a[ch], other = b[ch], channel = output[ch];
+                for (int x = 0; x < w; x++)
+                    channel[x] = Mix(source[x], other[x], factor[x]);
+            }
+        }
+
+        /// <summary>One channel of the type 21 mix.</summary>
+        /// <param name="a">The value at a factor of 4096.</param>
+        /// <param name="b">The value at a factor of 0.</param>
+        /// <param name="factor">The 12-bit blend factor.</param>
+        /// <returns>The blended value.</returns>
+        private static int Mix(int a, int b, int factor) {
+            if (factor == FP_ONE)
+                return a;
+            if (factor == 0)
+                return b;
+            return (a * factor + b * (FP_ONE - factor)) >> 12;
+        }
+
+        /// <summary>Whether a node has at least <paramref name="count"/> non-null children.</summary>
+        /// <remarks>
+        /// A graph's child indices are raw bytes with no ordering constraint, so an index naming a
+        /// slot the file never filled leaves a null in the array. Every evaluator guards on this;
+        /// the ones taking three children were checking the length and not the entries.
+        /// </remarks>
+        private static bool HasChildren(TextureNode node, int count) {
+            if (node.Children == null || node.Children.Length < count)
+                return false;
+            for (int i = 0; i < count; i++)
+                if (node.Children[i] == null)
+                    return false;
+            return true;
         }
 
         // ===================================================================
@@ -1910,20 +2085,33 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         // ===================================================================
-        //  TYPE 24: Merge RGB (mono → colour)
+        //  TYPE 24: Merge RGB (colour → one channel)
         // ===================================================================
-        private static void EvalMergeRGB(TextureNode node, int[][] output, int w, int row) {
+        /// <summary>
+        /// Averages the three channels of its child's colour down to a single channel.
+        /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub16</c> is constructed <c>super(1, true)</c> - one input, monochrome -
+        /// and <c>method990</c> is the only evaluator it overrides: it takes the child's colour
+        /// through <c>method994</c> and writes <c>(r + g + b) / 3</c>. So it merges a colour into
+        /// one channel, not a channel into a colour.
+        ///
+        /// It was dispatched from <see cref="EvalColour"/>, which a monochrome node never reaches -
+        /// <see cref="GetColour"/> promotes one from its mono row instead of calling
+        /// <see cref="EvalColour"/> at all - so the arm was unreachable, <see cref="EvalMono"/> had
+        /// no case for type 24, and the node fell through to the unknown-type default and rendered
+        /// flat mid-grey. Its own header said "mono to colour", which is the operation backwards;
+        /// what settles it is what the client does with the node, not the label on ours.
+        /// </remarks>
+        private static void EvalMergeRgbToMono(TextureNode node, int[] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
-                Array.Fill(output[0], 2040, 0, w);
-                Array.Fill(output[1], 2040, 0, w);
-                Array.Fill(output[2], 2040, 0, w);
+                Array.Fill(output, 2040, 0, w);
                 return;
             }
-            // Takes single mono child and copies to all channels
-            int[] child = GetMono(node.Children[0], row);
-            Array.Copy(child, output[0], w);
-            Array.Copy(child, output[1], w);
-            Array.Copy(child, output[2], w);
+            int[][] child = GetColour(node.Children[0], row);
+            int[] r = child[0], g = child[1], b = child[2];
+            for (int x = 0; x < w; x++)
+                output[x] = (r[x] + g[x] + b[x]) / 3;
         }
 
         // ===================================================================
@@ -2010,7 +2198,7 @@ namespace FlashEditor.Definitions.Sprites {
                 int sy = (int)((ny + dy) * node.Height) % node.Height;
                 if (sx < 0) sx += w;
                 if (sy < 0) sy += node.Height;
-                int[] childRow = GetMono(node.Children[0], sy);
+                int[] childRow = SampledMono(node, node.Children[0], sy);
                 output[x] = childRow[sx % w];
             }
         }
@@ -2153,26 +2341,82 @@ namespace FlashEditor.Definitions.Sprites {
                 int sy = (int)(radius * node.Height) % node.Height;
                 if (sx < 0) sx += w;
                 if (sy < 0) sy += node.Height;
-                int[] childRow = GetMono(node.Children[0], sy);
+                int[] childRow = SampledMono(node, node.Children[0], sy);
                 output[x] = childRow[sx % w];
             }
         }
 
         // ===================================================================
-        //  TYPE 33: Offset/Scroll
+        //  TYPE 33: Surface normal from a height field
         // ===================================================================
-        private static void EvalOffset(TextureNode node, int[] output, int w, int row) {
+        /// <summary>
+        /// Turns its child's mono output into a surface normal, one axis per colour channel.
+        /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub20.method997</c>. The child is read as a height field: the x slope
+        /// comes from the neighbouring columns of the current row and the y slope from the same
+        /// column of the rows either side, both scaled by <c>anInt5637</c>; the vector
+        /// <c>(dx, dy, 4096)</c> is then normalised and written out as red, green and blue.
+        /// <c>aBoolean5636</c> folds each axis into the upper half of the range, which is the usual
+        /// signed-to-unsigned remap a normal map needs.
+        ///
+        /// This node had no colour evaluator at all, so its one instance in this cache passed its
+        /// child's colour through untouched. The mono arm it did have was an offset/scroll, which
+        /// is a different operation again - and one the client has no counterpart for, since
+        /// <c>Node_Sub10_Sub20</c> is <c>super(1, false)</c> and never overrides
+        /// <c>Node_Sub10.method990</c>, so asking it for a monochrome row throws in the client the
+        /// same way type 25 does.
+        ///
+        /// Two deliberate divergences. The client masks the neighbour coordinates with
+        /// <c>width - 1</c> and <c>height - 1</c>, which is a wrap only because it renders at 64 or
+        /// 128; this editor renders at any size, so the wrap is a modulo. And the client's
+        /// <c>method1000</c> can hold several rows of a child at once where
+        /// <see cref="GetMono"/> caches exactly one, so the two neighbouring rows are copied out
+        /// before the third is fetched - reading them as live references hands back three views of
+        /// whichever row was asked for last, and the slopes then come out as zero.
+        /// </remarks>
+        private static void EvalNormalMap(TextureNode node, int[][] output, int w, int row) {
             if (node.Children == null || node.Children.Length < 1 || node.Children[0] == null) {
-                Array.Fill(output, 2040, 0, w);
+                for (int ch = 0; ch < 3; ch++)
+                    Array.Fill(output[ch], 2040, 0, w);
                 return;
             }
-            int offX = (node.IntParam0 * w) >> 12;
-            int offY = (node.IntParam1 * node.Height) >> 12;
-            int srcRow = ((row - offY) % node.Height + node.Height) % node.Height;
-            int[] child = GetMono(node.Children[0], srcRow);
+
+            int h = node.Height;
+            TextureNode child = node.Children[0];
+            int[] above = SampledMono(node, child, ((row - 1) % h + h) % h);
+            int[] below = SampledMono(node, child, (row + 1) % h);
+            int[] current = SampledMono(node, child, row);
+
+            int scale = node.IntParam0;
+            bool remap = node.IntParam1 != 0;
+            int[] outX = output[0], outY = output[1], outZ = output[2];
+
             for (int x = 0; x < w; x++) {
-                int sx = ((x - offX) % w + w) % w;
-                output[x] = child[sx];
+                int dx = scale * (current[(x + 1) % w] - current[(x - 1 + w) % w]);
+                int dy = scale * (below[x] - above[x]);
+
+                int sx = dx >> 12, sy = dy >> 12;
+                int length = (int) (Math.Sqrt((FP_ONE + (sx * sx >> 12) + (sy * sy >> 12)) / 4096.0) * 4096.0);
+
+                int nx = 0, ny = 0, nz = 0;
+                if (length != 0) {
+                    nx = dx / length;
+                    ny = dy / length;
+                    //16777216 is 4096 squared: the z component is the unit height divided by the
+                    //same length, in the same 12-bit fixed point as the other two.
+                    nz = 16777216 / length;
+                }
+
+                if (remap) {
+                    nx = 2048 + (nx >> 1);
+                    ny = 2048 + (ny >> 1);
+                    nz = 2048 + (nz >> 1);
+                }
+
+                outX[x] = nx;
+                outY[x] = ny;
+                outZ[x] = nz;
             }
         }
 

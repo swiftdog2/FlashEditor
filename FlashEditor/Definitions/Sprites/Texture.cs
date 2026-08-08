@@ -153,6 +153,12 @@ namespace FlashEditor.Definitions.Sprites
                     node.IntParam0 = 409;
                     node.IntParam1 = node.IntParam2 = node.IntParam3 = 4096;
                     break;
+                //Node_Sub10_Sub20: slope scale anInt5637 = 4096, and aBoolean5636 = true, which
+                //folds each normal axis into the upper half of the range. Zero-initialised the
+                //scale would flatten every normal to (0, 0, 4096) and the node would emit one
+                //constant colour, which is the opposite of what a node carrying no opcode asks
+                //for.
+                case 33: node.IntParam0 = 4096; node.IntParam1 = 1; break;
                 //Node_Sub10_Sub26: 5/5 cells, seed 0, jitter 2048, output mode 2, metric 1.
                 case 15:
                     node.IntParam0 = node.IntParam1 = 5;
@@ -718,7 +724,11 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 2) { node.IntParam2 = buf.ReadUnsignedShort(); return true; }
                     return false;
 
-                case 33: // Offset/Scroll (Sub20)
+                case 33: // SurfaceNormal (Sub20)
+                    //Not an offset or a scroll, whatever this arm used to be labelled:
+                    //Node_Sub10_Sub20.method997 reads its child as a height field and emits a
+                    //surface normal. IntParam0 is anInt5637, the slope scale; IntParam1 is
+                    //aBoolean5636, the signed-to-unsigned remap.
                     if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedShort(); return true; }
                     if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
                     return false;

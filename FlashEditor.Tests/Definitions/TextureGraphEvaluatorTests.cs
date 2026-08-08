@@ -339,70 +339,150 @@ namespace FlashEditor.Tests.Definitions
         }
 
         // ===================================================================
-        //  Known evaluator defects
+        //  Node types the dispatch used to route to the wrong evaluator
         // ===================================================================
 
         /// <summary>
-        /// DEFECT: type 24 is absent from the colour-node list, so it is classified mono and
-        /// dispatched through EvalMono, which has no case for it. It always renders flat
-        /// mid-grey and EvalMergeRGB is dead code that can never run.
+        /// Type 24 averages its child's three channels into one.
         /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub16</c> is <c>super(1, true)</c> and overrides only <c>method990</c>,
+        /// which reads the child's colour and writes <c>(r + g + b) / 3</c>. It was dispatched from
+        /// the colour side, where a monochrome node never arrives, so <c>EvalMono</c> had no case
+        /// for it and every type 24 node rendered flat mid-grey.
+        /// <para>
+        /// The expected value is rendered from a constant node carrying the average rather than
+        /// written down, so this pins the merge without restating the gamma ramp - and it is
+        /// checked against mid-grey too, since a defect that renders everything mid-grey would
+        /// otherwise satisfy any single-value assertion by luck.
+        /// </para>
+        /// </remarks>
         [Fact]
-        public void Render_Type24MergeRgb_IsUnreachableAndRendersMidGrey_DocumentsKnownDefect()
+        public void Render_Type24MergeRgb_AveragesItsChildsChannelsIntoOne()
         {
+            //ConstantColour expands each 8-bit channel to 12 bits, so 0xFF0000 is (4080, 0, 0).
             var child = ConstantColour(0xFF0000);
             var merge = new TextureNode { Type = 24, Children = new[] { child } };
 
             var px = Render(Graph(0, merge, child));
+            byte expected = Render(Single(Constant((4080 + 0 + 0) / 3)))[0, 0].R;
 
-            Assert.Equal(MidGrey, px[0, 0].R);
-            Assert.Equal(MidGrey, px[0, 0].G);
-            Assert.Equal(MidGrey, px[0, 0].B);
+            Assert.NotEqual(MidGrey, expected);
+            Assert.Equal(expected, px[0, 0].R);
+            //A merge emits one channel, so the three come out equal after the mono replication.
+            Assert.Equal(px[0, 0].R, px[0, 0].G);
+            Assert.Equal(px[0, 0].R, px[0, 0].B);
         }
 
         /// <summary>
-        /// DEFECT: types 21, 30 and 33 are classified as colour nodes but have no colour
-        /// implementation, so EvalColour routes them to the passthrough default. Their own
-        /// operation is silently discarded and the child's colour is copied through unchanged.
-        ///
-        /// Type 25 used to be in this list and is not any more: it is Node_Sub10_Sub14, a
-        /// colour-key scale, and it now has a colour arm. See
-        /// <c>ColourKeyNode_TintsTexture911TowardItsDeclaredColour</c>.
+        /// Type 21 interpolates between its first two inputs by its third, on both paths.
         /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub12</c> is <c>super(3, false)</c>, and its <c>method990</c> and
+        /// <c>method997</c> are the same mix: child 2's mono row is the factor, child 0 wins at
+        /// 4096 and child 1 at 0. It had no colour arm at all, so all 128 of them in this index
+        /// passed child 0 through untouched, and the mono arm was an emboss - a different operation
+        /// reading a strength parameter a type 21 node cannot carry, since its only opcode is
+        /// claimed by the monochrome flag.
+        /// </remarks>
         [Theory]
-        [InlineData(21)]   // Emboss
-        [InlineData(33)]   // Offset / scroll
-        public void Render_ColourTypesWithoutColourImplementation_PassChildThrough_DocumentsKnownDefect(int type)
+        [InlineData(4096, 255, 0)]   // full factor selects child 0
+        [InlineData(0, 0, 255)]      // zero factor selects child 1
+        public void Render_Type21Mix_SelectsOneInputAtEitherEndOfTheFactor(int factor, byte red, byte green)
         {
-            // A horizontal gradient child gives a spatially varying signal, so a genuine
-            // emboss/offset/edge-detect would visibly change it.
+            var px = MixOf(0xFF0000, 0x00FF00, factor);
+
+            Assert.Equal(red, px.R);
+            Assert.Equal(green, px.G);
+            Assert.Equal(0, px.B);
+        }
+
+        /// <summary>Halfway between full red and full green is both channels at half.</summary>
+        /// <remarks>
+        ///     The expected value is <see cref="MidGrey"/> because half of 4080 is 2040, which is
+        ///     the same 12-bit value every guard clause falls back to. Deriving it rather than
+        ///     writing the post-gamma byte down keeps this from restating the gamma ramp.
+        /// </remarks>
+        [Fact]
+        public void Render_Type21Mix_HalfFactorIsHalfOfEachInput()
+        {
+            Color px = MixOf(0xFF0000, 0x00FF00, 2048);
+
+            Assert.Equal(MidGrey, px.R);
+            Assert.Equal(MidGrey, px.G);
+            Assert.Equal(0, px.B);
+        }
+
+        /// <summary>Renders a type 21 node over two constant colours and a constant factor.</summary>
+        private static Color MixOf(int aRgb, int bRgb, int factor)
+        {
+            var a = ConstantColour(aRgb);
+            var b = ConstantColour(bRgb);
+            var blend = Constant(factor);
+            var mix = new TextureNode { Type = 21, Children = new[] { a, b, blend } };
+
+            return Render(Graph(0, mix, a, b, blend))[0, 0];
+        }
+
+        /// <summary>
+        /// Type 33 turns a height field into a surface normal rather than passing it through.
+        /// </summary>
+        /// <remarks>
+        /// <c>Node_Sub10_Sub20.method997</c> emits the normalised <c>(dx, dy, 4096)</c> of its
+        /// child, one axis per channel, so a horizontal gradient - which slopes in x and is flat in
+        /// y - must produce three channels that differ from one another and from the input. With no
+        /// colour arm the node fell through to the pass-through default and reproduced the gradient
+        /// exactly, which is what this asserts against.
+        /// </remarks>
+        [Fact]
+        public void Render_Type33SurfaceNormal_EmitsANormalRatherThanItsChild()
+        {
             var childForOp = new TextureNode { Type = 2 };
-            var op = new TextureNode
+            var normal = new TextureNode
             {
-                Type = type,
-                IntParam0 = 1000,   // a large parameter that a real implementation would act on
-                IntParam1 = 1000,
+                Type = 33,
+                IntParam0 = 4096,   // anInt5637, the slope scale
+                IntParam1 = 1,      // aBoolean5636, the signed-to-unsigned remap
                 Children = new[] { childForOp }
             };
 
-            var actual = Render(Graph(0, op, childForOp));
+            var actual = Render(Graph(0, normal, childForOp));
             var childAlone = Render(Single(new TextureNode { Type = 2 }));
 
-            for (int x = 0; x < Size; x++)
-                for (int y = 0; y < Size; y++)
-                    Assert.Equal(childAlone[x, y].R, actual[x, y].R);
+            //The x slope of a horizontal gradient is constant across the row bar the wrap, so the
+            //red channel is flat where the child ramps.
+            Assert.NotEqual(childAlone[Size - 1, 0].R, actual[Size - 1, 0].R);
+            Assert.Equal(actual[2, 0].R, actual[3, 0].R);
+
+            //Flat in y, so the green axis is the remap's midpoint everywhere, and z is not.
+            Assert.NotEqual(actual[2, 0].G, actual[2, 0].B);
+            for (int y = 0; y < Size; y++)
+                Assert.Equal(actual[2, 0].G, actual[2, y].G);
         }
 
         /// <summary>
-        /// DEFECT: the transpose branch indexes with `x * width + y` where it should use
-        /// `x * height + y`, so any non-square transposed render walks off the end of the
-        /// pixel buffer. Production only ever calls this 128x128, which is why it survives.
+        /// A transposed render of a non-square graph produces the transposed image.
         /// </summary>
+        /// <remarks>
+        /// The transposed pixel index used the untransposed row length as its stride, so it walked
+        /// off the end of the buffer for any width and height that differ. Production only ever
+        /// renders square, which is why it survived. The transpose of a w by h image is an h by w
+        /// one, so the bitmap's dimensions swap with it.
+        /// </remarks>
         [Fact]
-        public void Render_TransposeWithNonSquareBitmap_Throws_DocumentsKnownDefect()
+        public void Render_TransposeWithNonSquareBitmap_ProducesTheTransposedImage()
         {
-            Assert.Throws<IndexOutOfRangeException>(() =>
-                TextureGraphEvaluator.Render(Single(Constant(2048)), 8, 4, null, transpose: true));
+            using Bitmap normal = TextureGraphEvaluator.Render(
+                Single(new TextureNode { Type = 2 }), 8, 4, null);
+            using Bitmap transposed = TextureGraphEvaluator.Render(
+                Single(new TextureNode { Type = 2 }), 8, 4, null, transpose: true);
+
+            Assert.Equal(4, transposed.Width);
+            Assert.Equal(8, transposed.Height);
+
+            for (int x = 0; x < 8; x++)
+                for (int y = 0; y < 4; y++)
+                    Assert.Equal(normal.GetPixel(x, y), transposed.GetPixel(y, x));
         }
 
         [Fact]
@@ -574,7 +654,8 @@ namespace FlashEditor.Tests.Definitions
             foreach (FieldInfo field in typeof(TextureNode).GetFields(Scope))
             {
                 //Evaluation scratch is meant to be left behind; everything else must survive.
-                if (field.Name is "MonoCache" or "ColourCache" or "CachedRow" or "CachedIsMono"
+                if (field.Name is "MonoCache" or "ColourCache" or "MonoCachedRow" or "ColourCachedRow"
+                    or "SampledMonoRows" or "SampledColourRows"
                     or "Width" or "Height" or "XCoord" or "YCoord"
                     or "Children" or "GradientColourLUT")
                     continue;

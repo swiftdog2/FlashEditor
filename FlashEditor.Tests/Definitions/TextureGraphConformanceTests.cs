@@ -421,8 +421,11 @@ namespace FlashEditor.Tests.Definitions
                     results[i] = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
                 });
 
+                //Null rather than different is the shape a render that ran out of its time budget
+                //takes, and SequenceEqual throws on it rather than reporting it, so it is checked
+                //here instead of surfacing as an ArgumentNullException from inside LINQ.
                 for (int i = 0; i < results.Length; i++)
-                    Assert.True(expected.SequenceEqual(results[i]),
+                    Assert.True(results[i] != null && expected.SequenceEqual(results[i]),
                         $"Texture {def.id} rendered differently on thread {i} than it did serially.");
             }
         }
