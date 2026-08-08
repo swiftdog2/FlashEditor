@@ -62,8 +62,11 @@ namespace FlashEditor.Definitions.Fonts {
         /// <summary>The backdrop a glyph is drawn on, dark enough for a near-white mask to read.</summary>
         private static readonly Color GlyphBackdrop = Color.FromArgb(0xFF, 0x2A, 0x2A, 0x2A);
 
-        /// <summary>The advance box's edge, so an empty glyph still shows how wide it is.</summary>
-        private static readonly Color AdvanceEdge = Color.FromArgb(0xFF, 0x50, 0x78, 0xA0);
+        /// <summary>The canvas outside the advance box, so the width being edited is a visible region.</summary>
+        private static readonly Color OutsideAdvance = Color.FromArgb(0xFF, 0x14, 0x14, 0x14);
+
+        /// <summary>The baseline rule in a glyph tile, which is what heights are compared against.</summary>
+        private static readonly Color BaselineRule = Color.FromArgb(0xFF, 0x50, 0x78, 0xA0);
 
         private readonly DefinitionListPanel fontList = new DefinitionListPanel();
 
@@ -97,32 +100,27 @@ namespace FlashEditor.Definitions.Fonts {
         private readonly TabPage previewPage = new TabPage("Preview") { Font = GridFont };
         private readonly TabPage kerningPage = new TabPage("Kerning") { Font = GridFont };
 
-        //AutoSize on every caption. The form scales by DPI and a stated height clips the text it was
-        //measured for, which is what turned another tab's captions into "Tmnort NPC".
-        private readonly Label header = new Label {
-            AutoSize = true, Dock = DockStyle.Top, Font = GridFont, Text = NoCacheText
-        };
+        private readonly Label header = Caption(NoCacheText);
 
-        private readonly Label glyphNote = new Label {
-            AutoSize = true, Dock = DockStyle.Bottom, Font = GridFont,
-            Text = "Advance width is editable in place - double click the cell. Editing it re-encodes " +
-                   "the whole 263 byte record and stages it.\r\n" +
-                   "The pixels are in index 8 and are not editable here. Importing a TTF or OTF is not " +
-                   "available: it would mean rasterising into the index-8 sprite format as well as " +
-                   "writing these metrics."
-        };
+        /* Every caption is a wrapping label whose height is measured against the width it ends up
+           with, and each half of that was a defect first. AutoSize does not wrap, so the longest of
+           these ran off the right edge of the pane and the clipped half read as a sentence nobody
+           had written; a Bottom-docked AutoSize label drew nothing at all, because the filled grid
+           above it claimed the page; and a height stated in whole lines still clipped, because how
+           many lines the text wraps to is a property of the pane's width rather than of the text. */
+        private readonly Label glyphNote = Caption(
+            "Advance width is editable - double click the cell. It restages the whole record. " +
+            "The glyph pixels live in index 8 and are not editable here. " +
+            "Importing a TTF or OTF is NOT AVAILABLE: it would mean rasterising into the index-8 " +
+            "sprite format as well as writing these metrics.");
 
-        private readonly Label previewNote = new Label {
-            AutoSize = true, Dock = DockStyle.Bottom, Font = GridFont,
-            Text = "This is a metrics preview, not the client's text renderer. It applies advance " +
-                   "widths and kerning only:\r\n" +
-                   "no <br>, <img=n> or colour markup (Class197.method2675:236-268), and no mapping " +
-                   "into the cache's own character encoding."
-        };
+        private readonly Label previewNote = Caption(
+            "A metrics preview, not the client's text renderer. It applies advance widths and " +
+            "kerning and nothing else: no <br>, <img=n> or colour markup " +
+            "(Class197.method2675:236-268), and no mapping into the cache's own character " +
+            "encoding, so a byte above 127 is not Latin-1 here.");
 
-        private readonly Label kerningNote = new Label {
-            AutoSize = true, Dock = DockStyle.Top, Font = GridFont
-        };
+        private readonly Label kerningNote = Caption(string.Empty);
 
         private readonly TextBox previewText = new TextBox {
             Dock = DockStyle.Top, Font = GridFont, Multiline = true, ScrollBars = ScrollBars.Vertical,
@@ -167,6 +165,55 @@ namespace FlashEditor.Definitions.Fonts {
         private bool splitterPlaced;
         private int glyphTileHeight;
 
+        /// <summary>
+        ///     A caption that wraps to the pane it is in and is measured, never stated.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Label.AutoSize"/> is deliberately off, because a Label only word-wraps when
+        ///     it is not auto-sizing and every one of these is longer than the detail pane is wide.
+        ///     The height that follows from that is set by <see cref="FitCaptions"/> once the pane
+        ///     has a width to wrap against.
+        /// </remarks>
+        /// <param name="text">The caption.</param>
+        /// <returns>The label.</returns>
+        private static Label Caption(string text) {
+            return new Label {
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Font = GridFont,
+                Height = GridFont.Height,
+                Text = text
+            };
+        }
+
+        /// <summary>
+        ///     Gives every caption the height its own text needs at the width it has.
+        /// </summary>
+        /// <remarks>
+        ///     Measured rather than stated, which is the only thing that holds at every pane width
+        ///     and DPI: how many lines a caption wraps to depends on how wide the pane is, so a
+        ///     reserved line count is right at one size and clips at every narrower one. The kerning
+        ///     note lost its last sentence exactly that way, and the sentence it lost was the one
+        ///     saying no shipped font exercises that pane.
+        ///     <para>
+        ///     Only assigns when the height actually changes. Setting it lays the panel out again,
+        ///     and this runs from that layout.
+        ///     </para>
+        /// </remarks>
+        private void FitCaptions() {
+            foreach (Label caption in new[] { header, glyphNote, previewNote, kerningNote }) {
+                if (caption.Width <= 0 || caption.Dock != DockStyle.Top)
+                    continue;
+
+                Size needed = TextRenderer.MeasureText(caption.Text, caption.Font,
+                    new Size(caption.Width, 0), TextFormatFlags.WordBreak);
+                int height = Math.Max(GridFont.Height, needed.Height + 2);
+
+                if (caption.Height != height)
+                    caption.Height = height;
+            }
+        }
+
         /// <summary>Creates the panel.</summary>
         public FontEditorPanel() {
             Dock = DockStyle.Fill;
@@ -206,6 +253,7 @@ namespace FlashEditor.Definitions.Fonts {
         protected override void OnLayout(LayoutEventArgs levent) {
             base.OnLayout(levent);
             PlaceSplitter();
+            FitCaptions();
         }
 
         /// <summary>Releases the glyph tiles and the preview bitmap.</summary>
@@ -264,11 +312,13 @@ namespace FlashEditor.Definitions.Fonts {
             previewControls.Controls.Add(zoom);
             previewControls.Controls.Add(showBaselines);
 
-            previewText.Height = previewText.Font.Height * 4;
+            //Derived from the font rather than stated, so the box holds the lines it was sized for
+            //whatever the form scales to. A literal here is multiplied by the scale factor and clips.
+            previewText.Height = previewText.Font.Height * 3;
             previewPage.Controls.Add(previewSurface);
-            previewPage.Controls.Add(previewNote);
             previewPage.Controls.Add(previewControls);
             previewPage.Controls.Add(previewText);
+            previewPage.Controls.Add(previewNote);
 
             kerningPage.Controls.Add(kerningGrid);
             kerningPage.Controls.Add(kerningNote);
@@ -285,12 +335,13 @@ namespace FlashEditor.Definitions.Fonts {
         }
 
         private void BuildGlyphColumns() {
-            //Four rows of text tall, so a 61 pixel glyph is legible and an 8 pixel one is not lost.
-            glyphTileHeight = Math.Clamp(GridFont.Height * 4, 40, 80);
+            //Five rows of text. The per-font magnification below is measured against this, so it is
+            //derived from the panel's own font rather than stated in pixels.
+            glyphTileHeight = Math.Clamp(GridFont.Height * 5, 48, 96);
             glyphs.RowHeight = glyphTileHeight + 2;
 
             var image = new OLVColumn("Glyph", null) {
-                Width = 140,
+                Width = 160,
                 Groupable = false,
                 IsEditable = false,
                 ImageGetter = row => row is GlyphRow glyph ? TileFor(glyph.Character) : null,
@@ -317,13 +368,13 @@ namespace FlashEditor.Definitions.Fonts {
             glyphs.AllColumns.Add(advance);
             glyphs.Columns.Add(advance);
 
-            AddColumn(glyphs, "Ink w", 60, row => Glyph(row)?.InkWidth);
-            AddColumn(glyphs, "Ink h", 60, row => Glyph(row)?.InkHeight);
-            AddColumn(glyphs, "Left", 60, row => Glyph(row)?.OffsetX);
-            AddColumn(glyphs, "Top", 60, row => Glyph(row)?.OffsetY);
-            AddColumn(glyphs, "Right gap", 90, row => Glyph(row)?.RightBearing);
-            AddColumn(glyphs, "Rows", 60, row => Glyph(row)?.StoredRows);
-            AddColumn(glyphs, "Stored top", 90, row => Glyph(row)?.StoredTop);
+            AddColumn(glyphs, "Ink w", 55, row => Glyph(row)?.InkWidth);
+            AddColumn(glyphs, "Ink h", 55, row => Glyph(row)?.InkHeight);
+            AddColumn(glyphs, "Left", 50, row => Glyph(row)?.OffsetX);
+            AddColumn(glyphs, "Top", 50, row => Glyph(row)?.OffsetY);
+            AddColumn(glyphs, "Right", 55, row => Glyph(row)?.RightBearing);
+            AddColumn(glyphs, "Rows", 55, row => Glyph(row)?.StoredRows);
+            AddColumn(glyphs, "Prof top", 75, row => Glyph(row)?.StoredTop);
 
             glyphs.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
         }
@@ -414,6 +465,10 @@ namespace FlashEditor.Definitions.Fonts {
             BuildGlyphRows(row);
             BuildKerningView(row);
             RedrawPreview();
+
+            //The captions just changed, and a re-measure is what keeps the longest of them from
+            //losing its last line. A Text assignment alone does not re-run this control's layout.
+            FitCaptions();
         }
 
         /// <summary>The header line: which font, which layout, and whether its glyph sheet joined.</summary>
@@ -452,7 +507,25 @@ namespace FlashEditor.Definitions.Fonts {
             for (int character = 0; character < FontDefinition.CharacterCount; character++)
                 rows.Add(new GlyphRow(row.Record, sheet, character));
 
+            //Sized to the tile this font actually produces rather than to a constant, so a 12 row
+            //sheet magnified five times and a 61 row one at 1x both sit in a row that fits them.
+            glyphs.RowHeight = sheet == null
+                ? glyphTileHeight + 2
+                : GlyphBoxRows * GlyphScale + 4;
+
             glyphs.SetObjects(rows);
+
+            //Scrolled to the first character that draws anything. Codes 0 to 31 are control codes
+            //with no ink in every font of both caches, so a grid parked at the top opens on 32
+            //blank rows and reads as a tab that failed to load. The rows are still there and still
+            //in code order - only the viewport moves.
+            for (int character = 0; character < FontDefinition.CharacterCount; character++) {
+                if (sheet == null || !sheet.HasInk(character))
+                    continue;
+                glyphs.EnsureVisible(Math.Min(character + 12, FontDefinition.CharacterCount - 1));
+                glyphs.EnsureVisible(character);
+                break;
+            }
         }
 
         /// <summary>
@@ -479,13 +552,12 @@ namespace FlashEditor.Definitions.Fonts {
             if (matrix == null) {
                 kerningGrid.Visible = false;
                 kerningNote.Text =
-                    "Font " + row.FontId + " is unkerned, so it has no kerning matrix - that is the " +
-                    "record's own shape, not a missing feature.\r\n" +
-                    "The client keeps the matrix null for these fonts and every reader checks it " +
-                    "(Class197.java:151,249).\r\n" +
-                    "NO FONT IN EITHER SUPPORTED CACHE SETS THE KERNING FLAG, so this grid is reached " +
-                    "only by a synthetic record and is covered by FontDefinitionCodecTests rather " +
-                    "than by any sweep over the cache.";
+                    "Font " + row.FontId + " is unkerned, so it has no kerning matrix. That is the " +
+                    "record's own shape and not a missing feature - the client keeps the matrix null " +
+                    "for these fonts and every reader checks it (Class197.java:151,249). " +
+                    "NO FONT IN EITHER SUPPORTED CACHE SETS THE KERNING FLAG, so this grid is " +
+                    "reached only by a hand-built record and is defended by FontGlyphSheetTests and " +
+                    "FontDefinitionCodecTests rather than by any sweep over the cache.";
                 return;
             }
 
@@ -499,11 +571,11 @@ namespace FlashEditor.Definitions.Fonts {
             kerningGrid.Visible = true;
             kerningNote.Text =
                 "Font " + row.FontId + " is kerned. Rows are the LEFT character and columns the " +
-                "RIGHT one, which is the client's own subscript order (Class197.method2675:250).\r\n" +
+                "RIGHT one, which is the client's own subscript order (Class197.method2675:250). " +
                 "Columns cover the printable range " + FirstKerningColumn + " to " + LastKerningColumn +
-                "; the stored matrix is 256 by 256. A negative entry pulls the pair together.\r\n" +
-                "The matrix is derived from the edge profiles and the advance widths, so editing an " +
-                "advance moves it.";
+                "; the stored matrix is 256 by 256, and a blank cell kerns by zero. A negative entry " +
+                "pulls the pair together. The matrix is derived from the edge profiles and the " +
+                "advance widths, so editing an advance moves it.";
         }
 
         /// <summary>The first right-hand character the kerning grid gives a column to.</summary>
@@ -623,28 +695,36 @@ namespace FlashEditor.Definitions.Fonts {
                 return cached;
 
             int boxWidth = Math.Max(1, sheet.CanvasWidth);
-            int boxHeight = Math.Max(1, sheet.CanvasHeight);
+            int boxRows = GlyphBoxRows;
+            int boxTop = GlyphBoxTop;
+            int scale = GlyphScale;
 
-            //Integer magnification only. These are one-bit masks, and interpolating them turns a
-            //one-pixel bearing into a smear.
-            int scale = Math.Max(1, Math.Min(glyphTileHeight / boxHeight, 6));
-
-            var tile = new Bitmap(boxWidth * scale + 2, boxHeight * scale + 2, PixelFormat.Format32bppArgb);
+            var tile = new Bitmap(boxWidth * scale + 2, boxRows * scale + 2, PixelFormat.Format32bppArgb);
             using (Graphics graphics = Graphics.FromImage(tile)) {
-                graphics.Clear(GlyphBackdrop);
                 graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
                 graphics.SmoothingMode = SmoothingMode.None;
 
+                //The canvas is filled darker than the advance box, so the width being edited reads as
+                //a lit region rather than as a one-pixel outline lost against a mask of the same
+                //colour. A zero-advance character is then visibly a sliver rather than an empty cell.
                 int advance = sheet.Metrics.AdvanceOf(character);
-                using (var edge = new Pen(AdvanceEdge))
-                    graphics.DrawRectangle(edge, 0, 0, Math.Max(1, advance * scale) + 1, boxHeight * scale + 1);
+                graphics.Clear(OutsideAdvance);
+
+                using (var inside = new SolidBrush(GlyphBackdrop))
+                    graphics.FillRectangle(inside, 1, 1, Math.Max(1, advance * scale), boxRows * scale);
+
+                //And the baseline, because a glyph's height above it is the thing the eye compares
+                //down the column and nothing else in the tile states where it is.
+                int baseline = 1 + (sheet.Baseline - boxTop) * scale;
+                using (var rule = new Pen(BaselineRule))
+                    graphics.DrawLine(rule, 0, baseline, tile.Width, baseline);
 
                 using Bitmap? ink = sheet.RenderInk(character, GlyphInk);
                 if (ink != null) {
                     SpriteFrame frame = sheet.FrameFor(character)!;
                     graphics.DrawImage(ink,
-                        new Rectangle(1 + frame.OffsetX * scale, 1 + frame.OffsetY * scale,
+                        new Rectangle(1 + frame.OffsetX * scale, 1 + (frame.OffsetY - boxTop) * scale,
                             ink.Width * scale, ink.Height * scale),
                         new Rectangle(0, 0, ink.Width, ink.Height), GraphicsUnit.Pixel);
                 }
@@ -653,6 +733,36 @@ namespace FlashEditor.Definitions.Fonts {
             glyphTiles[character] = tile;
             return tile;
         }
+
+        /// <summary>
+        ///     The rows a glyph tile shows: the metrics' own box, not the whole sprite canvas.
+        /// </summary>
+        /// <remarks>
+        ///     <c>ascent + descent</c>, which is the box the client reserves for a line of this font
+        ///     (<c>RSFont.java:942</c>). The sprite canvas is taller - <c>lineHeight + descent</c> -
+        ///     and the difference is empty padding above the ink: verdana 11pt's canvas is 38 rows
+        ///     for a 15 row box. Drawing the canvas made every glyph a sixth of the tile and
+        ///     illegible; drawing the box is what lets the tile magnify. Nothing is lost by it,
+        ///     because "no ink reaches above the ascent" is one of the relations the join is checked
+        ///     with, on all 25 fonts of both caches.
+        /// </remarks>
+        private int GlyphBoxRows =>
+            sheet == null ? 1 : Math.Max(1, sheet.Metrics.Ascent + sheet.Metrics.Descent);
+
+        /// <summary>The canvas row the glyph tile starts at.</summary>
+        private int GlyphBoxTop => sheet == null ? 0 : sheet.CanvasHeight - GlyphBoxRows;
+
+        /// <summary>
+        ///     How far the glyph tiles are magnified for the font on display.
+        /// </summary>
+        /// <remarks>
+        ///     Per font, because the boxes in this cache run from 11 rows to 60 and a fixed
+        ///     magnification serves neither end: at 1x the small fonts are eight pixels of glyph in a
+        ///     row five times that, and at 5x the large ones do not fit in the row at all. Integer
+        ///     only, and the drawing never smooths - these are one-bit masks, and interpolating one
+        ///     turns the one-pixel bearing an advance edit moves into a smear.
+        /// </remarks>
+        private int GlyphScale => Math.Clamp(glyphTileHeight / GlyphBoxRows, 1, 6);
 
         private void DropTile(int character) {
             if (glyphTiles.Remove(character, out Bitmap? tile))
