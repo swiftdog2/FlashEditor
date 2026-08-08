@@ -176,15 +176,17 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
-        ///     An overlay tile carries a shape byte, and it is signed.
+        ///     An overlay tile carries an underlay id, stored signed and read unsigned.
         /// </summary>
         /// <remarks>
-        ///     The whole signed range occurs in the cache, so a decoder reading it unsigned would
-        ///     round-trip through its own encoder and hand the editor a value 256 too large for half
-        ///     of them.
+        ///     The byte is written signed (<c>Class278.java:217</c>) into the plane the client's
+        ///     terrain blender resolves underlay definitions out of, so the stored form and the read
+        ///     form differ above 127 and both have to be right: the stored byte is what round-trips
+        ///     and the unsigned reading is what names a floor. 0x80 is the boundary case - it
+        ///     round-trips as -128 and means underlay 128.
         /// </remarks>
         [Fact]
-        public void AnOverlayTileKeepsItsSignedShapeByte()
+        public void AnOverlayTileKeepsItsSignedUnderlayByteAndReadsItUnsigned()
         {
             const byte Overlay = (2 << 2) | WorldMapTile.OverlayFlag;
             byte[] stored = Raster(Array.Empty<byte>(), new byte[] { 11, 12, 13 },
@@ -194,7 +196,8 @@ namespace FlashEditor.Tests.Definitions
 
             WorldMapTile tile = raster.Blocks[0].Tiles[0];
             Assert.Equal(13, tile.ResolveFloorId(raster));
-            Assert.Equal(-128, tile.OverlayShape);
+            Assert.Equal(-128, tile.StoredUnderlayByte);
+            Assert.Equal(128, tile.UnderlayBeneathOverlay);
             Assert.Equal(stored, written);
         }
 

@@ -951,6 +951,15 @@ namespace FlashEditor {
                rows with nothing to say where one script ends. */
             Register(ClientScriptEditorTab, RSConstants.CLIENT_SCRIPTS_INDEX, EditorCategory.ConfigAndScripts,
                 openCache => ClientScriptPanel.Bind(openCache));
+            /* Index 23, filed under World beside Map and named so it cannot be mistaken for it. Map
+               edits index 5, the terrain the world is built from; this is the pre-rendered overview
+               the client draws in its map window, which never reads index 5 at all
+               (InterfaceSettings.java:179 hands Class278 index 23 and nothing else). Three unrelated
+               families share the index - one details record per area, one tile raster per area and
+               one icon group per area - and only the areas are a list, so the tab lists those and
+               draws the selected area's raster beside them. */
+            Register(WorldMapOverviewTab, RSConstants.WORLD_MAP, EditorCategory.World,
+                openCache => WorldMapPanel.Bind(openCache));
 
             /* Every page in the deck has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
