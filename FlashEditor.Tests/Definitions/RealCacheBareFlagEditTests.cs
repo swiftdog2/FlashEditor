@@ -50,13 +50,35 @@ namespace FlashEditor.Tests.Definitions {
             _output = output;
         }
 
-        /// <summary>How many groups are searched for a record carrying, and a record lacking, each flag.</summary>
+        /// <summary>
+        ///     Opcodes that carry no payload and are not an editable flag, so nothing here covers them.
+        /// </summary>
         /// <remarks>
-        ///     Enough to find both cases without sweeping the index. Both are reported, and the test
-        ///     fails rather than skips if either is missing after the search, so a shrinking search
-        ///     cannot quietly turn this into a one-sided check.
+        ///     Each is a bare opcode with a side effect rather than a flag: 21 and 94 select a
+        ///     contour ground type, 23 and 103 an obstruction mode, 27 a clip type. They have no
+        ///     property because the value they set is spelled by a family of opcodes rather than by
+        ///     presence alone, so an "on/off" edit is not defined for them.
+        ///     <para>
+        ///     Stated as an exemption list rather than left out, because
+        ///     <see cref="EveryBareOpcodeInTheCacheIsCoveredOrExempt"/> reads it: a bare flag added
+        ///     to either codec later fails that test until it is either covered here or listed
+        ///     here, which is what stops this file drifting back to partial coverage of a rule that
+        ///     is shared by every flag.
+        ///     </para>
         /// </remarks>
-        private const int GroupsSearched = 6;
+        private static readonly int[] BareOpcodesThatAreNotFlags = { 21, 23, 27, 94, 103 };
+
+        /// <summary>
+        ///     Opcodes spelled by a paired-flag property, covered by <c>RealCachePairedFlagEditTests</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <c>ObjectDefinition.walkable</c> is opcode 17 <i>or</i> 18 and
+        ///     <c>NPCDefinition.mainOptionIndex</c> is 158 <i>or</i> 159, so neither is a single
+        ///     opcode's presence and neither fits the three checks here. Both have already produced
+        ///     a defect apiece, which is why they get a file of their own rather than an entry with
+        ///     a caveat.
+        /// </remarks>
+        private static readonly int[] OpcodesCoveredByPairedFlags = { 17, 18, 158, 159 };
 
         /// <summary>
         ///     Setting a flag on a record that lacks it adds exactly its opcode, and nothing else moves.
@@ -91,17 +113,132 @@ namespace FlashEditor.Tests.Definitions {
         }
 
         /// <summary>
-        ///     One flag per family, since the three are three separate opcode tables.
+        ///     A flag whose opcode the file carries twice drops both occurrences and restores both.
         /// </summary>
         /// <remarks>
-        ///     Six are covered rather than three: two per family, one whose opcode's presence means
-        ///     <i>true</i> and one whose presence means <i>false</i>. The inverted ones are where an
-        ///     off-by-one in a setter hides, because the obvious reading of "drop the opcode" is
-        ///     wrong for them.
+        ///     A real shape rather than a hypothetical: measured over index 16, identically in both
+        ///     caches, 49 objects carry opcode 22 twice, 19 carry 64 twice, 12 each carry 73 and 88
+        ///     twice, 8 carry 62 twice, 5 carry 74 twice and one each carry 17 and 89 twice.
+        ///     <para>
+        ///     It is the case that separates suppressing an opcode from dropping its last
+        ///     occurrence. Turning the flag off has to drop <b>every</b> occurrence, or the client
+        ///     still reads the flag as set while the grid says otherwise; turning it back on has to
+        ///     restore every occurrence in place, or the record comes back a byte short. Neither
+        ///     direction is a single-byte change, so the checks above do not apply and none of them
+        ///     would fail if this went wrong.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void AFlagCarriedTwiceDropsBothOccurrencesAndRestoresBoth() {
+            RSCache cache = _cache.OpenCache();
+            int checkedFlags = 0;
+
+            foreach (BareFlag flag in Flags()) {
+                OpcodeFlagSurvey survey = OpcodeFlagSurvey.For(cache, flag.Descriptor);
+                if (survey.Repeating(flag.Opcode).Count == 0) {
+                    _output.WriteLine($"{flag.Name}: no record carries opcode {flag.Opcode} twice in this cache");
+                    continue;
+                }
+
+                (byte[] stored, object row, DefinitionAddress address) =
+                    FirstRecordThatReEncodes(cache, flag.Descriptor, survey.Repeating(flag.Opcode));
+
+                int occurrences = Occurrences(row, flag.Opcode);
+                Assert.True(occurrences > 1, "The survey named a record that does not repeat the opcode.");
+
+                bool original = flag.Get(row);
+                flag.Set(row, !original);
+                byte[] dropped = flag.Descriptor.Encode(row).ToArray();
+
+                //Every occurrence, not just the last. One left behind still spells the flag.
+                Assert.Equal(stored.Length - occurrences, dropped.Length);
+                AssertDiffersOnlyByOpcode(stored, dropped, flag.Opcode, added: false, times: occurrences);
+                Assert.Equal(0, Occurrences(Redecode(flag, dropped), flag.Opcode));
+
+                flag.Set(row, original);
+                Assert.Equal(stored, flag.Descriptor.Encode(row).ToArray());
+
+                checkedFlags++;
+                _output.WriteLine($"{flag.Name}: opcode {flag.Opcode} occurs {occurrences} times at {address} " +
+                                  $"({survey.RepeatedBy(flag.Opcode)} such records in this cache); " +
+                                  "both dropped and both restored");
+            }
+
+            Assert.True(checkedFlags > 0,
+                "No flag opcode is carried twice by any record, so this cache cannot exercise the case at all.");
+        }
+
+        /// <summary>
+        ///     Every payload-free opcode the cache actually carries is either edit-tested or listed
+        ///     as not a flag.
+        /// </summary>
+        /// <remarks>
+        ///     The gate that stops this file drifting back to partial coverage. The rule under test
+        ///     lives in <c>OpcodeStream.Replay</c> and is shared by every bare flag, so a flag added
+        ///     to either codec later inherits a rule nothing exercises for it - which is how a
+        ///     whole-index sweep over 431,558 packets once passed against a deliberately broken
+        ///     shared length rule, no shipped record having reached the boundary.
+        ///     <para>
+        ///     Derived from the data rather than from the source: an opcode counts as bare when
+        ///     every occurrence of it in the index consumed no payload. Items are out of scope
+        ///     because their flags are driven by the field alone and never touch the recorded
+        ///     stream.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EveryBareOpcodeInTheCacheIsCoveredOrExempt() {
+            RSCache cache = _cache.OpenCache();
+            var covered = new HashSet<string>();
+            foreach (BareFlag flag in Flags())
+                covered.Add(flag.Descriptor.GetType().Name + ":" + flag.Opcode);
+
+            foreach (IDefinitionListDescriptor descriptor in
+                     new IDefinitionListDescriptor[] { new NPCListDescriptor(), new ObjectListDescriptor() }) {
+                OpcodeFlagSurvey survey = OpcodeFlagSurvey.For(cache, descriptor);
+                var uncovered = new List<int>();
+                var found = new List<int>();
+
+                for (int opcode = 0; opcode < 256; opcode++) {
+                    if (survey.CarriedBy(opcode) == 0 || !survey.IsAlwaysBare(opcode))
+                        continue;
+
+                    found.Add(opcode);
+                    if (covered.Contains(descriptor.GetType().Name + ":" + opcode))
+                        continue;
+                    if (BareOpcodesThatAreNotFlags.Contains(opcode) || OpcodesCoveredByPairedFlags.Contains(opcode))
+                        continue;
+                    uncovered.Add(opcode);
+                }
+
+                _output.WriteLine($"{descriptor.RowNoun}: payload-free opcodes carried by this cache: " +
+                                  string.Join(", ", found));
+                Assert.True(uncovered.Count == 0,
+                    $"{descriptor.RowNoun} opcodes {string.Join(", ", uncovered)} carry no payload and no test edits " +
+                    "them. Add a BareFlag entry, or list the opcode in BareOpcodesThatAreNotFlags with the reason.");
+            }
+        }
+
+        /// <summary>
+        ///     Every bare-flag property whose whole meaning is one opcode's presence.
+        /// </summary>
+        /// <remarks>
+        ///     All of them, not a sample. The rule they share lives in <c>OpcodeStream.Replay</c>,
+        ///     and a shared rule tested on a quarter of its callers is the shape that has already
+        ///     failed twice in this project: the first version of this file covered six of them and
+        ///     the two defects it found were both in properties it happened to include.
+        ///     <para>
+        ///     Both polarities are represented in every family, because the inverted ones are where
+        ///     an off-by-one in a setter hides - the obvious reading of "drop the opcode" is wrong
+        ///     for a flag whose presence means <i>false</i>.
+        ///     </para>
+        ///     <para>
+        ///     The two paired-opcode properties are deliberately absent; see
+        ///     <see cref="OpcodesCoveredByPairedFlags"/>.
+        ///     </para>
         /// </remarks>
         private static IEnumerable<BareFlag> Flags() {
             //Item opcode 16. The item codec drives its bare flags from the field alone and never
-            //touches the recorded stream, which is why these three were already symmetric.
+            //touches the recorded stream, which is why these two were already symmetric.
             yield return new BareFlag("item.membersOnly", new ItemListDescriptor(), 16,
                 presenceMeansTrue: true,
                 row => ((ItemDefinition) row).membersOnly,
@@ -113,29 +250,154 @@ namespace FlashEditor.Tests.Definitions {
                 row => ((ItemDefinition) row).stackable == 1,
                 (row, value) => ((ItemDefinition) row).stackable = value ? 1 : 0);
 
-            //NPC opcode 107, inverted: carrying it makes the NPC unclickable.
+            foreach (BareFlag flag in NpcFlags())
+                yield return flag;
+
+            foreach (BareFlag flag in ObjectFlags())
+                yield return flag;
+        }
+
+        /// <summary>Every single-opcode bare flag on <see cref="NPCDefinition"/>.</summary>
+        /// <remarks>
+        ///     Four of the seven are inverted: 93, 107, 109 and 111 all read <i>false</i> when the
+        ///     opcode is present.
+        /// </remarks>
+        private static IEnumerable<BareFlag> NpcFlags() {
+            yield return new BareFlag("npc.drawMinimapDot", new NPCListDescriptor(), 93,
+                presenceMeansTrue: false,
+                row => ((NPCDefinition) row).drawMinimapDot,
+                (row, value) => ((NPCDefinition) row).drawMinimapDot = value);
+
+            yield return new BareFlag("npc.hasRenderPriority", new NPCListDescriptor(), 99,
+                presenceMeansTrue: true,
+                row => ((NPCDefinition) row).hasRenderPriority,
+                (row, value) => ((NPCDefinition) row).hasRenderPriority = value);
+
+            //Inverted: carrying 107 makes the NPC unclickable.
             yield return new BareFlag("npc.clickable", new NPCListDescriptor(), 107,
                 presenceMeansTrue: false,
                 row => ((NPCDefinition) row).clickable,
                 (row, value) => ((NPCDefinition) row).clickable = value);
 
-            //NPC opcode 141, not inverted.
+            yield return new BareFlag("npc.slowWalk", new NPCListDescriptor(), 109,
+                presenceMeansTrue: false,
+                row => ((NPCDefinition) row).slowWalk,
+                (row, value) => ((NPCDefinition) row).slowWalk = value);
+
+            yield return new BareFlag("npc.animateIdle", new NPCListDescriptor(), 111,
+                presenceMeansTrue: false,
+                row => ((NPCDefinition) row).animateIdle,
+                (row, value) => ((NPCDefinition) row).animateIdle = value);
+
             yield return new BareFlag("npc.visiblePriority", new NPCListDescriptor(), 141,
                 presenceMeansTrue: true,
                 row => ((NPCDefinition) row).visiblePriority,
                 (row, value) => ((NPCDefinition) row).visiblePriority = value);
 
-            //Object opcode 22, not inverted.
+            yield return new BareFlag("npc.invisiblePriority", new NPCListDescriptor(), 143,
+                presenceMeansTrue: true,
+                row => ((NPCDefinition) row).invisiblePriority,
+                (row, value) => ((NPCDefinition) row).invisiblePriority = value);
+        }
+
+        /// <summary>Every single-opcode bare flag on <see cref="ObjectDefinition"/>.</summary>
+        /// <remarks>
+        ///     Five of the eighteen - 90, 96, 105, 177 and 189 - are carried by no object in either
+        ///     cache, so their "carries the opcode" case is built rather than found and the test
+        ///     says which. Building it is the point: an opcode absent from the data is exactly
+        ///     where a codec change goes unnoticed.
+        /// </remarks>
+        private static IEnumerable<BareFlag> ObjectFlags() {
             yield return new BareFlag("object.isClipped", new ObjectListDescriptor(), 22,
                 presenceMeansTrue: true,
                 row => ((ObjectDefinition) row).isClipped,
                 (row, value) => ((ObjectDefinition) row).isClipped = value);
 
-            //Object opcode 64, inverted: carrying it suppresses the shadow.
+            yield return new BareFlag("object.flipped", new ObjectListDescriptor(), 62,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).flipped,
+                (row, value) => ((ObjectDefinition) row).flipped = value);
+
+            //Inverted: carrying 64 suppresses the shadow.
             yield return new BareFlag("object.castsShadow", new ObjectListDescriptor(), 64,
                 presenceMeansTrue: false,
                 row => ((ObjectDefinition) row).castsShadow,
                 (row, value) => ((ObjectDefinition) row).castsShadow = value);
+
+            yield return new BareFlag("object.obstructsWheelchair", new ObjectListDescriptor(), 73,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).obstructsWheelchair,
+                (row, value) => ((ObjectDefinition) row).obstructsWheelchair = value);
+
+            yield return new BareFlag("object.isSolid", new ObjectListDescriptor(), 74,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).isSolid,
+                (row, value) => ((ObjectDefinition) row).isSolid = value);
+
+            yield return new BareFlag("object.mergeNormals", new ObjectListDescriptor(), 82,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).mergeNormals,
+                (row, value) => ((ObjectDefinition) row).mergeNormals = value);
+
+            yield return new BareFlag("object.noShadow", new ObjectListDescriptor(), 88,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).noShadow,
+                (row, value) => ((ObjectDefinition) row).noShadow = value);
+
+            yield return new BareFlag("object.noDecor", new ObjectListDescriptor(), 89,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).noDecor,
+                (row, value) => ((ObjectDefinition) row).noDecor = value);
+
+            yield return new BareFlag("object.unknownFlag90", new ObjectListDescriptor(), 90,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag90,
+                (row, value) => ((ObjectDefinition) row).unknownFlag90 = value);
+
+            yield return new BareFlag("object.unknownFlag91", new ObjectListDescriptor(), 91,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag91,
+                (row, value) => ((ObjectDefinition) row).unknownFlag91 = value);
+
+            yield return new BareFlag("object.unknownFlag96", new ObjectListDescriptor(), 96,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag96,
+                (row, value) => ((ObjectDefinition) row).unknownFlag96 = value);
+
+            yield return new BareFlag("object.unknownFlag97", new ObjectListDescriptor(), 97,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag97,
+                (row, value) => ((ObjectDefinition) row).unknownFlag97 = value);
+
+            yield return new BareFlag("object.unknownFlag98", new ObjectListDescriptor(), 98,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag98,
+                (row, value) => ((ObjectDefinition) row).unknownFlag98 = value);
+
+            yield return new BareFlag("object.unknownFlag105", new ObjectListDescriptor(), 105,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag105,
+                (row, value) => ((ObjectDefinition) row).unknownFlag105 = value);
+
+            yield return new BareFlag("object.unknownFlag168", new ObjectListDescriptor(), 168,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag168,
+                (row, value) => ((ObjectDefinition) row).unknownFlag168 = value);
+
+            yield return new BareFlag("object.unknownFlag169", new ObjectListDescriptor(), 169,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag169,
+                (row, value) => ((ObjectDefinition) row).unknownFlag169 = value);
+
+            yield return new BareFlag("object.unknownFlag177", new ObjectListDescriptor(), 177,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag177,
+                (row, value) => ((ObjectDefinition) row).unknownFlag177 = value);
+
+            yield return new BareFlag("object.unknownFlag189", new ObjectListDescriptor(), 189,
+                presenceMeansTrue: true,
+                row => ((ObjectDefinition) row).unknownFlag189,
+                (row, value) => ((ObjectDefinition) row).unknownFlag189 = value);
         }
 
         private void CheckTurningOn(BareFlag flag) {
@@ -203,20 +465,41 @@ namespace FlashEditor.Tests.Definitions {
         ///     and allowing exactly one skip at the point they diverge is what identifies the
         ///     inserted or deleted byte unambiguously.
         /// </remarks>
-        private static void AssertDiffersOnlyByOpcode(byte[] stored, byte[] edited, int opcode, bool added) {
+        private static void AssertDiffersOnlyByOpcode(byte[] stored, byte[] edited, int opcode, bool added,
+            int times = 1) {
             byte[] longer = added ? edited : stored;
             byte[] shorter = added ? stored : edited;
 
-            int at = 0;
-            while (at < shorter.Length && shorter[at] == longer[at])
-                at++;
+            int inShorter = 0;
+            int inLonger = 0;
+            int skipped = 0;
 
-            Assert.True(at < longer.Length,
-                "The two encodings never diverged, so no opcode was added or dropped.");
-            Assert.Equal(opcode, longer[at]);
+            while (inShorter < shorter.Length) {
+                Assert.True(inLonger < longer.Length,
+                    "The shorter encoding is not the longer one with opcode bytes removed.");
 
-            for (int i = at; i < shorter.Length; i++)
-                Assert.Equal(shorter[i], longer[i + 1]);
+                if (shorter[inShorter] == longer[inLonger]) {
+                    inShorter++;
+                    inLonger++;
+                    continue;
+                }
+
+                Assert.Equal(opcode, longer[inLonger]);
+                inLonger++;
+                skipped++;
+                Assert.True(skipped <= times,
+                    $"More than {times} byte(s) differ, so something other than opcode {opcode} moved.");
+            }
+
+            //Whatever is left in the longer encoding can only be the remaining skips, or the two
+            //aligned in a way that hid a real difference behind them.
+            while (inLonger < longer.Length) {
+                Assert.Equal(opcode, longer[inLonger]);
+                inLonger++;
+                skipped++;
+            }
+
+            Assert.Equal(times, skipped);
         }
 
         /// <summary>
@@ -245,64 +528,103 @@ namespace FlashEditor.Tests.Definitions {
         ///     A real record that does, or does not, carry the flag's opcode.
         /// </summary>
         /// <remarks>
-        ///     Searched rather than named by id, because which records carry which bare flag is a
-        ///     property of the cache and the two caches differ on eleven indexes. If the search
-        ///     finds no record of the wanted shape, one is <b>built</b> from a real record by
-        ///     toggling the flag and re-encoding, and the test says so - skipping would leave the
+        ///     Taken from a survey of the <b>whole</b> index rather than of the first few groups.
+        ///     The sampled search this replaced could not tell "this cache holds no such record"
+        ///     from "the sample missed it", and for the rarest flags it always missed: object
+        ///     opcode 97 is carried by 9 records of 56,199 and 169 by 21, so both were tested
+        ///     against a synthetic record while a real one existed. Which records carry which flag
+        ///     is a property of the cache, so it is measured rather than named by id.
+        ///     <para>
+        ///     Only where the index genuinely holds no record of the wanted shape is one
+        ///     <b>built</b> from a real one, and the test says so. Skipping instead would leave the
         ///     direction that is absent from this cache untested in this cache, which is the shape
         ///     of hole this project keeps finding.
+        ///     </para>
         /// </remarks>
         private (byte[] Stored, object Row) FindRecord(BareFlag flag, bool carriesOpcode, out string how) {
             RSCache cache = _cache.OpenCache();
             IDefinitionListDescriptor descriptor = flag.Descriptor;
+            OpcodeFlagSurvey survey = OpcodeFlagSurvey.For(cache, descriptor);
 
-            List<DefinitionAddress> addresses = descriptor.Enumerate(cache).ToList();
-            int[] groups = addresses.Select(address => address.GroupId).Distinct().Take(GroupsSearched).ToArray();
+            //Records carrying the opcode once. A record carrying it twice is a different shape and
+            //has its own test, because dropping the flag there changes the length by two.
+            IReadOnlyList<DefinitionAddress> wanted = carriesOpcode
+                ? survey.Carrying(flag.Opcode)
+                : survey.Lacking(flag.Opcode);
 
-            object fallbackRow = null;
-            byte[] fallbackStored = null;
+            if (wanted.Count > 0) {
+                (byte[] stored, object row, DefinitionAddress address) =
+                    FirstRecordThatReEncodes(cache, descriptor, wanted);
 
-            foreach (int group in groups) {
-                IReadOnlyDictionary<int, JagStream> files = cache.ReadGroup(descriptor.IndexId, group);
-
-                foreach (DefinitionAddress address in addresses.Where(a => a.GroupId == group)) {
-                    if (!files.TryGetValue(address.FileId, out JagStream payload))
-                        continue;
-
-                    byte[] stored = cache.ReadFileBytes(descriptor.IndexId, address.GroupId, address.FileId);
-                    object row = descriptor.Decode(cache, address, payload);
-
-                    //The record has to re-encode to what it was read from before it is any use as a
-                    //baseline. Every one does - that is what the sweeps assert - so a failure here
-                    //is a codec regression rather than a bad pick.
-                    if (!descriptor.Encode(row).ToArray().SequenceEqual(stored))
-                        continue;
-
-                    if (CarriesOpcode(row, flag) == carriesOpcode) {
-                        how = "found at " + address;
-                        //Decoded a second time from a fresh stream: the first decode left the
-                        //payload's position at the terminator, and the row above has already been
-                        //re-encoded once to check it against the cache.
-                        return (stored, descriptor.Decode(cache, address, new JagStream(stored)));
-                    }
-
-                    fallbackRow ??= row;
-                    fallbackStored ??= stored;
-                }
+                //A second reading of the same fact: the survey went by the recorded opcode stream
+                //and this goes by the flag's own getter. They cannot disagree unless one of the two
+                //is wrong about what the record says.
+                Assert.Equal(carriesOpcode, CarriesOpcode(row, flag));
+                how = "found at " + address + ", " + survey.CarriedBy(flag.Opcode) + " of " +
+                      survey.RecordsExamined + " records carry opcode " + flag.Opcode;
+                return (stored, row);
             }
 
-            Assert.True(fallbackStored != null,
-                $"No {descriptor.RowNoun} in the first {GroupsSearched} groups re-encoded to its stored bytes.");
+            IReadOnlyList<DefinitionAddress> seeds = carriesOpcode
+                ? survey.Lacking(flag.Opcode)
+                : survey.Carrying(flag.Opcode);
+            (byte[] _, object seed, DefinitionAddress seedAddress) =
+                FirstRecordThatReEncodes(cache, descriptor, seeds);
 
             //Built rather than skipped. Toggling the flag on a real record produces exactly the
-            //shape the search could not find, and the built bytes are proven by decoding them back.
-            flag.Set(fallbackRow, carriesOpcode == flag.PresenceMeansTrue);
-            byte[] built = descriptor.Encode(fallbackRow).ToArray();
+            //shape the index does not hold, and the built bytes are proven by decoding them back.
+            flag.Set(seed, carriesOpcode == flag.PresenceMeansTrue);
+            byte[] built = descriptor.Encode(seed).ToArray();
             object rebuilt = Redecode(flag, built);
 
             Assert.Equal(carriesOpcode, CarriesOpcode(rebuilt, flag));
-            how = "built synthetically - this cache holds no such record in the searched groups";
+            how = "built from " + seedAddress + " - no " + descriptor.RowNoun +
+                  " in this cache carries opcode " + flag.Opcode;
             return (built, rebuilt);
+        }
+
+        /// <summary>
+        ///     The first of the candidate addresses whose record re-encodes to its stored bytes.
+        /// </summary>
+        /// <remarks>
+        ///     A record has to re-encode to what it was read from before it is any use as a
+        ///     baseline. Every one does - that is what the byte-identity sweeps assert - so several
+        ///     candidates are offered only so that a bad pick reads as a bad pick, and running out
+        ///     of them fails loudly rather than falling through to a synthetic record and hiding a
+        ///     codec regression behind a test that still passes.
+        /// </remarks>
+        private static (byte[] Stored, object Row, DefinitionAddress Address) FirstRecordThatReEncodes(
+            RSCache cache, IDefinitionListDescriptor descriptor, IReadOnlyList<DefinitionAddress> candidates) {
+            Assert.True(candidates.Count > 0,
+                $"The survey offered no {descriptor.RowNoun} of the shape this case needs.");
+
+            foreach (DefinitionAddress address in candidates) {
+                byte[] stored = cache.ReadFileBytes(descriptor.IndexId, address.GroupId, address.FileId);
+                object row = descriptor.Decode(cache, address, new JagStream(stored));
+                if (!descriptor.Encode(row).ToArray().SequenceEqual(stored))
+                    continue;
+
+                //Decoded a second time from a fresh stream, because the row above has already been
+                //re-encoded once and an encode is not required to leave a definition untouched.
+                return (stored, descriptor.Decode(cache, address, new JagStream(stored)), address);
+            }
+
+            Assert.Fail($"None of the {candidates.Count} candidate {descriptor.RowNoun} records re-encoded to its " +
+                        "stored bytes, which is a codec regression rather than a bad pick.");
+            return default;
+        }
+
+        /// <summary>How many times the record carries an opcode, read off its recorded stream.</summary>
+        /// <param name="row">The decoded record.</param>
+        /// <param name="opcode">The opcode to count.</param>
+        /// <returns>The occurrence count.</returns>
+        private static int Occurrences(object row, int opcode) {
+            OpcodeStream stream = ((OpcodeStreamDefinition) row).Opcodes;
+            int count = 0;
+            for (int i = 0; i < stream.Count; i++)
+                if (stream[i].Opcode == opcode)
+                    count++;
+            return count;
         }
 
         /// <summary>
