@@ -660,8 +660,15 @@ namespace FlashEditor {
                     + " (g" + player.FrameGroup.ToString(CultureInfo.InvariantCulture)
                     + " f" + player.FrameFileId.ToString(CultureInfo.InvariantCulture) + ")";
 
-            string elapsed = player.ElapsedSeconds.ToString("0.000", CultureInfo.InvariantCulture) + " s of "
-                + player.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture) + " s";
+            //Position inside the pass, not total run time. ElapsedSeconds keeps climbing across
+            //loops by design, so a looping two second animation read "51.120 s of 2.000 s" - a
+            //figure that is not wrong so much as answering a question nobody asked while looking
+            //like a broken clock. The loop counter carries what it used to say.
+            string elapsed = player.PositionSeconds.ToString("0.000", CultureInfo.InvariantCulture) + " s of "
+                + player.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture) + " s"
+                + (player.LoopsCompleted > 0
+                    ? ", loop " + (player.LoopsCompleted + 1).ToString(CultureInfo.InvariantCulture)
+                    : string.Empty);
 
             string particles = _particles == null
                 ? "particles -"

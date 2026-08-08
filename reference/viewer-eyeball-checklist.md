@@ -1,10 +1,24 @@
 # The 3D viewer's eyeball checklist
 
-**Nothing automated verifies the 3D viewport, and nothing on this machine can.** No BitBlt capture
-sees the OpenGL surface: a `GLControl` clearing to magenta captures blank through `CopyFromScreen`
-and through `PrintWindow` flags 0 to 3, in this application and in a minimal one outside the
-repository. That rectangle shows whatever GDI last blitted into it, which reads convincingly as the
-previous page bleeding through and is not. One investigation was already lost to that phantom.
+**Nothing automated verifies the 3D viewport.** No BitBlt capture sees the OpenGL surface: a
+`GLControl` clearing to magenta captures blank through `CopyFromScreen` and through `PrintWindow`
+flags 0 to 3, in this application and in a minimal one outside the repository. That rectangle shows
+whatever GDI last blitted into it, which reads convincingly as the previous page bleeding through
+and is not. One investigation was already lost to that phantom, and `tools/Capture-EditorTab.ps1`
+is on that family, so it is no evidence at all about this viewport.
+
+**A DWM-composited screen capture DOES see it, confirmed 2026-08-09.** A grab taken with the
+Windows Snipping Tool showed the viewport's particle quads, the wireframe and the overlay marks
+correctly, on the same machine where every BitBlt path returns blank. The distinction is the
+compositor: a GL surface bypasses GDI, so anything reading the window's GDI device context gets
+nothing, while anything reading DWM's composed output gets the real pixels.
+
+That matters because it means **this checklist is semi-automatable and nobody has built it**. A
+driver using `Windows.Graphics.Capture` or Desktop Duplication, rather than `CopyFromScreen`, could
+settle the cases below that are currently marked as needing a human. Until someone writes it, the
+human pass stands. Do not "fix" `Capture-EditorTab.ps1` by pointing it at the GL rectangle - the
+right move is a second tool on the DWM path, leaving the BitBlt one alone for WinForms panels,
+where it works and is faster.
 
 So the viewer is judged by a human at the monitor, and this file is what that human reads. Every
 entry names what **correct** looks like and what a **plausible wrong** result looks like, because a
@@ -21,6 +35,19 @@ reached the model. They say nothing about whether it drew. Both halves matter an
 for both.
 
 ---
+
+## Results so far
+
+First human pass, 2026-08-09, against the repack (the model list read 63,614).
+
+| Case | Verdict |
+|---|---|
+| **A** skeletal animation | **PASS.** Readout `0.000 s of 3.360 s` over `frame 0/13`, run observed at about 3.4 s with the shape visibly changing. Rules out the rate conflation, which would have finished in about 0.43 s |
+| **F** particles, model 62810 | **PASS.** `particles 68/2047, emitters 2/2`, against a predicted peak near 73. Cap honoured, both emitters resolved |
+| **D** hover overlay | **OPEN.** Amber and blue marks are present near the shape. Whether they read as `face N` and `vN`, and whether the numbers fall in 0-7 and 0-23, is not yet settled |
+| **B, C, E, G, H** | **NOT YET RUN** |
+
+The tooltip also confirmed model 62810 as 24 vertices and 8 triangles, which is why it was chosen.
 
 ## A. Skeletal animation, the positive case
 

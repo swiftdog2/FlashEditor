@@ -308,6 +308,74 @@ namespace FlashEditor.Tests.Rendering
         /// <summary>Builds an animation whose steps play frame set 10, files 0 upward.</summary>
         /// <param name="durations">How long each step is held, in client cycles.</param>
         /// <returns>The animation.</returns>
+        /// <summary>
+        ///     The position readout wraps with the playhead instead of climbing across loops.
+        /// </summary>
+        /// <remarks>
+        ///     Observed on the monitor as <c>51.120 s of 2.000 s</c>, on a two second animation left
+        ///     looping. <see cref="AnimationPlayer.ElapsedCycles"/> counts every cycle ever run and is
+        ///     right to, so both figures are wanted and the defect was showing the wrong one of them.
+        ///     <para>
+        ///     The assertion runs a six cycle animation twice round and checks the position at every
+        ///     step of the second pass, because a wrap that fires a cycle early or late still looks
+        ///     plausible on screen and would only ever be caught here.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void Position_WrapsWithThePlayheadWhileElapsedKeepsCounting()
+        {
+            var player = new AnimationPlayer { RepeatIndefinitely = true };
+            player.Play(Animation(3, 1, 2));
+
+            Assert.Equal(0, player.PositionCycles);
+
+            //First pass: the position is the cycle count, since nothing has wrapped yet.
+            for (int cycle = 1; cycle <= 6; cycle++)
+            {
+                player.Tick();
+                Assert.Equal(cycle, player.PositionCycles);
+            }
+
+            //The seventh cycle runs off the end and restarts the pass.
+            player.Tick();
+            Assert.Equal(1, player.LoopsCompleted);
+            Assert.Equal(0, player.PositionCycles);
+            Assert.Equal(7, player.ElapsedCycles);
+
+            //Second pass: position repeats the first pass exactly while elapsed keeps climbing.
+            for (int cycle = 1; cycle <= 6; cycle++)
+            {
+                player.Tick();
+                Assert.Equal(cycle, player.PositionCycles);
+                Assert.Equal(7 + cycle, player.ElapsedCycles);
+            }
+
+            //And it never exceeds the animation's own length, which is what the readout divides by.
+            Assert.True(player.PositionCycles <= player.TotalCycles,
+                "the position ran past the animation's length, so the readout would show more " +
+                "elapsed than total again");
+        }
+
+        /// <summary>
+        ///     A finished animation rests on its full length rather than snapping back to zero.
+        /// </summary>
+        /// <remarks>
+        ///     The wrap must not make a stopped preview read <c>0.000 s of 2.000 s</c> while showing
+        ///     the animation's last pose, which would look like a player that never ran.
+        /// </remarks>
+        [Fact]
+        public void Position_RestsOnTheFullLengthOnceTheAnimationHasFinished()
+        {
+            var player = new AnimationPlayer();
+            player.Play(Animation(3, 1, 2));
+
+            for (int cycle = 0; cycle < 7; cycle++)
+                player.Tick();
+
+            Assert.Equal(PlaybackState.Finished, player.State);
+            Assert.Equal(6, player.PositionCycles);
+        }
+
         private static AnimationDefinition Animation(params int[] durations)
         {
             var frames = new int[durations.Length];
