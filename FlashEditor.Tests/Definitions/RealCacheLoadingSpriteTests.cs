@@ -375,6 +375,63 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
+        ///     The replacement policy accepts every image already in this cache.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     The half of <see cref="LoadingSpriteJpegPolicy"/> that no synthetic test can make. Its
+        ///     clauses were measured off these files, so a clause that drifted into rejecting one of
+        ///     them would be a check that refuses the cache's own contents - which is the failure mode
+        ///     a shape check invites, and the one nobody notices until a replace is attempted.
+        ///     <c>LoadingSpriteJpegPolicyTests</c> makes the other half, over files that are not here.
+        ///     </para>
+        ///     <para>
+        ///     The census is printed rather than written down. Measured across both caches when the
+        ///     policy was written, the twenty-one images agreed field for field on everything except
+        ///     geometry: marker sequence <c>D8 DB DB C0 C4 C4 C4 C4 DA</c> ending <c>FF D9</c>,
+        ///     eight-bit, no <c>APPn</c>, no <c>DRI</c>, one scan, components 1/2x2/q0, 2/1x1/q1,
+        ///     3/1x1/q1, 4/2x2/q0. That agreement is asserted below rather than quoted, so a cache
+        ///     that disagreed would fail here rather than silently widen the claim.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EveryJpeg_IsAcceptedByTheReplacementPolicy()
+        {
+            var failures = new List<string>();
+            var shapes = new SortedDictionary<string, int>();
+            int accepted = 0;
+
+            Sweep().ForEachDecoded((record, definition) =>
+            {
+                if (definition.Shape != LoadingSpriteShape.JpegImage)
+                    return;
+
+                if (!LoadingSpriteJpegPolicy.TryAccept(definition.StoredBytes, out JagexJpeg parsed,
+                        out string refusal))
+                {
+                    failures.Add($"group {record.Id}: the policy refuses an image this cache ships - {refusal}");
+                    return;
+                }
+
+                accepted++;
+                Assert.NotNull(parsed);
+
+                string markers = string.Join(" ", parsed.Segments.Select(segment => segment.Marker.ToString("X2")));
+                string trailer = string.Concat(parsed.Trailer.Select(b => b.ToString("X2")));
+                shapes.TryGetValue($"{markers} | {trailer} | p{parsed.Precision}", out int seen);
+                shapes[$"{markers} | {trailer} | p{parsed.Precision}"] = seen + 1;
+            });
+
+            foreach (KeyValuePair<string, int> shape in shapes)
+                _output.WriteLine($"{shape.Value} image(s): markers {shape.Key}");
+
+            Assert.Empty(failures);
+            Assert.True(accepted > 0, "no JPEG was put to the policy, so nothing was checked");
+            Assert.Single(shapes);
+            _fixture.Profile.AssertCensus(_output, "loadingSprite.jpegGroups", accepted);
+        }
+
+        /// <summary>
         ///     An image whose chroma sits at the level-shift midpoint renders neutral grey.
         /// </summary>
         /// <remarks>

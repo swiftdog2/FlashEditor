@@ -36,7 +36,28 @@ namespace FlashEditor.Definitions.LoadingSprites {
     ///     <b>Replacing is not transcoding.</b> <c>LoadingSpriteDefinition.Encode</c> returns a JPEG
     ///     group's stored bytes verbatim, so there is no encoder to push an edited picture through:
     ///     the only edit this index supports is substituting one file for another. The tab offers
-    ///     exactly that and states its cost next to the button.
+    ///     exactly that, gates it on <see cref="LoadingSpriteJpegPolicy"/>, and states both the cost
+    ///     and the accepted shape next to the button.
+    ///     </para>
+    ///     <para>
+    ///     <b>Which group is the loading-screen background cannot be settled from the client, and
+    ///     the tab says so rather than implying an answer.</b> Index 32 is opened into
+    ///     <c>Class1.aJS5Archive_67</c> (<c>InterfaceSettings.java:73-74</c>), or index 34 into the
+    ///     same field when the AWT decoder fails the probe. Only three groups are ever asked for by
+    ///     name - <c>p11_full</c>, <c>p12_full</c> and <c>b12_full</c>, at
+    ///     <c>Class84.java:23,25,26</c> - and all three are glyph sheets. Every picture the client
+    ///     draws from this index arrives through <c>Class237_Sub1.method2915</c>
+    ///     (<c>Class237_Sub1.java:23</c>) with a group id its caller supplies, and the full-screen
+    ///     one is <c>Class5.java:86</c>, which reads <c>Class367.anInt3544</c>. That field is a
+    ///     <c>readUnsignedShort</c> off an index-33 loading-screen record
+    ///     (<c>Node_Sub46_Sub19.java:35-36</c>, reached for element type byte 8 via
+    ///     <c>Class4.java:17</c> and <c>Class362.java:125-127</c>), and which record is used is
+    ///     chosen from a client preference against a shuffled table (<c>InterfaceSettings.java:95,
+    ///     100</c>, <c>Class282.java:150-163</c>). So the client carries no constant, no name and no
+    ///     hash for the background, more than one of the twenty-one images may be one, and the
+    ///     question is answerable only by reading index 33 - which nothing in this project does yet.
+    ///     An id guessed from ordering or from file size would be exactly the plausible,
+    ///     unverifiable claim this cache rewards.
     ///     </para>
     /// </remarks>
     public sealed class LoadingSpriteEditorPanel : UserControl {
@@ -61,7 +82,12 @@ namespace FlashEditor.Definitions.LoadingSprites {
             Dock = DockStyle.Top,
             Font = GridFont,
             Text = "Shape is decided by the payload's own FF D8 magic, not by the index: RSConstants calls " +
-                   "index 32 \"loading sprites in jpg format\" and five of its groups are Jagex glyph sheets."
+                   "index 32 \"loading sprites in jpg format\" and five of its groups are Jagex glyph sheets." +
+                   Environment.NewLine +
+                   "This tab cannot tell you which image is the loading-screen background. The client names no " +
+                   "group here except the three font sheets; every picture it draws is fetched by an id read out " +
+                   "of index 33 at runtime, so which one is the backdrop is a property of that data and not of " +
+                   "the client. Do not infer it from a group's id or its size."
         };
 
         private readonly DefinitionListPanel groups = new DefinitionListPanel {
@@ -128,6 +154,9 @@ namespace FlashEditor.Definitions.LoadingSprites {
             Text = "Replace stored bytes..."
         };
 
+        /* The accepted shape is spliced in from the policy rather than retyped, so the limit this
+           label states and the limit ReplaceStored enforces cannot drift apart. A refusal the user
+           was never warned about reads as the tab being broken. */
         private readonly Label cost = new Label {
             AutoSize = true,
             Dock = DockStyle.Bottom,
@@ -135,7 +164,11 @@ namespace FlashEditor.Definitions.LoadingSprites {
             Text = "Replace stores the file you pick byte for byte - there is no transcode, so what the client " +
                    "sees is your file and not a re-encoding of it. It rewrites the group's CRC and the " +
                    "reference-table entry of every archive packed beside it, and stages the change; nothing " +
-                   "reaches disk until the cache is saved."
+                   "reaches disk until the cache is saved." + Environment.NewLine +
+                   "Only the shape every index-32 image and the client's own probe image carry is accepted: " +
+                   LoadingSpriteJpegPolicy.AcceptedShapeInWords + ". An ordinary three-component JFIF - what " +
+                   "any normal tool saves - is refused, because this editor's colour reading is inferred from " +
+                   "that four-component layout and nothing establishes what the client would draw instead."
         };
 
         private readonly Label status = new Label {
@@ -430,11 +463,12 @@ namespace FlashEditor.Definitions.LoadingSprites {
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///     Every refusal below is a refusal to stage something this editor cannot show the user.
         ///     The tab's whole claim is that the picture on screen is the picture the client will
-        ///     draw, and a file that will not parse, or that renders through a colour model no
-        ///     evidence in this cache covers, breaks that claim while still looking like a successful
-        ///     import.
+        ///     draw. <see cref="LoadingSpriteJpegPolicy"/> is what keeps that claim true across a
+        ///     replace, and the dangerous case is not a file that fails to render - it is one that
+        ///     renders beautifully and is a different kind of file to everything the index holds. A
+        ///     three-component JFIF is exactly that, so "did it produce a picture" is deliberately
+        ///     not the test.
         ///     </para>
         ///     <para>
         ///     The bytes are staged exactly as read. Re-encoding them would change the stored bytes of
@@ -456,12 +490,6 @@ namespace FlashEditor.Definitions.LoadingSprites {
             try {
                 byte[] bytes = File.ReadAllBytes(dialog.FileName);
 
-                if (!LoadingSpriteDefinition.LooksLikeJpeg(bytes)) {
-                    status.Text = "Refused: that file does not open FF D8, so the client's reader for this " +
-                                  "group would not treat it as an image.";
-                    return;
-                }
-
                 if (bytes.AsSpan().SequenceEqual(listing.StoredBytes)) {
                     //A save that changes nothing must write nothing: re-storing identical bytes still
                     //rewrites the archive CRC and drags in the reference-table entry beside it.
@@ -470,11 +498,12 @@ namespace FlashEditor.Definitions.LoadingSprites {
                     return;
                 }
 
-                LoadingSpriteListing replacement =
-                    LoadingSpriteListing.Build(cache, listing.Address, new JagStream(bytes));
-
-                if (!replacement.Preview.HasImage) {
-                    status.Text = "Refused: " + replacement.Preview.Note;
+                //One gate, and it is the whole safety margin. A three-component JFIF previews here as a
+                //perfectly good picture - JpegRaster reads planes 0, 1 and 2 as Y, Cb and Cr whether
+                //there are three planes or four - so "it rendered" is no evidence that the client would
+                //draw it, and without this check it would be stored with nothing said.
+                if (!LoadingSpriteJpegPolicy.TryAccept(bytes, out JagexJpeg? accepted, out string refusal)) {
+                    status.Text = "Refused: " + refusal;
                     return;
                 }
 
@@ -483,7 +512,7 @@ namespace FlashEditor.Definitions.LoadingSprites {
 
                 status.Text = "Staged group " + listing.GroupId + ": " +
                               bytes.Length.ToString("N0", CultureInfo.InvariantCulture) + " bytes stored verbatim, " +
-                              replacement.Geometry + ". Save the cache to write it.";
+                              accepted!.Width + "x" + accepted.Height + ". Save the cache to write it.";
 
                 //Reloaded rather than patched in place, so the stored length and the picture in the
                 //grid cannot disagree with what was just staged.
