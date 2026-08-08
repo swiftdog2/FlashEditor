@@ -19,8 +19,17 @@ namespace FlashEditor.Tests.Cache
     ///     touched the write. The commit was complete, correct and unreachable - the grid's
     ///     <c>CellEditActivation</c> was never set, so ObjectListView never raised the handler that
     ///     called it, and nothing in the suite called it either. Exercising
-    ///     <see cref="DefinitionWriter.Save"/> here is exercising the same code the handler runs,
-    ///     which is why the commit lives outside the form.
+    ///     <see cref="DefinitionWriter.Save"/> here is exercising the same rules the editor's commit
+    ///     applies, which is why they live outside the form.
+    ///     <para>
+    ///     The NPC grid this was written against has gone: index 18 is one family of the Entities
+    ///     page now, and its commit runs through <c>DefinitionListPanel.CommitEdit</c> rather than
+    ///     through <c>DefinitionWriter</c>. The two make the same two decisions - fold the id into an
+    ///     address through <see cref="CacheAddressing"/>, and write nothing when the re-encode
+    ///     matches what the cache already holds - so this still covers the behaviour the editor
+    ///     depends on, but it is no longer literally the same method the UI calls. Point it at the
+    ///     panel's commit if <see cref="DefinitionWriter"/> ever loses its last caller.
+    ///     </para>
     ///     <para>
     ///     The definitions are seeded from the real cache but written into a synthetic one in a temp
     ///     directory: the real cache is read-only, and a persistence claim has to be checked by

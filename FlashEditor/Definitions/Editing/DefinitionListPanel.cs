@@ -93,6 +93,67 @@ namespace FlashEditor.Definitions.Editing {
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public object? SelectedRow => list.SelectedObject;
 
+        /// <summary>Every selected row, in the order the grid holds them.</summary>
+        /// <remarks>
+        ///     Copied out rather than handed over as the control's own collection. Anything that
+        ///     walks a selection is about to do work per row, and the grid's collection is only
+        ///     valid on the UI thread and only until the selection next moves.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public IReadOnlyList<object> SelectedRows {
+            get {
+                var rows = new List<object>(list.SelectedObjects.Count);
+                foreach (object row in list.SelectedObjects)
+                    rows.Add(row);
+                return rows;
+            }
+        }
+
+        /// <summary>The descriptor currently bound, or null when the panel holds no cache.</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public IDefinitionListDescriptor? Descriptor => descriptor;
+
+        /// <summary>Says what the panel is doing, in the same line a load reports through.</summary>
+        /// <remarks>
+        ///     Exposed so a tab that adds its own actions beside the list - an import, an export -
+        ///     reports through the same line the load does rather than growing a second status label
+        ///     that contradicts it.
+        /// </remarks>
+        /// <param name="text">What to say.</param>
+        public void ReportStatus(string text) {
+            status.Text = text ?? string.Empty;
+        }
+
+        /// <summary>
+        ///     Replaces one row in place, keeping the sort and the selection.
+        /// </summary>
+        /// <remarks>
+        ///     For an action that produces a different object for the same address - an import
+        ///     decodes the file it staged, and the decoded record is not the row that was selected.
+        ///     Adding and removing would reorder the grid; this does not.
+        /// </remarks>
+        /// <param name="oldRow">The row on screen.</param>
+        /// <param name="newRow">What it becomes.</param>
+        public void ReplaceRow(object oldRow, object newRow) {
+            if (oldRow == null || newRow == null)
+                return;
+
+            list.RemoveObject(oldRow);
+            list.AddObject(newRow);
+            list.SelectedObject = newRow;
+        }
+
+        /// <summary>Turns alternating row shading on or off, for the form's View menu.</summary>
+        /// <param name="enabled">Whether alternate rows are shaded.</param>
+        /// <param name="colour">The shade.</param>
+        public void SetAlternatingRows(bool enabled, Color colour) {
+            list.UseAlternatingBackColors = enabled;
+            list.AlternateRowBackColor = colour;
+            list.Refresh();
+        }
+
         /// <summary>Raised when <see cref="SelectedRow"/> changes.</summary>
         /// <remarks>
         ///     For a tab that shows something alongside the list - a model, a preview, a detail pane.
@@ -292,6 +353,35 @@ namespace FlashEditor.Definitions.Editing {
 
             int done = 0;
             int percentile = Math.Max(1, addresses.Count / 100);
+
+            /* A descriptor that says its rows are fully described by their address never has a group
+               opened for it. Index 7 is the case: 63,607 groups of one file, every column of which
+               the reference table already states, so reading them would inflate every model in the
+               cache to print a list of ids. The payload handed over is empty rather than null so the
+               decode signature stays the same for both kinds of descriptor. */
+            if (!openDescriptor.ReadsPayload) {
+                JagStream nothing = new JagStream(Array.Empty<byte>());
+
+                foreach (DefinitionAddress address in addresses) {
+                    if (loader.CancellationPending) {
+                        args.Cancel = true;
+                        return result;
+                    }
+
+                    try {
+                        result.Rows.Add(openDescriptor.Decode(open, address, nothing));
+                    }
+                    catch (Exception ex) {
+                        result.Failed++;
+                        Debug($"Index {openDescriptor.IndexId} {address} failed to list: {ex.Message}");
+                    }
+
+                    done++;
+                    Report(loader, done, addresses.Count, percentile, openDescriptor);
+                }
+
+                return result;
+            }
 
             foreach (IGrouping<int, DefinitionAddress> group in addresses.GroupBy(address => address.GroupId)) {
                 if (loader.CancellationPending) {
