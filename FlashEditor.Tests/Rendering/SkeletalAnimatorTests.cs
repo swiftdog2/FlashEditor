@@ -196,6 +196,120 @@ namespace FlashEditor.Tests.Rendering
             Assert.All(animator.Diagnostics, row => Assert.False(string.IsNullOrWhiteSpace(row.Value)));
         }
 
+        /// <summary>
+        ///     A part carrying none of the pivot bone's labels still turns about the body's centre.
+        /// </summary>
+        /// <remarks>
+        ///     ROOT 1 of the detached-limb defect, pinned without a cache and without a seam. The two
+        ///     parts here share no coordinate at all, so welding cannot account for the result - only
+        ///     the merge can. The client merges before it poses (<c>Class141.java:801</c>) and sums the
+        ///     pivot centroid over the merged model (<c>Renderable_Sub2.java:2803-2827</c>).
+        ///     <para>
+        ///     Same arithmetic as <see cref="Pose_RotatesAboutThePivotTheSkeletonDefines"/>, split
+        ///     across two model files. The pivot bone owns label 0, which lives entirely in the first
+        ///     part; the second part carries only label 1 and is the one that rotates. Posed as a body,
+        ///     the pivot is (40,0,0) and the quarter turn swings the second part's vertex from 60 along
+        ///     x to 60 along negative y, landing on (40,-60,0).
+        ///     </para>
+        ///     <para>
+        ///     Posed a part at a time - which is what this animator did until 2026-08-09 - the second
+        ///     part finds no label-0 vertex of its own, falls back to the bare offset
+        ///     (<c>Renderable_Sub2.java:2820-2823</c>) and rotates about the model origin, landing on
+        ///     (0,-100,0). That is the jaw leaving the face, reduced to one vertex.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void Pose_TurnsAPartAboutTheWholeBodysPivotRatherThanItsOwn()
+        {
+            SkeletalAnimator animator = Animator(
+                new[] { OneVertexModel(40, label: 0), OneVertexModel(100, label: 1) },
+                PivotThenRotateSkeleton(),
+                Frame(slot0Flag: 0x00, rotationFlag: FrameTransform.ZPresent, rotationZ: StoredQuarterTurn));
+
+            Assert.Null(animator.LastError);
+            Assert.True(animator.IsMerged);
+
+            //Two parts of one vertex each, sharing no coordinate, so nothing welds.
+            Assert.Equal(2, animator.MergedVertexCount);
+            Assert.Equal(0, animator.WeldedVertexCount);
+
+            Assert.Equal(new[] { 40 }, animator.Poses[0].VertexX);
+            Assert.Equal(new[] { 0 }, animator.Poses[0].VertexY);
+
+            Assert.Equal(new[] { 40 }, animator.Poses[1].VertexX);
+            Assert.Equal(new[] { -60 }, animator.Poses[1].VertexY);
+        }
+
+        /// <summary>
+        ///     Two parts meeting at a coordinate stay one point, and the first part's label wins.
+        /// </summary>
+        /// <remarks>
+        ///     ROOT 2. <c>Model.method2598</c> (<c>Model.java:1824-1848</c>) reuses a vertex already
+        ///     placed at the same coordinate and rewrites only its source mask, never its label
+        ///     (<c>:1841</c>), so a seam whose two parts disagree about which bone owns it follows the
+        ///     first one rather than being pulled apart by both.
+        ///     <para>
+        ///     Both parts here carry a vertex at x = 100. The first labels it 1, which the rotate bone
+        ///     owns; the second labels it 0, which only the pivot bone owns. Welded, there is one
+        ///     vertex, it keeps label 1, and both parts read back (40,-60,0). Unwelded, the second
+        ///     part's copy is untouched at (100,0,0) and the seam opens by 100 units.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void Pose_WeldsACoincidentVertexAndKeepsTheFirstPartsLabel()
+        {
+            SkeletalAnimator animator = Animator(
+                new[] { TwoVertexModel(), OneVertexModel(100, label: 0) },
+                PivotThenRotateSkeleton(),
+                Frame(slot0Flag: 0x00, rotationFlag: FrameTransform.ZPresent, rotationZ: StoredQuarterTurn));
+
+            Assert.Null(animator.LastError);
+            Assert.True(animator.IsMerged);
+
+            //Three source vertices, two of them at x = 100, so one weld and two vertices left.
+            Assert.Equal(2, animator.MergedVertexCount);
+            Assert.Equal(1, animator.WeldedVertexCount);
+
+            Assert.Equal(new[] { 40 }, animator.Poses[1].VertexX);
+            Assert.Equal(new[] { -60 }, animator.Poses[1].VertexY);
+            Assert.Equal(animator.Poses[0].VertexX[1], animator.Poses[1].VertexX[0]);
+            Assert.Equal(animator.Poses[0].VertexY[1], animator.Poses[1].VertexY[0]);
+        }
+
+        /// <summary>
+        ///     One model is posed unmerged, which is what the client does.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Class141.java:801</c> takes <c>models[0]</c> untouched when there is only one.
+        ///     Merging it anyway would weld its own coincident vertices, and index 7 is full of models
+        ///     that have them, so every static model in the viewer would start posing differently on a
+        ///     change that was only ever about entities.
+        /// </remarks>
+        [Fact]
+        public void Pose_LeavesASingleModelUnmerged()
+        {
+            SkeletalAnimator animator = Animator(TwoVertexModel(), PivotThenRotateSkeleton(),
+                Frame(slot0Flag: 0x00, rotationFlag: FrameTransform.ZPresent, rotationZ: StoredQuarterTurn));
+
+            Assert.False(animator.IsMerged);
+            Assert.Equal(0, animator.WeldedVertexCount);
+        }
+
+        /// <summary>One vertex on the x axis, in a label group of its own.</summary>
+        /// <param name="x">Where on the x axis.</param>
+        /// <param name="label">The vertex label a skeleton bone would name.</param>
+        /// <returns>The model.</returns>
+        private static ModelDefinition OneVertexModel(int x, int label) => new ModelDefinition
+        {
+            VertX = new[] { x },
+            VertY = new[] { 0 },
+            VertZ = new[] { 0 },
+            VertSkins = new[] { label },
+            faceIndices1 = new[] { 0 },
+            faceIndices2 = new[] { 0 },
+            faceIndices3 = new[] { 0 }
+        };
+
         /// <summary>Two vertices in their own label groups, 40 and 100 along x.</summary>
         /// <returns>The model.</returns>
         private static ModelDefinition TwoVertexModel() => new ModelDefinition
@@ -260,12 +374,28 @@ namespace FlashEditor.Tests.Rendering
         private static SkeletalAnimator Animator(ModelDefinition model, SkeletonDefinition skeleton,
             FrameDefinition frame)
         {
+            return Animator(new[] { model }, skeleton, frame);
+        }
+
+        /// <summary>Builds an animator over a set of models, one skeleton and one frame, already posed.</summary>
+        /// <remarks>
+        ///     More than one model is the entity case, and the animator merges them before posing.
+        ///     Passing one leaves it unmerged, which is the client's own condition
+        ///     (<c>Class141.java:801</c>) and is why the two overloads are not the same call.
+        /// </remarks>
+        /// <param name="models">The models, in the order the viewport would upload them.</param>
+        /// <param name="skeleton">The skeleton the frame names.</param>
+        /// <param name="frame">The frame.</param>
+        /// <returns>The animator, with its first frame posed.</returns>
+        private static SkeletalAnimator Animator(ModelDefinition[] models, SkeletonDefinition skeleton,
+            FrameDefinition frame)
+        {
             var source = new InMemoryAnimationDataSource()
                 .AddFrame(AnimationDefinition.PackFrame(FrameSet, 0), frame)
                 .AddSkeleton(SkeletonId, skeleton);
 
             var animator = new SkeletalAnimator(source);
-            animator.SetModels(new[] { model });
+            animator.SetModels(models);
             animator.Play(OneFrameAnimation());
             return animator;
         }

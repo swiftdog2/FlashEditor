@@ -50,6 +50,26 @@ namespace FlashEditor.Rendering
         /// <summary>One pose per model, in the same order, reused every frame.</summary>
         private readonly List<PosedMesh> poses = new List<PosedMesh>();
 
+        /// <summary>
+        ///     The parts joined into one mesh, or null when there is nothing to join.
+        /// </summary>
+        /// <remarks>
+        ///     Null for zero or one model, which is the client's own condition -
+        ///     <c>Class141.java:801</c> merges only when <c>models.length != 1</c>. Merging a lone
+        ///     model would weld its own coincident vertices and change how every static model poses.
+        /// </remarks>
+        private CompositeModel? composite;
+
+        /// <summary>The pose of <see cref="composite"/>, which is what the transforms are applied to.</summary>
+        private PosedMesh? compositePose;
+
+        /// <summary>Whatever the frame's transforms are applied to: the merged body, or the one model.</summary>
+        /// <remarks>
+        ///     Aliased rather than rebuilt per frame, and it is either a single-element list holding
+        ///     <see cref="compositePose"/> or <see cref="poses"/> itself.
+        /// </remarks>
+        private IReadOnlyList<PosedMesh> targets = Array.Empty<PosedMesh>();
+
         /// <summary>Whether the poses need rebuilding even though the playhead has not moved.</summary>
         /// <remarks>
         ///     Set when the models or the animation change. Without it, loading a new model while an
@@ -107,6 +127,26 @@ namespace FlashEditor.Rendering
 
         /// <summary>How many applied bones carry a mask short of <see cref="FullMask"/>.</summary>
         public int PartialMaskBoneCount { get; private set; }
+
+        /// <summary>Whether the models were joined into one mesh before posing.</summary>
+        /// <remarks>
+        ///     False for a single model, which the client does not merge either
+        ///     (<c>Class141.java:801</c>). Exposed because "was this posed as a body or as a pile of
+        ///     parts" is the difference between a jaw that stays on and one that does not, and nothing
+        ///     on this machine can see the viewport to tell.
+        /// </remarks>
+        public bool IsMerged => composite != null;
+
+        /// <summary>Vertices in the merged mesh, or in the one model when nothing was merged.</summary>
+        public int MergedVertexCount => composite?.Model.VertX.Length
+            ?? (models.Count == 1 ? models[0].Model.VertX.Length : 0);
+
+        /// <summary>How many of the parts' vertices were welded onto one an earlier part had placed.</summary>
+        /// <remarks>
+        ///     The seam count. Zero on a set whose parts share no coordinate, in which case merging
+        ///     changed the pivots and nothing else.
+        /// </remarks>
+        public int WeldedVertexCount => composite?.WeldedVertexCount ?? 0;
 
         /// <summary>What went wrong with the last pose attempt, or null.</summary>
         public string? LastError { get; private set; }
@@ -187,6 +227,9 @@ namespace FlashEditor.Rendering
                 Row("Unsupported transforms", UnsupportedTransformCount);
                 Row("Partial-mask bones", PartialMaskBoneCount);
                 Row("Models", models.Count);
+                Row("Posed as", IsMerged
+                    ? "one merged mesh of " + MergedVertexCount + " vertices, " + WeldedVertexCount + " welded"
+                    : models.Count == 1 ? "a single model, unmerged" : "nothing");
 
                 return rows;
 
@@ -209,8 +252,24 @@ namespace FlashEditor.Rendering
         /// <summary>Replaces the set of models being animated.</summary>
         /// <remarks>
         ///     A set rather than one model, because an entity is several: a player is a head, a torso
-        ///     and so on, all driven by one skeleton, and a transform naming a label has to reach
-        ///     whichever of them carries it.
+        ///     and so on, all driven by one skeleton.
+        ///     <para>
+        ///     <b>They are posed as one mesh, not one at a time.</b> That is the client's behaviour -
+        ///     <c>Class141.java:801</c> builds <c>new Model(models, models.length)</c> whenever there
+        ///     is more than one, and <c>Node_Sub3.java:172</c> does the same for equipped models - and
+        ///     it is not a detail. A pivot bone's centroid is summed over the whole body
+        ///     (<c>Renderable_Sub2.java:2803-2827</c>), so posing each part against its own vertices
+        ///     gives every part a different rotation centre, and a part carrying none of the pivot
+        ///     bone's labels falls back to the model origin on the floor between the feet. This class
+        ///     built one pose per model until 2026-08-09, which is why an NPC's jaw came off its face
+        ///     and its hands off its arms. See <see cref="CompositeModel"/> for the merge and the
+        ///     measurements.
+        ///     </para>
+        ///     <para>
+        ///     <see cref="Poses"/> still holds one entry per model in the order given. The merged pose
+        ///     is read back out through the composite's vertex map, so the renderer, the picker, the
+        ///     particle system and the hover overlay keep addressing a vertex as "model m, vertex v".
+        ///     </para>
         /// </remarks>
         /// <param name="definitions">The models.</param>
         /// <exception cref="ArgumentNullException"><paramref name="definitions"/> is null.</exception>
@@ -223,12 +282,28 @@ namespace FlashEditor.Rendering
 
             models.Clear();
             poses.Clear();
+            composite = null;
+            compositePose = null;
+
+            List<ModelDefinition> parts = new List<ModelDefinition>();
 
             foreach (ModelDefinition definition in definitions)
             {
                 SkinnedModel skinned = new SkinnedModel(definition);
                 models.Add(skinned);
                 poses.Add(skinned.CreatePose());
+                parts.Add(definition);
+            }
+
+            if (parts.Count > 1)
+            {
+                composite = new CompositeModel(parts);
+                compositePose = composite.Skin.CreatePose();
+                targets = new[] { compositePose };
+            }
+            else
+            {
+                targets = poses;
             }
 
             HasPose = false;
@@ -290,6 +365,10 @@ namespace FlashEditor.Rendering
             {
                 pose.Reset();
             }
+
+            //Reset apart from the loop above, because the merged pose is not one of the per-part ones
+            //and a frame that returns early has to leave both at rest.
+            compositePose?.Reset();
 
             int packedFrameId = Player.PackedFrameId;
 
@@ -375,7 +454,8 @@ namespace FlashEditor.Rendering
         ///     <b>The outcome is scored across the whole model set, not per model.</b> A transform
         ///     that reached one model of five has been applied, not failed four times - the other four
         ///     simply do not carry that label. Counting per model would make every multi-part entity
-        ///     look broken.
+        ///     look broken. Once the parts are merged there is only one target to score, which reaches
+        ///     the same answer by construction rather than by the loop below being careful.
         ///     </para>
         /// </remarks>
         /// <param name="resolved">The frame's slots with their values.</param>
@@ -405,7 +485,7 @@ namespace FlashEditor.Rendering
                 {
                     List<int> pivotLabels = skeleton.Bones[framePose.PivotSlot].Labels;
 
-                    foreach (PosedMesh pose in poses)
+                    foreach (PosedMesh pose in targets)
                     {
                         pose.Apply(PosedMesh.TypePivot, pivotLabels, 0, 0, 0);
                     }
@@ -414,7 +494,7 @@ namespace FlashEditor.Rendering
                 bool reachedAModel = false;
                 bool unsupportedOnSomeModel = false;
 
-                foreach (PosedMesh pose in poses)
+                foreach (PosedMesh pose in targets)
                 {
                     switch (pose.Apply(types[framePose.Slot], bone.Labels, framePose.X, framePose.Y, framePose.Z))
                     {
@@ -445,12 +525,31 @@ namespace FlashEditor.Rendering
             }
         }
 
-        /// <summary>Reduces every pose back to model units.</summary>
+        /// <summary>
+        ///     Reduces the posed mesh back to model units and hands each part its share of it.
+        /// </summary>
+        /// <remarks>
+        ///     The read-back is unconditional rather than only on the success path. Every exit from
+        ///     <see cref="RefreshPose"/> resets both the parts and the merged mesh first, so on a
+        ///     failure path the merged mesh is at rest and scattering it writes each part the rest
+        ///     coordinates it already had - a welded vertex is coincident with its source by
+        ///     definition, which is what makes that a no-op rather than a coincidence.
+        /// </remarks>
         private void Finish()
         {
-            foreach (PosedMesh pose in poses)
+            foreach (PosedMesh pose in targets)
             {
                 pose.Finish();
+            }
+
+            if (composite == null || compositePose == null)
+            {
+                return;
+            }
+
+            for (int part = 0; part < poses.Count; part++)
+            {
+                poses[part].ReadBackFrom(compositePose, composite.VertexMap[part], composite.FaceOffset[part]);
             }
         }
     }

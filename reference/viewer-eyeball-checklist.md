@@ -122,7 +122,59 @@ nothing animating.
 - **Wrong.** A continuous 30 Hz repaint on any page with nothing animating. That is the old
   behaviour returning.
 
-## H. Layout
+## H. A multi-part entity holds together
+
+Entities tab, NPC **1** ("Man") - eight model files. Play animation **811**, the one the defect was
+reported on. This is the case where the jaw came off the face, the hands off the arms and the boots
+sat inboard of the ankles.
+
+An entity is not one model, and the client never poses its parts separately: `Class141.java:801`
+merges them with `new Model(models, models.length)` whenever there is more than one, so the pivot a
+rotation turns about is summed over the **whole body** (`Renderable_Sub2.java:2803-2827`). Posing
+part by part gave each part its own centre, and a part carrying none of the pivot bone's labels fell
+back to the model origin - the floor between the feet.
+
+- **Correct.** The body reads as one object at every step. The jaw stays seated in the head through
+  the whole cycle; both hands stay at the ends of their arms; each boot sits **under** its trouser
+  cuff rather than inboard of it, and does so on every frame including the first. Nothing detaches at
+  the neck, the wrists or the ankles.
+- **Wrong, and the original defect.** Extremities separate and the gap **grows and shrinks across the
+  cycle** rather than being constant. A varying excursion is the signature of a rotation about the
+  wrong centre, which is what a per-part pivot produces.
+- **Wrong, and the failure a single shared pivot would produce instead.** The parts move together and
+  stay joined, but the **whole body** pivots oddly - leaning or swinging about a point that is not
+  where a joint is, most visibly a torso that rotates about the feet or about a point outside the
+  model. That is what taking one part's pivot and pushing it into all of them looks like, and it is
+  the plausible wrong result that reads as "fixed" at a glance.
+- **Wrong, welding.** A single vertex spike, a thin triangle stretched between two parts at the neck,
+  a wrist or an ankle. A seam vertex that failed to weld is driven by two bones and drags a face
+  between them.
+
+**Two things here are not defects, so do not chase them.**
+
+- **The legs and boots do not move.** Below about mid-thigh the render is identical on every frame,
+  measured at 10,505 pixels in common with none differing between most pairs. Animation 811 appears
+  to be an upper body animation. The waist and belt **do** tilt with the torso, so the boundary sits
+  at mid-thigh and not at the belt. Frozen legs here are the animation, not the viewer. Check what
+  the frames actually transform before treating still legs as a fault.
+- **The transform count does not reach the denominator.** It reads 15 to 17 applied out of 19 to 21
+  resolved depending on the frame, and never 0. The shortfall does not track how bad a frame looks -
+  the cleanest render is one of the frames with the lower denominator - so an unreached transform
+  here is a bone no loaded part carries rather than a join that is failing.
+
+**What is measured and needs no eye.** Seam coherence is a number, and
+`FlashEditor.Tests/Rendering/SeamCoherenceTests.cs` asserts it: over NPC 1 at index-0 frame
+**15204474**, 46 rest coordinates are carried by two of the eight parts, and after posing the worst
+of them is **0** model units out of place, in both caches. Before the parts were merged it was
+**695**, and the 46 totalled **9677**. So this section is asking a human for the things a distance
+cannot see - whether the body reads as one object, and whether it pivots where a joint is.
+
+**One thing this section deliberately does not ask about.** Where a part does separate, the interior
+renders near-black rather than as background, and both wrists show the same open tube. That is
+backfaces being drawn rather than culled, it is a property of the render state and not of the pose,
+and it is out of scope here.
+
+## I. Layout
 
 Drag the splitter narrow and resize the window. The tool strip **wraps** rather than clipping, every
 caption stays readable, and the GL rectangle resizes with it without overlapping the strip.

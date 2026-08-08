@@ -257,6 +257,84 @@ namespace FlashEditor.Rendering
             PivotZ = 0;
         }
 
+        /// <summary>
+        ///     Reads this part's share of a merged pose back out of it.
+        /// </summary>
+        /// <remarks>
+        ///     The seam between "the client poses one merged body" and "everything downstream indexes
+        ///     by model position". An entity has to be posed as one mesh
+        ///     (see <see cref="CompositeModel"/>), and the renderer's vertex buffers,
+        ///     <see cref="PickMesh"/>, <see cref="ParticleSystem"/> and the hover overlay all address a
+        ///     vertex as "model <i>m</i>, vertex <i>v</i>". Scattering the merged result back through
+        ///     the composite's vertex map satisfies both: the pose is the body's, and the arrays it
+        ///     lands in are still the ones a caller was already holding.
+        ///     <para>
+        ///     Welding means the map is many-to-one, so two parts meeting at a seam read the same
+        ///     composite vertex and land in the same place. That is the point rather than a side
+        ///     effect.
+        ///     </para>
+        ///     <para>
+        ///     The arrays are written in place rather than replaced, because
+        ///     <see cref="ParticleSystem.ApplyPose"/> aliases them rather than copying, and a
+        ///     reassignment would leave the emitters pointing at last frame's buffer forever.
+        ///     </para>
+        /// </remarks>
+        /// <param name="merged">The posed composite, already reduced to model units.</param>
+        /// <param name="vertexMap">Composite vertex per vertex of this part.</param>
+        /// <param name="faceOffset">Where this part's faces begin in the composite.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="merged"/> or <paramref name="vertexMap"/> is null.</exception>
+        internal void ReadBackFrom(PosedMesh merged, int[] vertexMap, int faceOffset)
+        {
+            if (merged == null)
+            {
+                throw new ArgumentNullException(nameof(merged));
+            }
+
+            if (vertexMap == null)
+            {
+                throw new ArgumentNullException(nameof(vertexMap));
+            }
+
+            int vertices = Math.Min(VertexX.Length, vertexMap.Length);
+
+            for (int vertex = 0; vertex < vertices; vertex++)
+            {
+                int source = vertexMap[vertex];
+
+                //A vertex the merge could not place - a face naming one the part does not have leaves
+                //its index unmapped. Left at the rest position Reset put there.
+                if ((uint)source < (uint)merged.VertexX.Length)
+                {
+                    VertexX[vertex] = merged.VertexX[source];
+                    VertexY[vertex] = merged.VertexY[source];
+                    VertexZ[vertex] = merged.VertexZ[source];
+                }
+            }
+
+            for (int face = 0; face < FaceAlpha.Length; face++)
+            {
+                int source = faceOffset + face;
+
+                if ((uint)source >= (uint)merged.FaceAlpha.Length)
+                {
+                    break;
+                }
+
+                FaceAlpha[face] = merged.FaceAlpha[source];
+                FaceColour[face] = merged.FaceColour[source];
+            }
+
+            //Flags describe the frame rather than the part, so they carry over whole. A part whose own
+            //faces were untouched still has to be re-uploaded when the merge changed any of them,
+            //because the uploader decides per pose and not per face.
+            FaceAlphaChanged = merged.FaceAlphaChanged;
+            FaceColourChanged = merged.FaceColourChanged;
+            PivotX = merged.PivotX;
+            PivotY = merged.PivotY;
+            PivotZ = merged.PivotZ;
+            IsScaled = merged.IsScaled;
+        }
+
         /// <summary>Applies one frame transform to the labels a skeleton bone names.</summary>
         /// <remarks>
         ///     The dispatch is <c>Renderable_Sub2.method2344</c>
