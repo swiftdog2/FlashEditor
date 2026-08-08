@@ -165,6 +165,7 @@ namespace FlashEditor {
             QuickChatEditorTab = new TabPage();
             ParticleEditorTab = new TabPage();
             LoadingScreenEditorTab = new TabPage();
+            LoadingSpriteEditorTab = new TabPage();
             FontEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
@@ -337,6 +338,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(LoadingScreenEditorTab);
+            EditorTabControl.Controls.Add(LoadingSpriteEditorTab);
             EditorTabControl.Controls.Add(ConfigEditorTab);
             EditorTabControl.Controls.Add(EnumEditorTab);
             EditorTabControl.Controls.Add(VarBitEditorTab);
@@ -1706,6 +1708,16 @@ namespace FlashEditor {
             FontEditorTab.Text = "Fonts";
             FontEditorTab.UseVisualStyleBackColor = true;
             //
+            // LoadingSpriteEditorTab
+            //
+            LoadingSpriteEditorTab.Controls.Add(LoadingSpritePanel);
+            LoadingSpriteEditorTab.Location = new Point(4, 37);
+            LoadingSpriteEditorTab.Name = "LoadingSpriteEditorTab";
+            LoadingSpriteEditorTab.Size = new Size(1113, 554);
+            LoadingSpriteEditorTab.TabIndex = 24;
+            LoadingSpriteEditorTab.Text = "Loading Sprites";
+            LoadingSpriteEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -2008,6 +2020,12 @@ namespace FlashEditor {
         //not columns: they belong beside the index-8 glyph sheet, where an edited width can be seen.
         private TabPage FontEditorTab;
         private FlashEditor.Definitions.Editing.DefinitionListPanel FontPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        //Index 32, the pre-login art store, and the only index holding two unrelated payload formats
+        //with no flag to tell them apart: 21 JPEG images and 5 Jagex glyph sheets in the vanilla b639
+        //capture. The panel owns the shape dispatch, the preview and the replace path because the two
+        //halves are drawn and saved differently and a bare list could say neither.
+        private TabPage LoadingSpriteEditorTab;
+        private FlashEditor.Definitions.LoadingSprites.LoadingSpriteEditorPanel LoadingSpritePanel = new FlashEditor.Definitions.LoadingSprites.LoadingSpriteEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

@@ -883,6 +883,13 @@ namespace FlashEditor {
                screens it categorises - so the tab selects the group. */
             Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS, EditorCategory.Media,
                 openCache => LoadingScreenPanel.Bind(openCache));
+            /* Index 32 is one file per group, so a list would ordinarily be the whole tab - but the
+               index is mixed, holding JPEG images and Jagex glyph sheets with nothing on disk to tell
+               them apart, so the panel dispatches on the payload's own FF D8 magic and draws whichever
+               picture the row's shape asks for. Filed under Media beside Loading Screens: index 33
+               says which pre-login screens exist and this holds the art they are made of. */
+            Register(LoadingSpriteEditorTab, RSConstants.LOADING_SPRITES, EditorCategory.Media,
+                openCache => LoadingSpritePanel.Bind(openCache));
             /* Index 13 is one file per group with the group id as the font id, so like indexes 21 and
                29 the shared list panel is the whole tab. Filed under Media beside Sprites because a
                font's glyphs are an index-8 sprite set addressed by this same id - the metrics here
