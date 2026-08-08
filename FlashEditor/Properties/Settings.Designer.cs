@@ -34,5 +34,29 @@ namespace FlashEditor.Properties {
                 this["cacheDir"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool js5LiveReload {
+            get {
+                return ((bool)(this["js5LiveReload"]));
+            }
+            set {
+                this["js5LiveReload"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("30")]
+        public int js5LiveReloadTimeoutSeconds {
+            get {
+                return ((int)(this["js5LiveReloadTimeoutSeconds"]));
+            }
+            set {
+                this["js5LiveReloadTimeoutSeconds"] = value;
+            }
+        }
     }
 }

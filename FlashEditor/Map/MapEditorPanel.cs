@@ -1016,7 +1016,11 @@ namespace FlashEditor.Map {
                     foreach ((MapRegion Square, int RegionX, int RegionY) entry in dirty)
                         loader.Save(entry.Square, entry.RegionX, entry.RegionY);
 
-                    cache.WriteCache(cacheDirectory);
+                    //Around the write alone, not around the staging above it. While the JS5 live
+                    //reload handshake is on, the server's handles are shut for the whole span this
+                    //wraps, so encoding the squares inside it would hold the server down for work
+                    //that never touches the disk.
+                    JS5ReloadHandshake.AroundSave(cacheDirectory, () => cache.WriteCache(cacheDirectory));
                 });
 
                 history.Clear();

@@ -34,6 +34,7 @@ namespace FlashEditor {
             saveAllToolStripMenuItem = new ToolStripMenuItem();
             setDirectoryToolStripMenuItem = new ToolStripMenuItem();
             openDirectoryToolStripMenuItem = new ToolStripMenuItem();
+            js5LiveReloadToolStripMenuItem = new ToolStripMenuItem();
             viewToolStripMenuItem = new ToolStripMenuItem();
             alternateRowsToolStripMenuItem = new ToolStripMenuItem();
             EditorNavSplit = new SplitContainer();
@@ -187,7 +188,7 @@ namespace FlashEditor {
             // 
             // openToolStripMenuItem
             // 
-            openToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveAllToolStripMenuItem, setDirectoryToolStripMenuItem, openDirectoryToolStripMenuItem });
+            openToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveAllToolStripMenuItem, setDirectoryToolStripMenuItem, openDirectoryToolStripMenuItem, js5LiveReloadToolStripMenuItem });
             openToolStripMenuItem.Font = new Font("Consolas", 14.25F);
             openToolStripMenuItem.Name = "openToolStripMenuItem";
             openToolStripMenuItem.Size = new Size(111, 38);
@@ -212,6 +213,14 @@ namespace FlashEditor {
             openDirectoryToolStripMenuItem.Name = "openDirectoryToolStripMenuItem";
             openDirectoryToolStripMenuItem.Size = new Size(344, 42);
             openDirectoryToolStripMenuItem.Text = "Open Directory";
+            //
+            // js5LiveReloadToolStripMenuItem
+            //
+            js5LiveReloadToolStripMenuItem.CheckOnClick = true;
+            js5LiveReloadToolStripMenuItem.Name = "js5LiveReloadToolStripMenuItem";
+            js5LiveReloadToolStripMenuItem.Text = "JS5 Live Reload Handshake";
+            js5LiveReloadToolStripMenuItem.ToolTipText = "Only for a cache a Hydra update server is serving. Every save then stops that server, waits for it to close its files, writes, and lets it reload - and fails if nothing answers.";
+            js5LiveReloadToolStripMenuItem.CheckedChanged += js5LiveReloadToolStripMenuItem_CheckedChanged;
             openDirectoryToolStripMenuItem.Click += OpenDirectoryToolStripMenuItem_Click;
             // 
             // viewToolStripMenuItem
@@ -1523,6 +1532,7 @@ namespace FlashEditor {
         private System.Windows.Forms.ToolStripMenuItem setDirectoryToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem openDirectoryToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem js5LiveReloadToolStripMenuItem;
         private BrightIdeasSoftware.TreeListView RefTableListView;
         private BrightIdeasSoftware.OLVColumn formatCol;
         private BrightIdeasSoftware.OLVColumn namedCol;
