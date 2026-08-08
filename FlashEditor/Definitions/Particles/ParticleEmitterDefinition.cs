@@ -293,8 +293,13 @@ namespace FlashEditor.Definitions.Particles {
         /// <summary>Opcode 16, second field. Point in the cycle the emitter switches at.</summary>
         public int CycleThreshold { get; set; } = -1;
 
-        /// <summary>Opcode 16, third field. Cycle length in milliseconds, or -1 for no cycle.</summary>
-        /// <remarks>Particle_Sub9.java:153-159 takes the elapsed time modulo this.</remarks>
+        /// <summary>Opcode 16, third field. Cycle length in client cycles, or -1 for no cycle.</summary>
+        /// <remarks>
+        ///     Particle_Sub9.java:153-159 takes the elapsed time modulo this, and the elapsed time it
+        ///     is handed is the client's 20 ms cycle counter rather than a wall clock - see
+        ///     <c>ParticleUnits.MillisecondsPerCycle</c>. So a stored period is in the same unit as a
+        ///     lifetime, and a duty cycle needs no conversion of its own.
+        /// </remarks>
         public int CyclePeriod { get; set; } = -1;
 
         /// <summary>Opcode 16, fourth field. Stored byte deciding whether the cycle repeats.</summary>

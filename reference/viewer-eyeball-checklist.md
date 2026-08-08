@@ -233,6 +233,51 @@ column.
   entirely, most likely by mis-reading the model's flags byte - the emitter list is gated on bit
   `0x2`, and 19709's `0x00` against 59885's `0x0B` is the difference between the two cases.
 
+### F3. The Dungeoneering master cape, and what a wrong particle clock looks like
+
+Models or Entities tab, model **59885** (worn male) or **59887** (worn female) - the same five
+attachments either way, so pick either. Tick Particles. This is the case a human reported as broken
+and the one the clock fix was made against, so it is the regression case for that fix.
+
+The cape carries emitter **157** on face 715, **158** on faces 716 and 718, and **159** on 717 and
+719 - the last five faces of a 721-face mesh, which is the hem. Emitter 157 is the smoke: it spawns
+near-black at alpha 150 to 200, half extent 32 to 35 model units, and a lifetime of 50 to 60 client
+cycles, so about one to one and a quarter seconds a particle.
+
+- **Correct.** A **thick black trail rooted at the hem**, continuous rather than in shells, thinning
+  and fading as it falls away. Particles must appear touching the bottom of the cape, not below it.
+  The readout reads `emitters 5/5`.
+- **Wrong, the reported defect: a faint sparse smudge, detached, below and behind the cape.** The
+  step is being read as a millisecond rather than as a 20 ms client cycle, so one 33 ms redraw runs
+  33 steps and every particle is first drawn about 57% through its life - alpha 84 instead of near
+  its birth 150 to 200, half extent 19 instead of 33, and 92 model units clear of the hem instead of
+  16, drawn once instead of thirty to thirty-six times. Any partial correction of the unit gives the
+  same shape less severely. Pinned numerically by
+  `FlashEditor.Tests/Rendering/ParticleClockTests.cs`, so if this is what you see, that file is
+  failing too and it is not a render defect.
+- **Wrong, and the near miss to watch for: the trail is present, moves with the cape, and reads as
+  discrete puffs** with visible gaps between clumps rather than as one continuous column. That is a
+  step still several times too long: enough particles survive to see, and each is drawn only a
+  handful of times over its life, so the trail is sampled rather than swept. This one reads as
+  "working" at a glance and is the reason this entry asks for continuity rather than for presence.
+- **Wrong, rooted off the mesh.** A trail of the right density and colour that starts a body-width
+  away from the cape and hangs in space. The attachment is on the wrong face, or the emitter is being
+  left at the rest position while the model poses - `ParticleSystem.ApplyPose` not being called.
+- **Wrong, no material.** Hard-edged opaque squares rather than soft smoke. Emitter 157 names index-26
+  material **812** and `Particle.MaterialId` is currently written and never read, so **this is the
+  expected result today** and is a known gap rather than a regression. Recorded here so the two are
+  not confused.
+- **Not a defect.** The trail keeps falling for about a second after the cape stops moving. That is
+  the particles' own lifetime, and the client does the same.
+
+**The peak-live figures in the table above predate the clock fix.** They were measured by driving
+the system at 33 ms advances under the reading of a step as a millisecond, so each advance ran 33
+steps rather than one or two. Every peak in that table is therefore a figure for a simulation
+running twenty times too fast, and several of the notes derived from them - 63586 and 59584 peaking
+at zero because they "spawn and kill inside one 33 ms step", 62446 being a sputter - are properties
+of the old clock rather than of build 639. **Re-measure before treating any of them as a target.**
+The attachment counts in the Emitters column are read from the model's tail block and are unaffected.
+
 ### Finding one in the editor
 
 There is currently **no way to know a model has an emitter except to select it and read the
