@@ -287,6 +287,115 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
+        ///     Perturbs every opcode width the cache exercises, one at a time, and measures which
+        ///     layer of the evidence notices.
+        /// </summary>
+        /// <remarks>
+        ///     A mutation gate rather than an assertion about the format: it wrongs one width by a
+        ///     byte and asks what would have gone red, over the whole index, for each of the widths
+        ///     this cache actually puts to the test. Two layers are compared - the exact-consumption
+        ///     sweep, which sees a perturbation only when it moves some file's total, and the
+        ///     per-occurrence check, which sees it at the opcode.
+        ///     <para>
+        ///     The assertion is the second one, because that is the property the new sweep is for: a
+        ///     single wrong width must be visible at every occurrence of it, with no pair skipped.
+        ///     A width table that quietly passed unknown pairs, or a sweep that compared totals
+        ///     rather than spans, fails here rather than sitting green and testing nothing.
+        ///     </para>
+        ///     <para>
+        ///     How many perturbations exact consumption misses is printed rather than asserted, since
+        ///     it is a property of the two caches and not of the format. The general statement -
+        ///     that consumption balancing cannot pin an individual width, because two errors inside
+        ///     one node cancel - is made by construction in
+        ///     <see cref="TextureGraphWidthEvidenceTests"/>, which needs no cache to hold.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void PerturbingOneOpcodeWidth_IsSeenAtTheOpcodeEvenWhenTheFileTotalSurvives()
+        {
+            var files = new List<byte[]>();
+            Sweep().ForEachDecoded((record, texture) => files.Add(record.Bytes));
+
+            var pairs = new SortedSet<(int Type, int Opcode)>();
+            var bodyLengths = new List<int>();
+            foreach (byte[] file in files)
+            {
+                ClientGraphLayout layout = ClientTextureGraphReader.Read(file);
+                bodyLengths.Add(layout.BodyLength);
+                foreach (ClientOpcodeSpan span in layout.Opcodes)
+                    pairs.Add((span.NodeType, span.Opcode));
+            }
+
+            var unseenByConsumption = new List<string>();
+            var unseenAtTheOpcode = new List<string>();
+            int perturbations = 0;
+
+            foreach ((int Type, int Opcode) pair in pairs)
+            {
+                foreach (int delta in new[] { -1, 1 })
+                {
+                    int perturbed = ClientTextureGraphReader.DeclaredWidth(pair.Type, pair.Opcode) + delta;
+                    if (perturbed < 0)
+                        continue;
+
+                    perturbations++;
+                    int filesWithADifferentTotal = 0;
+                    int occurrencesOfADifferentWidth = 0;
+
+                    for (int f = 0; f < files.Count; f++)
+                    {
+                        ClientGraphLayout wrong;
+                        try
+                        {
+                            wrong = ClientTextureGraphReader.Read(files[f],
+                                (type, opcode) => type == pair.Type && opcode == pair.Opcode
+                                    ? perturbed
+                                    : ClientTextureGraphReader.DeclaredWidth(type, opcode));
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            //Ran off the end of the file, which is a consumption failure too.
+                            filesWithADifferentTotal++;
+                            occurrencesOfADifferentWidth++;
+                            continue;
+                        }
+
+                        if (wrong.BodyLength != bodyLengths[f])
+                            filesWithADifferentTotal++;
+
+                        foreach (ClientOpcodeSpan span in wrong.Opcodes)
+                            if (span.NodeType == pair.Type && span.Opcode == pair.Opcode &&
+                                span.Width != ClientTextureGraphReader.DeclaredWidth(pair.Type, pair.Opcode))
+                                occurrencesOfADifferentWidth++;
+                    }
+
+                    string named = $"type {pair.Type} opcode {pair.Opcode} at " +
+                                   $"{ClientTextureGraphReader.DeclaredWidth(pair.Type, pair.Opcode) + delta} " +
+                                   $"bytes instead of " +
+                                   $"{ClientTextureGraphReader.DeclaredWidth(pair.Type, pair.Opcode)}";
+
+                    if (filesWithADifferentTotal == 0)
+                        unseenByConsumption.Add(named);
+                    if (occurrencesOfADifferentWidth == 0)
+                        unseenAtTheOpcode.Add($"{named}: no occurrence of it changed width");
+                }
+            }
+
+            _output.WriteLine($"{perturbations} single-opcode width perturbations were tried across the " +
+                              $"{pairs.Count} node-type/opcode pairs this cache exercises");
+            _output.WriteLine($"{unseenByConsumption.Count} of them move no file's total, so the " +
+                              "exact-consumption sweep would stay green" +
+                              (unseenByConsumption.Count == 0
+                                  ? ""
+                                  : ": " + string.Join(", ", unseenByConsumption.Take(10))));
+            _output.WriteLine($"{unseenAtTheOpcode.Count} of them are invisible at the opcode, which is " +
+                              "what this test asserts is none");
+
+            Assert.True(perturbations > 0, "no width was perturbed, so nothing was gated");
+            AssertNoFailures(unseenAtTheOpcode);
+        }
+
+        /// <summary>
         ///     What index 9 actually contains, so the codec's coverage is stated rather than assumed.
         /// </summary>
         /// <remarks>
