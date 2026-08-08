@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.ExceptionServices;
@@ -98,13 +99,10 @@ namespace FlashEditor.Tests.Definitions {
         /// </remarks>
         [Fact]
         public void SwitchingDescriptorWithASortActiveNeverSortsTheNewRowsThroughTheOldColumns() {
-            OnUiThread(() => {
+            OnUiThread(form => {
                 RSCache cache = CreateCache();
-                using var form = new Form { ShowInTaskbar = false };
                 var panel = new DefinitionListPanel();
                 form.Controls.Add(panel);
-                _ = form.Handle;
-                panel.CreateControl();
 
                 FastObjectListView grid = GridOf(panel);
 
@@ -149,13 +147,10 @@ namespace FlashEditor.Tests.Definitions {
         /// </remarks>
         [Fact]
         public void ReplacingARowAfterAFamilySwitchDoesNotReachThePreviousFamilysColumns() {
-            OnUiThread(() => {
+            OnUiThread(form => {
                 RSCache cache = CreateCache();
-                using var form = new Form { ShowInTaskbar = false };
                 var panel = new DefinitionListPanel();
                 form.Controls.Add(panel);
-                _ = form.Handle;
-                panel.CreateControl();
 
                 FastObjectListView grid = GridOf(panel);
 
@@ -292,28 +287,56 @@ namespace FlashEditor.Tests.Definitions {
         ///     Runs an action on a fresh STA thread, and rethrows what it threw.
         /// </summary>
         /// <remarks>
-        ///     An exception raised while a message is being dispatched - which is exactly where this
-        ///     defect surfaces - does not come back up the caller's stack. It is taken at the
-        ///     WinForms boundary through <c>Application.ThreadException</c> and re-thrown from the
-        ///     pump instead. Letting it go unhandled kills the test host and aborts the run, so every
-        ///     other test then reports as not executed rather than as passing.
+        ///     A real message loop rather than a bare thread with <c>DoEvents</c>, because the panel
+        ///     publishes from <c>RunWorkerCompleted</c> and where that runs is the whole point. A
+        ///     <c>BackgroundWorker</c> completes on whatever synchronisation context was current when
+        ///     it started, and a thread with no loop has none - so the completion lands on a thread
+        ///     pool thread, which is not what the application does and is also where nothing can
+        ///     catch it: <c>SetObjects</c> then marshals the publication with <c>Control.Invoke</c>
+        ///     and re-throws on the pool thread, killing the process instead of failing one test.
+        ///     <para>
+        ///     Inside the loop, an exception from a dispatched message is taken at the WinForms
+        ///     boundary through <c>Application.ThreadException</c> and re-thrown from the pump. The
+        ///     window is transparent and off the taskbar: this runs on a machine somebody is using.
+        ///     </para>
         /// </remarks>
-        /// <param name="action">What to run.</param>
-        private void OnUiThread(Action action) {
+        /// <param name="action">What to run, given the form to host the panel in.</param>
+        private void OnUiThread(Action<Form> action) {
             Exception? failure = null;
 
             var thread = new Thread(() => {
                 void OnThreadException(object sender, ThreadExceptionEventArgs e) =>
                     _dispatchFailure ??= e.Exception;
 
+                //First, before anything creates a control on this thread: WinForms refuses the
+                //change once one exists.
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
                 Application.ThreadException += OnThreadException;
 
+                using var form = new Form {
+                    Opacity = 0,
+                    ShowInTaskbar = false,
+                    StartPosition = FormStartPosition.Manual,
+                    Location = new Point(-32000, -32000)
+                };
+
+                form.Shown += (_, _) => {
+                    try {
+                        action(form);
+                    }
+                    catch (Exception ex) {
+                        failure = ex;
+                    }
+                    finally {
+                        form.Close();
+                    }
+                };
+
                 try {
-                    action();
+                    Application.Run(form);
                 }
                 catch (Exception ex) {
-                    failure = ex;
+                    failure ??= ex;
                 }
                 finally {
                     Application.ThreadException -= OnThreadException;
