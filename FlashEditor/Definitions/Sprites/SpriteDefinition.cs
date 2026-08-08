@@ -369,11 +369,16 @@ namespace FlashEditor.cache.sprites {
         /// <param name="canvasHeight">The canvas height to store.</param>
         /// <param name="paletteStored">The palette as stored, entry 0 reserved and never written.</param>
         /// <param name="frames">The frames, in the order they are to be stored.</param>
+        /// <param name="pixelPlaneTrailer">
+        ///     The unread gap the file kept between its last plane and its palette, for a set built
+        ///     by editing one that was read from disk. Null for a set built from nothing.
+        /// </param>
         /// <returns>The set.</returns>
         /// <exception cref="ArgumentNullException">A required argument is null.</exception>
         /// <exception cref="ArgumentException">The set cannot be expressed by the format.</exception>
         public static SpriteDefinition FromFrames(int canvasWidth, int canvasHeight, int[] paletteStored,
-                                                  IReadOnlyList<SpriteFrame> frames) {
+                                                  IReadOnlyList<SpriteFrame> frames,
+                                                  byte[] pixelPlaneTrailer = null) {
             if (paletteStored == null)
                 throw new ArgumentNullException(nameof(paletteStored));
             if (frames == null)
@@ -389,6 +394,12 @@ namespace FlashEditor.cache.sprites {
                 throw new ArgumentException($"A set holds 1 to 65535 frames, not {frames.Count}.");
 
             var sprite = new SpriteDefinition(canvasWidth, canvasHeight, frames.Count);
+            //Carried rather than dropped. Thirteen groups in the repack leave a three byte gap here
+            //that nothing reads, so an edit to one frame of such a set would otherwise come back
+            //three bytes shorter for a reason that has nothing to do with the edit.
+            sprite.PixelPlaneTrailer = pixelPlaneTrailer == null
+                ? System.Array.Empty<byte>()
+                : (byte[]) pixelPlaneTrailer.Clone();
             sprite.PaletteStored = (int[]) paletteStored.Clone();
             sprite.RenderPalette = new int[paletteStored.Length];
             //Entry 0 stays zero on both, which is what "transparent" is; every other entry takes the
