@@ -129,7 +129,7 @@ namespace FlashEditor.Definitions.Sprites {
     ///     than editing one, and the encoder's rule that a stored flag is kept verbatim is untouched.
     ///     </para>
     /// </remarks>
-    public static class SpriteImageImporter {
+    public static partial class SpriteImageImporter {
         /// <summary>The most colours a frame can address, entry 0 being the transparent slot.</summary>
         /// <remarks>
         ///     <c>paletteSize - 1</c> is written as one unsigned byte (<c>Class324.java:55</c>), so
@@ -154,6 +154,15 @@ namespace FlashEditor.Definitions.Sprites {
         public const string FileFilter =
             "Picture (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|" +
             "Sprite set (*.dat)|*.dat|All files (*.*)|*.*";
+
+        /// <summary>The picker filter for a target that only a picture can describe.</summary>
+        /// <remarks>
+        ///     One frame of a set, where a <c>.dat</c> would be a whole set and there is nothing
+        ///     sensible to do with it. Offering the filter and then refusing the file is worse than
+        ///     not offering it.
+        /// </remarks>
+        public const string PictureFilter =
+            "Picture (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*";
 
         /// <summary>Whether a path names a picture the importer will convert.</summary>
         /// <param name="path">The chosen file.</param>
@@ -197,24 +206,7 @@ namespace FlashEditor.Definitions.Sprites {
 
             //Harvested after the black promotion, so 0x000000 and 0x000001 are one colour rather
             //than two that would draw identically and waste a palette entry apiece.
-            var counts = new Dictionary<int, long>();
-            bool needsAlphaPlane = false;
-            int transparentPixels = 0;
-
-            foreach (int argb in pixels) {
-                int alpha = (argb >> 24) & 0xFF;
-                if (alpha == 0) {
-                    transparentPixels++;
-                    continue;
-                }
-
-                if (alpha != 0xFF)
-                    needsAlphaPlane = true;
-
-                int colour = StorableColour(argb & 0xFFFFFF);
-                counts.TryGetValue(colour, out long seen);
-                counts[colour] = seen + 1;
-            }
+            Dictionary<int, long> counts = Harvest(pixels, out bool needsAlphaPlane, out int transparentPixels);
 
             int[] palette = BuildPalette(counts, out int worstChannelError);
             byte[] indices = MapPixels(pixels, palette, out int blackPixels);

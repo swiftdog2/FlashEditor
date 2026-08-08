@@ -1726,23 +1726,41 @@ namespace FlashEditor {
         ///     </para>
         /// </remarks>
         private void ImportSpriteBtn_Click(object sender, EventArgs e) {
-            if (cache == null || SpriteListView.SelectedObject is not SpriteDefinition target ||
-                target is RSBufferedImage) {
-                MessageBox.Show(this, "Select the sprite set to overwrite first.", "Import sprite",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            object? row = SpriteListView.SelectedObject;
+            SpriteDefinition? target = cache == null || row == null ? null : SpriteSetBehind(row);
+            if (target == null) {
+                MessageBox.Show(this,
+                    "Select the sprite set to write into first, or expand it and select one of its frames.",
+                    "Import sprite", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
+            /* Which row is selected is what says whether one frame or the whole set is being written,
+               and it is the only statement of intent available: a picture cannot say which frame of a
+               set it belongs to, and asking in a dialog after the file has been chosen would be a
+               question about a selection the user already made. */
+            int? frameId = SelectedSpriteFrameId(row!);
+
             using OpenFileDialog picker = new OpenFileDialog {
-                Title = "Import into sprite set " + target.index,
-                Filter = SpriteImageImporter.FileFilter
+                Title = frameId == null
+                    ? "Import into sprite set " + target.index
+                    : "Replace frame " + frameId + " of sprite set " + target.index,
+                //A .dat is a whole set, so it is not offered for a frame row rather than offered and
+                //then refused. Several pictures make sense only for a whole set, where they become
+                //its frames.
+                Filter = frameId == null ? SpriteImageImporter.FileFilter : SpriteImageImporter.PictureFilter,
+                Multiselect = frameId == null
             };
 
             if (picker.ShowDialog(this) != DialogResult.OK)
                 return;
 
             try {
-                if (SpriteImageImporter.LooksLikeAPicture(picker.FileName))
+                if (frameId != null)
+                    ImportSpriteFrame(target, frameId.Value, picker.FileName);
+                else if (picker.FileNames.Length > 1)
+                    ImportSpriteSetFromPictures(target, picker.FileNames);
+                else if (SpriteImageImporter.LooksLikeAPicture(picker.FileName))
                     ImportSpriteFromPicture(target, picker.FileName);
                 else
                     StageSpriteBytes(target, File.ReadAllBytes(picker.FileName), null);
@@ -1753,6 +1771,175 @@ namespace FlashEditor {
                 MessageBox.Show(this,
                     "Could not import that file as a sprite set:" + Environment.NewLine + ex.Message,
                     "Import sprite", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>The frame a row names, or null when the row is a set rather than a frame.</summary>
+        /// <param name="row">The selected row.</param>
+        /// <returns>The frame's position in its set, or null.</returns>
+        private int? SelectedSpriteFrameId(object row) {
+            return row is RSBufferedImage frame &&
+                   _spriteFrameOwners.TryGetValue(frame, out (SpriteDefinition Set, int Frame) owner)
+                ? owner.Frame
+                : null;
+        }
+
+        /// <summary>What the strip says the palette may do, defaulting to the safe answer.</summary>
+        /// <remarks>
+        ///     The default is the one that cannot change a frame the user did not select. A combo that
+        ///     has not been populated yet answers with no selection at all, and defaulting the other
+        ///     way there would rewrite artwork on an import made before the tab finished binding.
+        /// </remarks>
+        private SpriteSetPalettePolicy SpritePalettePolicy =>
+            SpritePaletteChoice.SelectedItem is SpriteImportChoice<SpriteSetPalettePolicy> chosen
+                ? chosen.Value
+                : SpriteSetPalettePolicy.KeepExistingFrames;
+
+        /// <summary>Where the strip says a replacement frame goes, defaulting to where the old one was.</summary>
+        private SpriteFrameAnchor SpriteFramePlacement =>
+            SpritePlacementChoice.SelectedItem is SpriteImportChoice<SpriteFrameAnchor> chosen
+                ? chosen.Value
+                : SpriteFrameAnchor.KeepOffset;
+
+        /// <summary>
+        ///     Replaces one frame of a set with a picture, after saying what it will cost.
+        /// </summary>
+        /// <remarks>
+        ///     The set is rebuilt around its other frames rather than replaced, which is the whole
+        ///     difference between this and <see cref="ImportSpriteFromPicture"/>. Two of the costs are
+        ///     invisible in the result and are stated before anything is written: colours approximated
+        ///     because the palette a set shares had no room for them, and - if the palette is being
+        ///     rebuilt - the frames nobody edited that come back re-indexed.
+        /// </remarks>
+        /// <param name="target">The set holding the frame.</param>
+        /// <param name="frameId">Which frame the picture replaces.</param>
+        /// <param name="path">The chosen picture.</param>
+        private void ImportSpriteFrame(SpriteDefinition target, int frameId, string path) {
+            SpriteFrameImport converted;
+            using (Image picture = LoadPicture(path))
+                converted = SpriteImageImporter.ReplaceFrame(target, frameId, picture,
+                    SpriteFramePlacement, SpritePalettePolicy);
+
+            var warnings = new List<string>();
+            if (converted.Requantised && converted.FramesRewritten > 0)
+                warnings.Add($"Rebuilding the palette re-indexes {converted.FramesRewritten} frame(s) you did not " +
+                             "edit. They draw the same colours, but their stored bytes change, so the whole set is " +
+                             "rewritten rather than one frame of it.");
+            if (converted.PaletteEntriesApproximated > 0)
+                warnings.Add($"{converted.PaletteEntriesApproximated} of that picture's {converted.SourceColours} " +
+                             "colours are not in this set's palette and it has no room left, so they are " +
+                             $"approximated - worst per-channel error {converted.WorstChannelError} out of 255. " +
+                             "Rebuilding the palette instead would keep them, at the cost above.");
+
+            SpriteFrame? displaced = target.Frames != null && frameId < target.Frames.Count
+                ? target.Frames[frameId] : null;
+            if (displaced != null &&
+                (displaced.OffsetX != converted.Placement.X || displaced.OffsetY != converted.Placement.Y ||
+                 displaced.SubWidth != converted.Placement.Width || displaced.SubHeight != converted.Placement.Height))
+                warnings.Add($"The frame moves from {displaced.SubWidth}x{displaced.SubHeight} at " +
+                             $"{displaced.OffsetX},{displaced.OffsetY} to {converted.Placement.Width}x" +
+                             $"{converted.Placement.Height} at {converted.Placement.X},{converted.Placement.Y}.");
+
+            if (!Confirm(warnings, "Replace frame " + frameId + " of sprite " + target.index))
+                return;
+
+            StageSpriteBytes(target, converted.Set.Encode().ToArray(), converted.Describe());
+        }
+
+        /// <summary>
+        ///     Builds a whole multi-frame set out of several pictures sharing one palette.
+        /// </summary>
+        /// <remarks>
+        ///     The picker's own multiple selection is the frame order, so the frames come out in the
+        ///     order the dialog lists the files rather than in an order this code invents. Everything
+        ///     the set held is replaced, which is stated before it happens because the picture count
+        ///     rarely matches the frame count.
+        /// </remarks>
+        /// <param name="target">The selected set, which is replaced.</param>
+        /// <param name="paths">The chosen pictures, in frame order.</param>
+        private void ImportSpriteSetFromPictures(SpriteDefinition target, string[] paths) {
+            var pictures = new List<Image>(paths.Length);
+            SpriteFrameImport converted;
+            try {
+                foreach (string path in paths)
+                    pictures.Add(LoadPicture(path));
+                converted = SpriteImageImporter.FromImages(pictures, SpriteFramePlacement == SpriteFrameAnchor.Centre
+                    ? SpriteFrameAnchor.Centre
+                    : SpriteFrameAnchor.TopLeft);
+            }
+            finally {
+                foreach (Image picture in pictures)
+                    picture.Dispose();
+            }
+
+            var warnings = new List<string> {
+                $"Sprite {target.index} holds {target.GetFrameCount()} frame(s) and this replaces the set with " +
+                $"{paths.Length}, on a {converted.Set.width}x{converted.Set.height} canvas."
+            };
+            if (converted.PaletteEntriesApproximated > 0)
+                warnings.Add($"Those pictures hold {converted.SourceColours} colours between them and one set " +
+                             $"shares one palette of at most {SpriteImageImporter.MaxColours}, so they are " +
+                             $"quantised to {converted.PaletteColours} by median cut, with a worst per-channel " +
+                             $"error of {converted.WorstChannelError} out of 255.");
+
+            if (!Confirm(warnings, "Import " + paths.Length + " pictures as sprite " + target.index))
+                return;
+
+            StageSpriteBytes(target, converted.Set.Encode().ToArray(), converted.Describe());
+        }
+
+        /// <summary>
+        ///     Loads a picture without keeping its file locked.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Image.FromFile</c> holds the file for the lifetime of the image, so a user could not
+        ///     overwrite their own PNG and import it again without restarting the editor.
+        /// </remarks>
+        /// <param name="path">The picture file.</param>
+        /// <returns>The picture, owned by the caller.</returns>
+        private static Image LoadPicture(string path) {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read);
+            return Image.FromStream(file);
+        }
+
+        /// <summary>Asks before an import that costs something the result does not show.</summary>
+        /// <param name="warnings">What it will cost, or nothing when it costs nothing.</param>
+        /// <param name="caption">The dialog caption.</param>
+        /// <returns>Whether to proceed.</returns>
+        private bool Confirm(List<string> warnings, string caption) {
+            return warnings.Count == 0 ||
+                   MessageBox.Show(this,
+                       string.Join(Environment.NewLine + Environment.NewLine, warnings) +
+                       Environment.NewLine + Environment.NewLine + "Import anyway?",
+                       caption, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
+        }
+
+        /// <summary>One entry of an import-option combo: what it says and what it means.</summary>
+        /// <remarks>
+        ///     The value travels with the caption rather than being recovered from
+        ///     <c>SelectedIndex</c>, so reordering the list or inserting an option cannot silently
+        ///     repoint an entry at a different policy.
+        /// </remarks>
+        /// <typeparam name="T">The option this entry stands for.</typeparam>
+        private sealed class SpriteImportChoice<T> {
+            /// <summary>Binds a caption to the option it selects.</summary>
+            /// <param name="caption">What the combo shows.</param>
+            /// <param name="value">What choosing it means.</param>
+            public SpriteImportChoice(string caption, T value) {
+                Caption = caption;
+                Value = value;
+            }
+
+            /// <summary>What the combo shows.</summary>
+            public string Caption { get; }
+
+            /// <summary>What choosing it means.</summary>
+            public T Value { get; }
+
+            /// <summary>The caption, which is what a ComboBox draws for an item.</summary>
+            /// <returns>The caption.</returns>
+            public override string ToString() {
+                return Caption;
             }
         }
 
@@ -1771,11 +1958,7 @@ namespace FlashEditor {
         /// <param name="path">The chosen picture.</param>
         private void ImportSpriteFromPicture(SpriteDefinition target, string path) {
             SpriteImageImport converted;
-            //Loaded through a stream that is closed immediately: Image.FromFile keeps the file
-            //locked for the lifetime of the image, so a user could not overwrite their own PNG and
-            //import it again without restarting the editor.
-            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read))
-            using (Image picture = Image.FromStream(file))
+            using (Image picture = LoadPicture(path))
                 converted = SpriteImageImporter.FromImage(picture);
 
             var warnings = new List<string>();
@@ -1786,16 +1969,13 @@ namespace FlashEditor {
                              $"{converted.WorstChannelError} out of 255.");
             if (target.GetFrameCount() > 1)
                 warnings.Add($"Sprite {target.index} holds {target.GetFrameCount()} frames and a picture " +
-                             "describes one, so the other frames are discarded.");
+                             "describes one, so the other frames are discarded. To keep them, expand the set and " +
+                             "select the frame to replace, or choose one picture per frame.");
             if (target.width != converted.Set.width || target.height != converted.Set.height)
                 warnings.Add($"The canvas changes from {target.width}x{target.height} to " +
                              $"{converted.Set.width}x{converted.Set.height}.");
 
-            if (warnings.Count > 0 &&
-                MessageBox.Show(this,
-                    string.Join(Environment.NewLine + Environment.NewLine, warnings) +
-                    Environment.NewLine + Environment.NewLine + "Import anyway?",
-                    "Import sprite " + target.index, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            if (!Confirm(warnings, "Import sprite " + target.index))
                 return;
 
             StageSpriteBytes(target, converted.Set.Encode().ToArray(), converted.Describe());
@@ -3067,6 +3247,28 @@ namespace FlashEditor {
                 row is SpriteDefinition set && row is not RSBufferedImage && set.GetFrameCount() > 1;
             SpriteListView.ChildrenGetter = row => SpriteFrameRows((SpriteDefinition) row);
 
+            /* Populated here rather than in the designer so the caption and the value it selects are
+               stated in one place. The first entry of each is the default, and both defaults are the
+               choice that changes nothing the user did not select: the palette is left alone, and a
+               replacement frame stays where the frame it displaces was.
+               Every caption is inside the strip's budget of about 22 characters of Consolas 9pt. A
+               ComboBox clips its selected item at the right with no ellipsis and no wrap, so a longer
+               one would read as a different option once chosen. */
+            SpritePaletteChoice.Items.AddRange(new object[] {
+                new SpriteImportChoice<SpriteSetPalettePolicy>("Palette: keep existing",
+                    SpriteSetPalettePolicy.KeepExistingFrames),
+                new SpriteImportChoice<SpriteSetPalettePolicy>("Palette: rebuild set",
+                    SpriteSetPalettePolicy.RequantiseWholeSet)
+            });
+            SpritePaletteChoice.SelectedIndex = 0;
+
+            SpritePlacementChoice.Items.AddRange(new object[] {
+                new SpriteImportChoice<SpriteFrameAnchor>("Place: keep offset", SpriteFrameAnchor.KeepOffset),
+                new SpriteImportChoice<SpriteFrameAnchor>("Place: centre", SpriteFrameAnchor.Centre),
+                new SpriteImportChoice<SpriteFrameAnchor>("Place: at 0,0", SpriteFrameAnchor.TopLeft)
+            });
+            SpritePlacementChoice.SelectedIndex = 0;
+
             SpritePreview.Zoom = (int) SpriteZoom.Value;
             SpritePreview.OutlineFrame = SpriteFrameOutline.Checked;
 
@@ -3550,7 +3752,7 @@ namespace FlashEditor {
                 return;
             }
 
-            SpriteDetailLabel.Text = DescribeSelectedSprite(set, frame, frameId);
+            SpriteDetailLabel.Text = DescribeSelectedSprite(set, frame, frameId, row is RSBufferedImage);
 
             if (frame.Area == 0) {
                 SpritePreview.EmptyText = "This frame stores no pixels";
@@ -3586,15 +3788,30 @@ namespace FlashEditor {
         /// <param name="set">The selected set.</param>
         /// <param name="frame">The frame on show.</param>
         /// <param name="frameId">Its position in the set.</param>
+        /// <param name="frameSelected">Whether the selected row is a frame rather than the set.</param>
         /// <returns>The description.</returns>
-        private string DescribeSelectedSprite(SpriteDefinition set, SpriteFrame frame, int frameId) {
+        private string DescribeSelectedSprite(SpriteDefinition set, SpriteFrame frame, int frameId,
+                                              bool frameSelected) {
             string placement = frame.SubWidth + "x" + frame.SubHeight + " at " + frame.OffsetX + "," + frame.OffsetY;
             string canvas = set.width + "x" + set.height;
+
+            /* What Import will do to this selection, next to the selection rather than only in the
+               strip. The same button writes one frame or the whole set depending on which row is
+               highlighted, and a set row and one of its frame rows look alike enough that the
+               difference has to be said rather than inferred from the indent. */
+            string import = frameSelected
+                ? "Import replaces THIS FRAME and leaves the other " + Math.Max(0, set.GetFrameCount() - 1) +
+                  " alone."
+                : set.GetFrameCount() > 1
+                    ? "Import replaces the WHOLE SET, all " + set.GetFrameCount() +
+                      " frames. Expand it and select a frame to replace one."
+                    : "Import replaces the WHOLE SET.";
 
             return "Sprite " + set.index + ", frame " + frameId + " of " + set.GetFrameCount() +
                    ". Canvas " + canvas + ", frame " + placement + ", " + DescribeSpriteStorage(set, frame) +
                    ", palette " + Math.Max(0, set.PaletteStored.Length - 1) + ", " +
                    set.StoredLength + " bytes stored." + Environment.NewLine +
+                   import + Environment.NewLine +
                    "Drawn at " + SpritePreview.Zoom + ":1 with the client's colour rule - palette entry 0 is " +
                    "transparent and an alpha plane is blended - over a checkerboard, so a fully transparent " +
                    "sprite is checkerboard rather than a blank box. This is not the client's renderer: it " +
@@ -3620,6 +3837,24 @@ namespace FlashEditor {
             foreach ((int Set, int Frame) key in stale) {
                 _spriteFrameTiles[key].Dispose();
                 _spriteFrameTiles.Remove(key);
+            }
+
+            /* And so do the frame rows themselves. The set was disposed and re-decoded in place, so
+               every RSBufferedImage this dictionary maps was released with it; leaving them here
+               would let a stale key answer for a frame row that no longer exists, which is how a
+               per-frame import would end up writing into the frame the set used to have. */
+            var orphaned = new List<RSBufferedImage>();
+            foreach (KeyValuePair<RSBufferedImage, (SpriteDefinition Set, int Frame)> owner in _spriteFrameOwners)
+                if (ReferenceEquals(owner.Value.Set, set))
+                    orphaned.Add(owner.Key);
+            foreach (RSBufferedImage frame in orphaned)
+                _spriteFrameOwners.Remove(frame);
+
+            //Rebuilt rather than refreshed: ChildrenGetter runs on expand, so a branch left open is
+            //still showing the frames of the file that was there before the import.
+            if (SpriteListView.IsExpanded(set)) {
+                SpriteListView.Collapse(set);
+                SpriteListView.Expand(set);
             }
 
             SpriteTileContent content = SpritePainter.ContentOf(set, 0);

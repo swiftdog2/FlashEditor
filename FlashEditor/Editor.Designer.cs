@@ -82,6 +82,8 @@ namespace FlashEditor {
             ExportSpriteBmpBtn = new Button();
             ExportSpriteDatBtn = new Button();
             ImportSpriteBtn = new Button();
+            SpritePaletteChoice = new ComboBox();
+            SpritePlacementChoice = new ComboBox();
             SpriteListView = new TreeListView();
             SpriteIdColumn = new OLVColumn();
             SpriteFrameCountColumn = new OLVColumn();
@@ -732,14 +734,18 @@ namespace FlashEditor {
             SpriteControlsLayout.ColumnCount = 1;
             SpriteControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             SpriteControlsLayout.Controls.Add(ImportSpriteBtn, 0, 0);
-            SpriteControlsLayout.Controls.Add(ExportSpriteDatBtn, 0, 1);
-            SpriteControlsLayout.Controls.Add(ExportSpriteBmpBtn, 0, 2);
-            SpriteControlsLayout.Controls.Add(SpriteCostLabel, 0, 3);
-            SpriteControlsLayout.Controls.Add(SpriteLoadingLabel, 0, 4);
-            SpriteControlsLayout.Controls.Add(SpriteProgressBar, 0, 5);
+            SpriteControlsLayout.Controls.Add(SpritePaletteChoice, 0, 1);
+            SpriteControlsLayout.Controls.Add(SpritePlacementChoice, 0, 2);
+            SpriteControlsLayout.Controls.Add(ExportSpriteDatBtn, 0, 3);
+            SpriteControlsLayout.Controls.Add(ExportSpriteBmpBtn, 0, 4);
+            SpriteControlsLayout.Controls.Add(SpriteCostLabel, 0, 5);
+            SpriteControlsLayout.Controls.Add(SpriteLoadingLabel, 0, 6);
+            SpriteControlsLayout.Controls.Add(SpriteProgressBar, 0, 7);
             SpriteControlsLayout.Dock = DockStyle.Fill;
             SpriteControlsLayout.Name = "SpriteControlsLayout";
-            SpriteControlsLayout.RowCount = 6;
+            SpriteControlsLayout.RowCount = 8;
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -747,6 +753,31 @@ namespace FlashEditor {
             SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             SpriteControlsLayout.TabIndex = 0;
+            //
+            // SpritePaletteChoice
+            //
+            /* The two import decisions that reach frames the user did not select live on the strip
+               rather than inside a dialog, because they are standing choices rather than answers to
+               one question, and a choice a user cannot see before clicking Import is a choice the
+               editor made for them. Each entry reads as a whole sentence, so neither needs a caption
+               beside it taking width the strip does not have.
+               DropDownList, not DropDown: these are two and three fixed options and a typed value
+               would have to be parsed and rejected. Nothing here states a height - a ComboBox keeps
+               the height its font needs and an Absolute row would shrink around it, which is what
+               once rendered a combo on this form as "Pl". */
+            SpritePaletteChoice.Dock = DockStyle.Fill;
+            SpritePaletteChoice.DropDownStyle = ComboBoxStyle.DropDownList;
+            SpritePaletteChoice.Font = new Font("Consolas", 9F);
+            SpritePaletteChoice.Name = "SpritePaletteChoice";
+            SpritePaletteChoice.TabIndex = 5;
+            //
+            // SpritePlacementChoice
+            //
+            SpritePlacementChoice.Dock = DockStyle.Fill;
+            SpritePlacementChoice.DropDownStyle = ComboBoxStyle.DropDownList;
+            SpritePlacementChoice.Font = new Font("Consolas", 9F);
+            SpritePlacementChoice.Name = "SpritePlacementChoice";
+            SpritePlacementChoice.TabIndex = 6;
             //
             // SpriteCostLabel
             //
@@ -761,14 +792,21 @@ namespace FlashEditor {
             SpriteCostLabel.Name = "SpriteCostLabel";
             SpriteCostLabel.TabIndex = 11;
             SpriteCostLabel.Text =
-                "Import replaces the selected set. A .dat is stored as it is, after decoding it to check that it parses.\r\n" +
+                "Import writes into whatever is selected. Expand a set to reach its frames.\r\n" +
                 "\r\n" +
-                "A .png, .jpg or .bmp becomes one frame filling its own canvas, replacing every frame the set held:\r\n" +
+                "A FRAME row: one picture replaces that frame and the rest of the set is left exactly as it was.\r\n" +
+                "- the frame keeps its stored traversal order and any flag bit the client does not read.\r\n" +
+                "- Place decides its offset. Keeping the old frame's offset moves no artwork; a picture that would then reach outside the canvas is refused rather than clipped.\r\n" +
+                "- Palette is shared by every frame in the set. Keep existing appends new colours while there is room and approximates the rest, and no other frame changes. Rebuild set gets the colours right and RE-INDEXES FRAMES YOU DID NOT EDIT - it asks first and says how many.\r\n" +
+                "\r\n" +
+                "A SET row: the whole set is replaced. Pick several pictures at once to build a multi-frame set sharing one palette; pick one and it becomes a single frame on its own canvas. A .dat is stored as it is, after decoding it to check that it parses.\r\n" +
+                "\r\n" +
+                "Either way:\r\n" +
                 "- over 255 colours is quantised by median cut, not refused. It asks first and reports the worst error.\r\n" +
                 "- pure black is stored as 0x000001, the spelling the client promotes it to. Both are shipped.\r\n" +
                 "- an alpha plane is written only for a picture with partial transparency. Fully opaque or fully clear needs none.\r\n" +
                 "\r\n" +
-                "Either way it rewrites the group's CRC and the reference-table entry of every archive packed beside it, and only stages the change - nothing reaches disk until the cache is saved.";
+                "Every import rewrites the group's CRC and the reference-table entry of every archive packed beside it, and only stages the change - nothing reaches disk until the cache is saved.";
             //
             // SpriteLoadingLabel
             //
@@ -825,9 +863,13 @@ namespace FlashEditor {
             ImportSpriteBtn.Dock = DockStyle.Fill;
             ImportSpriteBtn.Name = "ImportSpriteBtn";
             ImportSpriteBtn.TabIndex = 0;
-            //Names the formats, because the picker's own filter is the only other place they are
-            //stated and a user has to open the dialog to see it.
-            ImportSpriteBtn.Text = "Import (.png/.dat)";
+            /* Names the target, because the same button writes a whole set or one frame of one
+               depending on which row is selected. It used to name the formats as well and no longer
+               can: a Button word-breaks its caption and does not grow to the second line, so
+               "Import selection (.png/.dat)" rendered as "Import selection" with the rest simply not
+               drawn. The strip holds about 22 characters of Consolas 9pt, which is the budget for
+               every caption on it. The formats are in the picker's filter and in the cost label. */
+            ImportSpriteBtn.Text = "Import into selection";
             ImportSpriteBtn.UseVisualStyleBackColor = false;
             //The button shipped with no handler attached, so it did nothing at all when clicked
             ImportSpriteBtn.Click += ImportSpriteBtn_Click;
@@ -1516,6 +1558,9 @@ namespace FlashEditor {
         private System.Windows.Forms.GroupBox groupBox3;
         private System.Windows.Forms.Button ExportSpriteDatBtn;
         private System.Windows.Forms.Button ImportSpriteBtn;
+        //The two standing import decisions that reach frames the user did not select.
+        private System.Windows.Forms.ComboBox SpritePaletteChoice;
+        private System.Windows.Forms.ComboBox SpritePlacementChoice;
         private System.Windows.Forms.Button ExportSpriteBmpBtn;
         private System.Windows.Forms.Label SpriteLoadingLabel;
         private System.Windows.Forms.ProgressBar SpriteProgressBar;
