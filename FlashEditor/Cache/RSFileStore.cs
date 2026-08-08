@@ -13,6 +13,35 @@ namespace FlashEditor.cache {
         private bool _dirty;
 
         /// <summary>
+        ///     The lowest sector id an archive may actually occupy.
+        /// </summary>
+        /// <remarks>
+        ///     Sector id 0 is the end of chain marker in both readers, so it is a sentinel rather
+        ///     than a location. Deriving the next free sector straight from the dat2 length hands
+        ///     it out against a zero length file, and the resulting archive is written perfectly
+        ///     and can never be followed - which is why every allocation floors at 1 and sector 0
+        ///     is left as a reserved hole.
+        /// </remarks>
+        private const int FIRST_USABLE_SECTOR = 1;
+
+        /// <summary>
+        ///     Sectors released by an archive that shrank, offered to the next allocation in this
+        ///     session before the dat2 is extended.
+        /// </summary>
+        /// <remarks>
+        ///     <b>In memory only, and it does not persist across sessions.</b> An idx record states
+        ///     where one archive lives and the format records nothing else, so there is nowhere on
+        ///     disk to write a free list down. A sector freed and not reused before the cache is
+        ///     closed therefore stays as an unreferenced hole - which is precisely what the
+        ///     append-only allocator left behind on every shrink, so reuse within a session is a
+        ///     strict improvement rather than a new liability.
+        ///
+        ///     Sector 0 can never enter the set: the only source of entries is a chain walk, and a
+        ///     chain walk stops at 0 because that is what terminates a chain.
+        /// </remarks>
+        private readonly SortedSet<int> _freeSectors = new SortedSet<int>();
+
+        /// <summary>
         ///     Whether any edit has been made since the cache was opened or last saved. Set
         ///     before the first mutation in <see cref="Write"/> so a write that fails part way
         ///     through still counts as dirty.
@@ -62,20 +91,37 @@ namespace FlashEditor.cache {
         }
 
         /// <summary>
-        /// Returns the highest non-meta index rather than a true count.
+        ///     The non-meta index ids this cache actually holds, ascending.
         /// </summary>
-        /// <returns>The maximum index present in the index channels</returns>
-        internal int GetIndexCount() {
-            if(indexChannels == null)
-                throw new NullReferenceException("IndexChannels is null");
+        /// <remarks>
+        ///     Iterate this to visit every index. Index ids are not contiguous - a cache can hold
+        ///     {0, 1, 4} - so counting up to a bound both visits ids that do not exist and, if the
+        ///     bound is mistaken for a count, stops before the ones that do.
+        /// </remarks>
+        internal IReadOnlyList<int> ContentIndexIds =>
+            indexChannels.Keys.Where(id => id != RSConstants.META_INDEX).ToList();
 
-            //Don't include the meta index, of course
-            int max = 0;
-            foreach(int key in indexChannels.Keys) {
-                if(key < RSConstants.META_INDEX && key > max)
-                    max = key;
+        /// <summary>
+        ///     The highest non-meta index id present, or <c>-1</c> when the cache holds none.
+        /// </summary>
+        /// <remarks>
+        ///     A bound for sizing an array that is addressed <b>by index id</b>, never a count of
+        ///     indexes. The two were previously conflated under the name <c>GetIndexCount</c>,
+        ///     which returned this value and was consumed as a count: <c>indexId &lt; count</c>
+        ///     skipped the highest index of every cache, and a cache holding index 0 alone loaded
+        ///     nothing at all. Swapping in a true count is not the fix either - with indexes
+        ///     {0, 1, 4} a three element array cannot address index 4 - so the bound and the
+        ///     enumeration are two separate members and neither can stand in for the other.
+        /// </remarks>
+        internal int HighestContentIndexId {
+            get {
+                int max = -1;
+                foreach(int key in indexChannels.Keys) {
+                    if(key != RSConstants.META_INDEX && key > max)
+                        max = key;
+                }
+                return max;
             }
-            return max;
         }
 
         internal RSIndex GetIndexEntry(int indexId) {
@@ -98,6 +144,12 @@ namespace FlashEditor.cache {
         ///     Stages an archive's payload and updates the corresponding six byte record inside
         ///     the index. Neither becomes durable until <see cref="SaveTo"/> runs.
         /// </summary>
+        /// <remarks>
+        ///     The chain is terminated at the number of sectors the new payload needs, so an
+        ///     archive that shrinks releases its tail instead of leaving it chained off the head.
+        ///     The released sectors go on <see cref="_freeSectors"/> for reuse in this session -
+        ///     see that field for why nothing can persist them.
+        /// </remarks>
         /// <param name="indexId">Index the archive belongs to.</param>
         /// <param name="archiveId">Archive id within the index.</param>
         /// <param name="data">Stream holding the encoded container.</param>
@@ -124,11 +176,11 @@ namespace FlashEditor.cache {
             if(ptr > index.GetStream().Length)
                 throw new ArgumentOutOfRangeException("Archive IDs must be contiguous -- " + archiveId + " @ " + ptr);
 
-            //By default, appends the sectors to the end of the data stream
-            int curSector = (int) (dataChannel.Length / RSSector.SIZE);
-
             //Are we adding a completely new archive?
             bool newArchive = ptr == index.GetStream().Length;
+
+            //The head of the chain to overwrite, or 0 when there is nothing reusable to walk
+            int existingHead = 0;
             int oldSectorCount = 0;
 
             //Read the existing header before anything is overwritten
@@ -143,9 +195,9 @@ namespace FlashEditor.cache {
                    marker, not a real location, which is why the reader rejects it. Reusing it as
                    a chain head appends the payload to the end of the dat2 and then records 0 as
                    its pointer, so the archive is written correctly and can never be found again.
-                   Leaving both values alone here falls through to the append defaults instead. */
+                   Leaving both values alone here falls through to a fresh allocation instead. */
                 if(existingSector > 0 && oldSize > 0) {
-                    curSector = existingSector;
+                    existingHead = existingSector;
                     oldSectorCount = oldSize / RSSector.DATA_LEN +
                         (oldSize % RSSector.DATA_LEN > 0 ? 1 : 0);
                 }
@@ -153,12 +205,17 @@ namespace FlashEditor.cache {
 
             /* Walk the existing chain and allocate any extra sectors BEFORE touching the
                record. Everything that can throw is then in front of the mutation, so a failure
-               cannot leave a header describing a chain that was never written. */
-            List<int> sectors = new List<int>();
-            int chainSector = curSector;
+               cannot leave a header describing a chain that was never written.
 
-            for(int k = 0 ; k < oldSectorCount ; k++) {
-                sectors.Add(chainSector);
+               The walk stops on a next-sector of 0 as well as on the declared count: a record
+               whose size claims more sectors than the chain actually links is corrupt, and
+               following it past the terminator would put sector 0 - the terminator itself - into
+               the allocation, then into the free list. */
+            List<int> existingChain = new List<int>();
+            int chainSector = existingHead;
+
+            for(int k = 0 ; k < oldSectorCount && chainSector > 0 ; k++) {
+                existingChain.Add(chainSector);
                 Debug("Overwriting sector: " + chainSector);
                 byte[] sectorBytes = dataChannel.ReadBytes((long) chainSector * RSSector.SIZE, RSSector.SIZE);
                 chainSector = RSSector.Decode(new JagStream(sectorBytes)).GetNextSector();
@@ -166,15 +223,25 @@ namespace FlashEditor.cache {
 
             int newSectorCount = (int) data.Length / RSSector.DATA_LEN +
                 (data.Length % RSSector.DATA_LEN > 0 ? 1 : 0);
-            if(newSectorCount > oldSectorCount) {
-                Debug("**Expanding the index**");
 
-                int nextFreeSector = (int) (dataChannel.Length / RSSector.SIZE);
-                for(int k = 0 ; k < newSectorCount - oldSectorCount ; k++) {
-                    sectors.Add(nextFreeSector);
-                    Debug("New sector: " + nextFreeSector);
-                    nextFreeSector++;
-                }
+            List<int> sectors;
+            List<int> surplus;
+
+            if(newSectorCount <= existingChain.Count) {
+                /* The payload shrank. Take only what it needs, so the write loop terminates the
+                   chain there; the rest used to be rewritten zero filled and left chained off the
+                   head, unreachable and unreclaimable. */
+                sectors = existingChain.GetRange(0, newSectorCount);
+                surplus = existingChain.GetRange(newSectorCount, existingChain.Count - newSectorCount);
+            }
+            else {
+                Debug("**Expanding the index**");
+                sectors = existingChain;
+                surplus = new List<int>();
+
+                int appendCursor = NextAppendSector();
+                for(int k = existingChain.Count ; k < newSectorCount ; k++)
+                    sectors.Add(TakeSector(ref appendCursor));
             }
 
             //Snapshot the record so a failed verification can put it back
@@ -250,11 +317,53 @@ namespace FlashEditor.cache {
                 JagStream verify = ReadSectorChain(index.GetSectorID(), index.GetSize());
                 if(!verify.ToArray().SequenceEqual(expected))
                     throw new IOException("Sector chain verification failed");
+
+                /* Release the shrunk tail only now that the record and the chain both verified.
+                   A write that threw part way leaves the old chain in an unknown state, and
+                   handing its sectors straight out would let the next archive land on bytes the
+                   restored record may still reach through. */
+                foreach(int freed in surplus) {
+                    _freeSectors.Add(freed);
+                    Debug("Freed sector: " + freed);
+                }
             }
             catch {
                 RestoreRecord(index, ptr, recordBefore, recordLengthBefore);
                 throw;
             }
+        }
+
+        /// <summary>
+        ///     The sector the dat2 would be extended at, floored so sector 0 is never allocated.
+        /// </summary>
+        /// <remarks>
+        ///     Against a zero length dat2 the raw division yields 0, which both readers treat as
+        ///     the end of a chain - so the first write to a fresh cache used to fail its own
+        ///     verification. Starting at <see cref="FIRST_USABLE_SECTOR"/> instead leaves sector 0
+        ///     as a reserved hole, which is what a real cache's dat2 carries anyway.
+        /// </remarks>
+        private int NextAppendSector() {
+            int next = (int) (dataChannel.Length / RSSector.SIZE);
+            return next < FIRST_USABLE_SECTOR ? FIRST_USABLE_SECTOR : next;
+        }
+
+        /// <summary>
+        ///     Takes the next sector to write into, preferring one released by an earlier shrink
+        ///     over extending the dat2.
+        /// </summary>
+        /// <param name="appendCursor">
+        ///     Where the dat2 would be extended; advanced only when the free list is empty.
+        /// </param>
+        private int TakeSector(ref int appendCursor) {
+            if(_freeSectors.Count > 0) {
+                int reused = _freeSectors.Min;
+                _freeSectors.Remove(reused);
+                Debug("Reusing freed sector: " + reused);
+                return reused;
+            }
+
+            Debug("New sector: " + appendCursor);
+            return appendCursor++;
         }
 
         /// <summary>

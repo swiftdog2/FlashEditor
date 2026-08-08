@@ -12,10 +12,16 @@ namespace FlashEditor.Tests.Cache
     /// Comprehensive coverage of the cache write path: sector encoding, index record
     /// maintenance, sector chaining, allocation and the error surface.
     ///
-    /// Several tests are named *_DocumentsKnownDefect. Those pin CURRENT behaviour that is
-    /// known to be wrong, so the defect is recorded and any future fix shows up as a
-    /// deliberate, visible test change rather than a silent behaviour swap. They are not
-    /// endorsements of the behaviour they assert.
+    /// A test named *_DocumentsKnownDefect pins CURRENT behaviour that is known to be wrong,
+    /// so the defect is recorded and any future fix shows up as a deliberate, visible test
+    /// change rather than a silent behaviour swap. Such a test is not an endorsement of the
+    /// behaviour it asserts.
+    ///
+    /// Four tests here carried that suffix and all four defects have since been fixed, so each
+    /// now asserts the corrected behaviour under a name that states it: the index-id bound and
+    /// the index-id enumeration are separate members, a shrinking archive terminates its chain
+    /// and releases the tail, and the allocator never hands out sector 0. Their doc comments
+    /// still describe what was wrong, because knowing that is what stops it coming back.
     /// </summary>
     public class RSFileStoreTests : IDisposable
     {
@@ -43,10 +49,17 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// Seeds a synthetic cache. The dat2 gets one dummy sector so that sector 0 is
-        /// burned: allocation derives the next free sector from the data length, and a
-        /// zero-length dat2 would hand out sector 0, which the reader treats as EOF.
+        /// Seeds a synthetic cache. The dat2 gets one dummy sector so sector 0 is already
+        /// reserved, which is the shape a real cache's dat2 has.
         /// </summary>
+        /// <remarks>
+        /// This used to be load bearing: allocation derived the next free sector from the data
+        /// length, so without the dummy the first write was handed sector 0 - the end-of-chain
+        /// marker - and failed its own verification. The allocator now floors at sector 1, so the
+        /// dummy only keeps the sector numbers these tests assert stable, and
+        /// <see cref="Write_ToEmptyDataFile_SkipsSectorZeroAndLandsAtSectorOne"/> covers the case
+        /// it used to hide.
+        /// </remarks>
         private RSFileStore CreateStore(int dummySectors = 1, params int[] indexes)
         {
             if (indexes.Length == 0)
@@ -233,29 +246,54 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// DEFECT: GetIndexCount returns the highest non-meta index id, not a count. Callers
-        /// in RSCache use it as a count and loop `indexId &lt; GetIndexCount()`, so the highest
-        /// index present is never loaded, and a single-index cache yields zero.
+        /// The bound for an array addressed BY INDEX ID and the enumeration of the ids that
+        /// exist are two different numbers, and this cache is the case that separates them:
+        /// three indexes are present, index 4 needs five slots to be addressable, and neither
+        /// figure can be derived from the other.
         /// </summary>
+        /// <remarks>
+        /// This replaces a defect these were once conflated into. <c>GetIndexCount</c> returned
+        /// the highest id and RSCache consumed it as a count, so <c>indexId &lt; count</c> skipped
+        /// index 4 entirely. Returning a true count of 3 instead would have put index 4 out of
+        /// bounds of the reference-table array, which is worse, so the fix was to stop having one
+        /// member answer both questions.
+        /// </remarks>
         [Fact]
-        public void GetIndexCount_ReturnsHighestIdNotACount_DocumentsKnownDefect()
+        public void ContentIndexIds_WithNonContiguousIds_ListsThemAndBoundsTheHighest()
         {
             var store = CreateStore(dummySectors: 1, indexes: new[] { 0, 1, 4 });
 
-            // Three indexes are loaded, but the highest id is 4, so this reports 4 rather
-            // than 3. A `for (i = 0; i < GetIndexCount(); i++)` loop therefore skips index 4.
-            Assert.Equal(4, store.GetIndexCount());
-            Assert.Equal(0, store.GetFileCount(4));   // index 4 IS loaded, just unreachable by that loop
+            Assert.Equal(new[] { 0, 1, 4 }, store.ContentIndexIds);
+            Assert.Equal(4, store.HighestContentIndexId);
+            Assert.Equal(0, store.GetFileCount(4));   // and index 4 is genuinely reachable
         }
 
+        /// <summary>
+        /// A cache holding index 0 alone is the degenerate case that used to load nothing at all:
+        /// the highest id is 0, which read as a count of zero, so RSCache allocated a zero-length
+        /// reference-table array. The bound is 0 and the enumeration still yields index 0.
+        /// </summary>
         [Fact]
-        public void GetIndexCount_SingleIndexZero_ReturnsZero_DocumentsKnownDefect()
+        public void ContentIndexIds_SingleIndexZero_StillYieldsThatIndex()
         {
             var store = CreateStore(dummySectors: 1, indexes: new[] { 0 });
 
-            // One index is loaded but this reports 0, so RSCache allocates a zero-length
-            // reference table array and never loads anything.
-            Assert.Equal(0, store.GetIndexCount());
+            Assert.Equal(new[] { 0 }, store.ContentIndexIds);
+            Assert.Equal(0, store.HighestContentIndexId);
+        }
+
+        /// <summary>
+        /// The meta index holds reference tables rather than content, so it is excluded from both
+        /// members. Including it would size the table array at 256 entries and then try to load a
+        /// reference table for the index that stores them.
+        /// </summary>
+        [Fact]
+        public void ContentIndexIds_ExcludeTheMetaIndex()
+        {
+            var store = CreateStore(dummySectors: 1, indexes: new[] { 0, 3, RSConstants.META_INDEX });
+
+            Assert.Equal(new[] { 0, 3 }, store.ContentIndexIds);
+            Assert.Equal(3, store.HighestContentIndexId);
         }
 
         // ===================================================================
@@ -364,13 +402,17 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// DEFECT: allocation is append-only with no free list. Shrinking an archive
-        /// rewrites the surplus sectors as zero-filled but leaves them chained from the
-        /// head sector, so they are permanently orphaned. The archive still reads back
-        /// correctly only because the index record's length field stops the reader early.
+        /// Shrinking an archive terminates the chain at the number of sectors the new payload
+        /// actually needs, and hands the surplus to the next allocation.
         /// </summary>
+        /// <remarks>
+        /// The surplus used to be rewritten zero-filled and left chained off the head. The
+        /// archive still read back correctly - the index record's length field stops the reader
+        /// early - so nothing failed; the sectors were simply unreachable and unreclaimable, and
+        /// every shrink leaked more of them.
+        /// </remarks>
         [Fact]
-        public void Write_ShrinkingAnExistingArchive_OrphansTrailingSectors_DocumentsKnownDefect()
+        public void Write_ShrinkingAnExistingArchive_TerminatesTheChainAndReleasesTheTail()
         {
             var store = CreateStore();
 
@@ -382,11 +424,44 @@ namespace FlashEditor.Tests.Cache
             var index = store.GetIndexEntry(0);
             index.ReadContainerHeader(0);
             Assert.Equal(4, index.GetSize());
+            Assert.Equal(1, index.GetSectorID());
 
-            // The head sector STILL points at sector 2 even though only one sector is needed.
-            // Nothing reclaims sector 2 and no free list exists, so the space is lost forever.
+            // The head sector is now the tail, so nothing is chained past what the payload needs.
+            Assert.Equal(0, ReadSector(store, 1).GetNextSector());
+
+            // And sector 2 is on the free list, so the next archive lands on it rather than
+            // extending the dat2 past a hole nothing will ever fill.
+            store.Write(0, 1, Payload(4, seed: 9));
+
+            index.ReadContainerHeader(1);
+            Assert.Equal(2, index.GetSectorID());
+            Assert.Equal(1, ReadSector(store, 2).GetId());
+            Assert.Equal(lengthAfterGrow, store.dataChannel.Length);
+        }
+
+        /// <summary>
+        /// The free list is a session-local allocation aid, not bookkeeping the format records,
+        /// so it has to stay correct when the archive that released a sector asks for it back.
+        /// </summary>
+        [Fact]
+        public void Write_ReGrowingAfterAShrink_TakesBackItsOwnReleasedSector()
+        {
+            var store = CreateStore();
+
+            store.Write(0, 0, Payload(600));            // sectors 1 -> 2
+            store.Write(0, 0, Payload(4));              // releases sector 2
+            store.Write(0, 0, Payload(600));            // needs two sectors again
+
+            var index = store.GetIndexEntry(0);
+            index.ReadContainerHeader(0);
+            Assert.Equal(600, index.GetSize());
+            Assert.Equal(1, index.GetSectorID());
+
             Assert.Equal(2, ReadSector(store, 1).GetNextSector());
-            Assert.Equal(lengthAfterGrow, store.dataChannel.Length);   // file never shrinks
+            Assert.Equal(0, ReadSector(store, 2).GetNextSector());
+
+            // dummy + two sectors: the dat2 was never extended to cover the round trip.
+            Assert.Equal(SectorSize * 3, store.dataChannel.Length);
         }
 
         // ===================================================================
@@ -438,19 +513,90 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
-        /// DEFECT: against a zero-length dat2 the allocator hands out sector 0, but both
-        /// readers treat sector id 0 as the end-of-chain marker. The very first write to a
-        /// fresh cache therefore always fails its own verification step.
+        /// Sector 0 is the end-of-chain marker rather than a location, so the allocator floors at
+        /// sector 1 even against a zero-length dat2 and leaves sector 0 as a reserved hole.
         /// </summary>
+        /// <remarks>
+        /// Allocation derived the next free sector straight from the data length, so a fresh
+        /// cache handed out sector 0 and the very first write failed its own verification: the
+        /// chain reader stops at sector id 0 and read nothing back. Every synthetic cache in this
+        /// suite burned a dummy sector to work around it, which is why the defect survived - the
+        /// only way to hit it was to start from genuinely nothing.
+        /// </remarks>
         [Fact]
-        public void Write_ToEmptyDataFile_AllocatesSectorZeroAndFailsVerification_DocumentsKnownDefect()
+        public void Write_ToEmptyDataFile_SkipsSectorZeroAndLandsAtSectorOne()
         {
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), Array.Empty<byte>());
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx0"), Array.Empty<byte>());
             _store = new RSFileStore(_dir);
 
-            var ex = Assert.Throws<IOException>(() => _store.Write(0, 0, Payload(4)));
-            Assert.Contains("Sector chain verification failed", ex.Message);
+            var payload = Payload(4);
+            byte[] expected = payload.ToArray();
+
+            _store.Write(0, 0, payload);
+
+            var index = _store.GetIndexEntry(0);
+            index.ReadContainerHeader(0);
+            Assert.Equal(4, index.GetSize());
+            Assert.Equal(1, index.GetSectorID());
+
+            var sector = ReadSector(_store, 1);
+            Assert.Equal(0, sector.GetNextSector());
+            Assert.Equal(expected, sector.GetData()[..4]);
+
+            // Sector 0 is reserved rather than used, and the dat2 covers both.
+            Assert.All(_store.dataChannel.ReadBytes(0, SectorSize), b => Assert.Equal(0, b));
+            Assert.Equal(SectorSize * 2, _store.dataChannel.Length);
+        }
+
+        /// <summary>
+        /// The whole path from an empty directory to a durable cache: a zero-length dat2, one
+        /// multi-sector write, one SaveTo, then a REOPENED store.
+        /// </summary>
+        /// <remarks>
+        /// Reading back through the store that did the writing proves nothing - the staging
+        /// overlay serves the new bytes whether or not they were ever committed - so persistence
+        /// is only established by a second store opened over the files on disk. Nothing else in
+        /// this suite builds a cache from nothing, because until sector 0 stopped being allocated
+        /// nothing could.
+        /// </remarks>
+        [Fact]
+        public void Write_ToAFreshCache_ThenSaveTo_RoundTripsThroughAReopenedStore()
+        {
+            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), Array.Empty<byte>());
+            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx0"), Array.Empty<byte>());
+            _store = new RSFileStore(_dir);
+
+            var payload = Payload(600, seed: 5);
+            byte[] expected = payload.ToArray();
+
+            _store.Write(0, 0, payload);
+
+            string outDir = Path.Combine(_dir, "fresh");
+            _store.SaveTo(outDir);
+            _store.Dispose();
+            _store = null;
+
+            using var reopened = new RSFileStore(outDir);
+
+            Assert.Equal(1, reopened.GetFileCount(0));
+
+            var index = reopened.GetIndexEntry(0);
+            index.ReadContainerHeader(0);
+            Assert.Equal(600, index.GetSize());
+            Assert.Equal(1, index.GetSectorID());
+
+            var first = RSSector.Decode(new JagStream(reopened.dataChannel.ReadBytes(SectorSize, SectorSize)));
+            var second = RSSector.Decode(new JagStream(reopened.dataChannel.ReadBytes(SectorSize * 2, SectorSize)));
+
+            Assert.Equal(2, first.GetNextSector());
+            Assert.Equal(0, second.GetNextSector());
+            Assert.Equal(expected[..SectorData], first.GetData());
+            Assert.Equal(expected[SectorData..], second.GetData()[..(600 - SectorData)]);
+
+            // The reserved sector 0 is written out too, so the reopened store's allocation
+            // cursor agrees with the one that produced the file.
+            Assert.Equal(SectorSize * 3, new FileInfo(Path.Combine(outDir, "main_file_cache.dat2")).Length);
         }
 
         /// <summary>

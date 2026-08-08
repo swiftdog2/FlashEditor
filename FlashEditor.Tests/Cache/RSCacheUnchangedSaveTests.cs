@@ -72,8 +72,10 @@ namespace FlashEditor.Tests.Cache
         /// emits one from scratch: the chunk split survives only a decode, so an archive built
         /// through <see cref="RSArchive.PutFile"/> is always single-chunk.
         /// <para>
-        /// Index 1 exists only so <c>GetIndexCount</c> - which reports the highest non-meta index
-        /// id rather than a count - returns 1 and lets index 0's reference table load.
+        /// Index 0 is the only content index. A padding index above it used to be needed, because
+        /// the store reported the highest non-meta index id under the name <c>GetIndexCount</c>
+        /// and RSCache consumed it as a count, which put the highest index one past the end; the
+        /// bound and the enumeration are separate members now, so index 0 loads on its own.
         /// </para>
         /// </remarks>
         private RSCache CreateCache(byte compression, byte[] payload, int[] fileIds, int tableFlags = 0)
@@ -81,7 +83,7 @@ namespace FlashEditor.Tests.Cache
             //Sector 0 is burned: allocation derives the next free sector from the data
             //length, and sector id 0 is the end-of-chain marker.
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), new byte[SectorSize]);
-            foreach (int i in new[] { 0, 1, RSConstants.META_INDEX })
+            foreach (int i in new[] { 0, RSConstants.META_INDEX })
                 File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + i), Array.Empty<byte>());
 
             var store = new RSFileStore(_dir);

@@ -388,9 +388,11 @@ investigation.
   index literals - every index-position argument already names a constant. So an unreferenced index
   constant does **not** mean someone used a magic number; it means the editor has no feature for
   that index yet. 27 of them have no adoption site anywhere. They are documentation of the index
-  map and should stay as such. The only two literals worth swapping are in the test project:
-  `RealCacheLocator.cs:27` hardcodes `"main_file_cache.idx255"`, and `RSCacheXteaWriteFileTests.cs:93`
-  hardcodes `"main_file_cache.idx6"` where it means `MAPS_INDEX + 1`.
+  map and should stay as such. The one literal left worth swapping is in the test project:
+  `RealCacheLocator.cs:27` hardcodes `"main_file_cache.idx255"`. A second, an `idx6` in
+  `RSCacheXteaWriteFileTests` meaning `MAPS_INDEX + 1`, has gone: it seeded a padding index that
+  only existed to work around `GetIndexCount` reporting the highest index id as a count, and the
+  padding went with the fix.
 - **`MemoryUtils` is dead, and adopting it is not a mechanical edit.** `RSArchive.Decode` is where
   pooling belongs and is the highest-value site in the codebase: it already reuses one 4 KB buffer
   and falls back to `new byte[chunkSize]` for anything larger, which fires once per chunk per file -

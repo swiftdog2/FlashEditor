@@ -99,11 +99,12 @@ namespace FlashEditor.Tests.Cache
         ///     Seeds a cache whose NPC index holds one group carrying the captured definitions.
         /// </summary>
         /// <remarks>
-        ///     Index 19 is created empty and never used: <c>GetIndexCount</c> reports the highest
-        ///     non-meta index id rather than a count, so without an index above it the NPC index is
-        ///     one past the end and its reference table cannot be loaded at all. The meta index is
-        ///     pre-sized to as many empty records as there are indexes below 18, because
-        ///     <see cref="RSFileStore.Write"/> only ever appends contiguously.
+        ///     The NPC index is the only content index. A padding index above it used to be
+        ///     needed, because the store reported the highest non-meta index id under the name
+        ///     <c>GetIndexCount</c> and RSCache consumed it as a count, which put the highest
+        ///     index one past the end; the bound and the enumeration are separate members now.
+        ///     The meta index is still pre-sized to as many empty records as there are indexes
+        ///     below 18, because <see cref="RSFileStore.Write"/> only ever appends contiguously.
         /// </remarks>
         private RSCache CreateCache(SortedDictionary<int, byte[]> definitions)
         {
@@ -111,7 +112,6 @@ namespace FlashEditor.Tests.Cache
             //sector id 0 is the end-of-chain marker.
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), new byte[SectorSize]);
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + RSConstants.NPC_DEFINITIONS_INDEX), Array.Empty<byte>());
-            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + (RSConstants.NPC_DEFINITIONS_INDEX + 1)), Array.Empty<byte>());
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + RSConstants.META_INDEX),
                                new byte[RSConstants.NPC_DEFINITIONS_INDEX * RSIndex.SIZE]);
 

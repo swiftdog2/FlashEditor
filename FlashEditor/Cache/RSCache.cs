@@ -490,7 +490,9 @@ namespace FlashEditor.cache {
         /// <param name="indexId">The index whose reference table should be replaced</param>
         /// <param name="refTable">The new reference table</param>
         public void UpdateReferenceTable(int indexId, RSReferenceTable refTable) {
-            if (indexId < 0 || indexId > referenceTables.Length)
+            //Strictly less than the length: the array is addressed by index id, so the last valid
+            //id is Length - 1 and the old bound let the very next id through to an array throw
+            if (indexId < 0 || indexId >= referenceTables.Length)
                 throw new IndexOutOfRangeException("Invalid index when updating reference table cache");
 
             lock (_containerLock)
@@ -574,11 +576,13 @@ namespace FlashEditor.cache {
         /// Memoize all of the reference tables from the cache
         /// </summary>
         public void LoadReferenceTables() {
-            //Reset the references array
-            referenceTables = new RSReferenceTable[store.GetIndexCount()];
+            /* Sized by index id and not by how many indexes exist. The ids are not contiguous, so
+               a cache holding {0, 1, 4} needs five slots to address index 4 at all - a true count
+               of three would put it out of bounds. */
+            referenceTables = new RSReferenceTable[store.HighestContentIndexId + 1];
 
-            //Attempt to load all of the reference tables
-            for (int indexId = 0 ; indexId < store.GetIndexCount() ; indexId++) {
+            //And iterate the ids that are actually present, rather than counting up to the bound
+            foreach (int indexId in store.ContentIndexIds) {
                 try {
                     GetReferenceTable(indexId);
                 }
@@ -596,7 +600,8 @@ namespace FlashEditor.cache {
         /// <returns></returns>
 
         public RSReferenceTable GetReferenceTable(int indexId) {
-            if (indexId < 0 || indexId >= store.GetIndexCount())
+            //A bound on the id, not on how many indexes there are - see RSFileStore for why
+            if (indexId < 0 || indexId > store.HighestContentIndexId)
                 throw new FileNotFoundException("\tERROR - Reference table " + indexId + " out of bounds");
 
             //The decode reads the container's shared stream, so it has to be inside the lock and

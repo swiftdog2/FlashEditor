@@ -73,9 +73,10 @@ namespace FlashEditor.Tests.Cache
         /// Seeds a cache whose map index holds a single archive, stored as the raw bytes given.
         /// </summary>
         /// <remarks>
-        /// Index 6 is created empty and never used: <c>GetIndexCount</c> reports the highest
-        /// non-meta index id rather than a count, so without an index above it the map index is
-        /// one past the end and its reference table cannot be loaded at all.
+        /// The map index is the only content index. A padding index above it used to be needed,
+        /// because the store reported the highest non-meta index id under the name
+        /// <c>GetIndexCount</c> and RSCache consumed it as a count, which put the highest index
+        /// one past the end; the bound and the enumeration are separate members now.
         /// <para>
         /// The meta index is pre-sized to five empty records, because the reference table for
         /// index 5 lands at record 5 and <see cref="RSFileStore.Write"/> only ever appends
@@ -90,7 +91,6 @@ namespace FlashEditor.Tests.Cache
             //length, and sector id 0 is the end-of-chain marker.
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.dat2"), new byte[SectorSize]);
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + RSConstants.MAPS_INDEX), Array.Empty<byte>());
-            File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx6"), Array.Empty<byte>());
             File.WriteAllBytes(Path.Combine(_dir, "main_file_cache.idx" + RSConstants.META_INDEX),
                                new byte[RSConstants.MAPS_INDEX * RSIndex.SIZE]);
 
