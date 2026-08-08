@@ -169,6 +169,42 @@ namespace FlashEditor.Tests.Definitions {
             });
         }
 
+        /// <summary>
+        ///     A load superseded before it published never puts its rows on screen.
+        /// </summary>
+        /// <remarks>
+        ///     The other way the grid could end up holding one family's rows under another family's
+        ///     columns, and it is closed by the panel rather than by the ordering: the previous
+        ///     load's worker is cancelled, but cancellation is cooperative, so a worker already past
+        ///     its last check still arrives at <c>RunWorkerCompleted</c> with a full result. What
+        ///     stops it is the completion handler refusing to publish unless it is still the panel's
+        ///     current worker.
+        ///     <para>
+        ///     Driven by swapping without pumping in between, so the first load's completion is
+        ///     necessarily still queued when the second bind happens. A regression here would show
+        ///     as item rows under object columns - the same crash by a different route - so the
+        ///     assertion is on what the panel published rather than only on the absence of a throw.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void ALoadSupersededBeforeItPublishedDoesNotPutItsRowsOnScreen() {
+            OnUiThread(form => {
+                RSCache cache = CreateCache();
+                var panel = new DefinitionListPanel();
+                form.Controls.Add(panel);
+
+                panel.Bind(cache, new ItemListDescriptor());
+
+                //No pump: the items load cannot have published, whether or not it has finished.
+                panel.Bind(cache, new ObjectListDescriptor());
+                PumpUntilLoaded(panel, "objects");
+
+                Assert.NotEmpty(panel.Rows);
+                Assert.All(panel.Rows, row => Assert.IsType<ObjectDefinition>(row));
+                _output.WriteLine($"superseded load discarded, {panel.Rows.Count} object rows published");
+            });
+        }
+
         /// <summary>The grid the panel docks, which it adds to its own <c>Controls</c>.</summary>
         /// <param name="panel">The panel.</param>
         /// <returns>Its grid.</returns>
