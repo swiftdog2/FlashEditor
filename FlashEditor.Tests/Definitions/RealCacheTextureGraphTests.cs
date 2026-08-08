@@ -175,6 +175,15 @@ namespace FlashEditor.Tests.Definitions
         ///     - because a width error and a child-count error look identical downstream and are
         ///     fixed in different places.
         ///     </para>
+        ///     <para>
+        ///     Measured rather than asserted: widening node type 12's opcode 0 from one byte to two
+        ///     in <c>Texture.DecodeNodeOpcode</c> leaves every other index 9 test in the suite green
+        ///     - byte identity, both exact-consumption sweeps, the encode fixed point and the
+        ///     unhandled-opcode check - and fails only here, naming texture 275 node 16 and texture
+        ///     742 node 3. Type 12 is the sharpest case because its arm returns true for every opcode
+        ///     it does not handle, so the byte the widened payload swallows cannot even surface as an
+        ///     unrecognised opcode.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void EveryOpcodePayload_IsTheWidthTheClientReads()
@@ -263,9 +272,9 @@ namespace FlashEditor.Tests.Definitions
 
                         if (expected.Width != actual.Payload.Length)
                         {
-                            failures.Add($"texture {record.Id} {expected}: the client reads " +
-                                         $"{expected.Width} payload bytes at offset {expected.Offset}, " +
-                                         $"we consumed {actual.Payload.Length}");
+                            failures.Add($"texture {record.Id} {expected}: the client reads a " +
+                                         $"{expected.Width}-byte payload at offset {expected.Offset}, " +
+                                         $"we consumed {actual.Payload.Length} bytes");
                             break;
                         }
                     }
