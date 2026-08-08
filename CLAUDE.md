@@ -208,7 +208,7 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 ## UI conventions
 
 **This is the reference for anything with a user interface. Follow it rather than copying whatever
-the nearest tab happens to do - seven of the tabs predate it.**
+the nearest tab happens to do - three of the tabs still predate it.**
 
 - **A tab states its own cache index; its position states nothing.** `Editor.RegisterEditorTabs`
   maps each `TabPage` to an index and, for the self-contained tabs, to the delegate that binds their
@@ -221,19 +221,23 @@ the nearest tab happens to do - seven of the tabs predate it.**
   `LoadEditorTab`.** `FlashEditor/Definitions/Editing/` holds the reusable list: the panel owns the
   worker, the percent-boundary progress, the UI-thread population and the edit commit, and one
   `DefinitionListDescriptor<TRow>` states the index, the enumeration, the decode, the columns and the
-  re-encode. Seven pages still predate it and each re-implement all of that, as bespoke arms inside
-  `LoadEditorTab`: the console (`Editor.cs:1106`), items (`:1147`), sprites (`:1207`), NPCs
-  (`:1272`), objects (`:1336`), textures (`:1388`) and models (`:1459`). An earlier version of this
-  line named only the middle four, which is why migration items keep getting scoped short. Leave
-  them until they are migrated deliberately. Three further tabs are **deliberately** not
-  `DefinitionListPanel` and are not migration candidates: Tracks runs its own worker
-  (`TrackEditorPanel.cs:197`), Map is a bespoke `UserControl` with its own rasteriser and undo
-  history, and Huffman is one group of one file and says so in its own header. The worked examples
-  are the Interfaces,
-  Animation, Sound and Config tabs, all master/detail. A detail pane is bound with a **null cache**
-  while nothing is selected, so that it keeps its column headings rather than reading as broken -
-  set `EmptyMessage` when you do that, or the pane claims no cache is loaded while the list beside
-  it is full of rows from that cache.
+  re-encode. **Three arms are left in that switch and no more**: the console (`Editor.cs:1356`),
+  sprites (`:1397`) and textures (`:1486`). Items, NPCs, objects and models left it with the
+  Entities page, which is also the worked example of migrating one - four bespoke workers, their
+  progress reporting and their edit commits collapsed into four descriptors, and their
+  `SetObjects`-from-`DoWork` cross-thread calls disappeared with them. Reading a group file by file
+  went with it too: index 19 dropped from 20,427 group decodes to 80, index 18 from 13,359 to 106,
+  index 16 from 56,199 to 224, because the old arms read per file and `ReadFile` re-decodes the whole
+  group each time. Earlier versions of this line said four pages, then seven, which is why migration
+  items kept getting scoped short - count the `case` labels rather than trusting the number here.
+  Three further tabs are **deliberately** not `DefinitionListPanel` and are not migration candidates:
+  Tracks runs its own worker (`TrackEditorPanel.cs:197`), Map is a bespoke `UserControl` with its own
+  rasteriser and undo history, and Huffman is one group of one file and says so in its own header.
+  The worked examples are the Interfaces, Animation, Sound, Config, SFX2, Client Scripts, Loading
+  Sprites, Fonts, World Map Overview and Entities tabs, all master/detail. A detail pane is bound
+  with a **null cache** while nothing is selected, so that it keeps its column headings rather than
+  reading as broken - set `EmptyMessage` when you do that, or the pane claims no cache is loaded
+  while the list beside it is full of rows from that cache.
 
 - **Layout measures itself; it does not state pixels.** The form is `AutoScaleMode.Dpi` against
   `AutoScaleDimensions(96F, 96F)`. It was `Font` against `(9F, 20F)` - dimensions for a font the
@@ -431,7 +435,8 @@ measurement here confirms it.
 | `reference/hydra-637-maps/` | The map path end to end: index-5 addressing and XTEA, the `m` and `l` byte formats, floor definitions, the colour model, and how to read the obfuscated client |
 | `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
 | `TODO.md` | **The running work list**, and where each open item carries the prompt that resumes it. Prompts cite the rules here rather than repeating them, so a rule changed in this file changes every prompt at once. Update it at milestones, not per commit |
-| `CLAUDE.md` UI conventions | The single reference for anything with a surface. Seven tabs predate it; copy it rather than the nearest tab |
+| `CLAUDE.md` UI conventions | The single reference for anything with a surface. Three tabs predate it; copy it rather than the nearest tab |
+| `reference/viewer-eyeball-checklist.md` | The only verification the 3D viewport has. No capture on this machine sees the GL surface, so a human runs this after any render change |
 | `reference/index-survey/` | Per-index capability and format survey. `00-WORKLIST.md` is the ordered plan for the indexes that still need an editor, and its section 4 lists the shared abstractions to build before writing more of them |
 | `reference/DOC-CONFLICTS.md` | Claims in our own documents that turned out wrong, with how each was settled. Read it before trusting a figure from `reference/` |
 | `STATE_OF_THE_EDITOR.md` | What has been found and fixed, plus the roadmap |

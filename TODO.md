@@ -17,10 +17,13 @@ Done; every `file:line` that survived was re-resolved at this commit, and `Edito
 several hundred lines because four bespoke tab loaders left it. **A claim here that is not carrying
 a `file:line`, a named test, or the cache it belongs to, is a claim nobody has re-checked since.**
 
-One claim in this pass was **reported as landed and is not**: the eyeball checklist for the 3D
-viewer. It exists in no commit message, no source file and no document - `grep -i checklist` over
-the tree finds only this file. The renderer is still unverified by any automated *or* manual means
-and that is recorded as open, in Constraints and again under Smaller items.
+One claim in this pass was **reported as landed and was not**: the eyeball checklist for the 3D
+viewer had been written into a hand-off report and into no file, so `grep -i checklist` over the
+tree found only this document. It has since been written down properly at
+`reference/viewer-eyeball-checklist.md`. The renderer is still verified by **nothing automated** -
+that has not changed and cannot on this machine - but the human pass now has something to follow.
+Worth keeping as a lesson in its own right: a checklist that lives in a conversation is not a
+deliverable, and it was reported as one.
 
 ---
 
@@ -31,8 +34,13 @@ and that is recorded as open, in Constraints and again under Smaller items.
   renderer is verified by a human looking at the screen. Budget for that.
   **The renderer is now reachable from the running editor and is still verified by nothing.** The
   whole `FlashEditor/Rendering/` cluster is constructed from production code (`Editor.ModelAnimation.cs`),
-  so a render defect now ships rather than sitting in dead code, and no test, no capture and no
-  written checklist stands between it and a user. The candidate model ids have never been chosen.
+  so a render defect now ships rather than sitting in dead code, and no test and no capture stands
+  between it and a user. What does stand there is one human pass against
+  `reference/viewer-eyeball-checklist.md`, which names the model ids, what correct looks like and
+  what a plausible **wrong** result looks like for each - the last being the part that matters,
+  since a viewer that draws something convincing is the failure to worry about. **Run it after any
+  render change.** It is a defect check and not a conformance check: the viewer deliberately omits
+  frame blending, scene lighting and particle scene collision.
 - **Nothing in the test suite covers WinForms or the renderer.** A layout or render defect passes
   every test.
 - **Serialise cache-backed test runs.** Parallelise the editing, serialise the sweeping.
@@ -396,13 +404,12 @@ realistic target stays edit, reconnect, see the change.
   is a per-frame import: choose which frame a picture replaces, and let a set be assembled from
   several. Inherits every constraint the whole-set import already carries - the 255 entry palette,
   the black trap, the stored traversal flag.
-- **Choose the 3D viewer's eyeball checklist and write it down.** The renderer is reachable from
-  production code now and is verified by nothing at all; the checklist that was to stand in for a
-  test does not exist in any commit message, source file or document. It needs specific model ids,
-  what correct looks like and what a plausible wrong result looks like. `CLAUDE.md` names model
-  15748 as a fast load, but that is a render-type case rather than a skinned or particle one, so it
-  is a starting point and not the answer. Find skinned candidates through models carrying vertex
-  labels and particle candidates through the spotanim definitions that reference emitters.
+- **Run the 3D viewer's checklist against the monitor, and record the result.**
+  `reference/viewer-eyeball-checklist.md` now exists and has **never been executed by a human**, so
+  the renderer's behaviour is still entirely unobserved. Its own prediction is that case D fails
+  first: GDI labels are painted after `SwapBuffers`, which is driver-dependent, and the stated fix
+  is to move the label pass into a transparent child control docked over the GL surface. Running it
+  is cheap and it is the only evidence anyone will ever have about this viewport.
 - **Settle what the client's JVM actually draws for an index-32 image, or record that it cannot be
   settled from this side.** The stored files are four-component with no `JFIF APP0` and no
   `Adobe APP14`, which is the combination libjpeg resolves as CMYK, and the client reaches the bytes
