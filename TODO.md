@@ -80,9 +80,20 @@ deliverable, and it was reported as one.
   arithmetic was settled by **one** script out of 4,149 (`RealCacheClientScriptTests.cs:327-331` -
   all 42,884 branches are in range under `position + 1 + delta`, exactly one is not under
   `position + delta`, and the 11,962 switch arms are consistent with both readings so they settle
-  nothing); the world map icon join rests on **2** self-proving rows out of 965 placements
-  (`RealCacheWorldMapIconJoinTests.cs:126`); and a whole-index sweep over 431,558 packets passed
-  clean against a deliberately broken packet-length rule.
+  nothing); and a whole-index sweep over 431,558 packets passed clean against a deliberately broken
+  packet-length rule.
+  **The world map icon join is the cautionary case, because its evidence turned out to be worth
+  nothing at all.** It rested on 2 self-proving rows out of 965 plus a shift sweep over -8..+8 where
+  offset 0 confirmed 2 areas and every other offset confirmed 0 or 1. Swept over -16..+16 instead,
+  `ancient_cavern` places eleven icons inside its own rectangle on clustered ids, so **every offset
+  from -9 to +1 confirms**. Clustered placements on clustered ids defeat a shift sweep by
+  construction, so the discriminator was measuring nothing and the earlier sweep was simply too
+  narrow to notice. It is gone, replaced by the client settling the question outright -
+  `Class341.java:185` calls `getChildFromFolder(36, i_0_)`, a plain accessor with no arithmetic, so
+  the key is a **file id and not a list position** - and by a full-coverage relation with a control:
+  all 965 placements sit inside their own area's source rectangle, while swapping the packed
+  position's halves puts only 486 inside. **When a sweep is your discriminator, widen it until it
+  breaks; if it never breaks you have not found its range yet.**
 - **A code comment is prose wherever it states a count, and so is a survey document.** Both are
   written once and never re-measured, so two of them agreeing is one unmeasured sentence copied
   twice. The worked case and its correction are recorded in `reference/DOC-CONFLICTS.md`, under the
