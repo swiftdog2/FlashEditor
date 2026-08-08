@@ -349,6 +349,14 @@ namespace FlashEditor.cache {
                 //incidental: Model.<init>:84 selects the new-protocol layout from the id alone, so
                 //a model decoded under the wrong group id is decoded with the wrong format. Both
                 //caches declare exactly one file per group across the whole index.
+                //Index 9 is the same accessor again, and the client spells out which of its two
+                //branches applies. Class260.method3206 (Class260.java:285) fetches a texture graph
+                //with aJS5Archive_3258.method2733(i, -5), and method2733
+                //(JS5Archive.java:591-611) treats i as a file in group 0 only when the table
+                //declares exactly one group; otherwise i is the group id and the group must
+                //declare exactly one file. Index 9 declares hundreds of groups in both caches, so
+                //it is the second branch - group per id, file read off the reference table.
+                case RSConstants.TEXTURES:
                 case RSConstants.MODELS_INDEX:
                     addressing = GroupPerId;
                     return true;

@@ -211,6 +211,19 @@ namespace FlashEditor.Definitions.Sprites {
         /// <summary>Parsed procedural texture graph for lazy rendering.</summary>
         public TextureGraph graph;
 
+        /// <summary>
+        ///     The index 9 file exactly as it was stored, which is the only thing a save can write
+        ///     back.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="graph"/> cannot stand in for it. Decoding runs the client's post-decode
+        ///     hooks, which overwrite decoded parameters with derived ones, and the format is
+        ///     non-canonical in five separate ways - so re-serialising the graph would rewrite
+        ///     files nobody edited. Like <see cref="graph"/> this comes from index 9 rather than
+        ///     from the material table, so setting it must not mark this record dirty.
+        /// </remarks>
+        public TextureGraphRecord graphRecord;
+
         /// <summary>Thumbnail for GUI display.</summary>
         public Bitmap? thumb;
 
@@ -262,6 +275,7 @@ namespace FlashEditor.Definitions.Sprites {
             thumb?.Dispose();
             thumb = null;
             graph = null;
+            graphRecord = null;
         }
     }
 }
