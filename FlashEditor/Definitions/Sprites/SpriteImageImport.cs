@@ -155,6 +155,15 @@ namespace FlashEditor.Definitions.Sprites {
             "Picture (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|" +
             "Sprite set (*.dat)|*.dat|All files (*.*)|*.*";
 
+        /// <summary>The picker filter for a target that only a picture can describe.</summary>
+        /// <remarks>
+        ///     One frame of a set, where a <c>.dat</c> would be a whole set and there is nothing
+        ///     sensible to do with it. Offering the filter and then refusing the file is worse than
+        ///     not offering it.
+        /// </remarks>
+        public const string PictureFilter =
+            "Picture (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*";
+
         /// <summary>Whether a path names a picture the importer will convert.</summary>
         /// <param name="path">The chosen file.</param>
         /// <returns>Whether to take the conversion path rather than storing the bytes verbatim.</returns>
