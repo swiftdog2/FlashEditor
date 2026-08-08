@@ -17,6 +17,20 @@ namespace FlashEditor.Definitions.WorldMap {
     ///     one of the 869 distinct ids stored here is a declared file of that group, and 38 of them
     ///     are not object ids at all, so the join cannot be the other one.
     ///     </para>
+    ///     <para>
+    ///     <b>It is a file id, not a position in the group's id list, and the client says so
+    ///     outright.</b> The value reaches <c>Class341.method3807</c> unmodified - stored at
+    ///     Class278.java:476, carried as <c>Node_Sub47.anInt4268</c> (Node_Sub47.java:57-61), passed
+    ///     by every consumer (Class86.java:36, Class202.java:228, Particle_Sub3.java:19,
+    ///     Class256_Sub1.java:54, Particle_Sub4.java:66-67) - and that method resolves it as
+    ///     <c>getChildFromFolder(36, i_0_)</c> (Class341.java:185) against index 2
+    ///     (Class341.java:140, InterfaceSettings.java:160,273-274), which is a plain
+    ///     <c>(group, file)</c> accessor (JS5Archive.java:203-205). The client splits an id into
+    ///     group and file elsewhere - <c>i &gt;&gt;&gt; 8</c> and <c>i &amp; 0xff</c> for locations
+    ///     at Class302.java:96 - and does none of it here. This matters because group 36's ids are
+    ///     dense from zero in this cache, so id and list position are the same number and no
+    ///     measurement of the data can tell the two readings apart.
+    ///     </para>
     /// </remarks>
     public sealed class WorldMapElement {
         /// <summary>The value of <see cref="MembersOnly"/> the client drops on a free world.</summary>
@@ -41,7 +55,13 @@ namespace FlashEditor.Definitions.WorldMap {
         /// </summary>
         /// <remarks>
         ///     Kept packed because that is what the record stores. The split is
-        ///     <c>Class278.java:473-474</c>.
+        ///     <c>Class278.java:473-474</c>, and <b>which half is x cannot be read off that line</b>:
+        ///     it passes <c>packed &amp; 0x3fff</c> and <c>packed &gt;&gt; 14 &amp; 0x3fff</c> into an
+        ///     obfuscated parameter list. The data settles it instead. Every area's details record
+        ///     declares the world rectangles it copies tiles from, so taking the high half as x puts
+        ///     all 965 placements inside their own area on plane, x and y, while swapping the halves
+        ///     puts 486 of them inside - measured by
+        ///     <c>RealCacheWorldMapIconJoinTests.EveryPlacementSitsInsideItsOwnAreasSourceRectangle</c>.
         /// </remarks>
         public int PackedPosition { get; set; }
 
