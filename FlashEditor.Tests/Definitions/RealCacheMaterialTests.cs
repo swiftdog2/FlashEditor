@@ -114,10 +114,13 @@ namespace FlashEditor.Tests.Definitions
         ///     The declared count and the present records account for the file exactly, to the byte.
         /// </summary>
         /// <remarks>
-        ///     The relationship rather than the number: the file length has to be exactly the count,
-        ///     the existence column and 23 bytes for each present texture. That holds in any cache,
-        ///     while the count itself is one of the figures the two supported caches disagree on and
-        ///     is reported through the census instead.
+        ///     Two claims, and neither replaces the other. The relationship - the file length is
+        ///     exactly the count, the existence column and 23 bytes per present texture - pins the
+        ///     format and holds in any cache, but it is satisfied by any pair of counts that agree
+        ///     with the file, so a table that had gained or lost records would still pass it. The
+        ///     absolute figures pin the population, and because the two supported caches disagree on
+        ///     them - 915 slots against 1408 - they are asserted through the census, which is scoped
+        ///     to the cache each was measured on.
         /// </remarks>
         [RealCacheFact]
         public void TheDeclaredTextureCount_AccountsForTheWholeFile()

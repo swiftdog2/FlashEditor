@@ -259,6 +259,18 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["loadingSprite.jpegPixels"] = 1176093,
                     ["loadingSprite.glyphFrames"] = 1280,
 
+                    //Index 26. The index is one group of one file, so these two are its entire
+                    //population and the only thing that says it has not moved: the relationship
+                    //the sweep asserts beside them - 2 + declared + present * 23 == the file
+                    //length - is satisfied by any pair of counts that agree with the file, so it
+                    //cannot notice a different population. Every declared slot is present here,
+                    //the existence column being 915 ones and no other value, so a run where the
+                    //two figures parted would mean a slot had started reading as absent.
+                    //Measured by a scratchpad reader that walks the sector chain and inflates the
+                    //container itself, so neither came through this project's decoders.
+                    ["materials.declaredTextures"] = 915,
+                    ["materials.presentRecords"] = 915,
+
                     //Index 27. Emitter opcodes 5 and 31 are aliases for the same pair of size
                     //bounds and every emitter carries exactly one of them, so the two sum to the
                     //group's file count - which is one of the six that move between the caches.
@@ -437,6 +449,16 @@ namespace FlashEditor.Tests.Cache.RealCache
                     ["loadingSprite.spriteSetGroups"] = 5,
                     ["loadingSprite.jpegPixels"] = 1176093,
                     ["loadingSprite.glyphFrames"] = 1280,
+
+                    //Index 26. This cache declares 1408 textures to the capture's 915, and like it
+                    //has every one of them present. Worth stating because the capture invites the
+                    //wrong inference: there, index 26 declares exactly as many textures as index 9
+                    //holds graphs, and here it does not - index 9 has 946 groups against these 1408
+                    //slots. So the two indexes are only incidentally equal in the capture and
+                    //neither figure may be derived from the other. Measured by the same raw
+                    //scratchpad reader used on the capture.
+                    ["materials.declaredTextures"] = 1408,
+                    ["materials.presentRecords"] = 1408,
 
                     //Index 27. Both moved against the vanilla capture, because this cache holds 403
                     //emitters to its 269 - the two still sum to the group's declared file count, so
