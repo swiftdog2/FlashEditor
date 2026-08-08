@@ -45,7 +45,11 @@ First human pass, 2026-08-09, against the repack (the model list read 63,614).
 | **A** skeletal animation | **PASS.** Readout `0.000 s of 3.360 s` over `frame 0/13`, run observed at about 3.4 s with the shape visibly changing. Rules out the rate conflation, which would have finished in about 0.43 s |
 | **F** particles, model 62810 | **PASS.** `particles 68/2047, emitters 2/2`, against a predicted peak near 73. Cap honoured, both emitters resolved |
 | **D** hover overlay | **OPEN.** Amber and blue marks are present near the shape. Whether they read as `face N` and `vN`, and whether the numbers fall in 0-7 and 0-23, is not yet settled |
-| **B, C, E, G, H** | **NOT YET RUN** |
+| **H** multi-part entity | **NOT YET RUN, and it is the one to run first.** A human reported the defect it covers - an NPC's jaw, hands and boots coming away under animation - and the merge that fixes it landed on 2026-08-09. The seam half of it is now measured and passes at 0 model units in both caches; what is unverified is whether the body reads as one object and pivots where a joint is |
+| **B, C, E, G, I** | **NOT YET RUN** |
+
+Case H was added after this pass, which is why it moved Layout from H to I. A verdict recorded
+against "H" before 2026-08-09 was about layout.
 
 The tooltip also confirmed model 62810 as 24 vertices and 8 triangles, which is why it was chosen.
 
@@ -193,8 +197,10 @@ back to the model origin - the floor between the feet.
 `FlashEditor.Tests/Rendering/SeamCoherenceTests.cs` asserts it: over NPC 1 at index-0 frame
 **15204474**, 46 rest coordinates are carried by two of the eight parts, and after posing the worst
 of them is **0** model units out of place, in both caches. Before the parts were merged it was
-**695**, and the 46 totalled **9677**. So this section is asking a human for the things a distance
-cannot see - whether the body reads as one object, and whether it pivots where a joint is.
+**695**, and the 46 totalled **9677**; with the parts merged but the weld disabled it is **11**,
+which is why the sweep's tolerance is 0 and not a margin. So this section is asking a human only for
+the things a distance cannot see - whether the body reads as one object, and whether it pivots where
+a joint is. A DWM-composited grab settles both without a second pair of eyes.
 
 **One thing this section deliberately does not ask about.** Where a part does separate, the interior
 renders near-black rather than as background, and both wrists show the same open tube. That is
