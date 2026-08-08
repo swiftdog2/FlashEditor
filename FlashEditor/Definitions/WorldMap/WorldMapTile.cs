@@ -154,12 +154,12 @@ namespace FlashEditor.Definitions.WorldMap {
         /// <summary>Binds a tile's stored flag byte to the payload that followed it.</summary>
         /// <param name="flags">The flag byte, verbatim.</param>
         /// <param name="storedFloorLiteral">The byte following palette code 63, else 0.</param>
-        /// <param name="overlayShape">The signed byte following an overlay terrain tile, else 0.</param>
+        /// <param name="storedUnderlayByte">The signed byte following an overlay terrain tile, else 0.</param>
         /// <param name="levels">The decoration levels, or null for a terrain tile.</param>
-        public WorldMapTile(byte flags, byte storedFloorLiteral, sbyte overlayShape, WorldMapTileLevel[]? levels) {
+        public WorldMapTile(byte flags, byte storedFloorLiteral, sbyte storedUnderlayByte, WorldMapTileLevel[]? levels) {
             Flags = flags;
             StoredFloorLiteral = storedFloorLiteral;
-            OverlayShape = overlayShape;
+            StoredUnderlayByte = storedUnderlayByte;
             Levels = levels;
         }
 
@@ -172,13 +172,39 @@ namespace FlashEditor.Definitions.WorldMap {
         public byte StoredFloorLiteral { get; }
 
         /// <summary>
-        ///     The shape byte that follows an overlay terrain tile, or 0 when the tile is not one.
+        ///     The byte that follows an overlay terrain tile, or 0 when the tile is not one.
         /// </summary>
         /// <remarks>
-        ///     Signed on the wire (<c>Class278.java:217</c>), and it uses the whole range here: 88
-        ///     distinct values spanning -128 to 127 occur across the index.
+        ///     Signed on the wire (<c>Class278.java:217</c>) and stored verbatim, because the value
+        ///     is what round-trips; <see cref="UnderlayBeneathOverlay"/> is the reading of it.
         /// </remarks>
-        public sbyte OverlayShape { get; }
+        public sbyte StoredUnderlayByte { get; }
+
+        /// <summary>
+        ///     The floor <b>underlay</b> drawn beneath this tile's overlay, one-based, 0 for none.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This was called <c>OverlayShape</c> and it is not a shape.</b> The client writes it
+        ///     into the same plane its terrain blender reads underlay ids out of -
+        ///     <c>Class278.java:217</c> assigns it to <c>aByteArray2081</c>, which
+        ///     <c>method3310</c> (<c>:634-636</c>) resolves with <c>method2483(value - 1)</c> to a
+        ///     <c>FloorUnderlay</c> - and the same branch sets the shape plane
+        ///     <c>aByteArray2073</c> to a literal <c>0</c> two lines earlier. A shape it is not,
+        ///     because the shape is written beside it and is zero.
+        ///     <para>
+        ///     Settled a third way, through neither the client nor this decoder: the stored byte read
+        ///     unsigned spans <b>0 to 150 across 88 distinct values</b> over the whole index, against
+        ///     <b>159</b> declared floor underlays, so every value is a live underlay id and none is
+        ///     in the range a packed shape and rotation would need. Pinned by
+        ///     <c>RealCacheWorldMapRasterTests.TheByteOnAnOverlayTerrainTileIsAnUnderlayId</c>.
+        ///     </para>
+        ///     <para>
+        ///     The name mattered: a renderer that treated it as a shape drew no ground colour at all
+        ///     under any overlay tile, and no byte-identity sweep would have noticed, because the
+        ///     byte round-trips whatever it is called.
+        ///     </para>
+        /// </remarks>
+        public int UnderlayBeneathOverlay => StoredUnderlayByte & 0xFF;
 
         /// <summary>The decoration levels, or null when this is a terrain tile.</summary>
         public WorldMapTileLevel[]? Levels { get; }
@@ -306,7 +332,7 @@ namespace FlashEditor.Definitions.WorldMap {
                 if (code == LiteralPaletteCode)
                     stream.WriteByte(StoredFloorLiteral);
                 if (IsOverlay)
-                    stream.WriteSignedByte(OverlayShape);
+                    stream.WriteSignedByte(StoredUnderlayByte);
                 return;
             }
 
