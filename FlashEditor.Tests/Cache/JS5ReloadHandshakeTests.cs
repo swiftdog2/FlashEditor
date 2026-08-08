@@ -1,5 +1,6 @@
 using FlashEditor.cache;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Reflection;
@@ -45,6 +46,37 @@ namespace FlashEditor.Tests.Cache
 
         private string Request => Path.Combine(directory, JS5ReloadHandshake.RequestFileName);
         private string Released => Path.Combine(directory, JS5ReloadHandshake.ReleasedFileName);
+
+        /// <summary>
+        /// Turns the persisted switch on for one test and puts it back afterwards.
+        /// </summary>
+        /// <remarks>
+        /// The setting is process-wide, so it is restored in Dispose rather than at the end of the
+        /// test body: a test that threw would otherwise leave the handshake enabled for whatever
+        /// ran next, and the symptom would be an unrelated test hanging on a wait for a server
+        /// that does not exist. Nothing is persisted to disk - Settings.Save is never called - so
+        /// this cannot change what the application opens with.
+        /// </remarks>
+        private sealed class SettingOverride : IDisposable
+        {
+            private readonly bool _enabled;
+            private readonly int _timeout;
+
+            public SettingOverride(bool enabled, int timeoutSeconds)
+            {
+                _enabled = FlashEditor.Properties.Settings.Default.js5LiveReload;
+                _timeout = FlashEditor.Properties.Settings.Default.js5LiveReloadTimeoutSeconds;
+
+                FlashEditor.Properties.Settings.Default.js5LiveReload = enabled;
+                FlashEditor.Properties.Settings.Default.js5LiveReloadTimeoutSeconds = timeoutSeconds;
+            }
+
+            public void Dispose()
+            {
+                FlashEditor.Properties.Settings.Default.js5LiveReload = _enabled;
+                FlashEditor.Properties.Settings.Default.js5LiveReloadTimeoutSeconds = _timeout;
+            }
+        }
 
         /// <summary>
         /// Plays the server: waits for the request, then answers with the released marker.
@@ -194,6 +226,142 @@ namespace FlashEditor.Tests.Cache
             Assert.False(File.Exists(Request));
             Assert.False(File.Exists(Released));
             Assert.Empty(Directory.GetFiles(directory));
+        }
+
+        /// <summary>
+        /// With the setting on the same call performs the whole handshake. This is the branch a
+        /// user reaches by ticking the menu item, and it is one line - the settings read and the
+        /// delegation - between a working feature and a feature nobody can turn on. The
+        /// end-to-end driver against a live server goes through <c>Run</c> and so never covers it.
+        /// </summary>
+        [Fact]
+        public async Task WithTheSettingOnTheSaveGoesThroughTheHandshake()
+        {
+            using var setting = new SettingOverride(enabled: true, timeoutSeconds: 5);
+
+            Task responder = Respond(TimeSpan.FromMilliseconds(150));
+
+            bool releasedWhenSaved = false;
+
+            JS5ReloadHandshake.AroundSave(directory, () => releasedWhenSaved = File.Exists(Released));
+
+            await responder;
+
+            Assert.True(releasedWhenSaved, "the save ran without the handshake having been performed");
+            Assert.False(File.Exists(Request));
+        }
+
+        /// <summary>
+        /// The timeout comes from the setting, and a value that would make the wait meaningless is
+        /// clamped rather than obeyed. Zero would reduce the wait to a single existence check and
+        /// report "no server is running" for one that was half a second away.
+        /// </summary>
+        [Theory]
+        [InlineData(45, 45)]
+        [InlineData(1, 1)]
+        [InlineData(0, 1)]
+        [InlineData(-30, 1)]
+        public void TheTimeoutIsReadFromTheSettingAndClamped(int configured, int expected)
+        {
+            using var setting = new SettingOverride(enabled: true, timeoutSeconds: configured);
+
+            Assert.Equal(TimeSpan.FromSeconds(expected), JS5ReloadHandshake.ConfiguredTimeout);
+        }
+
+        /// <summary>The switch the menu item writes is the switch the save path reads.</summary>
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void TheEnabledFlagFollowsTheSetting(bool on)
+        {
+            using var setting = new SettingOverride(enabled: on, timeoutSeconds: 30);
+
+            Assert.Equal(on, JS5ReloadHandshake.Enabled);
+        }
+
+        /// <summary>
+        /// The wait can be abandoned, and abandoning it withdraws the request so the server
+        /// reopens the cache it is holding shut. Nothing is written.
+        /// </summary>
+        [Fact]
+        public void CancellingTheWaitWithdrawsTheRequestAndWritesNothing()
+        {
+            using var cancellation = new CancellationTokenSource();
+            int saves = 0;
+
+            //Cancelled from another thread while the wait is in progress, which is what the dialog's
+            //Cancel button does.
+            Task.Run(() =>
+            {
+                while (!File.Exists(Request))
+                    Thread.Sleep(10);
+
+                cancellation.Cancel();
+            });
+
+            Assert.Throws<OperationCanceledException>(() =>
+                JS5ReloadHandshake.Run(directory, Generous, () => saves++, cancellation.Token));
+
+            Assert.Equal(0, saves);
+            Assert.False(File.Exists(Request));
+        }
+
+        /// <summary>
+        /// Cancellation is not honoured once the write has started, because there is nothing to
+        /// cancel to: the promotion replaces the dat2 and every index file together and a
+        /// half-applied one is the outcome the save path exists to prevent.
+        /// </summary>
+        [Fact]
+        public async Task CancellingDuringTheWriteDoesNotAbandonIt()
+        {
+            using var cancellation = new CancellationTokenSource();
+            Task responder = Respond(TimeSpan.Zero);
+            bool completed = false;
+
+            JS5ReloadHandshake.Run(directory, Generous, () =>
+            {
+                cancellation.Cancel();
+                completed = true;
+            }, cancellation.Token);
+
+            await responder;
+
+            Assert.True(completed);
+            Assert.False(File.Exists(Request));
+        }
+
+        /// <summary>
+        /// A caller drawing a countdown is told how long is left and when the wait turns into a
+        /// write, because a progress dialog that cannot say either is the frozen window with extra
+        /// steps.
+        /// </summary>
+        [Fact]
+        public async Task TheCallerIsToldWhatIsLeftAndWhenTheWriteStarts()
+        {
+            Task responder = Respond(TimeSpan.FromMilliseconds(250));
+
+            var reported = new List<TimeSpan>();
+            bool writingAnnounced = false;
+            bool announcedBeforeTheSave = false;
+
+            JS5ReloadHandshake.Run(directory, Generous,
+                () => announcedBeforeTheSave = writingAnnounced,
+                CancellationToken.None,
+                remaining => { lock (reported) reported.Add(remaining); },
+                () => writingAnnounced = true);
+
+            await responder;
+
+            Assert.NotEmpty(reported);
+            Assert.All(reported, remaining => Assert.InRange(remaining, TimeSpan.Zero, Generous));
+
+            //Strictly decreasing is what makes it a countdown rather than a spinner.
+            lock (reported)
+                for (int i = 1; i < reported.Count; i++)
+                    Assert.True(reported[i] < reported[i - 1],
+                        "the reported time left did not fall between polls");
+
+            Assert.True(announcedBeforeTheSave, "the write started without the caller being told");
         }
 
         /// <summary>

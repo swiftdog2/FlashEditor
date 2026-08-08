@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using FlashEditor.cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Definitions;
+using FlashEditor.UI;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
@@ -1012,19 +1013,25 @@ namespace FlashEditor.Map {
                 return;
 
             try {
-                store.RunExclusive(() => {
+                //Staging and writing both inside the gate, and the handshake's wait deliberately
+                //outside it. The gate is taken on the UI thread by the tile inspector and by the
+                //render thread, so holding it across a wait that can last the whole timeout would
+                //freeze the window from behind the progress dialog. With the handshake off this is
+                //the same single exclusive block it always was, run on the calling thread.
+                JS5ReloadProgressDialog.Save(FindForm(), cacheDirectory, () => store.RunExclusive(() => {
                     foreach ((MapRegion Square, int RegionX, int RegionY) entry in dirty)
                         loader.Save(entry.Square, entry.RegionX, entry.RegionY);
 
-                    //Around the write alone, not around the staging above it. While the JS5 live
-                    //reload handshake is on, the server's handles are shut for the whole span this
-                    //wraps, so encoding the squares inside it would hold the server down for work
-                    //that never touches the disk.
-                    JS5ReloadHandshake.AroundSave(cacheDirectory, () => cache.WriteCache(cacheDirectory));
-                });
+                    cache.WriteCache(cacheDirectory);
+                }));
 
                 history.Clear();
                 ShowMessage($"Saved {dirty.Count} square(s) to {cacheDirectory}");
+            }
+            catch (OperationCanceledException) {
+                //The user's own choice, and recoverable: the request has been withdrawn, the
+                //squares are still dirty and still in memory, and saving again retries.
+                ShowMessage("Save cancelled while waiting for the JS5 update server");
             }
             catch (Exception ex) {
                 //A failed save leaves the staged edits in memory, so the user can retry.
