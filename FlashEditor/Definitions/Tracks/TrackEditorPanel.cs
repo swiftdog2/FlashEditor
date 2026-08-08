@@ -1,5 +1,6 @@
 using BrightIdeasSoftware;
 using FlashEditor.cache;
+using FlashEditor.Definitions.Audio.Synth;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -84,6 +85,48 @@ namespace FlashEditor.Definitions.Tracks {
             Enabled = false
         };
 
+        /* Playback is a different kind of operation from the two above it: it runs until it is
+           stopped rather than completing, so the pair is a mode rather than two commands and both
+           buttons are present at once with only one of them enabled. */
+        private readonly Button playButton = new Button {
+            Text = "Play (cache instruments)",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Font = new Font("Consolas", 9F),
+            Enabled = false
+        };
+
+        private readonly Button stopButton = new Button {
+            Text = "Stop",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Font = new Font("Consolas", 9F),
+            Enabled = false
+        };
+
+        private readonly CheckBox loopCheck = new CheckBox {
+            Text = "Loop",
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Font = new Font("Consolas", 9F)
+        };
+
+        /* States what the player does not reproduce, in the view, because a user comparing it
+           against the game has no other way to tell a documented choice from a defect. The same
+           rule the 3D viewer follows. */
+        private readonly Label playerNote = new Label {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Font = new Font("Consolas", 8F),
+            Text =
+                "Playback uses the cache's own patch bank (index 15) and Vorbis samples (index 14),\r\n" +
+                "not a General MIDI synth. It is not the client, and diverges on purpose:\r\n" +
+                "  - index-4 procedural samples are silent (14 of the bank's 21,491 keys)\r\n" +
+                "  - no voice stealing, so dense passages keep notes the client would drop\r\n" +
+                "  - no portamento, no CC81 re-trigger, no aftertouch (the client discards that too)\r\n" +
+                "Exported MIDI plays on General MIDI instead, so it will not sound like this."
+        };
+
         private readonly ProgressBar progress = new ProgressBar { Dock = DockStyle.Bottom, Height = 20 };
 
         private readonly Label status = new Label {
@@ -99,6 +142,12 @@ namespace FlashEditor.Definitions.Tracks {
            would only invite code that thinks it can. */
         private RSCache? cache;
 
+        /* The running playback, or null. It owns its own thread and device, so the panel's only
+           responsibilities are to stop the previous one before starting another and to stop it when
+           the cache is rebound or the panel goes away - a player left running against a closed
+           cache reads a disposed store on its next sample lookup. */
+        private TrackPlayback? playback;
+
         /// <summary>Creates the panel.</summary>
         public TrackEditorPanel() {
             Dock = DockStyle.Fill;
@@ -107,6 +156,98 @@ namespace FlashEditor.Definitions.Tracks {
             list.SelectedIndexChanged += (_, _) => ShowDetails(list.SelectedObject as Track);
             exportButton.Click += (_, _) => ExportSelected();
             replaceButton.Click += (_, _) => ReplaceSelected();
+            playButton.Click += (_, _) => PlaySelected();
+            stopButton.Click += (_, _) => StopPlayback("Playback stopped");
+        }
+
+        /// <summary>Stops playback when the panel goes away.</summary>
+        /// <param name="disposing">Whether managed state is being released.</param>
+        protected override void Dispose(bool disposing) {
+            if (disposing)
+                StopPlayback(null);
+
+            base.Dispose(disposing);
+        }
+
+        // ===================================================================
+        //  Playback
+        // ===================================================================
+
+        /// <summary>
+        ///     Plays the selected track through the cache's own instruments.
+        /// </summary>
+        /// <remarks>
+        ///     Everything expensive happens on the playback thread: the patches and samples a track
+        ///     needs are decoded the first time a note asks for one, and an index-14 sample is a full
+        ///     Vorbis decode. Starting on the UI thread would freeze the window for the first bar.
+        /// </remarks>
+        private void PlaySelected() {
+            if (cache == null || list.SelectedObject is not Track track)
+                return;
+
+            if (track.Midi == null || track.Midi.Length == 0) {
+                status.Text = "Track " + track.Id + " built no MIDI, so there is nothing to play";
+                return;
+            }
+
+            StopPlayback(null);
+
+            try {
+                var started = new TrackPlayback(track.Midi, cache, loopCheck.Checked);
+                started.Completed += () => OnPlaybackEnded(started, null);
+                started.Failed += error => OnPlaybackEnded(started, error);
+                playback = started;
+            } catch (Exception ex) {
+                status.Text = "Playback failed: " + ex.Message;
+                return;
+            }
+
+            playButton.Enabled = false;
+            stopButton.Enabled = true;
+            status.Text = "Playing " + LabelFor(track.IndexId).ToLowerInvariant() + " track " + track.Id +
+                          (loopCheck.Checked ? " (looping)" : string.Empty);
+        }
+
+        /// <summary>Stops any running playback.</summary>
+        /// <param name="message">What to show in the status line, or null to leave it alone.</param>
+        private void StopPlayback(string? message) {
+            TrackPlayback? running = playback;
+            playback = null;
+            running?.Dispose();
+
+            if (IsDisposed)
+                return;
+
+            playButton.Enabled = cache != null && list.SelectedObjects.Count == 1;
+            stopButton.Enabled = false;
+            if (message != null)
+                status.Text = message;
+        }
+
+        /// <summary>
+        ///     Returns the panel to its stopped state when a track ends or fails.
+        /// </summary>
+        /// <remarks>
+        ///     Both events arrive on the playback thread, so this marshals before touching a control.
+        ///     It also checks that the playback reporting in is still the current one: a track
+        ///     stopped and immediately restarted has two threads alive for a moment, and the old
+        ///     one's completion must not disable the new one's Stop button.
+        /// </remarks>
+        /// <param name="source">The playback reporting in.</param>
+        /// <param name="error">What went wrong, or null if the track simply ended.</param>
+        private void OnPlaybackEnded(TrackPlayback source, Exception? error) {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            BeginInvoke(new Action(() => {
+                if (!ReferenceEquals(playback, source))
+                    return;
+
+                playback = null;
+                playButton.Enabled = cache != null && list.SelectedObjects.Count == 1;
+                stopButton.Enabled = false;
+                status.Text = error == null ? "Playback finished" : "Playback failed: " + error.Message;
+            }));
         }
 
         /// <summary>
@@ -125,11 +266,17 @@ namespace FlashEditor.Definitions.Tracks {
             if (ReferenceEquals(newCache, cache))
                 return;
 
+            /* Before the field moves: a player left running against the old cache reads a store
+               that is about to be closed the next time a note asks for a sample it has not decoded
+               yet. */
+            StopPlayback(null);
+
             cache = newCache;
             list.ClearObjects();
             details.Clear();
             exportButton.Enabled = false;
             replaceButton.Enabled = false;
+            playButton.Enabled = false;
 
             if (cache == null) {
                 status.Text = "No cache loaded";
@@ -167,9 +314,16 @@ namespace FlashEditor.Definitions.Tracks {
             var side = new Panel { Dock = DockStyle.Fill };
             var detailGroup = new GroupBox { Text = "Track", Dock = DockStyle.Fill };
             detailGroup.Controls.Add(details);
+            /* Docked controls are laid out from the last added to the first, so this list reads
+               bottom to top: the note sits directly above the Track box and the Play button ends up
+               at the top of the strip. */
             side.Controls.Add(detailGroup);
+            side.Controls.Add(playerNote);
             side.Controls.Add(exportButton);
             side.Controls.Add(replaceButton);
+            side.Controls.Add(loopCheck);
+            side.Controls.Add(stopButton);
+            side.Controls.Add(playButton);
 
             split.Panel1.Controls.Add(list);
             split.Panel2.Controls.Add(side);
@@ -282,6 +436,8 @@ namespace FlashEditor.Definitions.Tracks {
         private void ShowDetails(Track? track) {
             exportButton.Enabled = list.SelectedObjects.Count > 0;
             replaceButton.Enabled = cache != null && list.SelectedObjects.Count == 1 && track != null;
+            playButton.Enabled = cache != null && list.SelectedObjects.Count == 1 && track != null &&
+                                 playback == null && track.MidiLength > 0;
 
             if (track == null) {
                 details.Clear();
