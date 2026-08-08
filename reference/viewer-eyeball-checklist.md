@@ -43,7 +43,7 @@ First human pass, 2026-08-09, against the repack (the model list read 63,614).
 | Case | Verdict |
 |---|---|
 | **A** skeletal animation | **PASS.** Readout `0.000 s of 3.360 s` over `frame 0/13`, run observed at about 3.4 s with the shape visibly changing. Rules out the rate conflation, which would have finished in about 0.43 s |
-| **F** particles, model 62810 | **PASS.** `particles 68/2047, emitters 2/2`, against a predicted peak near 73. Cap honoured, both emitters resolved |
+| **F** particles | **PASS, and both halves now confirmed.** The first pass passed model 62810 on its **readout** alone - `particles 68/2047, emitters 2/2` against a predicted peak near 73 - which proves the simulation ran and the emitters resolved and says nothing about whether anything reached the screen, because the readout comes from `ParticleSystem` and not from the framebuffer. On **2026-08-09 a human confirmed model 19074 visibly drawing particles**, which is what promotes this case from "the simulation runs" to "particles render". That confirmation was taken **after** the DPI-awareness change, which altered the process-wide awareness context and which nobody had checked GL survived. It did |
 | **D** hover overlay | **OPEN.** Amber and blue marks are present near the shape. Whether they read as `face N` and `vN`, and whether the numbers fall in 0-7 and 0-23, is not yet settled |
 | **H** multi-part entity | **PASS, confirmed on the monitor 2026-08-09.** NPC 1 with animation 811, the exact case a human reported as broken - jaw, hands and boots coming away - reads correctly after the composite merge. Both halves now agree: the seam measures 0 model units in both caches, and a person says the body reads as one object. Worth keeping as the pattern: the defect was found by eye, turned into a number, fixed against the number, and then confirmed by eye again |
 | **B, C, E, G, I** | **NOT YET RUN** |
@@ -138,6 +138,110 @@ Tick Particles.
 Wrong, for 19074: live stays 0; or the count exceeds 2047, meaning the cap is not honoured; or quads
 stay fixed to the world as you orbit, meaning the camera basis is wrong; or the cloud punches holes
 in itself, meaning depth writes were left on for the particle pass.
+
+## F2. Which models actually carry particles, and how rare that is
+
+**Most models have no emitter, and a model with no emitter reads `emitters 0/0` with
+`particles 0/2047`. That is correct output, not a broken viewer.** Picking models at random and
+concluding particles are broken is the failure this section exists to prevent, and it has already
+happened once: a user looking for the Dungeoneering master cape's particles typed **19709** and
+**19710** into the model viewer and saw nothing.
+
+**Those are item ids, not model ids.** Items 19709 and 19710 are both named "Dungeoneering master
+cape" in index 19 of both caches, and the models they name are inventory **59888**, worn male
+**59885**, worn female **59887**. Index 7 does hold groups 19709 and 19710, and they are unrelated
+28-vertex and 27-vertex meshes whose stored flags byte is `0x00`, so they carry no particle tail
+block at all and no spot animation references either. The belief behind the attempt was right:
+**59885 and 59887 each carry 5 emitters**. Only the id was from the wrong index.
+
+**The population.** Sweeping every group index 7 declares and reading the tail block that
+`ModelCodec.ReadTail` parses under flag `0x2`:
+
+| | vanilla b639 | repack |
+|---|---|---|
+| Models declared | 63,607 | 63,614 |
+| Carrying at least one emitter | **211** | **215** |
+| Emitter attachments in total | 555 | 569 |
+| Carrying at least one effector | **4** | **4** |
+| Effector attachments in total | 12 | 12 |
+
+So roughly **one model in 300** has particles at all. The vanilla 211 are a subset of the repack's
+215 and every shared row is identical, attachment for attachment; the repack adds 23608, 25755,
+63609 and 63613. Of the 211, **119 are reachable through a spot animation** and 92 are not - worn
+equipment like the master cape among them - so index 21 is a route to little more than half of them.
+
+**The effector claim is confirmed at its stated scope and sharpened.** Of the 1,785 distinct models
+that index 21's 2,956 spot animations reference, **none carries an effector attachment**, exactly as
+case E says. Across the whole of index 7 there are **four**, the same four in both caches: 51221,
+51222, 51224 and 51225, twelve attachments between them, and **none of the four is referenced by any
+spot animation**. So `[effector ...]` on a face label is still wrong wherever case E can reach, and
+those four models are the only place in either cache where an effector label is legitimate at all.
+
+### The ranked demonstration models
+
+Ordered by how obvious the effect is. Emitter counts are read from the model's tail block; peak live
+counts are from `ParticleSystem` driven at 33 ms steps for 10 s with the default seed and the 2047
+cap. **Every figure below was re-measured against the repack and came out identical**, so they are
+properties of build 639 rather than of one capture. A peak is seed- and step-schedule dependent, so
+treat it as a target to within about ten per cent rather than an exact number - the same reason
+62810 is listed here at 76 while a human read 68 off the screen and case F predicts 73.
+
+| Rank | Model | Emitters | Peak live | What it should look like | Evidence |
+|---|---|---|---|---|---|
+| 1 | **19074** | 1 | **2047**, saturating | A dense amber-brown plume that fills the cap and stays there | **Seen drawing by a human, 2026-08-09** |
+| 2 | **11889** | 1 | **2047** | White-pink, and primed 10,000 steps, so it is already full on the first frame rather than building up | Decoded and simulated only |
+| 3 | **58633** | 4 | **2047** | Grey smoke rising from four separate points on one mesh | Decoded and simulated only |
+| 4 | **57595** | 7 | 1509 | Seven streams in different colours at once - white, black, blue, green, violet and two pale yellows | Decoded and simulated only |
+| 5 | **19076** | 2 | 1219 | Two heavy streams on a 796-vertex mesh | Decoded and simulated only |
+| 6 | **55477** | 12 | 1031 | Pale blue, twelve emitters spread over the largest mesh in this list (2543 vertices) | Decoded and simulated only |
+| 7 | **57600** | 6 | 694 | Red, green and blue in pairs. The case E model, so the face label should read `face N [emitter M]` | Decoded and simulated only |
+| 8 | **60332** | 4 | 688 | Cyan and yellow on a **12-vertex, 4-face** mesh, so the geometry is almost nothing and the cloud is the whole picture | Decoded and simulated only |
+| 9 | **62585** | 6 | 588 | Orange fire over dark brown smoke, two ramps running at once | Decoded and simulated only |
+| 10 | **51849** | 6 | 348 | Six emitters on an 18-vertex, 6-face mesh - one per face | Decoded and simulated only |
+| 11 | **62083** | 17 | 140 | **The most emitters of any model in either cache**, all seventeen sharing one definition. Sparse and orange-brown; its spawn alpha is stored as zero and the ramp raises it to 209, so a particle fades in rather than appearing | Decoded and simulated only |
+| 12 | **59885** / **59887** | 5 | 78 | The Dungeoneering master cape as worn, male and female. Near-black particles at 150 to 200 alpha, low rate, on five of the mesh's last faces | Decoded and simulated only |
+| 13 | **62810** | 2 | 76 | The small readable case, 24 vertices and 8 faces. Already passed by eye in the first pass | Readout confirmed 2026-08-09 |
+| 14 | **62446** | 7 | 19 | Seven emitters and still almost nothing on screen: lifetimes of 10 to 50 ms make it a sputter, not a cloud | Decoded and simulated only |
+| 15 | **63586** | 1 | **0** | Nothing. Spawns and kills inside one 33 ms step | Decoded and simulated only |
+| 16 | **59584** | 8 | **0** | Nothing, from **eight** emitters. The stronger version of the case below | Decoded and simulated only |
+
+**Read the Evidence column literally.** Only 19074 has been seen drawing, and only 62810 has had its
+readout checked against a prediction on the monitor. Everything else in this table is a decoded
+attachment count and a simulated peak, which says the emitters resolve and the arithmetic runs, and
+says nothing about the framebuffer. Do not let row 1's confirmation stand in for the rest of the
+column.
+
+- **Correct.** The readout's emitter denominator matches the Emitters column exactly, the live count
+  climbs towards the peak, and for 19074 quads are visibly on screen and keep facing the camera as
+  you orbit.
+- **Not a defect, though it looks like one.** `emitters 0/0, particles 0/2047` on a model that is not
+  in this table. 211 models out of 63,607 have an emitter; the overwhelmingly likely explanation for
+  an empty readout is the model, not the viewer.
+- **Not a defect either.** `emitters 1/1, particles 0/2047` on 63586, or `emitters 8/8,
+  particles 0/2047` on 59584. **59 of the 211 emitter models peak at zero** over a ten second run,
+  because they spawn and kill within a single step. More than a quarter of the population shows
+  nothing, which is why picking one at random is a bad way to test this.
+- **Plausible wrong, and the trap to know about.** Model **11890** reads `particles 2047/2047` and is
+  all but invisible: its particles never exceed alpha 10 out of 255. A full live count with an empty
+  screen is a legitimate result for that model, so it is a terrible choice of demonstration and a
+  terrible choice of regression case. Use 19074, where the peak alpha is 121.
+- **Wrong.** The emitter denominator is lower than the Emitters column above, which means an
+  attachment named an index-27 emitter the cache does not hold, or the tail block was mis-parsed.
+  `MissingEmitterCount` was measured at **0** for every one of the 211 in both caches, so any nonzero
+  value here is a regression rather than data.
+- **Wrong.** A model in this table showing `emitters 0/0`. The attachment block is being skipped
+  entirely, most likely by mis-reading the model's flags byte - the emitter list is gated on bit
+  `0x2`, and 19709's `0x00` against 59885's `0x0B` is the difference between the two cases.
+
+### Finding one in the editor
+
+There is currently **no way to know a model has an emitter except to select it and read the
+readout**, which over 63,607 models is not a search. The Models grid deliberately decodes nothing -
+`ModelListDescriptor.ReadsPayload` is false precisely so that visiting the tab does not inflate every
+model in the cache - so an always-on Emitters column is the wrong shape. The right shape is an
+opt-in scan: a button beside Export and Import on `EntityBrowserPanel`'s tool strip that runs one
+background pass over index 7, keeps the resulting id set on the panel, and lights up a Particles
+column in `ModelListDescriptor`. One pass, on demand, and the 211 become filterable. **Not built.**
 
 ## G. The render timer
 
