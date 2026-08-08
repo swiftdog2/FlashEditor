@@ -146,6 +146,30 @@ namespace FlashEditor.Definitions.Editing {
                 });
         }
 
+        /// <summary>A boolean column, editable when a setter is supplied.</summary>
+        /// <remarks>
+        ///     Separate from <see cref="Number{TRow}"/> because the cell editor for a boolean hands
+        ///     back whatever its editor produced - a checkbox yields a <c>bool</c>, an in-place text
+        ///     box the strings the user typed - and a setter that cast either way directly would
+        ///     throw on the editor it was not written for. The same reason <see cref="Number{TRow}"/>
+        ///     converts rather than casts.
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="read">Reads the value off a row.</param>
+        /// <param name="write">Writes an edited flag back, or null for a read-only column.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn Flag<TRow>(string header, Func<TRow, bool> read,
+            Action<TRow, bool>? write = null, int width = 90) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? read(typed) : (object?) null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToBool(value));
+                });
+        }
+
         /// <summary>An integer column, editable when a setter is supplied.</summary>
         /// <remarks>
         ///     The conversion is here rather than in every setter because the cell editor decides
@@ -173,6 +197,27 @@ namespace FlashEditor.Definitions.Editing {
             if (value == null)
                 return 0;
             return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        ///     Whatever the cell editor produced, as a flag.
+        /// </summary>
+        /// <remarks>
+        ///     A blank cell reads as false rather than throwing: an in-place text box hands back an
+        ///     empty string when the user clears it, and <c>Convert.ToBoolean</c> refuses that.
+        /// </remarks>
+        /// <param name="value">The editor's value.</param>
+        /// <returns>The flag.</returns>
+        private static bool ToBool(object? value) {
+            if (value == null)
+                return false;
+
+            if (value is string text) {
+                string trimmed = text.Trim();
+                return bool.TryParse(trimmed, out bool parsed) ? parsed : trimmed == "1";
+            }
+
+            return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
         }
 
         /// <summary>
@@ -225,6 +270,23 @@ namespace FlashEditor.Definitions.Editing {
         /// <summary>Whether <see cref="Encode"/> is implemented, and so whether cells may be edited.</summary>
         bool IsEditable { get; }
 
+        /// <summary>
+        ///     Whether a row needs the stored bytes to build, or is fully described by its address.
+        /// </summary>
+        /// <remarks>
+        ///     False buys a listing that costs one reference-table walk instead of one decompression
+        ///     per group, and index 7 is why it exists: it declares 63,607 groups of one file, and a
+        ///     grid of model ids needs none of their bytes. Reading them anyway would inflate every
+        ///     model in the cache to show a column of numbers the table already states.
+        ///     <para>
+        ///     A descriptor that clears this is handed an <b>empty</b> payload, not a null one, so
+        ///     <see cref="Decode"/> keeps one signature - and a descriptor that clears it and then
+        ///     reads the payload anyway decodes nothing rather than crashing, which is the failure
+        ///     that is easiest to see.
+        ///     </para>
+        /// </remarks>
+        bool ReadsPayload { get; }
+
         /// <summary>Every row the index holds, as cache addresses.</summary>
         /// <param name="cache">The open cache.</param>
         /// <returns>The addresses to load.</returns>
@@ -270,6 +332,13 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <inheritdoc/>
         public virtual bool IsEditable => false;
+
+        /// <inheritdoc/>
+        /// <remarks>
+        ///     True by default, because every index whose records are modelled has to read them.
+        ///     Override it only for a listing whose columns come entirely from the reference table.
+        /// </remarks>
+        public virtual bool ReadsPayload => true;
 
         /// <summary>
         ///     Every row the index holds, taken from the reference table.

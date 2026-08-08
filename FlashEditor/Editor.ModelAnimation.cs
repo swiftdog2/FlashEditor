@@ -375,13 +375,13 @@ namespace FlashEditor {
         /// </summary>
         /// <remarks>
         ///     The timer used to run from the constructor to <c>OnFormClosed</c> and invalidate on
-        ///     every tick regardless of which page was showing, so a session spent on the Items tab
+        ///     every tick regardless of which page was showing, so a session spent on any other page
         ///     still repainted a hidden GL surface thirty times a second for its whole length.
         /// </remarks>
-        /// <returns><c>true</c> when the model page is selected and realised.</returns>
+        /// <returns><c>true</c> when the entity page is selected and realised.</returns>
         private bool ViewportIsVisible() {
             return glControl.IsHandleCreated
-                && EditorTabControl.SelectedTab == ModelViewerTab;
+                && EditorTabControl.SelectedTab == EntityEditorTab;
         }
 
         /// <summary>

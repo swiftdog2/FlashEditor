@@ -64,28 +64,6 @@ namespace FlashEditor {
             button6 = new Button();
             button5 = new Button();
             button4 = new Button();
-            ItemEditorTab = new TabPage();
-            groupBox4 = new GroupBox();
-            ItemControlsLayout = new TableLayoutPanel();
-            ItemLoadingLabel = new Label();
-            ItemProgressBar = new ProgressBar();
-            ExportItemDatBtn = new Button();
-            button9 = new Button();
-            ItemListView = new FastObjectListView();
-            ItemID = new OLVColumn();
-            ItemName = new OLVColumn();
-            InvModel = new OLVColumn();
-            Male1 = new OLVColumn();
-            Male2 = new OLVColumn();
-            Female1 = new OLVColumn();
-            Female2 = new OLVColumn();
-            Rotate1 = new OLVColumn();
-            Rotate2 = new OLVColumn();
-            valueColumn = new OLVColumn();
-            stackableColumn = new OLVColumn();
-            equipSlotColumn = new OLVColumn();
-            equipIdColumn = new OLVColumn();
-            membersOnlyColumn = new OLVColumn();
             SpriteEditorTab = new TabPage();
             SpriteNoticeLabel = new Label();
             SpriteSplit = new SplitContainer();
@@ -111,45 +89,8 @@ namespace FlashEditor {
             SpriteStoredColumn = new OLVColumn();
             SpriteScaleColumn = new OLVColumn();
             SpriteImageColumn = new OLVColumn();
-            NPCEditorTab = new TabPage();
-            groupBox6 = new GroupBox();
-            NPCControlsLayout = new TableLayoutPanel();
-            NPCLoadingLabel = new Label();
-            NPCProgressBar = new ProgressBar();
-            button2 = new Button();
-            button3 = new Button();
-            NPCListView = new FastObjectListView();
-            npcIdColumn = new OLVColumn();
-            nameColumn = new OLVColumn();
-            sizeColumn = new OLVColumn();
-            levelColumn = new OLVColumn();
-            olvColumn10 = new OLVColumn();
-            olvColumn9 = new OLVColumn();
-            olvColumn11 = new OLVColumn();
-            rotationColumn = new OLVColumn();
-            ambientColumn = new OLVColumn();
-            contrastColumn = new OLVColumn();
-            attackCursorColumn = new OLVColumn();
-            visiblePriorityColumn = new OLVColumn();
-            npcModelIdsColumn = new OLVColumn();
-            ObjectEditorTab = new TabPage();
-            groupBox5 = new GroupBox();
-            ObjectControlsLayout = new TableLayoutPanel();
-            ObjectLoadingLabel = new Label();
-            ObjectProgressBar = new ProgressBar();
-            button7 = new Button();
-            button8 = new Button();
-            GameObjectListView = new FastObjectListView();
-            objectIdColumn = new OLVColumn();
-            objectNameColumn = new OLVColumn();
-            sizeXColumn = new OLVColumn();
-            sizeYColumn = new OLVColumn();
-            walkableColumn = new OLVColumn();
-            clippedColumn = new OLVColumn();
-            ambientSoundColumn = new OLVColumn();
-            morphVarbitColumn = new OLVColumn();
             InterfaceEditorTab = new TabPage();
-            ModelViewerTab = new TabPage();
+            EntityEditorTab = new TabPage();
             splitContainer1 = new SplitContainer();
             glControl = new OpenTK.GLControl.GLControl();
             ViewerToolPanel = new FlowLayoutPanel();
@@ -165,10 +106,6 @@ namespace FlashEditor {
             ViewerReadoutLabel = new Label();
             ViewerStatusLabel = new Label();
             ViewerLimitsLabel = new Label();
-            ModelListView = new FastObjectListView();
-            ModelID = new OLVColumn();
-            ModelLoadingLabel = new Label();
-            ModelProgressBar = new ProgressBar();
             TextureViewerTab = new TabPage();
             TextureStatusPanel = new Panel();
             TextureProgressBar = new ProgressBar();
@@ -213,10 +150,6 @@ namespace FlashEditor {
             ((System.ComponentModel.ISupportInitialize) ContainerListView).BeginInit();
             groupBox1.SuspendLayout();
             MetaControlsLayout.SuspendLayout();
-            ItemEditorTab.SuspendLayout();
-            groupBox4.SuspendLayout();
-            ItemControlsLayout.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) ItemListView).BeginInit();
             SpriteEditorTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) SpriteSplit).BeginInit();
             SpriteSplit.Panel1.SuspendLayout();
@@ -228,21 +161,12 @@ namespace FlashEditor {
             groupBox3.SuspendLayout();
             SpriteControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) SpriteListView).BeginInit();
-            NPCEditorTab.SuspendLayout();
-            groupBox6.SuspendLayout();
-            NPCControlsLayout.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) NPCListView).BeginInit();
-            ObjectEditorTab.SuspendLayout();
-            groupBox5.SuspendLayout();
-            ObjectControlsLayout.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) GameObjectListView).BeginInit();
-            ModelViewerTab.SuspendLayout();
+            EntityEditorTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
             splitContainer1.Panel2.SuspendLayout();
             splitContainer1.SuspendLayout();
             ViewerToolPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
             TextureViewerTab.SuspendLayout();
             TextureStatusPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) TextureListView).BeginInit();
@@ -356,14 +280,11 @@ namespace FlashEditor {
             // order the navigation tree lists them in, because the tree is built by walking this
             // collection - so the deck's own arrow keys and the tree agree.
             EditorTabControl.Controls.Add(Console);
-            EditorTabControl.Controls.Add(ItemEditorTab);
-            EditorTabControl.Controls.Add(NPCEditorTab);
-            EditorTabControl.Controls.Add(ObjectEditorTab);
+            EditorTabControl.Controls.Add(EntityEditorTab);
             EditorTabControl.Controls.Add(MapEditorTab);
             EditorTabControl.Controls.Add(WorldMapOverviewTab);
             EditorTabControl.Controls.Add(ParticleEditorTab);
             EditorTabControl.Controls.Add(BillboardEditorTab);
-            EditorTabControl.Controls.Add(ModelViewerTab);
             EditorTabControl.Controls.Add(AnimationEditorTab);
             EditorTabControl.Controls.Add(AnimationDefinitionsTab);
             EditorTabControl.Controls.Add(SpotAnimEditorTab);
@@ -656,231 +577,6 @@ namespace FlashEditor {
             button4.Text = "Compare to Output";
             button4.UseVisualStyleBackColor = false;
             button4.Click += button4_Click;
-            // 
-            // ItemEditorTab
-            // 
-            ItemEditorTab.Controls.Add(groupBox4);
-            ItemEditorTab.Controls.Add(ItemListView);
-            ItemEditorTab.Location = new Point(4, 37);
-            ItemEditorTab.Name = "ItemEditorTab";
-            ItemEditorTab.Padding = new Padding(3);
-            ItemEditorTab.Size = new Size(1113, 554);
-            ItemEditorTab.TabIndex = 0;
-            ItemEditorTab.Text = "Items";
-            ItemEditorTab.UseVisualStyleBackColor = true;
-            // 
-            // groupBox4
-            // 
-            groupBox4.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            groupBox4.BackColor = Color.White;
-            groupBox4.Controls.Add(ItemControlsLayout);
-            groupBox4.Font = new Font("Consolas", 12.25F);
-            groupBox4.Location = new Point(860, 6);
-            groupBox4.Name = "groupBox4";
-            groupBox4.Size = new Size(250, 542);
-            groupBox4.TabIndex = 11;
-            groupBox4.TabStop = false;
-            groupBox4.Text = "Editor Controls";
-            //
-            // ItemControlsLayout
-            //
-            // Every control in this strip used to state its own Location and Size, and the form used
-            // to scale those literals down by a third (see the AutoScaleMode note on the form) while
-            // the fonts stated on the controls were not scaled at all. The buttons ended up shorter
-            // than the text they hold and the status label wider than the box around it. The scale
-            // factor is fixed now, but a literal would still only be right at one font size, so
-            // nothing here states a pixel: the rows measure their contents, the spacer row takes the
-            // slack, and the strip is correct at any font or DPI rather than at the one it was drawn
-            // on.
-            ItemControlsLayout.ColumnCount = 1;
-            ItemControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            ItemControlsLayout.Controls.Add(button9, 0, 0);
-            ItemControlsLayout.Controls.Add(ExportItemDatBtn, 0, 1);
-            ItemControlsLayout.Controls.Add(ItemLoadingLabel, 0, 3);
-            ItemControlsLayout.Controls.Add(ItemProgressBar, 0, 4);
-            ItemControlsLayout.Dock = DockStyle.Fill;
-            ItemControlsLayout.Name = "ItemControlsLayout";
-            ItemControlsLayout.RowCount = 5;
-            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ItemControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ItemControlsLayout.TabIndex = 0;
-            //
-            // ItemLoadingLabel
-            //
-            // AutoSize with the cell width to measure against, so a status line longer than the strip
-            // wraps onto a second line instead of losing its last characters off the edge.
-            ItemLoadingLabel.AutoSize = true;
-            ItemLoadingLabel.BackColor = Color.Transparent;
-            ItemLoadingLabel.Dock = DockStyle.Fill;
-            ItemLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ItemLoadingLabel.Name = "ItemLoadingLabel";
-            ItemLoadingLabel.TabIndex = 12;
-            ItemLoadingLabel.Text = "Loading Items";
-            ItemLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            //
-            // ItemProgressBar
-            //
-            // Anchored to both sides rather than docked, so it stretches across the cell and keeps the
-            // height SizeProgressBars derives from its font. A ProgressBar cannot measure itself, so
-            // it is the one control in this strip whose height has to be stated at all.
-            ItemProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
-            ItemProgressBar.ForeColor = Color.DarkRed;
-            ItemProgressBar.Name = "ItemProgressBar";
-            ItemProgressBar.TabIndex = 8;
-            //
-            // ExportItemDatBtn
-            //
-            ExportItemDatBtn.AutoSize = true;
-            ExportItemDatBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            ExportItemDatBtn.BackColor = Color.White;
-            ExportItemDatBtn.Dock = DockStyle.Fill;
-            ExportItemDatBtn.Name = "ExportItemDatBtn";
-            ExportItemDatBtn.TabIndex = 1;
-            ExportItemDatBtn.Text = "Export Selected (.dat)";
-            ExportItemDatBtn.UseVisualStyleBackColor = false;
-            ExportItemDatBtn.Click += ExportItemDatBtn_Click;
-            //
-            // button9
-            //
-            button9.AutoSize = true;
-            button9.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            button9.BackColor = Color.White;
-            button9.Dock = DockStyle.Fill;
-            button9.Name = "button9";
-            button9.TabIndex = 0;
-            button9.Text = "Import Item";
-            button9.UseVisualStyleBackColor = false;
-            //
-            // ItemListView
-            // 
-            ItemListView.AllColumns.Add(ItemID);
-            ItemListView.AllColumns.Add(ItemName);
-            ItemListView.AllColumns.Add(InvModel);
-            ItemListView.AllColumns.Add(Male1);
-            ItemListView.AllColumns.Add(Male2);
-            ItemListView.AllColumns.Add(Female1);
-            ItemListView.AllColumns.Add(Female2);
-            ItemListView.AllColumns.Add(Rotate1);
-            ItemListView.AllColumns.Add(Rotate2);
-            ItemListView.AllColumns.Add(valueColumn);
-            ItemListView.AllColumns.Add(stackableColumn);
-            ItemListView.AllColumns.Add(equipSlotColumn);
-            ItemListView.AllColumns.Add(equipIdColumn);
-            ItemListView.AllColumns.Add(membersOnlyColumn);
-            ItemListView.AlternateRowBackColor = Color.FromArgb(  192,   255,   192);
-            ItemListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            ItemListView.BackColor = Color.White;
-            ItemListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
-            ItemListView.CellEditUseWholeCell = false;
-            ItemListView.CheckBoxes = true;
-            ItemListView.Columns.AddRange(new ColumnHeader[] { ItemID, ItemName, InvModel, Male1, Male2, Female1, Female2, Rotate1, Rotate2, valueColumn, stackableColumn, equipSlotColumn, equipIdColumn, membersOnlyColumn });
-            ItemListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ItemListView.FullRowSelect = true;
-            ItemListView.GridLines = true;
-            ItemListView.Location = new Point(-2, -2);
-            ItemListView.Name = "ItemListView";
-            ItemListView.RowHeight = 10;
-            ItemListView.ShowGroups = false;
-            ItemListView.ShowImagesOnSubItems = true;
-            ItemListView.Size = new Size(856, 565);
-            ItemListView.TabIndex = 14;
-            ItemListView.UseAlternatingBackColors = true;
-            ItemListView.UseCompatibleStateImageBehavior = false;
-            ItemListView.UseFilterIndicator = true;
-            ItemListView.View = View.Details;
-            ItemListView.VirtualMode = true;
-            ItemListView.CellEditFinished += ItemListView_CellEditFinished;
-            ItemListView.CellEditStarting += ItemListView_CellEditStarting;
-            ItemListView.SelectedIndexChanged += ItemListView_SelectedIndexChanged;
-            // 
-            // ItemID
-            // 
-            ItemID.AspectName = "id";
-            ItemID.Groupable = false;
-            ItemID.IsEditable = false;
-            ItemID.Searchable = false;
-            ItemID.Text = "ID";
-            ItemID.Width = 78;
-            // 
-            // ItemName
-            // 
-            ItemName.AspectName = "name";
-            ItemName.Text = "Name";
-            ItemName.Width = 191;
-            // 
-            // InvModel
-            // 
-            InvModel.AspectName = "inventoryModelId";
-            InvModel.Text = "InvModel";
-            InvModel.Width = 78;
-            // 
-            // Male1
-            // 
-            Male1.AspectName = "maleWearModel1";
-            Male1.Text = "ManModel1";
-            Male1.Width = 87;
-            // 
-            // Male2
-            // 
-            Male2.AspectName = "maleWearModel2";
-            Male2.Text = "ManModel2";
-            Male2.Width = 88;
-            // 
-            // Female1
-            // 
-            Female1.AspectName = "femaleWearModel1";
-            Female1.Text = "Female1";
-            Female1.Width = 72;
-            // 
-            // Female2
-            // 
-            Female2.AspectName = "femaleWearModel2";
-            Female2.Text = "Female2";
-            Female2.Width = 69;
-            // 
-            // Rotate1
-            // 
-            Rotate1.AspectName = "modelRotation1";
-            Rotate1.Text = "Rotate1";
-            Rotate1.Width = 73;
-            // 
-            // Rotate2
-            // 
-            Rotate2.AspectName = "modelRotation2";
-            Rotate2.Text = "Rotate2";
-            Rotate2.Width = 71;
-            // 
-            // valueColumn
-            // 
-            valueColumn.AspectName = "value";
-            valueColumn.Text = "Value";
-            valueColumn.Width = 80;
-            // 
-            // stackableColumn
-            // 
-            stackableColumn.AspectName = "stackable";
-            stackableColumn.Text = "Stack";
-            // 
-            // equipSlotColumn
-            // 
-            equipSlotColumn.AspectName = "equipSlotId";
-            equipSlotColumn.Text = "Slot";
-            // 
-            // equipIdColumn
-            // 
-            equipIdColumn.AspectName = "equipId";
-            equipIdColumn.Text = "EquipId";
-            equipIdColumn.Width = 70;
-            // 
-            // membersOnlyColumn
-            // 
-            membersOnlyColumn.AspectName = "membersOnly";
-            membersOnlyColumn.CheckBoxes = true;
-            membersOnlyColumn.Text = "Members";
-            membersOnlyColumn.Width = 80;
             // 
             // SpriteEditorTab
             //
@@ -1186,393 +882,6 @@ namespace FlashEditor {
             SpriteImageColumn.Searchable = false;
             SpriteImageColumn.Sortable = false;
             SpriteImageColumn.Text = "Sprite";
-            //
-            // NPCEditorTab
-            // 
-            NPCEditorTab.Controls.Add(groupBox6);
-            NPCEditorTab.Controls.Add(NPCListView);
-            NPCEditorTab.Location = new Point(4, 37);
-            NPCEditorTab.Name = "NPCEditorTab";
-            NPCEditorTab.Size = new Size(1113, 554);
-            NPCEditorTab.TabIndex = 3;
-            NPCEditorTab.Text = "NPCs";
-            NPCEditorTab.UseVisualStyleBackColor = true;
-            // 
-            // groupBox6
-            // 
-            groupBox6.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            groupBox6.BackColor = Color.White;
-            groupBox6.Controls.Add(NPCControlsLayout);
-            groupBox6.Font = new Font("Consolas", 12.25F);
-            groupBox6.Location = new Point(857, 3);
-            groupBox6.Name = "groupBox6";
-            groupBox6.Size = new Size(243, 523);
-            groupBox6.TabIndex = 16;
-            groupBox6.TabStop = false;
-            groupBox6.Text = "Editor Controls";
-            //
-            // NPCControlsLayout
-            //
-            // Same rebuild as ItemControlsLayout, and for the same defect - see the note there. This
-            // is what cut the tops and bottoms off "Import NPC" and "Export Selected": the stated
-            // 35-pixel height was scaled down by the form while the 12pt font on the button was not.
-            // Nothing here states a pixel.
-            NPCControlsLayout.ColumnCount = 1;
-            NPCControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            NPCControlsLayout.Controls.Add(button3, 0, 0);
-            NPCControlsLayout.Controls.Add(button2, 0, 1);
-            NPCControlsLayout.Controls.Add(NPCLoadingLabel, 0, 3);
-            NPCControlsLayout.Controls.Add(NPCProgressBar, 0, 4);
-            NPCControlsLayout.Dock = DockStyle.Fill;
-            NPCControlsLayout.Name = "NPCControlsLayout";
-            NPCControlsLayout.RowCount = 5;
-            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            NPCControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            NPCControlsLayout.TabIndex = 0;
-            //
-            // NPCLoadingLabel
-            //
-            // AutoSize with the cell width to measure against, so a status line longer than the strip
-            // wraps onto a second line instead of losing its last characters off the edge.
-            NPCLoadingLabel.AutoSize = true;
-            NPCLoadingLabel.BackColor = Color.Transparent;
-            NPCLoadingLabel.Dock = DockStyle.Fill;
-            NPCLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            NPCLoadingLabel.Name = "NPCLoadingLabel";
-            NPCLoadingLabel.TabIndex = 17;
-            NPCLoadingLabel.Text = "Loading NPCs";
-            NPCLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            //
-            // NPCProgressBar
-            //
-            // Anchored to both sides rather than docked, so it stretches across the cell and keeps the
-            // height SizeProgressBars derives from its font. A ProgressBar cannot measure itself, so
-            // it is the one control in this strip whose height has to be stated at all.
-            NPCProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
-            NPCProgressBar.ForeColor = Color.DarkRed;
-            NPCProgressBar.Name = "NPCProgressBar";
-            NPCProgressBar.TabIndex = 8;
-            //
-            // button2
-            //
-            button2.AutoSize = true;
-            button2.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            button2.BackColor = Color.White;
-            button2.Dock = DockStyle.Fill;
-            button2.Name = "button2";
-            button2.TabIndex = 1;
-            button2.Text = "Export Selected (.dat)";
-            button2.UseVisualStyleBackColor = false;
-            //
-            // button3
-            //
-            button3.AutoSize = true;
-            button3.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            button3.BackColor = Color.White;
-            button3.Dock = DockStyle.Fill;
-            button3.Name = "button3";
-            button3.TabIndex = 0;
-            button3.Text = "Import NPC";
-            button3.UseVisualStyleBackColor = false;
-            button3.Click += ImportNpcBtn_Click;
-            //
-            // NPCListView
-            // 
-            NPCListView.AllColumns.Add(npcIdColumn);
-            NPCListView.AllColumns.Add(nameColumn);
-            NPCListView.AllColumns.Add(sizeColumn);
-            NPCListView.AllColumns.Add(levelColumn);
-            NPCListView.AllColumns.Add(olvColumn10);
-            NPCListView.AllColumns.Add(olvColumn9);
-            NPCListView.AllColumns.Add(olvColumn11);
-            NPCListView.AllColumns.Add(rotationColumn);
-            NPCListView.AllColumns.Add(ambientColumn);
-            NPCListView.AllColumns.Add(contrastColumn);
-            NPCListView.AllColumns.Add(attackCursorColumn);
-            NPCListView.AllColumns.Add(visiblePriorityColumn);
-            NPCListView.AllColumns.Add(npcModelIdsColumn);
-            NPCListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            NPCListView.BackColor = Color.White;
-            //Without this the grid's activation is None, so the two handlers below can never run and
-            //index 18 is read-only however complete its write path is.
-            NPCListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
-            NPCListView.CellEditUseWholeCell = false;
-            NPCListView.Columns.AddRange(new ColumnHeader[] { npcIdColumn, nameColumn, sizeColumn, levelColumn, olvColumn10, olvColumn9, olvColumn11, rotationColumn, ambientColumn, contrastColumn, attackCursorColumn, visiblePriorityColumn, npcModelIdsColumn });
-            NPCListView.Font = new Font("Consolas", 11.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            NPCListView.FullRowSelect = true;
-            NPCListView.GridLines = true;
-            NPCListView.Location = new Point(0, 3);
-            NPCListView.Name = "NPCListView";
-            NPCListView.RowHeight = 10;
-            NPCListView.ShowGroups = false;
-            NPCListView.ShowImagesOnSubItems = true;
-            NPCListView.Size = new Size(853, 535);
-            NPCListView.TabIndex = 18;
-            NPCListView.TintSortColumn = true;
-            NPCListView.UseCompatibleStateImageBehavior = false;
-            NPCListView.View = View.Details;
-            NPCListView.VirtualMode = true;
-            NPCListView.CellEditFinished += NPCListView_CellEditFinished;
-            NPCListView.CellEditStarting += NPCListView_CellEditStarting;
-            NPCListView.SelectedIndexChanged += NPCListView_SelectedIndexChanged;
-            //
-            // npcIdColumn
-            //
-            npcIdColumn.AspectName = "id";
-            npcIdColumn.Groupable = false;
-            //The id is the address, not a field: the commit derives the group and file from it, so
-            //an edited id writes the definition over a different NPC.
-            npcIdColumn.IsEditable = false;
-            npcIdColumn.Searchable = false;
-            npcIdColumn.Text = "ID";
-            npcIdColumn.Width = 78;
-            // 
-            // nameColumn
-            // 
-            nameColumn.AspectName = "name";
-            nameColumn.Text = "Name";
-            nameColumn.Width = 191;
-            // 
-            // sizeColumn
-            // 
-            sizeColumn.AspectName = "size";
-            sizeColumn.Text = "Size";
-            sizeColumn.Width = 67;
-            // 
-            // levelColumn
-            // 
-            levelColumn.AspectName = "level";
-            levelColumn.Text = "Level";
-            levelColumn.Width = 58;
-            // 
-            // olvColumn10
-            // 
-            olvColumn10.AspectName = "renderTypeID";
-            olvColumn10.Text = "Render";
-            olvColumn10.Width = 73;
-            // 
-            // olvColumn9
-            // 
-            olvColumn9.AspectName = "clickable";
-            olvColumn9.CheckBoxes = true;
-            olvColumn9.Text = "Clickable";
-            olvColumn9.Width = 93;
-            // 
-            // olvColumn11
-            // 
-            olvColumn11.AspectName = "drawMinimapDot";
-            olvColumn11.CheckBoxes = true;
-            olvColumn11.Text = "Minidot";
-            olvColumn11.Width = 77;
-            // 
-            // rotationColumn
-            // 
-            rotationColumn.AspectName = "rotation";
-            rotationColumn.Text = "Rotation";
-            rotationColumn.Width = 80;
-            // 
-            // ambientColumn
-            // 
-            ambientColumn.AspectName = "ambient";
-            ambientColumn.Text = "Ambient";
-            ambientColumn.Width = 70;
-            // 
-            // contrastColumn
-            // 
-            contrastColumn.AspectName = "contrast";
-            contrastColumn.Text = "Contrast";
-            contrastColumn.Width = 70;
-            // 
-            // attackCursorColumn
-            // 
-            attackCursorColumn.AspectName = "attackOpCursor";
-            attackCursorColumn.Text = "AtkCursor";
-            attackCursorColumn.Width = 90;
-            // 
-            // visiblePriorityColumn
-            // 
-            visiblePriorityColumn.AspectName = "visiblePriority";
-            visiblePriorityColumn.CheckBoxes = true;
-            visiblePriorityColumn.Text = "VisiblePrio";
-            visiblePriorityColumn.Width = 90;
-            // 
-            // npcModelIdsColumn
-            // 
-            npcModelIdsColumn.AspectName = "ModelIdList";
-            npcModelIdsColumn.Text = "Model IDs";
-            npcModelIdsColumn.Width = 180;
-            // 
-            // ObjectEditorTab
-            // 
-            ObjectEditorTab.Controls.Add(groupBox5);
-            ObjectEditorTab.Controls.Add(GameObjectListView);
-            ObjectEditorTab.Location = new Point(4, 37);
-            ObjectEditorTab.Name = "ObjectEditorTab";
-            ObjectEditorTab.Size = new Size(1113, 554);
-            ObjectEditorTab.TabIndex = 4;
-            ObjectEditorTab.Text = "Objects";
-            ObjectEditorTab.UseVisualStyleBackColor = true;
-            // 
-            // groupBox5
-            // 
-            groupBox5.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            groupBox5.BackColor = Color.White;
-            groupBox5.Controls.Add(ObjectControlsLayout);
-            groupBox5.Font = new Font("Consolas", 12.25F);
-            groupBox5.Location = new Point(857, 3);
-            groupBox5.Name = "groupBox5";
-            groupBox5.Size = new Size(243, 523);
-            groupBox5.TabIndex = 19;
-            groupBox5.TabStop = false;
-            groupBox5.Text = "Editor Controls";
-            //
-            // ObjectControlsLayout
-            //
-            // Same rebuild as ItemControlsLayout, and for the same defect - see the note there.
-            ObjectControlsLayout.ColumnCount = 1;
-            ObjectControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            ObjectControlsLayout.Controls.Add(button8, 0, 0);
-            ObjectControlsLayout.Controls.Add(button7, 0, 1);
-            ObjectControlsLayout.Controls.Add(ObjectLoadingLabel, 0, 3);
-            ObjectControlsLayout.Controls.Add(ObjectProgressBar, 0, 4);
-            ObjectControlsLayout.Dock = DockStyle.Fill;
-            ObjectControlsLayout.Name = "ObjectControlsLayout";
-            ObjectControlsLayout.RowCount = 5;
-            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ObjectControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ObjectControlsLayout.TabIndex = 0;
-            //
-            // ObjectLoadingLabel
-            //
-            ObjectLoadingLabel.AutoSize = true;
-            ObjectLoadingLabel.BackColor = Color.Transparent;
-            ObjectLoadingLabel.Dock = DockStyle.Fill;
-            ObjectLoadingLabel.Font = new Font("Consolas", 12F);
-            ObjectLoadingLabel.Name = "ObjectLoadingLabel";
-            ObjectLoadingLabel.TabIndex = 17;
-            ObjectLoadingLabel.Text = "Loading Objects";
-            ObjectLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            //
-            // ObjectProgressBar
-            //
-            ObjectProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
-            ObjectProgressBar.ForeColor = Color.DarkRed;
-            ObjectProgressBar.Name = "ObjectProgressBar";
-            ObjectProgressBar.TabIndex = 8;
-            //
-            // button7
-            //
-            button7.AutoSize = true;
-            button7.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            button7.BackColor = Color.White;
-            button7.Dock = DockStyle.Fill;
-            button7.Name = "button7";
-            button7.TabIndex = 1;
-            button7.Text = "Export Selected (.dat)";
-            button7.UseVisualStyleBackColor = false;
-            //
-            // button8
-            //
-            button8.AutoSize = true;
-            button8.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            button8.BackColor = Color.White;
-            button8.Dock = DockStyle.Fill;
-            button8.Name = "button8";
-            button8.TabIndex = 0;
-            button8.Text = "Import Object";
-            button8.UseVisualStyleBackColor = false;
-            //
-            // GameObjectListView
-            // 
-            GameObjectListView.AllColumns.Add(objectIdColumn);
-            GameObjectListView.AllColumns.Add(objectNameColumn);
-            GameObjectListView.AllColumns.Add(sizeXColumn);
-            GameObjectListView.AllColumns.Add(sizeYColumn);
-            GameObjectListView.AllColumns.Add(walkableColumn);
-            GameObjectListView.AllColumns.Add(clippedColumn);
-            GameObjectListView.AllColumns.Add(ambientSoundColumn);
-            GameObjectListView.AllColumns.Add(morphVarbitColumn);
-            GameObjectListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            GameObjectListView.BackColor = Color.White;
-            //Same omission the NPC grid had: the handlers below are subscribed but nothing ever
-            //raises them while the activation is None.
-            GameObjectListView.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
-            GameObjectListView.CellEditUseWholeCell = false;
-            GameObjectListView.Columns.AddRange(new ColumnHeader[] { objectIdColumn, objectNameColumn, sizeXColumn, sizeYColumn, walkableColumn, clippedColumn, ambientSoundColumn, morphVarbitColumn });
-            GameObjectListView.Font = new Font("Consolas", 11.25F);
-            GameObjectListView.FullRowSelect = true;
-            GameObjectListView.GridLines = true;
-            GameObjectListView.Location = new Point(-2, -2);
-            GameObjectListView.Name = "GameObjectListView";
-            GameObjectListView.RowHeight = 10;
-            GameObjectListView.ShowGroups = false;
-            GameObjectListView.ShowImagesOnSubItems = true;
-            GameObjectListView.Size = new Size(853, 535);
-            GameObjectListView.TabIndex = 18;
-            GameObjectListView.UseCompatibleStateImageBehavior = false;
-            GameObjectListView.View = View.Details;
-            GameObjectListView.VirtualMode = true;
-            GameObjectListView.CellEditFinished += ObjectListView_CellEditFinished;
-            GameObjectListView.CellEditStarting += ObjectListView_CellEditStarting;
-            GameObjectListView.SelectedIndexChanged += GameObjectListView_SelectedIndexChanged;
-            // 
-            // objectIdColumn
-            // 
-            objectIdColumn.AspectName = "id";
-            objectIdColumn.Groupable = false;
-            //As with the NPC grid: the id is what the commit turns into a group and a file.
-            objectIdColumn.IsEditable = false;
-            objectIdColumn.Searchable = false;
-            objectIdColumn.Text = "ID";
-            objectIdColumn.Width = 78;
-            // 
-            // objectNameColumn
-            // 
-            objectNameColumn.AspectName = "name";
-            objectNameColumn.Text = "Name";
-            objectNameColumn.Width = 191;
-            // 
-            // sizeXColumn
-            // 
-            sizeXColumn.AspectName = "sizeX";
-            sizeXColumn.Text = "SizeX";
-            // 
-            // sizeYColumn
-            // 
-            sizeYColumn.AspectName = "sizeY";
-            sizeYColumn.Text = "SizeY";
-            // 
-            // walkableColumn
-            // 
-            walkableColumn.AspectName = "walkable";
-            walkableColumn.CheckBoxes = true;
-            walkableColumn.Text = "Walkable";
-            walkableColumn.Width = 80;
-            // 
-            // clippedColumn
-            // 
-            clippedColumn.AspectName = "isClipped";
-            clippedColumn.CheckBoxes = true;
-            clippedColumn.Text = "Clipped";
-            clippedColumn.Width = 70;
-            // 
-            // ambientSoundColumn
-            // 
-            ambientSoundColumn.AspectName = "ambientSoundId";
-            ambientSoundColumn.Text = "Sound";
-            ambientSoundColumn.Width = 70;
-            // 
-            // morphVarbitColumn
-            // 
-            morphVarbitColumn.AspectName = "morphVarbit";
-            morphVarbitColumn.Text = "MorphVar";
-            morphVarbitColumn.Width = 80;
             // 
             // InterfaceEditorTab
             //
@@ -1583,23 +892,33 @@ namespace FlashEditor {
             InterfaceEditorTab.TabIndex = 5;
             InterfaceEditorTab.Text = "Interfaces";
             InterfaceEditorTab.UseVisualStyleBackColor = true;
-            // 
-            // ModelViewerTab
-            // 
-            ModelViewerTab.Controls.Add(splitContainer1);
-            ModelViewerTab.Location = new Point(4, 37);
-            ModelViewerTab.Name = "ModelViewerTab";
-            ModelViewerTab.Size = new Size(1113, 554);
-            ModelViewerTab.TabIndex = 6;
-            ModelViewerTab.Text = "Models";
-            ModelViewerTab.UseVisualStyleBackColor = true;
-            // 
+            //
+            // EntityEditorTab
+            //
+            // The four model-bearing families - items, NPCs, objects and models - behind one type
+            // selector, with the viewport beside the grid rather than on a page of its own. It
+            // replaces four pages: Items, NPCs, Objects and Models. Seeing an item's model used to
+            // mean opening Models, then Items, then Models again, because the grid and the GL
+            // surface were never on screen together.
+            //
+            // splitContainer1 moves here from the page that was called Models, whole. glControl's
+            // own parent is splitContainer1.Panel1 and does not change at all: a GLControl that is
+            // reparented loses its window handle and its GL context with it, and there is exactly
+            // one context in this application.
+            EntityEditorTab.Controls.Add(splitContainer1);
+            EntityEditorTab.Location = new Point(4, 37);
+            EntityEditorTab.Name = "EntityEditorTab";
+            EntityEditorTab.Size = new Size(1113, 554);
+            EntityEditorTab.TabIndex = 28;
+            EntityEditorTab.Text = "Entities";
+            EntityEditorTab.UseVisualStyleBackColor = true;
+            //
             // splitContainer1
-            // 
+            //
             splitContainer1.Dock = DockStyle.Fill;
             splitContainer1.Location = new Point(0, 0);
             splitContainer1.Name = "splitContainer1";
-            // 
+            //
             // splitContainer1.Panel1
             //
             // Docking is resolved from the end of the Controls collection backwards, so the Fill'd
@@ -1610,11 +929,12 @@ namespace FlashEditor {
             //
             // splitContainer1.Panel2
             //
-            splitContainer1.Panel2.Controls.Add(ModelListView);
-            splitContainer1.Panel2.Controls.Add(ModelLoadingLabel);
-            splitContainer1.Panel2.Controls.Add(ModelProgressBar);
+            // The grid half, and the only half that changes as the type selector moves. The panel
+            // owns its own worker, progress bar and status line through DefinitionListPanel, so
+            // nothing here states a size for either.
+            splitContainer1.Panel2.Controls.Add(EntityPanel);
             splitContainer1.Size = new Size(1113, 554);
-            splitContainer1.SplitterDistance = 862;
+            splitContainer1.SplitterDistance = 620;
             splitContainer1.TabIndex = 0;
             // 
             // glControl
@@ -1758,45 +1078,6 @@ namespace FlashEditor {
             ViewerLimitsLabel.Name = "ViewerLimitsLabel";
             ViewerLimitsLabel.Text = "Viewer omits frame blending, scene lighting and particle scene collision.";
             ViewerLimitsLabel.TextAlign = ContentAlignment.MiddleLeft;
-            //
-            // ModelListView
-            // 
-            ModelListView.Columns.AddRange(new ColumnHeader[] { ModelID });
-            ModelListView.Location = new Point(3, 3);
-            ModelListView.Name = "ModelListView";
-            ModelListView.ShowGroups = false;
-            ModelListView.Size = new Size(241, 470);
-            ModelListView.TabIndex = 15;
-            ModelListView.View = View.Details;
-            ModelListView.VirtualMode = true;
-            ModelListView.SelectedIndexChanged += ModelListView_SelectedIndexChanged;
-            // 
-            // ModelID
-            // 
-            ModelID.AspectName = "ModelID";
-            ModelID.Text = "ID";
-            // 
-            // ModelLoadingLabel
-            // 
-            ModelLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
-            ModelLoadingLabel.AutoSize = true;
-            ModelLoadingLabel.BackColor = Color.Transparent;
-            ModelLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            ModelLoadingLabel.Location = new Point(6, 467);
-            ModelLoadingLabel.Name = "ModelLoadingLabel";
-            ModelLoadingLabel.Size = new Size(194, 28);
-            ModelLoadingLabel.TabIndex = 14;
-            ModelLoadingLabel.Text = "Loading Models";
-            ModelLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            // 
-            // ModelProgressBar
-            // 
-            ModelProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
-            ModelProgressBar.ForeColor = Color.DarkRed;
-            ModelProgressBar.Location = new Point(4, 489);
-            ModelProgressBar.Name = "ModelProgressBar";
-            ModelProgressBar.Size = new Size(240, 62);
-            ModelProgressBar.TabIndex = 13;
             // 
             // TextureViewerTab
             //
@@ -2139,11 +1420,6 @@ namespace FlashEditor {
             groupBox1.ResumeLayout(false);
             MetaControlsLayout.ResumeLayout(false);
             MetaControlsLayout.PerformLayout();
-            ItemEditorTab.ResumeLayout(false);
-            ItemControlsLayout.ResumeLayout(false);
-            ItemControlsLayout.PerformLayout();
-            groupBox4.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize) ItemListView).EndInit();
             SpriteEditorTab.ResumeLayout(false);
             SpriteEditorTab.PerformLayout();
             SpriteSplit.Panel1.ResumeLayout(false);
@@ -2160,18 +1436,7 @@ namespace FlashEditor {
             SpriteControlsLayout.ResumeLayout(false);
             SpriteControlsLayout.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) SpriteListView).EndInit();
-            NPCEditorTab.ResumeLayout(false);
-            NPCControlsLayout.ResumeLayout(false);
-            NPCControlsLayout.PerformLayout();
-            groupBox6.ResumeLayout(false);
-            groupBox6.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize) NPCListView).EndInit();
-            ObjectEditorTab.ResumeLayout(false);
-            ObjectControlsLayout.ResumeLayout(false);
-            ObjectControlsLayout.PerformLayout();
-            groupBox5.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize) GameObjectListView).EndInit();
-            ModelViewerTab.ResumeLayout(false);
+            EntityEditorTab.ResumeLayout(false);
             ViewerToolPanel.ResumeLayout(false);
             ViewerToolPanel.PerformLayout();
             splitContainer1.Panel1.ResumeLayout(false);
@@ -2179,7 +1444,6 @@ namespace FlashEditor {
             splitContainer1.Panel2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) splitContainer1).EndInit();
             splitContainer1.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize) ModelListView).EndInit();
             TextureViewerTab.ResumeLayout(false);
             TextureStatusPanel.ResumeLayout(false);
             TextureStatusPanel.PerformLayout();
@@ -2197,7 +1461,6 @@ namespace FlashEditor {
         private System.Windows.Forms.SplitContainer EditorNavSplit;
         private System.Windows.Forms.TreeView EditorNavTree;
         private PageDeck EditorTabControl;
-        private System.Windows.Forms.TabPage ItemEditorTab;
         private System.Windows.Forms.TabPage SpriteEditorTab;
         private System.Windows.Forms.TabPage Console;
         private System.Diagnostics.EventLog eventLog1;
@@ -2232,46 +1495,18 @@ namespace FlashEditor {
         private System.Windows.Forms.Button ExportSpriteBmpBtn;
         private System.Windows.Forms.Label SpriteLoadingLabel;
         private System.Windows.Forms.ProgressBar SpriteProgressBar;
-        private System.Windows.Forms.GroupBox groupBox4;
         //The Items and Objects control strips lay out through these rather than through absolute
         //positions, so nothing in them carries a pixel size for the form's font scaling to shrink.
-        private System.Windows.Forms.TableLayoutPanel ItemControlsLayout;
-        private System.Windows.Forms.ProgressBar ItemProgressBar;
-        private System.Windows.Forms.Button ExportItemDatBtn;
-        private System.Windows.Forms.Button button9;
-        private System.Windows.Forms.Label ItemLoadingLabel;
-        private BrightIdeasSoftware.FastObjectListView ItemListView;
-        private BrightIdeasSoftware.OLVColumn ItemID;
-        private BrightIdeasSoftware.OLVColumn ItemName;
-        private System.Windows.Forms.TabPage NPCEditorTab;
-        private System.Windows.Forms.TabPage ObjectEditorTab;
         private System.Windows.Forms.TabPage InterfaceEditorTab;
+        //Indexes 19, 18, 16 and 7 behind one type selector, with the viewport beside the grid. The
+        //page replaces four - Items, NPCs, Objects and Models - each of which carried its own copy
+        //of the worker, the progress reporting and the edit commit inside LoadEditorTab. The four
+        //are DefinitionListDescriptors now and the panel swaps between them.
+        private TabPage EntityEditorTab;
+        private FlashEditor.Definitions.Entities.EntityBrowserPanel EntityPanel = new FlashEditor.Definitions.Entities.EntityBrowserPanel();
         private BrightIdeasSoftware.OLVColumn EditButton;
-        private BrightIdeasSoftware.OLVColumn InvModel;
-        private BrightIdeasSoftware.OLVColumn Male1;
-        private BrightIdeasSoftware.OLVColumn Male2;
-        private BrightIdeasSoftware.OLVColumn Female1;
-        private BrightIdeasSoftware.OLVColumn Female2;
-        private BrightIdeasSoftware.OLVColumn valueColumn;
-        private BrightIdeasSoftware.OLVColumn stackableColumn;
-        private BrightIdeasSoftware.OLVColumn equipSlotColumn;
-        private BrightIdeasSoftware.OLVColumn equipIdColumn;
-        private BrightIdeasSoftware.OLVColumn membersOnlyColumn;
-        private System.Windows.Forms.Label NPCLoadingLabel;
-        private System.Windows.Forms.GroupBox groupBox6;
-        private System.Windows.Forms.TableLayoutPanel NPCControlsLayout;
-        private System.Windows.Forms.ProgressBar NPCProgressBar;
-        private System.Windows.Forms.Button button2;
-        private System.Windows.Forms.Button button3;
-        private BrightIdeasSoftware.FastObjectListView NPCListView;
-        private BrightIdeasSoftware.OLVColumn npcIdColumn;
-        private BrightIdeasSoftware.OLVColumn nameColumn;
-        private BrightIdeasSoftware.OLVColumn Rotate1;
-        private BrightIdeasSoftware.OLVColumn Rotate2;
         private System.Windows.Forms.ToolStripMenuItem setDirectoryToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem openDirectoryToolStripMenuItem;
-        private BrightIdeasSoftware.OLVColumn sizeColumn;
-        private BrightIdeasSoftware.OLVColumn levelColumn;
         private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
         private BrightIdeasSoftware.TreeListView RefTableListView;
         private BrightIdeasSoftware.OLVColumn formatCol;
@@ -2295,33 +1530,8 @@ namespace FlashEditor {
         private System.Windows.Forms.Button button5;
         private BrightIdeasSoftware.OLVColumn olvColumn4;
         private BrightIdeasSoftware.OLVColumn olvColumn7;
-        private BrightIdeasSoftware.OLVColumn olvColumn9;
-        private BrightIdeasSoftware.OLVColumn olvColumn10;
-        private BrightIdeasSoftware.OLVColumn olvColumn11;
-        private BrightIdeasSoftware.OLVColumn rotationColumn;
-        private BrightIdeasSoftware.OLVColumn ambientColumn;
-        private BrightIdeasSoftware.OLVColumn contrastColumn;
-        private BrightIdeasSoftware.OLVColumn attackCursorColumn;
-        private BrightIdeasSoftware.OLVColumn visiblePriorityColumn;
-        private BrightIdeasSoftware.OLVColumn npcModelIdsColumn;
         private System.Windows.Forms.ToolStripMenuItem viewToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem alternateRowsToolStripMenuItem;
-        private System.Windows.Forms.GroupBox groupBox5;
-        private System.Windows.Forms.TableLayoutPanel ObjectControlsLayout;
-        private System.Windows.Forms.Label ObjectLoadingLabel;
-        private System.Windows.Forms.ProgressBar ObjectProgressBar;
-        private System.Windows.Forms.Button button7;
-        private System.Windows.Forms.Button button8;
-        private BrightIdeasSoftware.FastObjectListView GameObjectListView;
-        private BrightIdeasSoftware.OLVColumn objectIdColumn;
-        private BrightIdeasSoftware.OLVColumn objectNameColumn;
-        private BrightIdeasSoftware.OLVColumn sizeXColumn;
-        private BrightIdeasSoftware.OLVColumn sizeYColumn;
-        private BrightIdeasSoftware.OLVColumn walkableColumn;
-        private BrightIdeasSoftware.OLVColumn clippedColumn;
-        private BrightIdeasSoftware.OLVColumn ambientSoundColumn;
-        private BrightIdeasSoftware.OLVColumn morphVarbitColumn;
-        private TabPage ModelViewerTab;
         private TabPage TextureViewerTab;
         private TabPage MapEditorTab;
         private FlashEditor.Map.MapEditorPanel MapEditorPanel = new FlashEditor.Map.MapEditorPanel();
@@ -2435,10 +1645,6 @@ namespace FlashEditor {
         private Label ViewerReadoutLabel;
         private Label ViewerStatusLabel;
         private Label ViewerLimitsLabel;
-        private FastObjectListView ModelListView;
-        private OLVColumn ModelID;
-        private Label ModelLoadingLabel;
-        private ProgressBar ModelProgressBar;
     }
 }
 

@@ -7,6 +7,7 @@ using FlashEditor.cache.util;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.Definitions.Entities;
 using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Definitions.Sprites;
@@ -427,6 +428,12 @@ namespace FlashEditor {
             saveAsItem.Click += saveAsToolStripMenuItem_Click;
             openToolStripMenuItem.DropDownItems.Insert(1, saveAsItem);
 
+            /* Wired once, here, rather than per bind. The entity page is a UserControl that outlives
+               every cache the form opens, so subscribing inside the bind delegate would add one more
+               handler on every cache open and load the model four times over on the fourth. */
+            EntityPanel.EntitySelected += EntityPanel_EntitySelected;
+            EntityPanel.AnimationChosen += EntityPanel_AnimationChosen;
+
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
             glControl.Resize += Editor_Resize;
@@ -762,7 +769,6 @@ namespace FlashEditor {
             //Here rather than in the constructor: the form's font scaling runs during layout, before
             //Load, and it would multiply anything set earlier by the same ratio that shrank the
             //designer's literals in the first place.
-            SizeProgressBars();
             SizeViewerControls();
 
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
@@ -773,11 +779,7 @@ namespace FlashEditor {
 
             if (IsCacheDirSet())
                 LoadCache(Properties.Settings.Default.cacheDir);
-            NPCListView.AlwaysGroupByColumn = npcIdColumn;
-            ItemListView.AlwaysGroupByColumn = ItemID;
             SpriteListView.AlwaysGroupByColumn = SpriteIdColumn;
-            GameObjectListView.AlwaysGroupByColumn = objectIdColumn;
-            ModelListView.AlwaysGroupByColumn = ModelID;
 
             //ObjectListView invokes this on the UI thread while it builds and paints rows, so it
             //is the safety net for any row the texture worker did not supply a bitmap for, not
@@ -834,14 +836,8 @@ namespace FlashEditor {
             //Clear off the previous crap
             workers.Clear();
 
-            ItemListView.ClearObjects();
-            ItemListView.Refresh();
-
             SpriteListView.ClearObjects();
             SpriteListView.Refresh();
-
-            NPCListView.ClearObjects();
-            NPCListView.Refresh();
 
             try {
                 //Dispose old resources before loading new cache
@@ -906,31 +902,15 @@ namespace FlashEditor {
         }
 
         /// <summary>
-        ///     Gives the editor-controls progress bars a height their own font can fill.
-        /// </summary>
-        /// <remarks>
-        ///     A <see cref="ProgressBar"/> cannot auto-size, so it is the one control in those strips
-        ///     whose height has to be stated at all. Derived from the font rather than written into
-        ///     the designer so that it stays right at any font size or DPI: a literal is only correct
-        ///     at the one it was drawn on, and a designer literal that no longer matched its control's
-        ///     font is what left the buttons shorter than their captions and the status labels wider
-        ///     than the box around them. <c>DefinitionListPanel</c> sizes its bar the same way and for
-        ///     the same reason.
-        /// </remarks>
-        private void SizeProgressBars() {
-            foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar, NPCProgressBar })
-                bar.Height = Math.Max(10, bar.Font.Height);
-        }
-
-        /// <summary>
         ///     Gives the viewport's animation selector a width its own font can fill.
         /// </summary>
         /// <remarks>
         ///     A <see cref="ComboBox"/> cannot auto-size its width, so it is the one control on that
         ///     strip whose size has to be stated at all - everything beside it is <c>AutoSize</c>.
         ///     Measured from the font against the widest id the index can hold rather than written
-        ///     into the designer, for the reason <see cref="SizeProgressBars"/> exists: a literal is
-        ///     only right at the DPI it was drawn at, and this form scales by <c>AutoScaleMode.Dpi</c>.
+        ///     into the designer, for the reason <c>DefinitionListPanel</c> derives its progress bar's
+        ///     height from its own font: a literal is only right at the DPI it was drawn at, and this
+        ///     form scales by <c>AutoScaleMode.Dpi</c>.
         /// </remarks>
         private void SizeViewerControls() {
             //Room for a five-digit id plus the drop-down arrow. Index 20 declares 15,260 records, so
@@ -953,15 +933,20 @@ namespace FlashEditor {
             //meta index - which is also what the loader reads to rebuild it on every visit.
             Register(Console, RSConstants.META_INDEX, EditorCategory.Cache);
 
-            Register(ItemEditorTab, RSConstants.ITEM_DEFINITIONS_INDEX, EditorCategory.Entities);
-            Register(NPCEditorTab, RSConstants.NPC_DEFINITIONS_INDEX, EditorCategory.Entities);
-            Register(ObjectEditorTab, RSConstants.OBJECTS_DEFINITIONS_INDEX, EditorCategory.Entities);
-            Register(ModelViewerTab, RSConstants.MODELS_INDEX, EditorCategory.ModelsAndAnimation);
             Register(SpriteEditorTab, RSConstants.SPRITES_INDEX, EditorCategory.Media);
             Register(TextureViewerTab, RSConstants.TEXTURES, EditorCategory.Media);
 
             //The self-contained tabs. Each owns its worker and its layout, so all the form does is
             //hand it the cache.
+            /* Indexes 19, 18, 16 and 7 in one page, because the three definition families and the
+               models they name are only useful together: seeing an item's model used to mean opening
+               Models, then Items, then Models again. Registered against index 19, the way the Tracks
+               tab is registered against 6 while listing 11 beside it - the routing index picks the
+               page's home in the tree and nothing else, since the page selects its own family. */
+            Register(EntityEditorTab, RSConstants.ITEM_DEFINITIONS_INDEX, EditorCategory.Entities,
+                openCache => BindEntityPage(openCache),
+                RSConstants.NPC_DEFINITIONS_INDEX, RSConstants.OBJECTS_DEFINITIONS_INDEX,
+                RSConstants.MODELS_INDEX);
             /* Index 3 has two real levels - a group is one interface and a file is one component -
                so the tab lists interfaces and loads a single interface's components on selection.
                A flat listing of all 42,256 files hid the level that matters. */
@@ -1323,66 +1308,6 @@ namespace FlashEditor {
                     bgw.RunWorkerAsync();
                     break;
 
-                case RSConstants.ITEM_DEFINITIONS_INDEX:
-                    //When an item is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
-                        ItemProgressBar.Value = e.ProgressPercentage;
-                        ItemLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
-                    });
-
-                    bgw.DoWork += delegate {
-                        /* The declared files, not the slot space. A page is 256 ids wide and index 19
-                           is sparse, so groupCount * 256 counts slots that were never allocated -
-                           it reported 20,480 items where the table declares 20,427, and every one of
-                           the difference cost a caught FileNotFoundException on the way past. */
-                        List<(int Group, int File)> addresses =
-                            cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX).ToList();
-                        CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
-
-                        int done = 0;
-                        int total = addresses.Count;
-                        int percentile = Math.Max(1, total / 100);
-
-                        Debug(@"  _                     _ _               _ _                     ");
-                        Debug(@" | |                   | (_)             (_) |                    ");
-                        Debug(@" | |     ___   __ _  __| |_ _ __   __ _   _| |_ ___ _ __ ___  ___ ");
-                        Debug(@" | |    / _ \ / _` |/ _` | | '_ \ / _` | | | __/ _ \ '_ ` _ \/ __|");
-                        Debug(@" | |___| (_) | (_| | (_| | | | | | (_| | | | ||  __/ | | | | \__ \");
-                        Debug(@" |______\___/ \__,_|\__,_|_|_| |_|\__, | |_|\__\___|_| |_| |_|___/");
-                        Debug(@"                                   __/ |                          ");
-                        Debug(@"                                  |___/                           ");
-                        Debug(@"Loading Items");
-
-                        foreach ((int archiveId, int file) in addresses) {
-                            try {
-                                ItemDefinition item = cache.GetItemDefinition(archiveId, file);
-                                int itemId = addressing.DefinitionId(archiveId, file);
-                                item.SetId(itemId); //Set the item ID
-                                cache.items.Add(itemId, item);
-                            }
-                            catch (Exception ex) {
-                                Debug(ex.Message);
-                            }
-                            finally {
-                                done++;
-
-                                //Only update the progress bar for each 1% completed
-                                if (done % percentile == 0 || done == total)
-                                    bgw.ReportProgress(done * 100 / total, "Loaded " + done + "/" + total + " (" + done * 100 / total + "%)");
-                            }
-                        }
-
-                        Debug("Finished loading " + total + " items");
-
-                        ItemListView.SetObjects(cache.items.Values);
-                    };
-
-                    bgw.Disposed += delegate {
-                        workers.Remove(bgw);
-                    };
-
-                    bgw.RunWorkerAsync();
-                    break;
                 case RSConstants.SPRITES_INDEX: {
                         Debug(@" _                     _ _                _____            _ _           ");
                         Debug(@"| |                   | (_)              / ____|          (_| |          ");
@@ -1472,122 +1397,6 @@ namespace FlashEditor {
                         bgw.RunWorkerAsync();
                         break;
                     }
-                case RSConstants.NPC_DEFINITIONS_INDEX:
-                    Debug(@" _                     _ _               _   _ _____   _____     ");
-                    Debug(@"| |                   | (_)             | \ | |  __ \ / ____|    ");
-                    Debug(@"| |     ___   __ _  __| |_ _ __   __ _  |  \| | |__) | |     ___ ");
-                    Debug(@"| |    / _ \ / _` |/ _` | | '_ \ / _` | | . ` |  ___/| |    / __|");
-                    Debug(@"| |___| (_) | (_| | (_| | | | | | (_| | | |\  | |    | |____\__ \");
-                    Debug(@"|______\___/ \__,_|\__,_|_|_| |_|\__, | |_| \_|_|     \_____|___/");
-                    Debug(@"                                  __/ |                          ");
-                    Debug(@"                                 |___/                           ");
-                    Debug(@"Loading NPCs");
-
-                    //When an NPC is loaded, update the progress bar
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
-                        NPCProgressBar.Value = e.ProgressPercentage;
-                        NPCLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
-                    });
-
-                    bgw.DoWork += async delegate {
-                        List<NPCDefinition> npcs = new List<NPCDefinition>();
-
-                        /* The declared files, not the slot space. This walked 106 groups x 128 and
-                           reported "Loaded 13568/13568" where index 18 declares 13,359 - 209 empty
-                           slots counted as NPCs, each one a caught FileNotFoundException that also
-                           made the count look like the truth. */
-                        List<(int Group, int File)> addresses =
-                            cache.EnumerateFiles(RSConstants.NPC_DEFINITIONS_INDEX).ToList();
-                        CacheAddressing addressing = CacheAddressing.For(RSConstants.NPC_DEFINITIONS_INDEX);
-
-                        int done = 0;
-                        int total = addresses.Count;
-                        int percentile = Math.Max(1, total / 100);
-
-                        bgw.ReportProgress(0, "Loading NPCs");
-
-                        Debug("Loading NPC data");
-
-                        foreach ((int archiveId, int file) in addresses) {
-                            try {
-                                NPCDefinition npc = cache.GetNPCDefinition(archiveId, file);
-                                npc.SetId(addressing.DefinitionId(archiveId, file)); //Set the NPC ID
-                                cache.npcs[npc.id] = npc;
-                                npcs.Add(npc);
-                            }
-                            catch (Exception ex) {
-                                Debug(ex.Message);
-                            }
-                            finally {
-                                done++;
-
-                                //Only update the progress bar for each 1% completed
-                                if (done % percentile == 0 || done == total)
-                                    bgw.ReportProgress(done * 100 / total, "Loaded " + done + "/" + total + " (" + done * 100 / total + "%)");
-                            }
-                        }
-
-                        NPCListView.SetObjects(npcs);
-                    };
-
-                    bgw.Disposed += delegate {
-                        workers.Remove(bgw);
-                    };
-
-                    bgw.RunWorkerAsync();
-                    break;
-                case RSConstants.OBJECTS_DEFINITIONS_INDEX:
-                    bgw.ProgressChanged += new ProgressChangedEventHandler((sender, e) => {
-                        ObjectProgressBar.Value = e.ProgressPercentage;
-                        ObjectLoadingLabel.Text = e.UserState!.ToString(); //Every ReportProgress call in this worker passes a status string
-                    });
-
-                    bgw.DoWork += delegate {
-                        List<ObjectDefinition> objects = new List<ObjectDefinition>();
-
-                        /* The declared files, not a page size read off group 0. Deriving the page
-                           size from the first group's file count is right only while that group
-                           happens to be full, and 64 of index 16's 224 groups are not - so the id
-                           arithmetic below it named the wrong definition for every group after the
-                           first short one, and the total was the same slot-space overcount the item
-                           and NPC tabs had. */
-                        List<(int Group, int File)> addresses =
-                            cache.EnumerateFiles(RSConstants.OBJECTS_DEFINITIONS_INDEX).ToList();
-                        CacheAddressing addressing = CacheAddressing.For(RSConstants.OBJECTS_DEFINITIONS_INDEX);
-
-                        int total = addresses.Count;
-                        int done = 0;
-                        int percentile = Math.Max(1, total / 100);
-
-                        bgw.ReportProgress(0, "Loading Objects");
-
-                        foreach ((int archiveId, int file) in addresses) {
-                            try {
-                                ObjectDefinition obj = cache.GetObjectDefinition(archiveId, file);
-                                obj.id = addressing.DefinitionId(archiveId, file);
-                                cache.objects[obj.id] = obj;
-                                objects.Add(obj);
-                            }
-                            catch (Exception ex) {
-                                Debug(ex.Message);
-                            }
-                            finally {
-                                done++;
-                                if (done % percentile == 0 || done == total)
-                                    bgw.ReportProgress(done * 100 / total, $"Loaded {done}/{total} {done * 100 / total}%");
-                            }
-                        }
-
-                        GameObjectListView.SetObjects(objects);
-                    };
-
-                    bgw.Disposed += delegate {
-                        workers.Remove(bgw);
-                    };
-
-                    bgw.RunWorkerAsync();
-                    break;
-
                 case RSConstants.TEXTURES: {
                         //This case used to call LoadTextures inline and leave the worker created
                         //above orphaned, so the whole 1408-definition render sweep ran on the UI
@@ -1656,30 +1465,6 @@ namespace FlashEditor {
                         //that arrived before its slot did would have nowhere to write, and seeding
                         //costs about 1.7s against a sweep that runs for two minutes.
                         SeedTextureGrid(snapshot, () => bgw.RunWorkerAsync());
-                        break;
-                    }
-
-                case RSConstants.MODELS_INDEX: {
-                        ProgressBar bar = ModelProgressBar;
-                        Label lbl = ModelLoadingLabel;
-                        RSCache openCache = cache;
-
-                        bgw.DoWork += (object? s, DoWorkEventArgs args) => {
-                            //Both are table walks with no decode in them, so the animation ids ride
-                            //along on the model enumeration's worker rather than earning one of their
-                            //own. Off the UI thread all the same: index 7 declares 63,607 groups.
-                            var list = openCache.EnumerateModelReferences().ToList();
-                            args.Result = (list, EnumerateAnimationIds(openCache));
-                        };
-
-                        bgw.RunWorkerCompleted += (_, e) => {
-                            var (list, animationIds) = ((List<ModelReference>, List<int>)) e.Result!;
-                            ModelListView.SetObjects(list);
-                            PopulateAnimationSelector(animationIds);
-                            lbl.Text = $"Models loaded ({list.Count})";
-                        };
-
-                        bgw.RunWorkerAsync();
                         break;
                     }
 
@@ -1933,195 +1718,6 @@ namespace FlashEditor {
             return fileIds[0];
         }
 
-        //Finished editing a definition
-        private void ItemListView_CellEditFinished(object sender, CellEditEventArgs e) {
-            Debug(@" ______    _ _ _     _____ _                ");
-            Debug(@"|  ____|  | (_) |   |_   _| |                ");
-            Debug(@"| |__   __| |_| |_    | | | |_ ___ _ __ ___  ");
-            Debug(@"|  __| / _` | | __|   | | | __/ _ \ '_ ` _ \ ");
-            Debug(@"| |___| (_| | | |_   _| |_| ||  __/ | | | | |");
-            Debug(@"|______\__,_|_|\__| |_____|\__\___|_| |_| |_|");
-            Debug("Edit Item");
-
-            Debug("itemdef name: " + currentItem.name);
-
-            //Get the object represented by the ListView
-            ItemDefinition newDefinition = (ItemDefinition) e.RowObject;
-
-            //Skip write if nothing actually changed
-            byte[] newBytes = newDefinition.Encode().ToArray();
-            byte[] oldBytes = currentItem.Encode().ToArray();
-            if (newBytes.AsSpan().SequenceEqual(oldBytes))
-                return;
-
-            //Update the items archive with the new definition
-            cache.items[newDefinition.id] = newDefinition;
-
-            //Update the cache definition
-            int archiveId = newDefinition.id / 256;
-            int entryId = newDefinition.id % 256;
-
-            //Update the entry in the container's archive
-            JagStream newItemStream = new JagStream(newBytes);
-
-            cache.WriteFile(RSConstants.ITEM_DEFINITIONS_INDEX, archiveId, entryId, newItemStream);
-
-            PrintDifferences(newDefinition, currentItem);
-        }
-
-        /// <summary>
-        ///     Stages an edited object definition.
-        /// </summary>
-        /// <remarks>
-        ///     The address comes from <see cref="CacheAddressing"/> through
-        ///     <see cref="DefinitionWriter.Save"/> rather than from a page size read off group 0. That
-        ///     derivation is right only while group 0 is full, and 64 of index 16's 224 groups are
-        ///     not, so a short group anywhere before the edited one made this write into a slot
-        ///     belonging to a different object and report success.
-        /// </remarks>
-        private void ObjectListView_CellEditFinished(object sender, CellEditEventArgs e) {
-            ObjectDefinition newDef = (ObjectDefinition) e.RowObject;
-
-            if (!DefinitionWriter.Save(cache, RSConstants.OBJECTS_DEFINITIONS_INDEX, newDef.id,
-                                       newDef.Encode().ToArray()))
-                return;
-
-            cache.objects[newDef.id] = newDef;
-
-            PrintDifferences(newDef, currentObject);
-        }
-
-        /// <summary>
-        ///     Stages an edited NPC definition.
-        /// </summary>
-        /// <remarks>
-        ///     Reachable only because <c>NPCListView.CellEditActivation</c> is set; without it
-        ///     ObjectListView never raises this and index 18 is read-only in the editor whatever the
-        ///     codec beneath it can do.
-        ///     <para>
-        ///     The unchanged check is inside <see cref="DefinitionWriter.Save"/>, against the bytes
-        ///     the cache holds rather than against the pre-edit snapshot, so a field typed back to
-        ///     its original value writes nothing.
-        ///     </para>
-        /// </remarks>
-        private void NPCListView_CellEditFinished(object sender, CellEditEventArgs e) {
-            NPCDefinition newDef = (NPCDefinition) e.RowObject;
-
-            if (!DefinitionWriter.Save(cache, RSConstants.NPC_DEFINITIONS_INDEX, newDef.id,
-                                       newDef.Encode().ToArray()))
-                return;
-
-            cache.npcs[newDef.id] = newDef;
-
-            PrintDifferences(newDef, currentNpc);
-        }
-
-        /// <summary>
-        ///     Replaces the selected NPC's definition with the encoded bytes of a file on disk.
-        /// </summary>
-        /// <remarks>
-        ///     The bytes are decoded before anything is staged. An NPC record is a self-delimiting
-        ///     opcode stream with no length prefix, so the only check available on it is that our
-        ///     decoder can walk it to its terminator - and the decoder throws on an opcode it does
-        ///     not know rather than skipping it, which is what makes that check worth anything.
-        ///     <para>
-        ///     The file's own id is ignored: the target is the row that was selected, since the id is
-        ///     the cache address rather than a field of the record.
-        ///     </para>
-        /// </remarks>
-        private void ImportNpcBtn_Click(object sender, EventArgs e) {
-            if (cache == null || NPCListView.SelectedObject is not NPCDefinition target) {
-                MessageBox.Show(this, "Select the NPC to overwrite first.", "Import NPC",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            using OpenFileDialog picker = new OpenFileDialog {
-                Title = "Import NPC " + target.id,
-                Filter = "NPC definition (*.dat)|*.dat|All files (*.*)|*.*"
-            };
-
-            if (picker.ShowDialog(this) != DialogResult.OK)
-                return;
-
-            try {
-                byte[] imported = File.ReadAllBytes(picker.FileName);
-
-                //Decoded to validate, but the file's own bytes are what gets stored: re-encoding
-                //would substitute our opcode order for the one the file carries, and the format
-                //has more than one valid spelling of the same definition.
-                NPCDefinition decoded = new NPCDefinition(new JagStream(imported));
-                decoded.SetId(target.id);
-
-                if (!DefinitionWriter.Save(cache, RSConstants.NPC_DEFINITIONS_INDEX, target.id, imported)) {
-                    NPCLoadingLabel.Text = "NPC " + target.id + " already holds those bytes";
-                    return;
-                }
-
-                cache.npcs[target.id] = decoded;
-                NPCListView.RemoveObject(target);
-                NPCListView.AddObject(decoded);
-                NPCListView.SelectedObject = decoded;
-                NPCLoadingLabel.Text = "Imported NPC " + target.id;
-            }
-            catch (Exception ex) {
-                //Reported rather than thrown: a malformed file must cost the import and nothing else
-                Debug("NPC import failed: " + ex);
-                MessageBox.Show(this,
-                    "Could not import that file as an NPC definition:" + Environment.NewLine + ex.Message,
-                    "Import NPC", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void ExportItemDatBtn_Click(object sender, EventArgs e) {
-            ItemLoadingLabel.Text = "Status: Dumping " + ItemListView.SelectedObjects.Count + " Items...";
-
-            //Creates a new background worker
-            BackgroundWorker itemDumper = new BackgroundWorker {
-                WorkerReportsProgress = true,
-                WorkerSupportsCancellation = true
-            };
-            workers.Add(itemDumper);
-
-            //When an item is loaded, update the progress bar
-            itemDumper.ProgressChanged += new ProgressChangedEventHandler((sender2, e2) => {
-                ItemProgressBar.Value = e2.ProgressPercentage;
-                //DoWork calls the single-arg ReportProgress, so UserState is always null
-                ItemLoadingLabel.Text = e2.UserState?.ToString() ?? "Status: Dumping " + e2.ProgressPercentage + "%...";
-            });
-
-            ItemDefinition[] items = new ItemDefinition[ItemListView.SelectedObjects.Count];
-            ItemListView.SelectedObjects.CopyTo(items, 0);
-            Debug(items[0].name);
-
-            itemDumper.DoWork += delegate {
-                if (items.Length > 0) {
-                    //Ensures that the directory exists
-                    Directory.CreateDirectory(RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/");
-
-                    int done = 0;
-
-                    foreach (ItemDefinition def in items) {
-                        Debug("Exporting Item " + def.GetId() + " name is " + def.name);
-                        JagStream.Save(def.Encode(), RSConstants.CACHE_OUTPUT_DIRECTORY + "/items/" + def.id + ".dat");
-                        done++;
-                        itemDumper.ReportProgress(done * 100 / items.Length);
-                    }
-                }
-            };
-
-            itemDumper.Disposed += delegate {
-                workers.Remove(itemDumper);
-            };
-
-            itemDumper.RunWorkerCompleted += (sender2, e2) => {
-                if (e2.Error != null)
-                    Debug("error: " + e2.Error.ToString());
-            };
-
-            itemDumper.RunWorkerAsync();
-        }
-
         /// <summary>
         /// This is where the magic gets done.
         /// And I really mean magic, because if this works then I am a literal god.
@@ -2231,28 +1827,6 @@ namespace FlashEditor {
             return 0;
         }
 
-        internal ItemDefinition currentItem;
-
-        internal NPCDefinition currentNpc;
-
-        internal ObjectDefinition currentObject;
-
-        private void ItemListView_CellEditStarting(object sender, CellEditEventArgs e) {
-            //cache the item definition prior to editing
-            currentItem = (ItemDefinition) ItemListView.SelectedObject;
-            currentItem = currentItem.Clone();
-        }
-
-        private void ObjectListView_CellEditStarting(object sender, CellEditEventArgs e) {
-            currentObject = (ObjectDefinition) GameObjectListView.SelectedObject;
-            currentObject = currentObject.Clone();
-        }
-
-        private void NPCListView_CellEditStarting(object sender, CellEditEventArgs e) {
-            currentNpc = (NPCDefinition) NPCListView.SelectedObject;
-            currentNpc = currentNpc.Clone();
-        }
-
         /// <summary>Reopens the pristine copy, discarding whatever the working cache holds.</summary>
         private void button5_Click(object sender, EventArgs e) {
             ReopenAt(CachePaths.Pristine, "pristine copy", CachePaths.PristineVariable);
@@ -2294,7 +1868,6 @@ namespace FlashEditor {
         //Set the alternating row back color
         private void alternateRowsToolStripMenuItem_Click(object sender, EventArgs e) {
             TreeListView[] tlvs = { RefTableListView, ContainerListView, SpriteListView };
-            FastObjectListView[] olvs = { ItemListView, NPCListView, GameObjectListView };
             DialogResult result = colorDialog1.ShowDialog();
 
             foreach (TreeListView tlv in tlvs) {
@@ -2303,12 +1876,11 @@ namespace FlashEditor {
                 tlv.Refresh();
             }
 
-            foreach (FastObjectListView olv in olvs) {
-                olv.UseAlternatingBackColors = result == DialogResult.OK;
-                olv.AlternateRowBackColor = colorDialog1.Color;
-                olv.Refresh();
-            }
-
+            /* The three grids this used to reach into by name are one DefinitionListPanel now, which
+               owns its list rather than exposing it. Asking the panel is what keeps the menu working
+               across a family switch: the shading has to survive the grid being rebound, and a
+               handle taken here would be to whichever list happened to be showing. */
+            EntityPanel.SetAlternatingRows(result == DialogResult.OK, colorDialog1.Color);
         }
 
         /// <summary>Redraws the sprite detail pane at the magnification the user asked for.</summary>
@@ -2325,87 +1897,6 @@ namespace FlashEditor {
             SpritePreview.OutlineFrame = SpriteFrameOutline.Checked;
         }
 
-        private void ModelListView_SelectedIndexChanged(object sender, EventArgs e) {
-            Debug("Entered ModelListView_SelectedIndexChanged", LOG_DETAIL.ADVANCED);
-
-            if (ModelListView.SelectedObject is ModelReference mr) {
-                Debug($"SelectedObject is ModelReference (ID={mr.ModelID}, Archive={mr.ArchiveId}, File={mr.FileId})", LOG_DETAIL.ADVANCED);
-
-                int id = mr.ModelID;
-
-                // Check cache
-                if (cache.models.TryGetValue(id, out var def)) {
-                    Debug($"Cache hit for model {id} – rendering immediately.", LOG_DETAIL.ADVANCED);
-                    if (_textureCache != null)
-                    {
-                        if (_testTexture != 0)
-                        {
-                            GL.DeleteTexture(_testTexture);
-                            _testTexture = 0;
-                        }
-                        _modelRenderer.Load(def, _textureCache);
-                        SetViewerModels(new[] { def });
-                        FrameModel(new[] { def });
-                        UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { def });
-                    }
-                    glControl.Invalidate();
-                    return;
-                }
-
-                Debug($"Cache miss for model {id}.", LOG_DETAIL.ADVANCED);
-
-                // See if a load is already in progress
-                if (!_modelTasks.TryGetValue(id, out var task)) {
-                    Debug($"No existing task for model {id}, starting new Task.Run…", LOG_DETAIL.ADVANCED);
-                    task = Task.Run(() => {
-                        Debug($"[BG] Calling cache.GetModelDefinition({mr.ArchiveId}, {mr.FileId})", LOG_DETAIL.ADVANCED);
-                        var result = cache.GetModelDefinition(mr.ArchiveId, mr.FileId);
-                        Debug($"[BG] Finished GetModelDefinition for {id}", LOG_DETAIL.ADVANCED);
-                        return result;
-                    });
-                    _modelTasks[id] = task;
-                }
-                else {
-                    Debug($"Found existing task for model {id}, skipping new Task.Run.", LOG_DETAIL.ADVANCED);
-                }
-
-                // When the task completes…
-                task.ContinueWith(t => {
-                    Debug($"[UI] Task completed with status {t.Status} for model {id}", LOG_DETAIL.ADVANCED);
-
-                    if (t.Status == TaskStatus.RanToCompletion) {
-                        var loaded = t.Result;
-                        Debug($"[UI] Caching loaded model {id}", LOG_DETAIL.ADVANCED);
-                        cache.models[id] = loaded;
-
-                        Debug($"[UI] Removing task entry for {id}", LOG_DETAIL.ADVANCED);
-                        _modelTasks.Remove(id);
-
-                        Debug($"[UI] Rendering loaded model {id}", LOG_DETAIL.ADVANCED);
-                        if (_textureCache != null)
-                        {
-                            if (_testTexture != 0)
-                            {
-                                GL.DeleteTexture(_testTexture);
-                                _testTexture = 0;
-                            }
-                            _modelRenderer.Load(loaded, _textureCache);
-                            SetViewerModels(new[] { loaded });
-                            FrameModel(new[] { loaded });
-                            UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { loaded });
-                        }
-                        glControl.Invalidate();
-                    }
-                    else if (t.IsFaulted) {
-                        _modelTasks.Remove(id);
-                        Debug($"[UI] Error loading model {id}: {t.Exception?.Flatten().InnerException}", LOG_DETAIL.ADVANCED);
-                    }
-                }, TaskScheduler.FromCurrentSynchronizationContext());
-            }
-            else {
-                Debug("SelectedObject was NOT a ModelReference – doing nothing.", LOG_DETAIL.ADVANCED);
-            }
-        }
 
         /// <summary>
         /// Applies NPC recolouring, retexturing, and per-model translation
@@ -2495,115 +1986,266 @@ namespace FlashEditor {
             }
         }
 
-        private void NPCListView_SelectedIndexChanged(object sender, EventArgs e) {
-            if (NPCListView.SelectedObject is not NPCDefinition npc) return;
-            if (_textureCache == null) return;
+        /// <summary>
+        ///     Points the entity page at a cache and refills the viewport's animation selector.
+        /// </summary>
+        /// <remarks>
+        ///     The selector holds every id index 20 declares, which is what lets a model be posed by
+        ///     an animation nothing in the cache says belongs to it. It used to ride along on the
+        ///     Models tab's enumeration worker; that tab is gone, so it gets a worker of its own -
+        ///     off the UI thread for the reason it always was, that a table walk over 120 groups is
+        ///     not free and the page it stalls is the one being opened.
+        /// </remarks>
+        /// <param name="openCache">The open cache.</param>
+        private void BindEntityPage(RSCache openCache) {
+            EntityPanel.Bind(openCache);
 
-            var ids = npc.modelIds?.Where(id => id >= 0).ToArray();
-            if (ids == null || ids.Length == 0) return;
+            BackgroundWorker animationIds = new BackgroundWorker { WorkerSupportsCancellation = true };
+            workers.Add(animationIds);
 
-            Debug($"NPC {npc.id} '{npc.name}': loading {ids.Length} models [{string.Join(", ", ids)}]");
+            animationIds.DoWork += (_, args) => args.Result = EnumerateAnimationIds(openCache);
 
-            Task.Run(() => {
-                var defs = new List<ModelDefinition>();
-                for (int i = 0; i < ids.Length; i++) {
-                    try {
-                        var def = cache.GetModelDefinition(ids[i], 0).CloneForRendering();
-                        // Find the original index in modelIds for translation lookup
-                        int modelIndex = Array.IndexOf(npc.modelIds!, ids[i]); //non-null: ids was built from npc.modelIds and the null case returned at the top
-                        ApplyNpcTransforms(def, npc, modelIndex);
-                        defs.Add(def);
-                        Debug($"  Model {ids[i]}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
-                    }
-                    catch (Exception ex) {
-                        Debug($"  Model {ids[i]}: FAILED - {ex.Message}");
-                    }
+            animationIds.RunWorkerCompleted += (_, args) => {
+                //Reading Result throws when the worker cancelled or faulted, so both are checked
+                //first. A failure costs the selector and nothing else - the grid beside it is
+                //already loading through its own worker.
+                if (args.Error != null || args.Cancelled || args.Result == null) {
+                    Debug("Animation ids could not be listed: " + args.Error?.Message);
+                    return;
                 }
-                Debug($"NPC {npc.id}: loaded {defs.Count}/{ids.Length} models");
-                return defs;
-            }).ContinueWith(t => {
-                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
-                if (!glControl.IsHandleCreated) return;
-                glControl.MakeCurrent();
-                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
-                _modelRenderer.LoadMultiple(t.Result, _textureCache);
-                SetViewerModels(t.Result);
-                FrameModel(t.Result);
-                UpdateModelTooltip($"NPC {npc.id} '{npc.name}'", ids, t.Result);
-                glControl.Invalidate();
+
+                PopulateAnimationSelector((List<int>) args.Result);
+            };
+
+            animationIds.Disposed += delegate {
+                workers.Remove(animationIds);
+            };
+
+            animationIds.RunWorkerAsync();
+        }
+
+        /// <summary>
+        ///     Loads whatever the entity page has selected into the viewport.
+        /// </summary>
+        /// <remarks>
+        ///     One handler where there were four, and the four were identical apart from which
+        ///     definition they read model ids out of. The row type is what selects the arm rather
+        ///     than which grid raised the event, because there is only one grid now.
+        ///     <para>
+        ///     A null row is the family selector having moved rather than a defect: the page reports
+        ///     that its selection is gone before the new family's grid has loaded. The viewport keeps
+        ///     the models it has, because unloading them would leave an empty rectangle that reads as
+        ///     a broken tab while the grid beside it fills.
+        ///     </para>
+        /// </remarks>
+        /// <param name="sender">The entity page.</param>
+        /// <param name="e">What is selected.</param>
+        private void EntityPanel_EntitySelected(object? sender, EntitySelectionEventArgs e) {
+            if (e.Kind != EntityKind.Npc)
+                EntityPanel.ClearAnimations("Animations are listed for NPCs, which name a render animation set.");
+
+            switch (e.Row) {
+                case ItemDefinition item:
+                    ShowItemModel(item);
+                    break;
+                case NPCDefinition npc:
+                    ShowNpcAnimations(npc);
+                    ShowNpcModels(npc);
+                    break;
+                case ObjectDefinition definition:
+                    ShowObjectModels(definition);
+                    break;
+                case ModelListing listing:
+                    ShowModel(listing);
+                    break;
+            }
+        }
+
+        /// <summary>Plays the animation the entity page's selector names.</summary>
+        /// <remarks>
+        ///     The viewport's own id box is moved to the same id, so the two selectors cannot end up
+        ///     showing different animations while one of them is playing. Setting <c>Text</c> rather
+        ///     than <c>SelectedItem</c>: the box lists every id index 20 declares and searching
+        ///     fifteen thousand items for one is not worth it to move a caption.
+        /// </remarks>
+        /// <param name="sender">The entity page.</param>
+        /// <param name="animationId">The index-20 id.</param>
+        private void EntityPanel_AnimationChosen(object? sender, int animationId) {
+            AnimationSelector.Text = animationId.ToString();
+            LoadViewerAnimation(animationId);
+        }
+
+        /// <summary>Lists the animations an NPC's render animation set names.</summary>
+        /// <param name="npc">The selected NPC.</param>
+        private void ShowNpcAnimations(NPCDefinition npc) {
+            if (cache == null)
+                return;
+
+            IReadOnlyList<NpcAnimation> animations = NpcAnimationSet.For(cache, npc, out string reason);
+            EntityPanel.ShowAnimations(animations, reason);
+        }
+
+        /// <summary>
+        ///     Uploads one model from index 7 to the viewport.
+        /// </summary>
+        /// <remarks>
+        ///     The decode is kept off the UI thread and the upload is kept on it, because the GL
+        ///     context is current only on the thread that owns the control. The decoded definition is
+        ///     memoised in <c>cache.models</c>, which is what makes stepping back and forth through
+        ///     the grid cheap.
+        /// </remarks>
+        /// <param name="listing">The row.</param>
+        private void ShowModel(ModelListing listing) {
+            if (cache == null || _textureCache == null)
+                return;
+
+            int id = listing.ModelId;
+
+            if (cache.models.TryGetValue(id, out ModelDefinition? cached)) {
+                UploadModels(new[] { cached },
+                    "Model " + id + " (group " + id + ", file " + listing.FileId + ")", new[] { id });
+                return;
+            }
+
+            //One task per id, shared: the selection can pass over the same row twice before the
+            //first decode has finished, and a second task for it would decode the same bytes again.
+            if (!_modelTasks.TryGetValue(id, out Task<ModelDefinition>? task)) {
+                task = Task.Run(() => cache.GetModelDefinition(listing.Address.GroupId, listing.FileId));
+                _modelTasks[id] = task;
+            }
+
+            task.ContinueWith(finished => {
+                _modelTasks.Remove(id);
+
+                if (finished.Status != TaskStatus.RanToCompletion) {
+                    Debug("Model " + id + " failed to load: " + finished.Exception?.Flatten().InnerException);
+                    return;
+                }
+
+                cache.models[id] = finished.Result;
+                UploadModels(new[] { finished.Result },
+                    "Model " + id + " (group " + id + ", file " + listing.FileId + ")", new[] { id });
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        private void ItemListView_SelectedIndexChanged(object sender, EventArgs e) {
-            if (ItemListView.SelectedObject is not ItemDefinition item) return;
-            if (_textureCache == null) return;
+        /// <summary>Uploads an item's inventory model, recoloured and retextured as the item asks.</summary>
+        /// <param name="item">The selected item.</param>
+        private void ShowItemModel(ItemDefinition item) {
+            if (cache == null || _textureCache == null)
+                return;
 
             int modelId = item.inventoryModelId;
-            if (modelId <= 0) return;
+            if (modelId <= 0)
+                return;
 
-            Debug($"Item {item.id} '{item.name}': loading model {modelId}");
+            LoadModelsAsync(new[] { modelId },
+                (definition, id) => ApplyItemTransforms(definition, item),
+                "Item " + item.id + " '" + item.name + "' (model " + modelId + ")");
+        }
+
+        /// <summary>Uploads an NPC's models, with its recolours, retextures and per-model offsets.</summary>
+        /// <param name="npc">The selected NPC.</param>
+        private void ShowNpcModels(NPCDefinition npc) {
+            if (cache == null || _textureCache == null || npc.modelIds == null)
+                return;
+
+            int[] ids = npc.modelIds.Where(id => id >= 0).ToArray();
+            if (ids.Length == 0)
+                return;
+
+            LoadModelsAsync(ids,
+                //The index into the NPC's own array, not into the filtered list: opcode 121's
+                //translations are positional, so a model whose siblings included a -1 would take the
+                //offset belonging to a different slot.
+                (definition, id) => ApplyNpcTransforms(definition, npc, Array.IndexOf(npc.modelIds!, id)),
+                "NPC " + npc.id + " '" + npc.name + "'");
+        }
+
+        /// <summary>Uploads an object's first render group, which is its default orientation.</summary>
+        /// <param name="definition">The selected object.</param>
+        private void ShowObjectModels(ObjectDefinition definition) {
+            if (cache == null || _textureCache == null)
+                return;
+
+            if (definition.modelIds == null || definition.modelIds.Length == 0 || definition.modelIds[0] == null)
+                return;
+
+            int[] ids = definition.modelIds[0].Where(id => id > 0).Select(id => (int) id).ToArray();
+            if (ids.Length == 0)
+                return;
+
+            LoadModelsAsync(ids, null, "Object " + definition.id + " '" + definition.name + "'");
+        }
+
+        /// <summary>
+        ///     Decodes a set of models off the UI thread and uploads them on it.
+        /// </summary>
+        /// <remarks>
+        ///     Shared by the item, NPC and object arms, which had three copies of this between them.
+        ///     The models are cloned for rendering before any transform touches them: recolouring
+        ///     writes into the face colour array, and the definitions are memoised, so transforming
+        ///     one in place would leave the next entity that names the same model wearing the last
+        ///     one's colours.
+        /// </remarks>
+        /// <param name="modelIds">The models to load, in the order they should be uploaded.</param>
+        /// <param name="transform">Applied to each decoded model, with its id. Null for none.</param>
+        /// <param name="source">What the viewport is showing, for the tooltip.</param>
+        private void LoadModelsAsync(int[] modelIds, Action<ModelDefinition, int>? transform, string source) {
+            RSCache open = cache;
 
             Task.Run(() => {
-                var defs = new List<ModelDefinition>();
-                try {
-                    var def = cache.GetModelDefinition(modelId, 0).CloneForRendering();
-                    ApplyItemTransforms(def, item);
-                    defs.Add(def);
-                    Debug($"  Model {modelId}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
+                List<ModelDefinition> loaded = new List<ModelDefinition>(modelIds.Length);
+
+                foreach (int id in modelIds) {
+                    try {
+                        ModelDefinition definition = open.GetModelDefinition(id, 0).CloneForRendering();
+                        transform?.Invoke(definition, id);
+                        loaded.Add(definition);
+                    }
+                    catch (Exception failure) {
+                        //One model that will not decode costs itself, not the whole entity.
+                        Debug("Model " + id + " failed to load: " + failure.Message);
+                    }
                 }
-                catch (Exception ex) {
-                    Debug($"  Model {modelId}: FAILED - {ex.Message}");
-                }
-                return defs;
-            }).ContinueWith(t => {
-                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
-                if (!glControl.IsHandleCreated) return;
-                glControl.MakeCurrent();
-                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
-                _modelRenderer.LoadMultiple(t.Result, _textureCache);
-                SetViewerModels(t.Result);
-                FrameModel(t.Result);
-                UpdateModelTooltip($"Item {item.id} '{item.name}' (model {modelId})", new[] { modelId }, t.Result);
-                glControl.Invalidate();
+
+                return loaded;
+            }).ContinueWith(finished => {
+                if (finished.Status != TaskStatus.RanToCompletion || finished.Result.Count == 0)
+                    return;
+
+                UploadModels(finished.Result, source, modelIds);
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        private void GameObjectListView_SelectedIndexChanged(object sender, EventArgs e) {
-            if (GameObjectListView.SelectedObject is not ObjectDefinition obj) return;
-            if (_textureCache == null) return;
+        /// <summary>
+        ///     Hands decoded models to the renderer, the picker, the animator and the particle system.
+        /// </summary>
+        /// <remarks>
+        ///     The one place any of that happens, and it runs on the UI thread only: every call below
+        ///     touches GL, and the context is current on the thread that owns the control. The order
+        ///     matters as well - <c>SetViewerModels</c> indexes by the same model position the
+        ///     renderer was given, so a set built from a different list would highlight one face and
+        ///     pose another.
+        /// </remarks>
+        /// <param name="definitions">The models, in upload order.</param>
+        /// <param name="source">What the viewport is showing, for the tooltip.</param>
+        /// <param name="modelIds">The ids those models came from, for the tooltip.</param>
+        private void UploadModels(IList<ModelDefinition> definitions, string source, IList<int> modelIds) {
+            if (!glControl.IsHandleCreated || _textureCache == null || definitions.Count == 0)
+                return;
 
-            // Use the first render group (default orientation)
-            if (obj.modelIds == null || obj.modelIds.Length == 0 || obj.modelIds[0] == null) return;
-            var ids = obj.modelIds[0].Where(id => id > 0).Select(id => (int)id).ToArray();
-            if (ids.Length == 0) return;
+            glControl.MakeCurrent();
 
-            Debug($"Object {obj.id} '{obj.name}': loading {ids.Length} models [{string.Join(", ", ids)}]");
+            if (_testTexture != 0) {
+                GL.DeleteTexture(_testTexture);
+                _testTexture = 0;
+            }
 
-            Task.Run(() => {
-                var defs = new List<ModelDefinition>();
-                foreach (int id in ids) {
-                    try {
-                        var def = cache.GetModelDefinition(id, 0);
-                        defs.Add(def);
-                        Debug($"  Model {id}: {def.VertexCount} verts, {def.TriangleCount} tris", LOG_DETAIL.ADVANCED);
-                    }
-                    catch (Exception ex) {
-                        Debug($"  Model {id}: FAILED - {ex.Message}");
-                    }
-                }
-                Debug($"Object {obj.id}: loaded {defs.Count}/{ids.Length} models");
-                return defs;
-            }).ContinueWith(t => {
-                if (t.Status != TaskStatus.RanToCompletion || t.Result.Count == 0) return;
-                if (!glControl.IsHandleCreated) return;
-                glControl.MakeCurrent();
-                if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
-                _modelRenderer.LoadMultiple(t.Result, _textureCache);
-                SetViewerModels(t.Result);
-                FrameModel(t.Result);
-                UpdateModelTooltip($"Object {obj.id} '{obj.name}'", ids, t.Result);
-                glControl.Invalidate();
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+            _modelRenderer.LoadMultiple(definitions, _textureCache);
+            SetViewerModels(new List<ModelDefinition>(definitions));
+            FrameModel(definitions);
+            UpdateModelTooltip(source, modelIds, definitions);
+            glControl.Invalidate();
         }
 
         private void Editor_Resize(object sender, EventArgs e) {
@@ -2682,6 +2324,12 @@ namespace FlashEditor {
             //group read there is guarded, so the worst case is a discarded result - which it was
             //going to be anyway, since unbinding supersedes it.
             InterfacePanel.Bind(null);
+
+            //And the entity page, whose grid sweeps whichever of indexes 19, 18, 16 and 7 is
+            //selected. Index 16 is the one that matters - 56,199 records over 224 groups - but the
+            //reason is the one every panel below has: a reload started from any other page would
+            //otherwise leave a sweep decoding out of a file store that is about to be disposed.
+            EntityPanel.Bind(null);
 
             //Same again: the config tab's record list reads a whole group of index 2 on a worker.
             ConfigPanel.Bind(null);
