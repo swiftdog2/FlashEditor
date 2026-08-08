@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.cache;
@@ -112,9 +113,19 @@ namespace FlashEditor.Tests.Definitions
         ///     The editor rewrites a whole index 9 file on any save, and the archive CRC covers the
         ///     stored bytes, so an encoder that dropped an opcode or normalised a count would
         ///     rewrite graphs nobody edited and drag in the reference-table entry with them. The
-        ///     opcodes type 12 swallows are the case to watch: <c>Node_Sub10_Sub30</c> has no arm
-        ///     for opcodes 2 and 4, the decoder recognises them while reading nothing, and an
+        ///     opcodes type 12 swallows are the case to watch: <c>Node_Sub10_Sub30</c> has arms for
+        ///     opcodes 0, 1 and 3 only, the decoder recognises the rest while reading nothing, and an
         ///     encoder built from decoded state alone drops them and shortens exactly those files.
+        ///     Which opcodes those are is printed by
+        ///     <see cref="TheTextureIndex_HoldsWhatTheCodecClaimsItDoes"/> rather than written down
+        ///     here - the set was recorded as "2 and 4" in three places at once, all of them copies
+        ///     of one unmeasured sentence, and it is not.
+        ///     <para>
+        ///     What this sweep cannot see is the whole reason
+        ///     <see cref="EveryOpcodePayload_IsTheWidthTheClientReads"/> exists: the encoder replays
+        ///     the spans the decoder captured, so wrongly-sized spans still tile the file exactly and
+        ///     still re-encode byte for byte.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void EveryTextureGraph_ReEncodesToTheCapturedBytes()
@@ -135,6 +146,144 @@ namespace FlashEditor.Tests.Definitions
         public void EveryTextureGraph_EncodeIsAFixedPointOfDecode()
         {
             Sweep().AssertEncodeIsAFixedPointOfDecode();
+        }
+
+        /// <summary>
+        ///     Every opcode payload in the index is the width the 637 client reads for it, checked
+        ///     one occurrence at a time.
+        /// </summary>
+        /// <remarks>
+        ///     This is the sweep that closes the hole
+        ///     <see cref="EveryTextureGraph_ReEncodesToTheCapturedBytes"/> leaves open. That one
+        ///     compares an encoder that replays the decoder's own spans against the bytes those spans
+        ///     were cut from, so a mis-sized payload is invisible to it: wrongly-sized spans
+        ///     concatenate back into the original file just as exactly as correctly-sized ones.
+        ///     <para>
+        ///     Exact consumption was the only thing constraining the widths, and it constrains them
+        ///     in aggregate - one equation per file, that every width in it sums with the structure
+        ///     to the file's length. Two errors inside one node that cancel satisfy it, and so does
+        ///     any other error vector in that equation's null space.
+        ///     <see cref="TextureGraphWidthEvidenceTests"/> builds such a pair rather than arguing
+        ///     about it. This sweep asserts one equality per <em>occurrence</em>, against a table
+        ///     transcribed from the client's node classes with no reference to
+        ///     <c>Texture.Decode</c>, so a single wrong width fails at the node and opcode that
+        ///     carries it.
+        ///     </para>
+        ///     <para>
+        ///     The whole structure is compared, not only the widths - node count, each node's type
+        ///     and header bytes, the opcode sequence, the child run and where the client's parse ends
+        ///     - because a width error and a child-count error look identical downstream and are
+        ///     fixed in different places.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EveryOpcodePayload_IsTheWidthTheClientReads()
+        {
+            var failures = new List<string>();
+            var checkedPairs = new SortedDictionary<(int Type, int Opcode), int>();
+            int opcodes = 0;
+            int nodes = 0;
+
+            DefinitionSweepResult swept = Sweep().ForEachDecoded((record, texture) =>
+            {
+                TextureGraphRecord ours = texture.Record;
+
+                ClientGraphLayout theirs;
+                try
+                {
+                    theirs = ClientTextureGraphReader.Read(record.Bytes);
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"texture {record.Id}: the client's own layout does not fit the " +
+                                 $"{record.Bytes.Length} bytes stored - {ex.Message}");
+                    return;
+                }
+
+                if (theirs.Nodes.Count != ours.Nodes.Count)
+                {
+                    failures.Add($"texture {record.Id}: the client reads {theirs.Nodes.Count} nodes, " +
+                                 $"we read {ours.Nodes.Count}");
+                    return;
+                }
+
+                if (theirs.BodyLength != ours.BodyLength)
+                {
+                    failures.Add($"texture {record.Id}: the client's parse ends at {theirs.BodyLength}, " +
+                                 $"ours at {ours.BodyLength}, in a {record.Bytes.Length}-byte file");
+                }
+
+                if (theirs.HasOutputIndices != ours.HasOutputIndices)
+                {
+                    failures.Add($"texture {record.Id}: output indices present={theirs.HasOutputIndices} " +
+                                 $"by the client, {ours.HasOutputIndices} by us");
+                }
+
+                for (int n = 0; n < theirs.Nodes.Count; n++)
+                {
+                    ClientNodeLayout thatNode = theirs.Nodes[n];
+                    TextureNodeRecord thisNode = ours.Nodes[n];
+                    nodes++;
+
+                    if (thatNode.Type != thisNode.Type)
+                    {
+                        failures.Add($"texture {record.Id} node {n}: type {thatNode.Type} by the " +
+                                     $"client, {thisNode.Type} by us");
+                        break;
+                    }
+
+                    if (thatNode.ChildCount != thisNode.ChildIndices.Length)
+                    {
+                        failures.Add($"texture {record.Id} node {n} (type {thatNode.Type}): " +
+                                     $"{thatNode.ChildCount} child bytes by the client, " +
+                                     $"{thisNode.ChildIndices.Length} by us");
+                    }
+
+                    if (thatNode.Opcodes.Count != thisNode.Opcodes.Count)
+                    {
+                        failures.Add($"texture {record.Id} node {n} (type {thatNode.Type}): " +
+                                     $"{thatNode.Opcodes.Count} opcodes by the client, " +
+                                     $"{thisNode.Opcodes.Count} by us");
+                        continue;
+                    }
+
+                    for (int op = 0; op < thatNode.Opcodes.Count; op++)
+                    {
+                        ClientOpcodeSpan expected = thatNode.Opcodes[op];
+                        TextureOpcodeRecord actual = thisNode.Opcodes[op];
+                        opcodes++;
+                        Count(checkedPairs, (expected.NodeType, expected.Opcode));
+
+                        if (expected.Opcode != actual.Opcode)
+                        {
+                            failures.Add($"texture {record.Id} {expected}: we read it as opcode " +
+                                         $"{actual.Opcode}");
+                            break;
+                        }
+
+                        if (expected.Width != actual.Payload.Length)
+                        {
+                            failures.Add($"texture {record.Id} {expected}: the client reads " +
+                                         $"{expected.Width} payload bytes at offset {expected.Offset}, " +
+                                         $"we consumed {actual.Payload.Length}");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            _output.WriteLine($"{opcodes} opcode payloads across {nodes} nodes in {swept.Records} graphs " +
+                              "were measured against the client's own widths");
+            _output.WriteLine($"{checkedPairs.Count} distinct node-type/opcode pairs occur in this cache, " +
+                              "so only those widths are pinned by data: " +
+                              string.Join(", ", checkedPairs.Select(e =>
+                                  $"{e.Key.Type}/{e.Key.Opcode}=x{e.Value}")));
+            _output.WriteLine($"{swept.Records} files give the exact-consumption sweep {swept.Records} " +
+                              $"equations to work with; this one asserts {opcodes} equalities over the " +
+                              "same widths");
+
+            Assert.True(opcodes > 0, "no opcode payload was measured, so nothing was checked");
+            AssertNoFailures(failures);
         }
 
         /// <summary>
@@ -198,6 +347,30 @@ namespace FlashEditor.Tests.Definitions
         {
             counts.TryGetValue(value, out int seen);
             counts[value] = seen + 1;
+        }
+
+        /// <summary>
+        ///     Fails with every disagreement listed, truncated so a whole-format mismatch stays
+        ///     readable.
+        /// </summary>
+        /// <remarks>
+        ///     The count is reported before the detail because "3 opcodes disagree" and "19,000
+        ///     opcodes disagree" want completely different first moves, and the truncated list cannot
+        ///     tell them apart on its own.
+        /// </remarks>
+        /// <param name="failures">Every disagreement found, in the order it was found.</param>
+        private static void AssertNoFailures(List<string> failures)
+        {
+            if (failures.Count == 0)
+                return;
+
+            const int reported = 20;
+            string detail = string.Join(Environment.NewLine, failures.Take(reported));
+            if (failures.Count > reported)
+                detail += $"{Environment.NewLine}... and {failures.Count - reported} more";
+
+            Assert.Fail($"{failures.Count} texture graph fields disagree with the 637 client:" +
+                        Environment.NewLine + detail);
         }
     }
 }
