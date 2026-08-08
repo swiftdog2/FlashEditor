@@ -315,6 +315,156 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
+        ///     Every branch and every switch arm in the index lands on a real instruction.
+        /// </summary>
+        /// <remarks>
+        ///     The assertion that settles the branch arithmetic, and it has no <c>or</c> in it: a
+        ///     target is in range or the sweep fails. <c>Class247.java:7779</c> advances the counter
+        ///     with <c>OPCODE = is[++current]</c> before dispatching and each branch arm then adds the
+        ///     delta, so the next instruction is at <c>position + 1 + delta</c>.
+        ///     <para>
+        ///     <b>The +1 is load bearing and this sweep is what proves it.</b> Measured over the
+        ///     vanilla capture, all 42,884 branches in the index are in range under that reading and
+        ///     exactly one is not under <c>position + delta</c>: script 686's unconditional jump at
+        ///     position 8 has a delta of -9 in a 13-instruction script, which is a loop back to
+        ///     instruction 0 correctly and instruction -1 otherwise. A single witness rather than an
+        ///     aggregate, which is the standard this cache demands - the 11,962 switch arms do not
+        ///     discriminate between the two readings at all, so they could never have settled it.
+        ///     </para>
+        ///     <para>
+        ///     Both figures are counted rather than written down, and the relationship asserted is
+        ///     that every branch resolved. A cache holding different scripts still has to pass.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EveryJumpTarget_LandsOnAnInstructionOfItsOwnScript()
+        {
+            long branches = 0;
+            long switchArms = 0;
+            long unresolvable = 0;
+            long survivingWithoutThePlusOne = 0;
+
+            DefinitionSweepResult swept = Sweep().ForEachDecoded((record, script) =>
+            {
+                int count = script.Instructions.Count;
+                unresolvable += ClientScriptDisassembly.Of(script).UnresolvableTargets;
+
+                for (int position = 0; position < count; position++)
+                {
+                    ClientScriptInstruction instruction = script.Instructions[position];
+
+                    if (ClientScriptOpcodes.IsBranch(instruction.Opcode))
+                    {
+                        branches++;
+                        int plain = position + instruction.IntegerOperand;
+                        if (plain >= 0 && plain < count)
+                            survivingWithoutThePlusOne++;
+                        continue;
+                    }
+
+                    if (instruction.Opcode != ClientScriptOpcodes.SwitchOpcode)
+                        continue;
+
+                    int block = instruction.IntegerOperand;
+                    if (block >= 0 && block < script.SwitchBlocks.Count)
+                        switchArms += script.SwitchBlocks[block].Cases.Count;
+                }
+            });
+
+            _output.WriteLine($"{branches} branches and {switchArms} switch arms across {swept.Records} " +
+                              $"scripts, {unresolvable} landing outside their script");
+            _output.WriteLine($"{branches - survivingWithoutThePlusOne} of those branches falsify the " +
+                              "reading that omits the +1");
+
+            Assert.Equal(ScriptsInCache, swept.Records);
+            Assert.True(branches > 0, "no script in the index branches at all, so nothing was tested");
+            Assert.True(switchArms > 0, "no switch block in the index holds an arm, so nothing was tested");
+            Assert.Equal(0, unresolvable);
+
+            //The discriminating witness. Without it this sweep would pass under either reading and
+            //would be evidence for neither.
+            Assert.True(survivingWithoutThePlusOne < branches,
+                "every branch is in range under 'position + delta' too, so this sweep no longer " +
+                "distinguishes the interpreter's arithmetic from an off-by-one");
+        }
+
+        /// <summary>
+        ///     Every opcode the interpreter handles in line is named, and the disassembler's coverage
+        ///     is reported as a share of instructions.
+        /// </summary>
+        /// <remarks>
+        ///     Two claims, and only the first is an assertion. <b>Every opcode below 100 that this
+        ///     cache uses carries a mnemonic</b>, because the in-line chain at
+        ///     <c>Class247.java:7781-7988</c> is short enough to have been read whole - so a cache
+        ///     turning up a sub-100 opcode the client has no arm for is a real discovery and fails
+        ///     here rather than appearing as a blank cell.
+        ///     <para>
+        ///     The coverage percentage is printed rather than asserted against a floor. A floor would
+        ///     be read as a target, and the honest statement is a measurement: naming one more opcode
+        ///     in the long tail moves it by hundredths, while the figure that matters - instructions
+        ///     rather than distinct opcodes - is already dominated by a set that is complete.
+        ///     </para>
+        ///     <para>
+        ///     Also asserted: nothing in the index uses an opcode at or above 10,000, which
+        ///     <c>Class247.java:7997</c> breaks out of the loop for. That is a claim about the data
+        ///     rather than about this project, and it is what says the two dispatchers plus the chain
+        ///     account for every instruction here.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void TheDisassembler_NamesEveryInLineOpcodeAndReportsWhatThatCovers()
+        {
+            long instructions = 0;
+            long named = 0;
+            long inLine = 0;
+            var unnamedBelowOneHundred = new SortedSet<int>();
+            var namedOpcodes = new SortedSet<int>();
+            var allOpcodes = new SortedSet<int>();
+            var undispatched = new SortedSet<int>();
+
+            DefinitionSweepResult swept = Sweep().ForEachDecoded((record, script) =>
+            {
+                foreach (ClientScriptInstruction instruction in script.Instructions)
+                {
+                    int opcode = instruction.Opcode;
+                    instructions++;
+                    allOpcodes.Add(opcode);
+
+                    if (opcode < 100)
+                        inLine++;
+                    if (opcode >= 10000)
+                        undispatched.Add(opcode);
+
+                    if (ClientScriptOpcodes.MnemonicOf(opcode) == null)
+                    {
+                        if (opcode < 100)
+                            unnamedBelowOneHundred.Add(opcode);
+                        continue;
+                    }
+
+                    named++;
+                    namedOpcodes.Add(opcode);
+                }
+            });
+
+            _output.WriteLine($"{named} of {instructions} instructions named " +
+                              $"({100.0 * named / instructions:F2}%), over {namedOpcodes.Count} of the " +
+                              $"{allOpcodes.Count} distinct opcodes in use");
+            _output.WriteLine($"the in-line chain below 100 is {inLine} instructions " +
+                              $"({100.0 * inLine / instructions:F2}%) over " +
+                              $"{allOpcodes.Count(opcode => opcode < 100)} opcodes");
+
+            Assert.Equal(ScriptsInCache, swept.Records);
+            Assert.True(instructions > 0, "the index decoded no instructions at all");
+            Assert.Empty(unnamedBelowOneHundred);
+            Assert.Empty(undispatched);
+
+            //Every named instruction is one this table has a row for, so the two counts cannot drift.
+            Assert.True(named <= instructions);
+            Assert.All(namedOpcodes, opcode => Assert.Contains(opcode, ClientScriptOpcodes.NamedOpcodes));
+        }
+
+        /// <summary>
         ///     Groups the idx file holds and the reference table does not are read and reported, not
         ///     swept.
         /// </summary>

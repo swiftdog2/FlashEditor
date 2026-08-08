@@ -55,16 +55,14 @@ namespace FlashEditor.Definitions.ClientScripts {
         /// </remarks>
         private static readonly IDefinitionListDescriptor Descriptor = new ClientScriptListDescriptor();
 
-        /// <summary>The opcode whose operand names one of the script's switch tables.</summary>
-        /// <remarks>
-        ///     <c>Class247.java:7975</c> indexes the block array with the instruction's own operand,
-        ///     which is what the "Switched at" column joins on. The join is self-proving rather than
-        ///     merely plausible, which is the bar this cache demands: both supported caches hold 831
-        ///     switch blocks and exactly 831 opcode-51 instructions, and every one of the 831 blocks
-        ///     is named by one of them. A blank cell in that column would therefore falsify the
-        ///     reading on screen, which is why it is a column rather than a comment.
-        /// </remarks>
-        private const int SwitchOpcode = 51;
+        /* The opcode whose operand names one of the script's switch tables is
+           ClientScriptOpcodes.SwitchOpcode, held there rather than here because the disassembler
+           needs it too. Class247.java:7975 indexes the block array with the instruction's own
+           operand, which is what the "Switched at" column joins on. The join is self-proving rather
+           than merely plausible, which is the bar this cache demands: both supported caches hold 831
+           switch blocks and exactly 831 opcode-51 instructions, and every one of the 831 blocks is
+           named by one of them. A blank cell in that column would therefore falsify the reading on
+           screen, which is why it is a column rather than a comment. */
 
         /* Consolas 9 on every child. The form puts Consolas 12 on the tab control and everything
            under it inherits, which is half again what these grids are laid out for. */
@@ -83,6 +81,15 @@ namespace FlashEditor.Definitions.ClientScripts {
             Dock = DockStyle.Top,
             Font = GridFont,
             Text = NoticeText
+        };
+
+        /* Separate from the notice because it is measured rather than written: the notice states
+           the policy and this states what that policy currently buys, from the rows in hand. */
+        private readonly Label coverage = new Label {
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            Font = GridFont,
+            Text = CoverageUnknownText
         };
 
         private readonly Label header = new Label {
@@ -116,30 +123,37 @@ namespace FlashEditor.Definitions.ClientScripts {
         private const string NoSelectionText = "Select a script to see its instructions";
 
         /// <summary>
-        ///     What this tab deliberately does not do, stated where a user can read it.
+        ///     What this tab does and, more importantly, what it still cannot do.
         /// </summary>
         /// <remarks>
-        ///     Required by the UI conventions and by the codec itself: <c>ClientScriptInstruction</c>
-        ///     keeps the numeric opcode because naming one needs a table over the roughly 580 opcodes
-        ///     this cache uses, spread across three dispatchers in the client's <c>Class247</c>. A
-        ///     user comparing this grid against a decompiler has no way to tell a missing feature
-        ///     from a defect unless the tab says which it is.
+        ///     Required by the UI conventions. The disassembler names only the opcodes the 637
+        ///     client's dispatch settles, so the grid holds a mixture of named and unnamed
+        ///     instructions and a user has no way to tell which is which - or to tell an unnamed
+        ///     opcode from a broken one - unless the tab says so. The measured share is filled in at
+        ///     load time from the rows themselves rather than written here, because a figure written
+        ///     down is a figure about whichever cache someone measured.
         /// </remarks>
         private const string NoticeText =
-            "Opcodes are the raw numbers the file stores. This tab has no disassembler - naming them needs a table " +
-            "over the ~580 opcodes in use across three dispatchers in the client's Class247, which is separate work.\n" +
-            "The identifier is not a name hash. A few are packed interface hooks; most are unexplained 32-bit values, " +
-            "and no script name has ever been recovered from this index.\n" +
-            "The four counts are editable. Committing one re-encodes the whole script and so changes its archive CRC. " +
-            "A parameter count above its matching local count writes a script the client cannot call.";
+            "The Opcode column is always the raw number; the Mnemonic beside it is this editor's reading of it, " +
+            "carried only where the 637 client's own dispatch proves it - the Client column cites the line. " +
+            "A blank mnemonic means not yet named, not broken.\n" +
+            "Jump targets are resolved and the In column marks a position something jumps to. Basic blocks, loops " +
+            "and if/else structure are not reconstructed: this is a linear listing and implies no structure.\n" +
+            "The identifier is not a name hash - a few are packed interface hooks, most are unexplained. The four " +
+            "counts are editable; committing one re-encodes the whole script and so changes its archive CRC.";
 
         private const string SwitchNoteText =
             "Switch tables. Jump is a delta in instructions rather than bytes, applied once the counter has moved " +
             "past the switch (Class247.java:7975-7980), so the target instruction is the switch position plus one " +
-            "plus the jump. Both are signed and both are legitimately negative.";
+            "plus the jump. Both are signed and both are legitimately negative. Target is that arithmetic resolved " +
+            "against the instruction that selects the block, so a block two instructions reach has two sets of " +
+            "targets.";
 
         private RSCache? cache;
         private bool splittersPlaced;
+
+        /// <summary>What the coverage line says before a cache has been loaded and measured.</summary>
+        private const string CoverageUnknownText = "Disassembler coverage is measured once the index has loaded.";
 
         /// <summary>Creates the panel.</summary>
         public ClientScriptEditorPanel() {
@@ -147,6 +161,51 @@ namespace FlashEditor.Definitions.ClientScripts {
             BuildLayout();
 
             scripts.SelectedRowChanged += (_, _) => ShowScript(scripts.SelectedRow as ClientScriptListing);
+            scripts.RowsLoaded += (_, _) => coverage.Text = MeasureCoverage();
+        }
+
+        /// <summary>
+        ///     States how much of the loaded index the opcode table can name, as a share of
+        ///     instructions.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Instructions, not distinct opcodes, and the difference is enormous.</b> The 32
+        ///     opcodes the client handles in its in-line chain are 5% of the roughly 580 this index
+        ///     uses and carry 85% of the instructions, so a percentage of distinct opcodes would read
+        ///     as derisory while describing a tab that names nearly everything on screen. Measured
+        ///     from the rows in hand rather than written down, because the figure belongs to whichever
+        ///     cache is open.
+        /// </remarks>
+        /// <returns>The coverage line.</returns>
+        private string MeasureCoverage() {
+            long instructions = 0;
+            long named = 0;
+            var distinct = new HashSet<int>();
+            var distinctNamed = new HashSet<int>();
+
+            foreach (object row in scripts.Rows) {
+                if (row is not ClientScriptListing listing)
+                    continue;
+
+                foreach (ClientScriptInstruction instruction in listing.Record.Instructions) {
+                    instructions++;
+                    distinct.Add(instruction.Opcode);
+
+                    if (ClientScriptOpcodes.MnemonicOf(instruction.Opcode) == null)
+                        continue;
+
+                    named++;
+                    distinctNamed.Add(instruction.Opcode);
+                }
+            }
+
+            if (instructions == 0)
+                return CoverageUnknownText;
+
+            return "Disassembler coverage in this cache: " + named.ToString("N0") + " of " +
+                   instructions.ToString("N0") + " instructions named (" +
+                   (100.0 * named / instructions).ToString("F2") + "%), which is " + distinctNamed.Count +
+                   " of the " + distinct.Count + " distinct opcodes in use. The rest keep the number.";
         }
 
         /// <summary>
@@ -167,6 +226,7 @@ namespace FlashEditor.Definitions.ClientScripts {
             instructions.ClearObjects();
             switchCases.ClearObjects();
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
+            coverage.Text = CoverageUnknownText;
             scripts.Bind(newCache, Descriptor);
         }
 
@@ -197,6 +257,7 @@ namespace FlashEditor.Definitions.ClientScripts {
         /// </remarks>
         private void ConstrainLabels() {
             Constrain(notice, ClientSize.Width);
+            Constrain(coverage, ClientSize.Width);
             Constrain(header, listAndDetail.Panel2.ClientSize.Width);
             Constrain(switchNote, streamAndSwitches.Panel2.ClientSize.Width);
         }
@@ -234,11 +295,14 @@ namespace FlashEditor.Definitions.ClientScripts {
             splittersPlaced = true;
 
             try {
-                //Half rather than the three fifths the other master/detail tabs use. The list's
-                //columns are all fixed-width numbers and it had visible slack at three fifths, while
-                //everything of variable length here - a string operand, the summary line - is on the
-                //other side of the splitter.
-                listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width / 2);
+                //Two fifths to the list. This was half while the instruction grid had five columns,
+                //on the reasoning that the list's columns are all fixed-width numbers with no slack
+                //to give up. The disassembler took that grid to ten columns and inverted it: at a
+                //half split the Flow column fell off the right edge, and a control flow edge that
+                //needs a horizontal scroll to see is one nobody sees. The list loses nothing it was
+                //showing, because it was already scrolling at half.
+                listAndDetail.SplitterDistance =
+                    Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width * 2 / 5);
                 //Two thirds to the stream: 485 of the 4,149 scripts hold a switch table at all, so
                 //the lower pane is empty roughly seven selections out of eight.
                 streamAndSwitches.SplitterDistance =
@@ -267,23 +331,65 @@ namespace FlashEditor.Definitions.ClientScripts {
             listAndDetail.Panel2.Controls.Add(header);
 
             Controls.Add(listAndDetail);
+            Controls.Add(coverage);
             Controls.Add(notice);
         }
 
+        /* Opcode before Mnemonic, and both always present. The number is the thing the file holds
+           and the name is this project's reading of it, so the reading sits beside the evidence and
+           a wrong name is one glance from being caught.
+
+           Ordered so the seven columns that make the stream readable - through Flow - fit the pane
+           at its default split, because a control flow edge that needs a horizontal scroll to see
+           is one nobody sees. Stored width, Effect and the client citation are the ones to scroll
+           for: they answer a question about a particular instruction rather than carrying the
+           listing. */
         private void BuildInstructionColumns() {
-            AddColumn(instructions, "#", 60, row => Instruction(row).Position);
-            AddColumn(instructions, "Offset", 80, row => Instruction(row).Offset);
-            AddColumn(instructions, "Opcode", 80, row => Instruction(row).Opcode);
-            AddColumn(instructions, "Operand", 90, row => Instruction(row).OperandWidth);
-            AddColumn(instructions, "Value", 460, row => Instruction(row).Value);
+            AddColumn(instructions, "#", 45, row => Instruction(row).Position);
+            AddColumn(instructions, "In", 34, row => Instruction(row).LabelMark);
+            AddColumn(instructions, "Offset", 62, row => Instruction(row).Offset);
+            AddColumn(instructions, "Opcode", 62, row => Instruction(row).Opcode);
+            AddColumn(instructions, "Mnemonic", MnemonicColumnWidth(), row => Instruction(row).Mnemonic);
+            AddColumn(instructions, "Value", 150, row => Instruction(row).Value);
+            AddColumn(instructions, "Flow", 88, row => Instruction(row).Flow);
+            AddColumn(instructions, "Stored as", 80, row => Instruction(row).OperandWidth);
+            AddColumn(instructions, "Effect", 520, row => Instruction(row).Effect);
+            AddColumn(instructions, "Client", 150, row => Instruction(row).Citation);
+        }
+
+        /// <summary>
+        ///     Measures the mnemonic column from the widest name the table actually holds.
+        /// </summary>
+        /// <remarks>
+        ///     The one column here whose content this project controls and will keep adding to, so a
+        ///     written-down width would be right until the next opcode is named and silently wrong
+        ///     afterwards - a clipped mnemonic reads as a different mnemonic, which is the one
+        ///     failure this whole tab is built to avoid. Measured in the grid's own pinned font
+        ///     rather than the form's, since that is what will render it, which also means the width
+        ///     survives the DPI scaling that the UI conventions warn about.
+        /// </remarks>
+        /// <returns>The column width in pixels.</returns>
+        private static int MnemonicColumnWidth() {
+            int widest = TextRenderer.MeasureText("Mnemonic", GridFont).Width;
+
+            foreach (int opcode in ClientScriptOpcodes.NamedOpcodes) {
+                int width = TextRenderer.MeasureText(ClientScriptOpcodes.MnemonicOf(opcode), GridFont).Width;
+                if (width > widest)
+                    widest = width;
+            }
+
+            //MeasureText excludes the cell's own padding, and a name flush against the next column
+            //boundary reads as truncated even when it is whole.
+            return widest + 12;
         }
 
         private void BuildSwitchColumns() {
-            AddColumn(switchCases, "Block", 70, row => SwitchCase(row).Block);
-            AddColumn(switchCases, "Case", 70, row => SwitchCase(row).Position);
-            AddColumn(switchCases, "Value", 130, row => SwitchCase(row).Value);
-            AddColumn(switchCases, "Jump", 90, row => SwitchCase(row).Jump);
-            AddColumn(switchCases, "Switched at", 200, row => SwitchCase(row).SwitchedAt);
+            AddColumn(switchCases, "Block", 60, row => SwitchCase(row).Block);
+            AddColumn(switchCases, "Case", 60, row => SwitchCase(row).Position);
+            AddColumn(switchCases, "Value", 120, row => SwitchCase(row).Value);
+            AddColumn(switchCases, "Jump", 80, row => SwitchCase(row).Jump);
+            AddColumn(switchCases, "Target", 90, row => SwitchCase(row).Target);
+            AddColumn(switchCases, "Switched at", 180, row => SwitchCase(row).SwitchedAt);
         }
 
         /// <summary>One grid, laid out the same way as every other.</summary>
@@ -361,22 +467,36 @@ namespace FlashEditor.Definitions.ClientScripts {
                 return;
             }
 
-            header.Text = Describe(listing);
-            instructions.SetObjects(ListInstructions(listing.Record));
+            ClientScriptDisassembly disassembly = ClientScriptDisassembly.Of(listing.Record);
+
+            header.Text = Describe(listing, disassembly);
+            instructions.SetObjects(ListInstructions(disassembly));
             switchCases.SetObjects(ListSwitchCases(listing.Record));
         }
 
         /// <summary>The line above the detail grids: what the selected script is.</summary>
         /// <param name="listing">The selected script.</param>
+        /// <param name="disassembly">The script's disassembly, for the per-script naming figure.</param>
         /// <returns>The summary line.</returns>
-        private static string Describe(ClientScriptListing listing) {
+        private static string Describe(ClientScriptListing listing, ClientScriptDisassembly disassembly) {
+            string named = disassembly.InstructionCount == 0
+                ? "no instructions"
+                : disassembly.NamedInstructions + " of " + disassembly.InstructionCount + " named (" +
+                  (100.0 * disassembly.NamedInstructions / disassembly.InstructionCount).ToString("F1") + "%)";
+
+            //Only mentioned when it is not zero, which it is everywhere in both supported caches.
+            //A permanent "0 unresolvable" would train a reader to stop reading the line.
+            string unresolvable = disassembly.UnresolvableTargets == 0
+                ? string.Empty
+                : " - " + disassembly.UnresolvableTargets + " jump targets land outside the script";
+
             return "Script " + listing.ScriptId + " - " + listing.StoredLength.ToString("N0") + " bytes, " +
-                   listing.InstructionCount.ToString("N0") + " instructions, frame " +
+                   listing.InstructionCount.ToString("N0") + " instructions, " + named + ", frame " +
                    listing.IntegerLocalCount + " int / " + listing.StringLocalCount + " string, takes " +
                    listing.IntegerParameterCount + " int / " + listing.StringParameterCount + " string, " +
                    listing.SwitchBlockCount + " switch blocks (" + listing.SwitchCaseCount + " cases) - " +
                    "identifier " + listing.Identifier + " (" + listing.IdentifierHex + ") - name " +
-                   listing.NameOrAbsent;
+                   listing.NameOrAbsent + unresolvable;
         }
 
         /// <summary>
@@ -388,20 +508,13 @@ namespace FlashEditor.Definitions.ClientScripts {
         ///     sits at a different offset in every script that holds it. It is worth a column at all
         ///     so the grid can be checked against a hex dump of the file.
         /// </remarks>
-        /// <param name="record">The decoded script.</param>
+        /// <param name="disassembly">The disassembled script.</param>
         /// <returns>The instruction rows.</returns>
-        private static List<InstructionListing> ListInstructions(ClientScriptDefinition record) {
-            var rows = new List<InstructionListing>(record.Instructions.Count);
+        private static List<InstructionListing> ListInstructions(ClientScriptDisassembly disassembly) {
+            var rows = new List<InstructionListing>(disassembly.InstructionCount);
 
-            //The name field precedes the stream and always costs at least its terminator, which is
-            //the byte a nameless record stores on its own.
-            int offset = (record.NameBytes?.Length ?? 0) + 1;
-
-            for (int position = 0; position < record.Instructions.Count; position++) {
-                ClientScriptInstruction instruction = record.Instructions[position];
-                rows.Add(new InstructionListing(position, offset, instruction));
-                offset += instruction.StoredLength;
-            }
+            foreach (ClientScriptDisassemblyLine line in disassembly.Lines)
+                rows.Add(new InstructionListing(line));
 
             return rows;
         }
@@ -416,17 +529,42 @@ namespace FlashEditor.Definitions.ClientScripts {
             if (record.SwitchBlocks.Count == 0)
                 return rows;
 
-            IReadOnlyList<string> switchedAt = FindSwitchSites(record);
+            IReadOnlyList<List<int>> sitesPerBlock = FindSwitchSites(record);
 
             for (int block = 0; block < record.SwitchBlocks.Count; block++) {
                 IList<ClientScriptSwitchCase> cases = record.SwitchBlocks[block].Cases;
-                string sites = block < switchedAt.Count ? switchedAt[block] : string.Empty;
+                List<int> sites = sitesPerBlock[block];
 
                 for (int arm = 0; arm < cases.Count; arm++)
-                    rows.Add(new SwitchCaseListing(block, arm, cases[arm], sites));
+                    rows.Add(new SwitchCaseListing(block, arm, cases[arm], sites,
+                        DescribeTargets(record, sites, cases[arm].JumpOffset)));
             }
 
             return rows;
+        }
+
+        /// <summary>
+        ///     Resolves one arm's delta against every instruction that selects its block.
+        /// </summary>
+        /// <remarks>
+        ///     A list rather than a single value because the delta is measured from the switch
+        ///     instruction, not from the block: two opcode-51 instructions sharing a block resolve
+        ///     the same arm to two different targets, and printing one of them would be a quiet lie.
+        ///     A block nothing selects has no target at all, which is why the cell can be blank.
+        /// </remarks>
+        /// <param name="record">The decoded script.</param>
+        /// <param name="sites">The instructions that select this arm's block.</param>
+        /// <param name="jumpOffset">The arm's stored delta.</param>
+        /// <returns>The resolved targets, as text.</returns>
+        private static string DescribeTargets(ClientScriptDefinition record, List<int> sites, int jumpOffset) {
+            var targets = new List<string>(sites.Count);
+
+            foreach (int site in sites) {
+                int? target = ClientScriptDisassembly.ResolveSwitchTarget(record, site, jumpOffset);
+                targets.Add(target == null ? "off end" : target.Value.ToString());
+            }
+
+            return string.Join(", ", targets);
         }
 
         /// <summary>
@@ -440,26 +578,24 @@ namespace FlashEditor.Definitions.ClientScripts {
         /// </remarks>
         /// <param name="record">The decoded script.</param>
         /// <returns>The instruction positions per block, as text.</returns>
-        private static IReadOnlyList<string> FindSwitchSites(ClientScriptDefinition record) {
+        private static IReadOnlyList<List<int>> FindSwitchSites(ClientScriptDefinition record) {
             var sites = new List<int>[record.SwitchBlocks.Count];
+            for (int block = 0; block < sites.Length; block++)
+                sites[block] = new List<int>();
 
             for (int position = 0; position < record.Instructions.Count; position++) {
                 ClientScriptInstruction instruction = record.Instructions[position];
-                if (instruction.Opcode != SwitchOpcode)
+                if (instruction.Opcode != ClientScriptOpcodes.SwitchOpcode)
                     continue;
 
                 int block = instruction.IntegerOperand;
                 if (block < 0 || block >= sites.Length)
                     continue;
 
-                (sites[block] ??= new List<int>()).Add(position);
+                sites[block].Add(position);
             }
 
-            var text = new string[sites.Length];
-            for (int block = 0; block < sites.Length; block++)
-                text[block] = sites[block] == null ? string.Empty : string.Join(", ", sites[block]!);
-
-            return text;
+            return sites;
         }
 
         /// <summary>One instruction of the selected script, as a grid row.</summary>
@@ -467,27 +603,44 @@ namespace FlashEditor.Definitions.ClientScripts {
             /// <summary>The row rendered for a null model, which ObjectListView asks for while recycling.</summary>
             internal static readonly InstructionListing Empty = new InstructionListing();
 
-            private readonly ClientScriptInstruction? instruction;
+            private readonly ClientScriptDisassemblyLine? line;
             private readonly bool present;
 
             private InstructionListing() {
             }
 
-            internal InstructionListing(int position, int offset, ClientScriptInstruction instruction) {
-                Position = position;
-                Offset = offset;
-                this.instruction = instruction;
+            internal InstructionListing(ClientScriptDisassemblyLine line) {
+                this.line = line;
                 present = true;
             }
 
             /// <summary>Where the instruction sits in the stream, which is what a jump is relative to.</summary>
-            internal object? Position { get; }
+            internal object? Position => present ? line!.Position : null;
+
+            /// <summary>
+            ///     Marks a position something else in this script jumps to.
+            /// </summary>
+            /// <remarks>
+            ///     The cheap half of control flow, and the half that is provable on its own. Without
+            ///     it a reader scrolling a seven thousand instruction stream cannot see where a loop
+            ///     re-enters, and with it the entry points are visible without claiming any block
+            ///     structure around them.
+            /// </remarks>
+            internal object? LabelMark => present && line!.IsLabel ? "<-" : string.Empty;
 
             /// <summary>Where the instruction starts in the decompressed file.</summary>
-            internal object? Offset { get; }
+            internal object? Offset => present ? line!.Offset : null;
 
-            /// <summary>The stored opcode, unnamed by design.</summary>
-            internal object? Opcode => present ? instruction!.Opcode : null;
+            /// <summary>The stored opcode, which is always shown whether or not it is named.</summary>
+            internal object? Opcode => present ? line!.Instruction.Opcode : null;
+
+            /// <summary>The proven mnemonic, or blank where none has been established.</summary>
+            /// <remarks>
+            ///     Blank rather than a placeholder such as "unknown". A blank cell beside a populated
+            ///     Effect column reads as "described but not named", which is exactly the state, while
+            ///     a word in the cell would sort and filter as if it were a mnemonic of its own.
+            /// </remarks>
+            internal object? Mnemonic => present ? line!.Info.Mnemonic ?? string.Empty : null;
 
             /// <summary>
             ///     How wide the operand is stored, which follows from the opcode.
@@ -502,7 +655,7 @@ namespace FlashEditor.Definitions.ClientScripts {
                     if (!present)
                         return null;
 
-                    return instruction!.OperandKind switch {
+                    return line!.Instruction.OperandKind switch {
                         ClientScriptOperandKind.Text => "string",
                         ClientScriptOperandKind.Byte => "byte",
                         _ => "int32"
@@ -511,16 +664,35 @@ namespace FlashEditor.Definitions.ClientScripts {
             }
 
             /// <summary>The operand, quoted when it is text so an empty string is visible as one.</summary>
-            internal object? Value {
+            internal object? Value => present ? line!.OperandText() : null;
+
+            /// <summary>
+            ///     Where control goes from here, for the instructions that decide it.
+            /// </summary>
+            /// <remarks>
+            ///     Resolved, not restated: the stored operand is already in the Value column, and a
+            ///     delta is not something a reader should be asked to add to a row number by hand.
+            /// </remarks>
+            internal object? Flow {
                 get {
                     if (!present)
                         return null;
 
-                    return instruction!.OperandKind == ClientScriptOperandKind.Text
-                        ? "\"" + instruction.TextOperand + "\""
-                        : instruction.IntegerOperand.ToString();
+                    if (line!.BranchTarget != null)
+                        return "-> " + line.BranchTarget;
+
+                    if (line.SwitchBlock != null)
+                        return "switch " + line.SwitchBlock;
+
+                    return line.Instruction.Opcode == ClientScriptOpcodes.ReturnOpcode ? "return" : string.Empty;
                 }
             }
+
+            /// <summary>What the client's dispatch arm does, named or not.</summary>
+            internal object? Effect => present ? line!.Info.Summary : null;
+
+            /// <summary>Where in the 637 client the row above it can be checked.</summary>
+            internal object? Citation => present ? line!.Info.Citation : null;
         }
 
         /// <summary>One arm of one switch table of the selected script, as a grid row.</summary>
@@ -534,11 +706,13 @@ namespace FlashEditor.Definitions.ClientScripts {
             private SwitchCaseListing() {
             }
 
-            internal SwitchCaseListing(int block, int position, ClientScriptSwitchCase arm, string switchedAt) {
+            internal SwitchCaseListing(int block, int position, ClientScriptSwitchCase arm, List<int> switchedAt,
+                string target) {
                 Block = block;
                 Position = position;
                 this.arm = arm;
-                SwitchedAt = switchedAt;
+                SwitchedAt = string.Join(", ", switchedAt);
+                Target = target;
                 present = true;
             }
 
@@ -556,6 +730,9 @@ namespace FlashEditor.Definitions.ClientScripts {
 
             /// <summary>The instructions that select this arm's table, or blank when none do.</summary>
             internal object? SwitchedAt { get; }
+
+            /// <summary>Where the arm lands, resolved against each instruction that selects it.</summary>
+            internal object? Target { get; }
         }
     }
 }
