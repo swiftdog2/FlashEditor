@@ -56,9 +56,21 @@ namespace FlashEditor.Definitions
                 }
                 else if (!decoded[17] && !decoded[18])
                 {
-                    //18 rather than 17: it blocks the tile without also resetting the clip type,
-                    //so it is the narrower of the two claims to make on the user's behalf.
-                    decoded[18] = true;
+                    /* Whichever the file carried comes back, both when it carried both. Blocking
+                       is one property spelled two ways and only one of the two is recoverable
+                       from the fields, so substituting the other would silently rewrite the
+                       record: 17 also resets the clip type, and a stored 17 turned off and back
+                       on used to come back as an 18, which is a different statement of the same
+                       length. Only a record that carried neither gets a flag invented for it. */
+                    bool restored = false;
+                    if (Opcodes.Has(17)) { decoded[17] = true; restored = true; }
+                    if (Opcodes.Has(18)) { decoded[18] = true; restored = true; }
+
+                    //18 rather than 17 for a record that carried neither: it blocks the tile
+                    //without also resetting the clip type, so it is the narrower of the two
+                    //claims to make on the user's behalf.
+                    if (!restored)
+                        decoded[18] = true;
                 }
             }
         }
@@ -1091,12 +1103,18 @@ namespace FlashEditor.Definitions
         /// Clearing <see cref="decoded"/> alone is not enough: an opcode still listed in the
         /// recorded stream is written back from the bytes it was read from, which is what keeps
         /// repeated opcodes byte-exact but would also resurrect a flag the user just turned off.
+        /// <para>
+        /// Suppressed rather than removed. Removing it forgot <b>where</b> the opcode was, so
+        /// turning the flag off and straight back on re-emitted it at the end of the record rather
+        /// than in place - a definition of the right length with a byte moved, which the editor
+        /// then staged as a real change. See <see cref="OpcodeStream.Suppress"/>.
+        /// </para>
         /// </remarks>
-        /// <param name="op">The opcode to remove.</param>
+        /// <param name="op">The opcode to turn off.</param>
         private void DropOpcode(int op)
         {
             decoded[op] = false;
-            Opcodes.Remove(op);
+            Opcodes.Suppress(op);
         }
 
         /// <summary>

@@ -199,6 +199,46 @@ namespace FlashEditor.Definitions.Entities {
         public object? SelectedRow => list.SelectedRow;
 
         /// <summary>
+        ///     The width this page needs to show its widest family's grid without a scrollbar.
+        /// </summary>
+        /// <remarks>
+        ///     Measured from the descriptors rather than stated, so the splitter beside the viewport
+        ///     is derived the way the navigation column widths and the two combo boxes are. The page
+        ///     was placed at a literal 620 pixels, which is the failure this form has already had at
+        ///     scale: it is `AutoScaleMode.Dpi` against 96 dpi, and a literal is only right at the
+        ///     dpi it was chosen at.
+        ///     <para>
+        ///     The <b>widest</b> family, not the selected one, because the splitter must not jump
+        ///     every time the type selector moves - a viewport that resized itself under the cursor
+        ///     as the user browsed would be worse than one column too narrow. Items is the widest at
+        ///     fourteen columns, but that is measured rather than assumed here so a new column
+        ///     anywhere widens it.
+        ///     </para>
+        /// </remarks>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(
+            System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public int PreferredGridWidth {
+            get {
+                int widest = 0;
+
+                foreach (IDefinitionListDescriptor descriptor in new[] {
+                             (IDefinitionListDescriptor) items, npcs, objects, models
+                         }) {
+                    int width = 0;
+                    foreach (DefinitionColumn column in descriptor.Columns)
+                        width += column.Width;
+                    widest = Math.Max(widest, width);
+                }
+
+                //The grid's own vertical scrollbar and its border, neither of which is a column but
+                //both of which sit inside the same rectangle. Every family here is long enough that
+                //the scrollbar is always present.
+                return widest + SystemInformation.VerticalScrollBarWidth + SystemInformation.Border3DSize.Width * 2;
+            }
+        }
+
+        /// <summary>
         ///     Points the page at a cache, or unbinds it.
         /// </summary>
         /// <remarks>

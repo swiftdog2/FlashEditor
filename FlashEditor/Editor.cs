@@ -424,6 +424,15 @@ namespace FlashEditor {
             EntityPanel.EntitySelected += EntityPanel_EntitySelected;
             EntityPanel.AnimationChosen += EntityPanel_AnimationChosen;
 
+            /* Re-measured on every resize rather than placed once, and stopped by a drag rather than
+               by any move. SplitterMoved is raised for a resize as well, so guarding on it froze the
+               splitter wherever it happened to be the first time the window changed size - which is
+               always, because the window is maximised straight after launch. SplitterMoving is
+               raised only for a drag, which is what states a preference. Same pair the sprite page
+               uses, for the same reason. */
+            splitContainer1.SizeChanged += (_, _) => PlaceEntitySplitter();
+            splitContainer1.SplitterMoving += (_, _) => entitySplitMovedByHand = true;
+
             glControl.Load += Gl_Load;
             glControl.Paint += Gl_Paint;
             glControl.Resize += Editor_Resize;
@@ -760,6 +769,7 @@ namespace FlashEditor {
             //Load, and it would multiply anything set earlier by the same ratio that shrank the
             //designer's literals in the first place.
             SizeViewerControls();
+            PlaceEntitySplitter();
 
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
             //all and say nothing about it; asking for a folder here would be worse, because the
@@ -1156,6 +1166,56 @@ namespace FlashEditor {
 
             WidenNavigationToFit();
             SyncNavigationToDeck();
+        }
+
+        /// <summary>Whether the user has moved the entity page's splitter themselves.</summary>
+        /// <remarks>
+        ///     Until they do, the splitter follows the width the grid's columns need, re-measured on
+        ///     every resize. Placing it once is not enough: the page is first laid out at the size
+        ///     the designer states and the window is usually maximised afterwards, which is the
+        ///     defect the sprite page had to fix the same way.
+        /// </remarks>
+        private bool entitySplitMovedByHand;
+
+        /// <summary>
+        ///     Gives the entity page's grid the width its own columns need, and the viewport the rest.
+        /// </summary>
+        /// <remarks>
+        ///     Derived rather than stated. The designer placed this at a literal 620 pixels, which
+        ///     is precisely the failure this form has already had: it scales by
+        ///     <c>AutoScaleMode.Dpi</c> against 96 dpi, so a literal is only correct at the dpi it
+        ///     was chosen at - and when this form's scaling was wrong, every literal was multiplied
+        ///     by about two thirds, which clipped a tool panel's buttons and rendered a combo as
+        ///     "Pl".
+        ///     <para>
+        ///     The viewport keeps at least half the page whatever the grid asks for. A grid wide
+        ///     enough to need more than half would otherwise squeeze the 3D view down to a strip,
+        ///     and the whole point of this page is that the two are side by side.
+        ///     </para>
+        /// </remarks>
+        private void PlaceEntitySplitter() {
+            if (entitySplitMovedByHand || splitContainer1.Width <= 0)
+                return;
+
+            int available = splitContainer1.Width - splitContainer1.SplitterWidth;
+            int least = splitContainer1.Panel1MinSize;
+            int most = available - splitContainer1.Panel2MinSize;
+
+            if (most <= least)
+                return;
+
+            //Half is the floor for the viewport, not a target: the grid gets what its columns need
+            //whenever that leaves the viewport at least half the page.
+            int wanted = Math.Max(available / 2, available - EntityPanel.PreferredGridWidth);
+
+            try {
+                splitContainer1.SplitterDistance = Math.Clamp(wanted, least, most);
+            }
+            catch (InvalidOperationException failure) {
+                //A distance the panels' minimum sizes will not allow at this width. Left where it
+                //is rather than thrown, the way the sprite page handles the same refusal.
+                Debug("Entity splitter could not be placed: " + failure.Message, LOG_DETAIL.ADVANCED);
+            }
         }
 
         /// <summary>
@@ -2093,6 +2153,13 @@ namespace FlashEditor {
         /// <param name="openCache">The open cache.</param>
         private void BindEntityPage(RSCache openCache) {
             EntityPanel.Bind(openCache);
+
+            /* A hidden TabPage is not laid out until it is shown, and this page is shown by the
+               same selection that runs this bind - so the width measured on the way in can be the
+               designer's rather than the window's. Re-placed here, by which time the page has
+               certainly been given its real size. Same reason the sprite page re-places its
+               splitter after its load. */
+            PlaceEntitySplitter();
 
             BackgroundWorker animationIds = new BackgroundWorker { WorkerSupportsCancellation = true };
             workers.Add(animationIds);

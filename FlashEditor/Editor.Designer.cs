@@ -946,7 +946,10 @@ namespace FlashEditor {
             // nothing here states a size for either.
             splitContainer1.Panel2.Controls.Add(EntityPanel);
             splitContainer1.Size = new Size(1113, 554);
-            splitContainer1.SplitterDistance = 620;
+            // No SplitterDistance here. PlaceEntitySplitter derives it from the width the grid's
+            // own columns need against the width the page actually has, for the reason nothing
+            // else on this page states a pixel: the form is AutoScaleMode.Dpi and a literal is
+            // only correct at the dpi it was measured at.
             splitContainer1.TabIndex = 0;
             // 
             // glControl
