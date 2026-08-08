@@ -76,9 +76,8 @@ namespace FlashEditor.Definitions.ClientScripts {
         private readonly FastObjectListView switchCases = Grid();
 
         /* AutoSize rather than a stated height on every label here, so the lines the text needs are
-           the lines it gets whatever font the form ends up scaling to. The notice is three short
-           lines rather than one long one for the same reason: a docked label is given the container's
-           width and does not wrap, so a line longer than the window is a line with its tail cut off. */
+           the lines it gets whatever font the form ends up scaling to. Height only - the width comes
+           from the dock, and wrapping within it is what ConstrainLabels arranges. */
         private readonly Label notice = new Label {
             AutoSize = true,
             Dock = DockStyle.Top,
@@ -135,8 +134,9 @@ namespace FlashEditor.Definitions.ClientScripts {
             "A parameter count above its matching local count writes a script the client cannot call.";
 
         private const string SwitchNoteText =
-            "Switch tables. Jump is a program-counter delta in instructions, applied after the counter has moved " +
-            "past the switch (Class247.java:7975-7980), so the target is the switch position plus one plus the jump.";
+            "Switch tables. Jump is a delta in instructions rather than bytes, applied once the counter has moved " +
+            "past the switch (Class247.java:7975-7980), so the target instruction is the switch position plus one " +
+            "plus the jump. Both are signed and both are legitimately negative.";
 
         private RSCache? cache;
         private bool splittersPlaced;
@@ -170,11 +170,45 @@ namespace FlashEditor.Definitions.ClientScripts {
             scripts.Bind(newCache, Descriptor);
         }
 
-        /// <summary>Places the splitters once the layout pass has given the containers a real size.</summary>
+        /// <summary>Places the splitters and re-measures the labels once the layout pass has run.</summary>
         /// <param name="levent">The event data.</param>
         protected override void OnLayout(LayoutEventArgs levent) {
             base.OnLayout(levent);
             PlaceSplitters();
+            ConstrainLabels();
+        }
+
+        /// <summary>
+        ///     Lets each docked label wrap inside its own pane rather than run off the edge of it.
+        /// </summary>
+        /// <remarks>
+        ///     An <c>AutoSize</c> label docked to the top is handed the container's width and then
+        ///     measures its text on one line, so a sentence longer than the pane is a sentence with
+        ///     its tail cut off. The switch note lost its client citation exactly that way in the
+        ///     narrower right-hand pane, and the summary line - which names a script, its size, its
+        ///     frame, its parameters and its identifier - is longer still.
+        ///     <para>
+        ///     A <c>MaximumSize</c> width is what turns the measurement into a wrapping one. It is
+        ///     the one pixel count in this panel, and it is taken from the measured pane on every
+        ///     layout rather than written down, so it stays right at any font, DPI or splitter
+        ///     position. Assigned only when it changes, because assigning it lays the panel out
+        ///     again and this runs from that layout.
+        ///     </para>
+        /// </remarks>
+        private void ConstrainLabels() {
+            Constrain(notice, ClientSize.Width);
+            Constrain(header, listAndDetail.Panel2.ClientSize.Width);
+            Constrain(switchNote, streamAndSwitches.Panel2.ClientSize.Width);
+        }
+
+        /// <summary>Caps one label's width so its text wraps at the pane edge.</summary>
+        /// <param name="label">The label.</param>
+        /// <param name="width">The pane's measured client width.</param>
+        private static void Constrain(Label label, int width) {
+            //Height stays 0, which is MaximumSize's spelling of "no limit" - the label has to be
+            //free to grow downwards, since wrapping is the whole point of capping the width.
+            if (width > 0 && label.MaximumSize.Width != width)
+                label.MaximumSize = new Size(width, 0);
         }
 
         /// <summary>
@@ -200,7 +234,11 @@ namespace FlashEditor.Definitions.ClientScripts {
             splittersPlaced = true;
 
             try {
-                listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width * 3 / 5);
+                //Half rather than the three fifths the other master/detail tabs use. The list's
+                //columns are all fixed-width numbers and it had visible slack at three fifths, while
+                //everything of variable length here - a string operand, the summary line - is on the
+                //other side of the splitter.
+                listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width / 2);
                 //Two thirds to the stream: 485 of the 4,149 scripts hold a switch table at all, so
                 //the lower pane is empty roughly seven selections out of eight.
                 streamAndSwitches.SplitterDistance =
