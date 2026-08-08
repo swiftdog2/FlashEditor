@@ -155,7 +155,11 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                 fields.Add(new DetailField("Packet bytes", sample.PacketByteCount.ToString("N0", CultureInfo.InvariantCulture) +
                                                            " (audio only, no length prefixes)"));
                 fields.Add(new DetailField("Packet lengths", DescribePacketLengths(sample)));
-                fields.Add(new DetailField("Record bytes", StoredByteCount(sample).ToString("N0", CultureInfo.InvariantCulture) +
+                //Read off the codec rather than recomputed here. Restating "header plus prefixes
+                //plus audio" would be a second copy of the encoder's layout rule, and no sweep over
+                //this cache could see the two diverge - every shipped packet is under 255 bytes, so
+                //a wrong prefix width and a right one produce the same number on all 431,558.
+                fields.Add(new DetailField("Record bytes", sample.StoredByteCount.ToString("N0", CultureInfo.InvariantCulture) +
                                                            " (header + length prefixes + audio)"));
                 fields.Add(new DetailField("Playback", "not decoded here - see the note above the list"));
                 return fields;
@@ -186,24 +190,6 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
 
             fields.Add(new DetailField("Packets", "none - this group is not a sample"));
             fields.Add(new DetailField("Playback", "not decoded here - see the note above the list"));
-        }
-
-        /// <summary>
-        ///     How many bytes the record occupies once written back.
-        /// </summary>
-        /// <remarks>
-        ///     Derived from the format rather than by re-encoding, so selecting a row costs nothing.
-        ///     A packet's length prefix is base 255 with a continuation at 255, so a length of
-        ///     <c>n</c> costs <c>n / 255 + 1</c> bytes.
-        /// </remarks>
-        /// <param name="sample">The record.</param>
-        /// <returns>The encoded size in bytes.</returns>
-        private static int StoredByteCount(Sfx2Sample sample) {
-            int prefixes = 0;
-            foreach (int length in sample.PacketLengths)
-                prefixes += length / Sfx2Sample.PacketLengthRadix + 1;
-
-            return Sfx2Sample.HeaderBytes + prefixes + sample.PacketByteCount;
         }
 
         /// <summary>The packet-length spread, which is what tells a padded record from a real one.</summary>

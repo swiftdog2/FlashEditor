@@ -185,6 +185,146 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
+        ///     The predicted prefix width is the number of bytes the writer actually emits.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Sfx2Sample.PacketLengthPrefixBytes"/> exists so the editor can show a
+        ///     packet's prefix cost without restating the rule, and <see cref="Sfx2Sample.Encode"/>
+        ///     sizes its buffer from it. Both make it a prediction about the writer, so it is checked
+        ///     against the writer directly and against the hand-built expectation above.
+        ///     <para>
+        ///     The boundary is the whole point. Below 255 every wrong implementation of this agrees
+        ///     with the right one, and the longest packet in either cache is 147 bytes, so nothing
+        ///     read from disk can ever exercise the row that matters.
+        ///     </para>
+        /// </remarks>
+        /// <param name="length">The packet length.</param>
+        /// <param name="expected">The bytes the client's reader takes for that length.</param>
+        [Theory]
+        [InlineData(0, new byte[] { 0x00 })]
+        [InlineData(1, new byte[] { 0x01 })]
+        [InlineData(254, new byte[] { 0xFE })]
+        [InlineData(255, new byte[] { 0xFF, 0x00 })]
+        [InlineData(256, new byte[] { 0xFF, 0x01 })]
+        [InlineData(509, new byte[] { 0xFF, 0xFE })]
+        [InlineData(510, new byte[] { 0xFF, 0xFF, 0x00 })]
+        [InlineData(511, new byte[] { 0xFF, 0xFF, 0x01 })]
+        [InlineData(1000, new byte[] { 0xFF, 0xFF, 0xFF, 0xEB })]
+        public void PacketLengthPrefixBytes_CountsTheBytesTheWriterEmits(int length, byte[] expected)
+        {
+            var written = new JagStream();
+            Sfx2Sample.WritePacketLength(written, length);
+
+            Assert.Equal(expected.Length, Sfx2Sample.PacketLengthPrefixBytes(length));
+            Assert.Equal(written.ToArray().Length, Sfx2Sample.PacketLengthPrefixBytes(length));
+        }
+
+        /// <summary>
+        ///     A negative length is refused rather than answered with a prefix width.
+        /// </summary>
+        /// <remarks>
+        ///     <c>-1 / 255 + 1</c> is 1 in C#, so an unguarded rule would quietly claim a one-byte
+        ///     prefix for a length that cannot be written at all - and the caller displaying it would
+        ///     show a plausible number for a record the encoder is about to reject.
+        /// </remarks>
+        [Fact]
+        public void PacketLengthPrefixBytes_RefusesANegativeLength()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => Sfx2Sample.PacketLengthPrefixBytes(-1));
+        }
+
+        /// <summary>
+        ///     The record's predicted stored size is exactly what encoding it writes, including when
+        ///     its packets cross the continuation boundary.
+        /// </summary>
+        /// <remarks>
+        ///     The test that closes the gap the editor opened. Showing "record bytes" beside a sample
+        ///     needs a size, and computing one from the format is a second implementation of the
+        ///     encoder's layout - one that <b>no sweep over either cache could distinguish from the
+        ///     first</b>, because every one of the 431,558 shipped packets is under 255 bytes and so
+        ///     costs a one-byte prefix under a right rule and a wrong one alike.
+        ///     <para>
+        ///     Three independent figures have to agree here, and the third is what makes it more than
+        ///     a round trip: <see cref="Sfx2Sample.StoredByteCount"/>, the length
+        ///     <see cref="Sfx2Sample.Encode"/> produces, and the length of a record assembled by
+        ///     <c>BuildRecord</c>, which spells the prefixes out from the client's reader and owes
+        ///     nothing to this project's encoder.
+        ///     </para>
+        ///     <para>
+        ///     254, 255 and 256 are each present on their own as well as together, so a failure names
+        ///     the side of the boundary it is on rather than just saying a mixed record is wrong.
+        ///     </para>
+        /// </remarks>
+        /// <param name="lengths">The packet lengths to build the record from.</param>
+        [Theory]
+        [InlineData(new int[0])]
+        [InlineData(new[] { 0 })]
+        [InlineData(new[] { 1 })]
+        [InlineData(new[] { 254 })]
+        [InlineData(new[] { 255 })]
+        [InlineData(new[] { 256 })]
+        [InlineData(new[] { 509 })]
+        [InlineData(new[] { 510 })]
+        [InlineData(new[] { 254, 255, 256 })]
+        [InlineData(new[] { 255, 0, 510, 1, 1000 })]
+        public void StoredByteCount_MatchesWhatEncodeWrites(int[] lengths)
+        {
+            byte[] built = BuildRecord(sampleRate: 22050, pcmByteCount: 4321, loopStart: 7,
+                storedLoopEnd: ~9999, lengths: lengths);
+
+            var sample = new Sfx2Sample { Id = 1 }.Decode(new JagStream(built));
+
+            Assert.Equal(built.Length, sample.StoredByteCount);
+            Assert.Equal(built.Length, sample.Encode().ToArray().Length);
+            Assert.Equal(built, sample.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     The predicted size still matches after packets are replaced, which is the path that
+        ///     can actually introduce a long one.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Sfx2Sample.SetPackets"/> is how imported audio gets in, and it is the only
+        ///     way a packet of 255 bytes or more can ever exist in this editor - nothing read from
+        ///     either cache is that long. Checking the size after an import rather than only after a
+        ///     decode is therefore checking it on the one path where the continuation branch is
+        ///     reachable at all.
+        /// </remarks>
+        [Fact]
+        public void StoredByteCount_TracksImportedPacketsAcrossTheContinuationBoundary()
+        {
+            int[] lengths = { 254, 255, 256, 510 };
+
+            var packets = new byte[lengths.Length][];
+            for (int i = 0; i < lengths.Length; i++)
+            {
+                packets[i] = new byte[lengths[i]];
+                for (int b = 0; b < lengths[i]; b++)
+                    packets[i][b] = PacketByte(i, b);
+            }
+
+            var sample = new Sfx2Sample
+            {
+                Id = 1,
+                SampleRate = 22050,
+                PcmByteCount = 4321,
+                LoopStart = 7,
+                LoopEnd = 9999,
+                IsLooping = true
+            };
+            sample.SetPackets(packets);
+
+            byte[] built = BuildRecord(sampleRate: 22050, pcmByteCount: 4321, loopStart: 7,
+                storedLoopEnd: ~9999, lengths: lengths);
+
+            //Header, four prefixes of 1, 2, 2 and 3 bytes, and the audio - stated rather than
+            //derived, so this does not pass by agreeing with the rule it is checking.
+            Assert.Equal(Sfx2Sample.HeaderBytes + 8 + (254 + 255 + 256 + 510), sample.StoredByteCount);
+            Assert.Equal(built.Length, sample.StoredByteCount);
+            Assert.Equal(built, sample.Encode().ToArray());
+        }
+
+        /// <summary>
         ///     A record whose packets need a continuation byte round-trips against bytes built by
         ///     hand.
         /// </summary>

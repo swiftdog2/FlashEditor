@@ -352,8 +352,13 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             ///     defend: no packet in either cache reaches 255 bytes, so every prefix here is one
             ///     byte and the continuation branch is never exercised. A column reading 2 would mean
             ///     imported audio has started to use it.
+            ///     <para>
+            ///     Asked of the codec rather than worked out here, for exactly the reason above: a
+            ///     restatement of the width rule in the display would agree with the encoder on every
+            ///     byte the cache holds and could only diverge on data no test has.
+            ///     </para>
             /// </remarks>
-            internal int PrefixBytes => Length / Sfx2Sample.PacketLengthRadix + 1;
+            internal int PrefixBytes => Sfx2Sample.PacketLengthPrefixBytes(Length);
 
             /// <summary>The packet's leading bytes in hex.</summary>
             internal string Preview { get; }
