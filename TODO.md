@@ -8,13 +8,18 @@ that is not a codec.
 direction change. If it is updated on every turn it becomes noise and stops being read.
 
 **Do not put volatile numbers here.** Counts of our own code go stale by the next commit and get
-read as targets. Counts *of the cache* are fine, because the cache does not change.
+read as targets. Counts *of the cache* are fine, because the cache does not change - but a count
+that differs between the two caches must name which one it belongs to.
 
-**Every claim below was checked against the code on 2026-08-05, not against the prose.** Seven were
-wrong and are corrected in place: the sprite import button, the index-2 families, the index-9
-sweep, the renderer's test coverage, the font editor, the environment data, and index 15 being
-treated as empty when it holds 176 groups. A claim here that is not carrying a `file:line` is a
-claim nobody has re-checked since.
+**Every claim below was checked against the code on 2026-08-08, at commit `b6e5dfb`, not against
+the prose.** Three figures inherited from the previous pass were repack-scoped and are corrected
+here with both caches named: index 9's group count and its uncompressed share, and index 3's
+component-name coverage. One structural claim was struck as void rather than deferred (route 4 of
+item 12), and one hand-off note about type 12's swallowed opcodes named four where the code and the
+survey both say two. Every surviving `file:line` was re-resolved at this commit, which moved most
+of them - `Editor.cs` alone gained roughly twenty lines per new tab - and one named the wrong
+directory outright (`MapElementDefinition.cs` is under `Definitions/Config/`, not `WorldMap/`).
+A claim here that is not carrying a `file:line` is a claim nobody has re-checked since.
 
 ---
 
@@ -27,87 +32,55 @@ claim nobody has re-checked since.
   every test.
 - **Serialise cache-backed test runs.** Parallelise the editing, serialise the sweeping.
 - **A byte-identity sweep cannot see a normalisation whose triggering input is absent from the
-  cache.** Those need synthetic tests. This has come up repeatedly and will keep coming up.
+  cache. This is now demonstrated rather than asserted, and index 14 is the worked example.** A
+  whole-index sweep over every declared index-14 group re-encoded byte-identically against a
+  deliberately broken packet-length rule, `(length - 1) / 255 + 1`. It passed clean because the
+  longest packet in either cache is 147 bytes (`Sfx2Sample.cs:345`), so nothing shipped reaches
+  the base-255 continuation boundary at all and every wrong prefix width agrees with the right one
+  below it (`Sfx2ListDescriptor.cs:158-161` says the same thing about the detail pane's arithmetic).
+  Only hand-built records caught it, at exactly 255, with 254 and 256 passing either way -
+  `Sfx2CodecTests.cs:169-171`, and the boundary is asserted in its own right by
+  `RealCacheSfx2Tests.ThePacketLengthContinuationByteIsUnreachableInThisCache` (`:371`), which
+  measures the longest packet so the premise fails loudly if a cache ever ships a longer one. When
+  a rule has a threshold, find the threshold and build a record that crosses it; the sweep will not
+  do it for you.
+- **A warning count is only comparable against a build of the same scope.** An incremental build
+  recompiles only the changed project, so the test project's warnings are not re-emitted and the
+  total drops - 319 against 330 for the same tree in this repo. `CLAUDE.md` already requires the
+  method behind a warning count to be stated; this is the form it takes here, and it is why two
+  passes that "agree the warnings went down" can both be measuring nothing.
 
 ---
 
 ## In flight
 
-Nothing.
-
----
-
-## Next
-
-Each item carries the prompt that resumes it, and **the prompt is the whole brief** - paste it
-and go. Most items are independent. The four that are not say so in their heading, and those are
-the only ordering constraints in this file.
-
-Prompts deliberately do not repeat the standing rules. Those live in `CLAUDE.md` and `AGENTS.md`,
-every prompt opens by requiring them, and duplicating them here would let the two drift apart. A
-prompt carries only what is specific to its item, plus the closing verify-and-commit line, which
-is repeated on purpose: it is the hand-off ritual rather than a rule.
-
-The rules a prompt relies on, so you can see they are covered: commit before anything
-deliberately breaks the tree; test against both caches; assert relationships rather than counts;
-settle behaviour from what the client does; separate stored from derived state; capture
-non-canonical encodings; follow the **UI conventions** section of `CLAUDE.md` for anything with a
-surface; and remember no capture on this machine can see the OpenGL viewport.
-
----
-
-### 1. Index 26 materials - record the census
-
-Smallest open item, and the *only* unrecorded census in the suite: `materials.declaredTextures`
-and `materials.presentRecords` are the sole `AssertCensus` keys with no entry in either profile
-(`RealCacheProfile.cs:65` defines the prefix, `:540` prints it, `RealCacheMaterialTests.cs:134-135`
-calls it).
-
-```
-Read CLAUDE.md and AGENTS.md first; they carry the standing rules.
-
-RealCacheMaterialTests.cs:134-135 calls AssertCensus for materials.declaredTextures and
-materials.presentRecords, and neither key exists in RealCacheProfile's Vanilla() or Repack()
-dictionary. AssertCensus on a missing key only calls output.WriteLine, so those figures are
-asserted by nothing and a change in the population would pass silently. Every other census key
-in the suite has an entry in both dictionaries; these two are the only exceptions.
-
-Measured independently by walking the dat2 sector chain outside our decoder: 915 declared and
-present in the vanilla b639 capture, 1,408 in the repack. Re-measure rather than trusting those.
-
-Record them in FlashEditor.Tests/Cache/RealCache/RealCacheProfile.cs, the sanctioned home for a
-measurement that genuinely differs between the two caches, and make the sweep assert them.
-
-Note that RealCacheMaterialTests.cs:138 already asserts the RELATIONSHIP the counts must satisfy
-(2 + declared + present * BytesPerRecord == stored length). Adding the absolute figures pins the
-population; do not weaken the relationship assertion to make room for them.
-
-Run the suite against both caches. Commit.
-```
-
----
+Three items are being worked in parallel worktrees right now. Their results are not visible from
+here, so they are listed rather than judged. **Confirm each against the tree before picking one
+up** - it may already be done, and its `file:line` citations below were verified at `b6e5dfb`,
+which is the base those worktrees branched from.
 
 ### 2. Sprite tab - lay it out for images rather than for rows
 
-The tab is the original item-list layout and has not changed since it was written. It renders
-every sprite into a 20 pixel row (`Editor.Designer.cs:970`), which is the whole problem: sprites
-run from 2x2 to over 400x200 and a single row height cannot serve both.
+The tab is the original item-list layout. It renders every sprite into a 20 pixel row
+(`Editor.Designer.cs:976`), which is the whole problem: sprites run from 2x2 to over 400x200 and a
+single row height cannot serve both.
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
 The Sprites tab (index 8) is a five column grid - ID, Frames, Width, Height, Image
-(Editor.Designer.cs:956-960) - with RowHeight 20 (:970), a fixed Consolas 11.25 font (:965) and
-absolute positioning (:968) rather than docking. Sprites vary from 2x2 to over 400x200, so one
+(Editor.Designer.cs:962-966) - with RowHeight 20 (:976), a fixed Consolas 11.25 font (:971) and
+absolute positioning (:974) rather than docking. Sprites vary from 2x2 to over 400x200, so one
 row height cannot present them. Rebuild the tab around the images.
 
 USE THE TEXTURES TAB AS THE REFERENCE, not the surrounding sprite code. Textures
-(Editor.cs:1388-1457) does the three things this tab does not: it seeds every row before the
-worker starts (SeedTextureGrid at :1455) so the grid is never empty, it replaces tiles in place
-as batches arrive (ApplyTextureTiles at :1411) rather than rebuilding the list, and it handles
-cancel and fault by clearing loadedTabs (:1430-1441) so a failed load can be retried. The sprite
-worker calls SpriteListView.SetObjects from inside DoWork (Editor.cs:1254), which is the
-cross-thread access CLAUDE.md's UI conventions forbid; populate in RunWorkerCompleted.
+(Editor.cs:1408-1477) does the three things this tab does not: it seeds every row before the
+worker starts (SeedTextureGrid at :2562, called at :1475) so the grid is never empty, it replaces
+tiles in place as batches arrive (ApplyTextureTiles at :2631, called at :1431) rather than
+rebuilding the list, and it handles cancel and fault by clearing loadedTabs (:1450-1460) so a
+failed load can be retried. The sprite worker calls SpriteListView.SetObjects from inside DoWork
+(Editor.cs:1274), which is the cross-thread access CLAUDE.md's UI conventions forbid; populate in
+RunWorkerCompleted.
 
 SCALING. Letterbox each sprite into a fixed tile, preserving aspect, never stretching:
  - Upscale small sprites by an INTEGER factor with nearest-neighbour sampling. A 2x2 sprite
@@ -120,12 +93,12 @@ SCALING. Letterbox each sprite into a fixed tile, preserving aspect, never stret
 
 FRAMES. A sprite set is a CANVAS plus N frames, which is what makes this more than a picture
 list. SpriteDefinition.width/height (:70,:73) are the canvas; each frame is a sub-rectangle of
-SubWidth x SubHeight at OffsetX,OffsetY (:216-217) that routinely does not reach the canvas edge.
-GetFrames() (:456) rasterises each frame onto a canvas-sized image, and Rasterise (:482) grows
+SubWidth x SubHeight at OffsetX,OffsetY (:216-219) that routinely does not reach the canvas edge.
+GetFrames() (:456) rasterises each frame onto a canvas-sized image, and Rasterise (:479) grows
 that canvas with Math.Max when a frame overflows it. So show BOTH: the frame's own pixels and
 where it sits within the canvas, because an offset is invisible if you crop to the sub-rectangle.
 The tree already models this - CanExpandGetter expands sets of more than one frame
-(Editor.cs:1256-1261) and ChildrenGetter returns the frames (:1263-1266), which is legal because
+(Editor.cs:1276-1281) and ChildrenGetter returns the frames (:1283-1286), which is legal because
 RSBufferedImage derives from SpriteDefinition (Cache/Util/RSBufferedImage.cs:12). Keep that
 relationship; replace only the presentation.
 
@@ -142,143 +115,36 @@ both caches. Commit.
 
 ---
 
-### 3. Index 14 SFX2 - a tab
-
-Cheapest tab on this list: the descriptor is already written. `Sfx2ListDescriptor.cs` is a real
-`DefinitionListDescriptor<Sfx2Listing>` and is currently referenced only by its own tests, so this
-is largely a `Register` call and a panel.
-
-```
-Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
-
-Index 14 has a codec, a whole-index sweep (RealCacheSfx2Tests.cs:121-190) and a written
-DefinitionListDescriptor<Sfx2Listing> in FlashEditor/Definitions/Audio/Sfx2/Sfx2ListDescriptor.cs
-that nothing outside the tests references. It has no tab. Wire the descriptor up rather than
-writing a second one: 3,657 groups, one Vorbis setup header plus 3,656 samples, 431,558 packets.
-
-A sample is a header - sample rate, PCM byte count, loop start, loop end - plus a packet list.
-Show those, the packet count and total packet bytes. Group 0 is structurally different from the
-rest; present it as what it is rather than as a broken sample.
-
-Playback is out of scope HERE: the setup header has no magic, no channel count and no framing
-bit, so no off-the-shelf decoder takes it, and a hand-written Vorbis decoder is a far larger job
-than this tab. Say so in the UI rather than leaving a dead play button. Item 16 is where that
-decoder gets settled, because track playback cannot happen without it - so do not design this tab
-in a way that makes adding playback later mean rebuilding it.
-
-Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
-```
-
----
-
-### 4. Index 12 client scripts - a tab
-
-Codec and sweep are done. A raw grid of numeric opcodes is barely better than hex, so be honest
-about how far this goes.
-
-```
-Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
-
-Index 12 has a decoder, an encoder and a whole-index byte-identity sweep
-(RealCacheClientScriptTests.cs:70-109), and no tab. Give it one via DefinitionListPanel and a
-descriptor.
-
-Size it for the shape: 4,149 scripts, 335,158 instructions, largest script 7,084 instructions
-and 106 KB decompressed. Decode on selection, not on load - a grid that materialises every
-instruction of every script on tab load builds over a third of a million rows.
-
-The identifier column must NOT be called a name hash. Index 12 sets the identifiers flag, but
-the identifier is partly a packed interface hook and roughly 3,800 of the 4,149 are unexplained
-32-bit values. Label it "identifier".
-
-A disassembler is OUT of scope here - it is its own item. Ship the raw instruction view and say
-in the UI that opcodes are unnamed. ClientScriptInstruction.cs:8-12 already states why the
-opcodes are raw; the tab should say the same thing to the user.
-
-Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
-```
-
----
-
-### 5. Index 32 loading sprites - a tab
-
-```
-Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
-
-Index 32 has a codec and a whole-index sweep and no tab. It is MIXED: of its 26 groups, 21 are
-JPEG and 5 are 256-frame Jagex glyph sheets. The tab has to present both and say which a group
-is. LoadingSpriteDefinition.LooksLikeJpeg (:69-71) is the discriminator the decoder uses.
-
-The JPEGs are 4-component, non-JFIF, with no Adobe marker. Every standard decoder renders them
-as CMYK and produces a plausible, wrong image. The codec already carries a proven colour path in
-JagexJpeg.cs - use it, and do not substitute a library decoder because it looks easier.
-
-Byte identity on the JPEG half is by construction: Encode returns the stored bytes verbatim
-(LoadingSpriteDefinition.cs:114-125). That means an import replaces the file rather than
-transcoding it, and the UI should say so.
-
-Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
-```
-
----
-
 ### 6. Index 23 world map - a tab
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
 Index 23 has a codec (FlashEditor/Definitions/WorldMap/) and a whole-index sweep
-(RealCacheWorldMapTests.cs:112-215) and no tab; nothing outside the tests references the reader.
-Three record families: area details, the area raster tile stream, and fixed-size static elements,
-addressed by name hash at both group and file level.
+(RealCacheWorldMapTests.cs:113) and no tab; nothing outside the tests references the reader, and
+RegisterEditorTabs (Editor.cs:801-924) names no page against RSConstants.WORLD_MAP
+(RSConstants.cs:48). Three record families: area details, the area raster tile stream, and
+fixed-size static elements, addressed by name hash at both group and file level.
 
 Name the tab so it cannot be confused with the existing Map tab. That one is index 5 terrain;
 this is the world map the client draws over it.
 
 The interesting view is the raster: render it rather than tabulate it. Its icons resolve through
-index 2 group 36, which is implemented (MapElementDefinition.cs:225) - prove that join resolves
+index 2 group 36, which is implemented - and note the file is Definitions/Config/
+MapElementDefinition.cs, not under WorldMap/, because it is an index-2 config record that the
+world map happens to be the main consumer of; its sprite ids are read at :227-228 - prove that
+join resolves
 rather than assuming it, the way object opcode 107 into group 36 was proven by decoding every
 object. A near-total aggregate match is not evidence; find the rows that are checkable alone.
+RealCacheWorldMapTests already draws that line twice, at :409 and :468, where a static element
+must name a map element and a tile element must name an object; reuse those rather than inventing
+a third reading.
 
-Note the addressing trap already recorded: the area file is id 4 in most groups and id 0 in the
-rest, so a reader assuming a fixed file id fails on a subset.
+Note the addressing trap the suite already pins: the area file is id 4 in most groups and id 0 in
+the rest (RealCacheWorldMapTests.TheRasterFileIdIsNotFixedAcrossAreas, :237), so a reader assuming
+a fixed file id fails on a subset.
 
 Screenshot the tab, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
-```
-
----
-
-### 7. Index 9 textures - an encoder and a byte-identity sweep
-
-**The only index with a decoder that does not re-encode.** This file previously claimed every
-index was covered, which was wrong: `Texture.cs` has no `Encode` method at all, and
-`TextureGraphConformanceTests` proves consumption, not identity. Index 15 is a different and worse
-case, having no decoder either, and is item 16.
-
-```
-Read CLAUDE.md and AGENTS.md first, plus reference/index-survey/index-009-TEXTURES.md, which
-already scopes this work in detail and is the authority on it.
-
-Index 9 has a decoder, an evaluator and a gallery, and NO encoder: there is no Texture.Encode, no
-TextureGraph serialiser, and no WriteFile call for index 9 anywhere. TextureGraphConformanceTests
-sweeps consumption only, so index 9 is the sole content index in the cache with no byte-identity
-sweep behind it. Close that.
-
-Decode must first record what it currently throws away, or byte identity is unreachable.
-Discarded today, per the survey: the per-node version byte (Texture.cs:325), the output-size byte
-(:329), the opcode order and which opcodes were present, the type-29 shape payloads (skipped
-blind at :629-632), and 10 trailing bytes that are never read. The survey's recommended design is
-to capture each opcode's raw byte span at decode and have the encoder replay it, editing only the
-spans the user touched - the same non-canonical problem every other index in this cache has.
-
-Two traps the survey records. Type 12 swallows four opcodes - (12,2), (12,4), (12,5), (12,6),
-Texture.cs:518-526 - which consume no bytes, so consumption still balances while an encoder built
-from decoded state alone drops them and shortens those files. And compression is mixed, 507 of
-946 groups stored uncompressed, so the sweep must compare DECOMPRESSED payloads.
-
-Then the sweep, in the shape of the existing definition sweeps, through DefinitionSweep.
-
-Run the suite against both caches. Commit.
 ```
 
 ---
@@ -304,7 +170,7 @@ Two things about this layer that will mislead you if you meet them cold:
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
 FlashEditor/Rendering/ holds skeletal animation, a playback loop, ray-triangle picking with a
-face and vertex index overlay, and a bounded particle simulation. Verified 2026-08-05: no
+face and vertex index overlay, and a bounded particle simulation. Verified again at b6e5dfb: no
 production code anywhere constructs AnimationPlayer, SkeletalAnimator, PickMesh, ParticleSystem
 or ModelAttachments - every construction site is inside Rendering/ or in a test.
 
@@ -327,8 +193,8 @@ Signatures are greppable; what is where is not:
  - ViewportOverlayRenderer is the only GL-touching piece and it is INTERNAL. Confirm the editor can
    reach it from wherever you intend to call it before designing around it.
 
-WHERE IT PLUGS IN. Editor.Designer.cs:144 declares the single GLControl and :1432 hosts it in
-splitContainer1.Panel1. Editor.cs:34 holds the ModelRenderer field, :321-330 is the whole of the GL
+WHERE IT PLUGS IN. Editor.Designer.cs:144 declares the single GLControl and :1438 hosts it in
+splitContainer1.Panel1. Editor.cs:34 holds the ModelRenderer field, :322-331 is the whole of the GL
 event wiring, and Gl_Paint is at :565. Before adding a vertex transform, read FrameModel
 (Editor.cs:527) - its loop at :535-537 already does the /128 flip and is commented "Same transform
 as AppendVertex / ModelRenderer", so there are at least three copies of it already and the overlay
@@ -357,7 +223,7 @@ Wire it into the Models editor:
 
 Fix the render timer while you are here rather than leaving it as a separate item. Editor.cs:329
 sets _fpsTimer to 1000/30 ms and :330 invalidates glControl unconditionally on every tick, from
-the constructor until OnFormClosed (:2455), on every page, with nothing animating. Gate it on the
+the constructor until OnFormClosed (:2483), on every page, with nothing animating. Gate it on the
 viewport being visible and on something actually needing a frame. The 30 Hz figure already
 matches AnimationPlayer.RenderFramesPerSecond (AnimationPlayer.cs:60); wire the two together
 rather than leaving them coincidentally equal.
@@ -384,6 +250,29 @@ Run the suite against both caches. Commit.
 
 ---
 
+## Next
+
+Each item carries the prompt that resumes it, and **the prompt is the whole brief** - paste it
+and go. Most items are independent. The two that are not say so in their heading, and those are
+the only ordering constraints in this file.
+
+**Numbers are not reused.** Items 1, 3, 4, 5, 7, 12 and 15 are done and their numbers stay
+retired, because other items and other documents cite items by number and a renumber breaks a
+cross-reference silently.
+
+Prompts deliberately do not repeat the standing rules. Those live in `CLAUDE.md` and `AGENTS.md`,
+every prompt opens by requiring them, and duplicating them here would let the two drift apart. A
+prompt carries only what is specific to its item, plus the closing verify-and-commit line, which
+is repeated on purpose: it is the hand-off ritual rather than a rule.
+
+The rules a prompt relies on, so you can see they are covered: commit before anything
+deliberately breaks the tree; test against both caches; assert relationships rather than counts;
+settle behaviour from what the client does; separate stored from derived state; capture
+non-canonical encodings; follow the **UI conventions** section of `CLAUDE.md` for anything with a
+surface; and remember no capture on this machine can see the OpenGL viewport.
+
+---
+
 ### 9. Entities page. **Needs item 8 first.**
 
 ```
@@ -400,10 +289,11 @@ For NPCs, list the animations the definition names and let them be cycled - that
 this page exists for, and it depends on the renderer wiring item being done first.
 
 Items, NPCs, Objects and Models all predate DefinitionListPanel: each is a bespoke BackgroundWorker
-arm inside LoadEditorTab (Editor.cs:1147, 1272, 1336, 1459) re-implementing the worker, the
+arm inside LoadEditorTab (Editor.cs:1167, 1292, 1356, 1479) re-implementing the worker, the
 progress reporting and the edit commit. Migrating those four is part of this item; do not leave
-four implementations behind a new shell. Textures (:1388) and the Console (:1106) are bespoke too
-but are not entity grids and are out of scope here.
+four implementations behind a new shell. Sprites (:1227), Textures (:1408) and the Console (:1126)
+are bespoke too; sprites is item 2's and the other two are in the smaller-items list, so all three
+are out of scope here.
 
 Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
 ```
@@ -412,20 +302,24 @@ Screenshot it, read the PNG, fix what is clipped. Run the suite against both cac
 
 ### 10. Sprite import from image formats. **Needs item 2 first.**
 
-Scope corrected: the import button is **not** dead. `ImportSpriteBtn_Click` exists and works
-(`Editor.cs:1595-1645`), but it only accepts the cache's own `.dat` sprite-set container. What is
-missing is PNG, JPG and BMP.
+Scope corrected in an earlier pass and re-checked here: the import button is **not** dead.
+`ImportSpriteBtn_Click` exists and works (`Editor.cs:1615-1665`), but it only accepts the cache's
+own `.dat` sprite-set container. What is missing is PNG, JPG and BMP.
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
-ImportSpriteBtn already has a handler (Editor.Designer.cs:952 wires it, Editor.cs:1595-1645
+ImportSpriteBtn already has a handler (Editor.Designer.cs:958 wires it, Editor.cs:1615-1665
 implements it) and it is a good one: it decodes into a throwaway SpriteDefinition to validate
-before touching anything (:1617), no-ops when the bytes match what is stored (:1621-1624), writes
-through cache.WriteFile (:1626) and re-decodes the row in place (:1633-1636). Earlier notes here
+before touching anything (:1637), no-ops when the bytes match what is stored (:1641), writes
+through cache.WriteFile (:1646) and re-decodes the row in place (:1654). Earlier notes here
 called it a dead button; that was wrong. Keep this path and its validate-then-write shape.
 
-What is missing is that its file filter (:1605) accepts only the cache's own .dat sprite-set
+The index-32 Replace path (LoadingSpriteEditorPanel.cs:444-495) is the same shape done more
+recently and with its refusals written out; read it before adding a second dialect of the same
+idea.
+
+What is missing is that its file filter (:1625) accepts only the cache's own .dat sprite-set
 container. Add PNG, JPG and BMP, converting to the stored form.
 
 Three real problems, each measured in shipped data:
@@ -439,77 +333,52 @@ Three real problems, each measured in shipped data:
 
 Traversal order is the trap no sweep catches: 2,767 frames are ambiguous between row-major and
 column-major, and not one sets the column-major flag, so an encoder recomputing that flag would
-sweep clean on both caches and corrupt the first sprite edited. Keep the stored flag.
+sweep clean on both caches and corrupt the first sprite edited. Keep the stored flag. That is the
+same class of blind spot the constraints section above now has a worked example of.
 
 Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
 ```
 
 ---
 
-### 11. Client background import. **Needs item 5 first.**
+### 11. Client background import - the two checks the index-32 tab did not make
+
+**Scope narrowed, because most of this landed with the index-32 tab.** A validating Replace path
+now exists (`LoadingSpriteEditorPanel.ReplaceStored`, `:444-495`): it stores the supplied file
+verbatim rather than transcoding, refuses a file that does not open `FF D8` (`:459`), refuses one
+byte-identical to what is stored so a no-op save writes nothing (`:465`), and refuses one whose
+preview will not build - which covers both "will not parse" and "the Jagex colour path cannot
+render it" (`:475`). What is left is two questions it deliberately did not answer.
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
-The client background lives in index 32, which is mostly JPEG rather than sprite format, so this
-is a different path from sprite import and should not be folded into it. There is no write path
-to index 32 today: the only WriteFile call sites in the editor are sprites and items.
+Two open questions about index 32's import path. Both are settled from the client, not from us.
 
-A JPEG re-encode is no more reproducible than a GZip one, so import means STORING THE SUPPLIED
-FILE, not transcoding it - which is what the encoder already does
-(LoadingSpriteDefinition.cs:114-125 returns the stored bytes). Validate that what the user
-supplies is a JPEG the client can read - 4-component, non-JFIF - and refuse with a clear message
-rather than storing something that renders as CMYK garbage in game. Those properties are recorded
-as observations about existing data at JagexJpeg.cs:65-68 and are enforced nowhere; this item is
-where they become a check.
+FIRST: a three-component JFIF JPEG is currently accepted, and nobody has established whether it
+should be. JpegRaster.ToArgb (:130) admits a component count of 1, 3 or 4 and applies the same
+YCbCr transform to 3 and 4, so an ordinary camera or Photoshop JPEG imports and previews
+correctly in the editor. Every image index 32 actually holds is four-component, baseline, no JFIF
+APP0 and no Adobe APP14, sampled 2x2, 1x1, 1x1, 2x2 - recorded with its evidence at
+JagexJpeg.cs:55-72, which ties the shape to the client's own 1x1 capability probe
+(Class74.aByteArray546, decoded by Class116.method2162, Class116.java:60-77) rather than to an
+inference about the data.
 
-Confirm from the client which group is actually the background before writing to one.
+DO NOT ASSUME THE ANSWER IS "REFUSE". Class271.method3277 (Class271.java:29-65) hands the stored
+bytes straight to Toolkit.getDefaultToolkit().createImage and grabs the result with a
+PixelGrabber, with no colour transform and no component handling anywhere - so on the face of it
+the JVM would decode a standard JFIF perfectly well and a refusal would be the editor being
+stricter than the client. Settle it from what that path does, and whichever way it goes, say so
+in the UI and pin it with a synthetic three-component file. The preview must never show a picture
+the client would draw differently.
+
+SECOND: which group is the background. LoadingSpriteNames names only the four glyph sheets -
+p11_full, p12_full and b12_full resolve by name out of Class84.java:20-31, and the fourth was
+recovered against its stored hash - and states outright that THE TWENTY-ONE JPEG GROUPS ARE NOT
+NAMED. So the background cannot be identified by name today, and no write should be aimed at a
+particular group until the client says which one it loads. Find the call site, not a plausible id.
 
 Screenshot it, read the PNG, fix what is clipped. Run the suite against both caches. Commit.
-```
-
----
-
-### 12. Interface name recovery
-
-Absorbs what was a separate "name recovery beyond the known list" backlog section, which
-described the same greps.
-
-```
-Read CLAUDE.md and AGENTS.md first.
-
-Index 3's tab shows raw 32-bit identifiers where names would be far more useful. What exists
-today is in FlashEditor/Definitions/Interfaces/InterfaceNames.cs: a curated dictionary of 27
-group names (:49-77), each of which is only displayed if re-hashing it matches the stored
-identifier (:91-100), plus a com_<fileId> rule for components (:112-118) that resolves 9,219 of
-9,219 candidates. Both mechanisms are self-proving. Keep that property.
-
-A verified list of 467 group names exists at
-C:\Users\CJ\Desktop\HydraScape\docs\cache-format\Leanbow Interface Names.txt, keyed by group id.
-It is in the sibling repo, not this one, and nothing here references it.
-
-The hash is djb2 - h = h * 31 + c, no lowercasing, no offset - implemented at
-Cache/Util/NameHasher.cs. Confirmed against this cache; the h * 61 + (c - 32) variant matched
-nothing. Verify that before relying on it.
-
-Every entry must re-hash and match the stored identifier before it is displayed, so a wrong row
-reads as unnamed rather than as a false name. Ship no unverified name.
-
-Then extend coverage the cheap way, in this order:
- - grep the 637 client for every string literal, hash each, keep the matches. The client asks
-   index 3 for names directly, so there will be more.
- - do the same against the HydraScape server sources.
- - token recombination over the vocabulary of the known names, which are structured
-   <system>_<thing>_<variant> in snake_case.
- - check the OpenRS2 archive for other 637 and 639 caches whose reference tables carry names this
-   one does not. The OpenRS2 repository itself ships no name dictionary; that was checked.
-
-A generated table is acceptable if it stays modest on disk and CPU. Do NOT brute force. djb2 is
-32 bits and real names are twenty characters or more, so the number of strings hashing to any
-given value is effectively unbounded and a cracked candidate is a guess wearing a name. This
-project already has a scar from exactly that failure.
-
-Run the suite against both caches. Commit.
 ```
 
 ---
@@ -517,7 +386,8 @@ Run the suite against both caches. Commit.
 ### 13. The editor half of the JS5 handshake
 
 Without this the live-reload loop cannot be proven at all. The server half is written, compiles,
-and has never run. Nothing in `FlashEditor/` mentions the protocol and no setting exists for it.
+and has never run. Nothing in `FlashEditor/` mentions the protocol - no occurrence of
+`reload.request` or `reload.released` anywhere in the project - and no setting exists for it.
 
 ```
 Read CLAUDE.md, AGENTS.md and the JS5 section of this file first.
@@ -549,71 +419,34 @@ make with this code in front of you.
 
 ---
 
-### 14. Index 12 disassembler. **Needs item 4 first.**
+### 14. Index 12 disassembler
 
-Deliberately separate from the tab. The codec is small and done; this is what makes a script tab
-worth opening. Nothing exists today: no opcode table, no mnemonics, no disassembler anywhere in
-the repo.
+Deliberately separate from the tab, which now exists. The codec is small and done; this is what
+makes the script tab worth opening. Nothing exists today: no opcode table, no mnemonics, no
+disassembler anywhere in the repo.
 
 ```
 Read CLAUDE.md and AGENTS.md first.
 
 Index 12's instructions are raw u16 opcodes - ClientScriptInstruction.cs:56 stores the number and
-:8-12 explains that naming it needs an opcode table spanning the three dispatchers in Class247,
-which is this item. A grid reading "opcode 2426, byte 0" is barely better than hex.
+:7-13 explains that naming it needs an opcode table spanning the three dispatchers in Class247:
+the in-line chain below 100 (Class247.java:7781-7988), method3148 for 100..4999 and method3156
+for 5000..9999. That table is this item. The tab (ClientScriptEditorPanel) shows the raw numbers
+and says in the UI that they are unnamed; replacing that message is how this item finishes.
 
-The bill is measured: 582 distinct opcodes across three client dispatchers, but 32 of them carry
-86 percent of all instructions - so a first pass covering the common ones is tractable and
-immediately useful.
+The bill is measured, and every figure here is identical in both caches, so it is a property of
+the format rather than of one capture (RealCacheProfile.cs:308-318 and :492-502): 335,158
+instructions, 582 distinct opcodes, highest opcode 7314, 831 switch blocks and 11,962 cases
+across 485 scripts. 32 opcodes carry 86 percent of all instructions, so a first pass covering the
+common ones is tractable and immediately useful.
 
 RuneStar on GitHub carries clientscript opcode definitions and decompilation work and is worth
 consulting. CHECK ITS BUILD COVERAGE FIRST: it is oriented at later revisions, and an opcode
 table from the wrong build is exactly the kind of plausible mapping this cache confirms by
 accident. Anything taken from it must be verified against the 637 client before it ships.
 
-Control flow reconstruction - the switch blocks and jump deltas the codec already decodes, 831
-blocks and 11,962 cases - turns a linear listing into something readable. That is the second half
-and can be split off.
-
-Run the suite against both caches. Commit.
-```
-
----
-
-### 15. The defects the suite already pins
-
-Seven `*_DocumentsKnownDefect` tests describe live, reproducible defects, and not one of them was
-on this list. They are cheap to find and each is a real behaviour someone will hit.
-
-```
-Read CLAUDE.md and AGENTS.md first, including the *_DocumentsKnownDefect convention at
-FlashEditor.Tests/Cache/RSFileStoreTests.cs:11-19.
-
-Seven tests currently pin behaviour known to be wrong. Fixing any one of them is a deliberate,
-visible change to its test - that is the point of the convention. Triage them, fix what is worth
-fixing, and say why for anything left pinned.
-
-Store defects, RSFileStoreTests.cs:
- - :241 GetIndexCount returns the highest non-meta index id rather than a count, so a
-   for (i < GetIndexCount()) loop skips the highest-id index.
- - :252 a cache holding only index 0 reports GetIndexCount() == 0, so RSCache allocates a
-   zero-length table array and loads nothing.
- - :373 allocation is append-only with no free list, so shrinking an archive leaves the surplus
-   sectors zero-filled but still chained and permanently orphaned.
- - :446 against a zero-length dat2 the allocator hands out sector 0, but both readers treat
-   sector 0 as end-of-chain, so the first write to a fresh cache fails its own verification.
-
-Texture evaluator defects, TextureGraphEvaluatorTests.cs:
- - :351 node type 24 (merge-RGB) is missing from the colour-node classification, so it dispatches
-   to the mono evaluator, which has no case for it, and always renders flat mid-grey. EvalMergeRGB
-   is dead code.
- - :375 types 21 and 33 are classified as colour nodes with no colour implementation, so they
-   silently pass the child's colour through instead of applying their operation.
- - :402 the transpose branch indexes with x * width + y instead of x * height + y, so a
-   non-square transposed render walks off the pixel buffer and throws.
-
-The four store defects are the ones with teeth: two of them affect writing a cache, which is what
-this application is for. Take those first.
+Control flow reconstruction - the switch blocks and jump deltas the codec already decodes - turns
+a linear listing into something readable. That is the second half and can be split off.
 
 Run the suite against both caches. Commit.
 ```
@@ -622,53 +455,55 @@ Run the suite against both caches. Commit.
 
 ### 16. Play a track the way the client does
 
-The largest item in this section and the only one gated on an unsolved research question. The
-Tracks tab can export MIDI (`TrackEditorPanel.cs:331-352`) and nothing in the editor can play it -
-there is no `NAudio`, `winmm`, `SoundPlayer` or `WaveOut` reference anywhere in `FlashEditor/`.
-Playing the exported file in any Windows player uses the GM synth, which is right for the stock
-programs and wrong for Jagex's own bank, so the cheap version of this feature teaches the user
-that tracks sound different from the game. The export path already knows this: `:315` notes a byte
-is written unconditionally "so the file plays outside the client". This item builds the real one.
+**Partly landed.** The index-15 codec that gated the synth is built: `MidiPatchDefinition` and
+`MidiPatchEnvelope` decode and re-encode every declared patch byte-identically in both caches
+through `DefinitionSweep`, and `RSConstants.SFX3_INDEX` is now `MIDI_PATCH_INDEX`
+(`RSConstants.cs:37`, first adoption site `CacheAddressing.cs:343`). What remains is the hard
+half: the Vorbis question, the semantic gap the codec's own sweep cannot close, the synth, and
+an output path.
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
 Give the Tracks tab playback that uses the cache's own instruments rather than a General MIDI
 synth. Index 6 and index 11 both decode already and Track.Midi (Track.cs:222, built by BuildMidi
-at :420) is a standard SMF; what is missing is everything under it. There is no audio output of
-any kind in the project today - no NAudio, winmm, SoundPlayer or WaveOut reference exists in
-FlashEditor/ - so the output path is being built from nothing as well.
+at :420) is a standard SMF; the export path is at TrackEditorPanel.cs:330-355 and its comment at
+:315 notes a byte written unconditionally "so the file plays outside the client", which is the
+cheap version of this feature admitting what it is. There is still no audio output of any kind in
+the project - no NAudio, winmm, SoundPlayer or WaveOut reference exists anywhere in FlashEditor/ -
+so the output path is being built from nothing as well.
 
 INDEX 14 IS THE GATE, and it should be settled before anything else is built. Its Vorbis setup
 header has no magic, no channel count and no framing bit, so no off-the-shelf decoder accepts it,
-and item 3 above declared playback out of scope for exactly that reason. Either a hand-written
-decoder or a proven way to feed the stored packets to an existing one is the largest part of this
-item. Decide and prove that first; the rest is tractable and this is not. If it cannot be settled,
-stop and report that rather than shipping a GM fallback, because a GM fallback is the thing this
-item exists to replace.
+and the index-14 tab says so on screen for exactly that reason. Either a hand-written decoder or
+a proven way to feed the stored packets to an existing one is the largest part of this item.
+Decide and prove that first; the rest is tractable and this is not. If it cannot be settled, stop
+and report that rather than shipping a GM fallback, because a GM fallback is the thing this item
+exists to replace.
 
-Then index 15, which has NO decoder, no definition class, no test and no tab - the only occurrence
-of its name in the whole solution is its own constant declaration. Build it the way every other
-index was built: decoder, encoder, whole-index byte-identity sweep over both caches, through
-DefinitionSweep. Measured by walking the dat2 outside our decoder: 176 declared and present
-groups, one file each, ids 0-127 (GM melodic), then 128, 129, 136, 144, 152, 153, 168, 176, 178
-and 184 (bank 1, the GM drum kits at canonical offsets), then 255 and 256-292 (bank 2, Jagex's
-custom instruments). Re-measure rather than trusting those figures.
-
-RSConstants.SFX3_INDEX (RSConstants.cs:32) is a wrong name for index 15 - it is the MIDI patch
-bank, not a third sound-effect bank. The comment two lines above it already says so and cites
-Particle_Sub3_Sub5_Sub2.java:99-100, so the constant currently contradicts its own neighbour. It
-has zero adoption sites anywhere in the solution, so renaming it is free and is part of this item.
+INDEX 15'S SEMANTIC ACCESSORS ARE UNDEFENDED, and closing that comes before the synth is built on
+top of them. The codec stores each per-key attribute as a run-length plane and Encode
+(MidiPatchDefinition.cs:525) writes those planes back verbatim, so the byte-identity sweep proves
+the planes survive a round trip and says nothing at all about how they expand. WalkPans (:692),
+WalkEnvelopes (:720), WalkVolumes (:746) and WalkMuteGroups are what the synth will actually
+read, through PanOf (:336), EnvelopeOf (:341), VolumeOf (:346), BankOf (:259), HeldOf (:283) and
+MuteGroupOf (:323). Today PanOf, EnvelopeOf and VolumeOf are called by nothing outside the class,
+and BankOf, HeldOf and MuteGroupOf are exercised only as aggregate tallies by
+RealCacheMidiPatchTests.TheMidiPatchBank_HoldsWhatTheCodecClaimsItDoes (:152-215). A run list
+walked with an off-by-one would keep every tally plausible, re-encode byte-identically, and hand
+the synth the wrong instrument on a key boundary. Pin the walks against hand-built plane bytes
+where the expected per-key array is written out by hand - the run boundary is the case, the same
+way the index-14 packet-length boundary was.
 
 Only then the synth: bank and program derivation, note-to-sample mapping, mixing, and an output
 device.
 
 NOTHING IN THE SUITE CAN HEAR ANYTHING. Audio output is the same class of problem as the OpenGL
 viewport: a synth that decodes every byte correctly and mixes them wrongly passes every sweep.
-Test what is testable - the index 15 codec, the sample lookup, the bank and program derivation,
-the note-to-sample mapping landing in range for both banks - and for the sound itself produce a
-checklist naming specific track ids, which bank each leans on, and what wrong sounds like. Do not
-claim it sounds right on the strength of a green suite.
+Test what is testable - the sample lookup, the bank and program derivation, the per-key walks
+above, the note-to-sample mapping landing in range for both banks - and for the sound itself
+produce a checklist naming specific track ids, which bank each leans on, and what wrong sounds
+like. Do not claim it sounds right on the strength of a green suite.
 
 Run the suite against both caches. Commit.
 ```
@@ -683,10 +518,10 @@ five are editable, and renders no glyph at all. The data it does not surface is 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
 
-Index 13 has a tab (Editor.cs:890, FontPanel is a raw DefinitionListPanel bound to
-FontListDescriptor) and a byte-identity sweep (RealCacheFontTests.cs:73-111). Its columns are Font,
+Index 13 has a tab (registered at Editor.cs:903; FontPanel is a raw DefinitionListPanel bound to
+FontListDescriptor) and a byte-identity sweep (RealCacheFontTests.cs:109). Its columns are Font,
 Name, Kerned, Line height, Ascent, Descent, Space adv, Byte 259 and Byte 260
-(FontListDescriptor.cs:83-99), of which five are editable numbers. Nothing renders a glyph, there
+(FontListDescriptor.cs:83-98), of which five are editable numbers. Nothing renders a glyph, there
 is no preview, and the per-character data is not reachable at all. Build the real editor.
 
 WHAT EXISTS AND IS NOT SURFACED, all on FontDefinition: AdvanceWidths, one byte per character for
@@ -695,12 +530,11 @@ GlyphRows (:215) and GlyphTops (:224); LeftEdgeProfiles (:235) and RightEdgeProf
 per-character edge insets; and KerningMatrix() (:373). Surface these.
 
 THE PIXELS ARE NOT IN INDEX 13. Index 13 is metrics only. The glyph sheet is an index-8 sprite set
-addressed by the SAME id - Editor.cs:886-889 records the relationship, and DOC-CONFLICTS states
-that all 25 index-13 ids exist in index 8 with byte-identical name hashes, so the pairing is by id.
-Nothing under FlashEditor/Definitions/Fonts/ references SPRITES_INDEX, so that join does not exist
-yet. Building it is the first step and it is what makes every view below possible. Prove the join
-row by row rather than on aggregate coverage - this project has a scar from a plausible join that
-matched almost everything and was wrong.
+addressed by the SAME id, and the join is already proven row by row in the suite -
+RealCacheFontTests.EveryFont_HasAGlyphSheetAtTheSameIdInIndexEight (:241) - but it exists nowhere
+in production: nothing under FlashEditor/Definitions/Fonts/ references SPRITES_INDEX. Building
+that join in the panel is the first step and it is what makes every view below possible. Carry the
+test's per-row standard across; do not settle for aggregate coverage.
 
 Then build:
  - A glyph grid: every character as its rendered sprite, with its advance width editable in place.
@@ -709,11 +543,15 @@ Then build:
    applied for kerned records. A preview is the only way to judge an advance-width edit.
  - The kerning matrix for kerned records, as a grid rather than as a number.
 
-TWO LAYOUTS, NOT ONE. A kerned record and an unkerned one are different shapes: the unkerned
-payload is 2 + 256 + 5 bytes (:59), while a kerned record carries the edge profiles and stores no
-line-height byte at all, which is why SetLineHeight silently swallows an edit on one
-(FontListDescriptor.cs:145-152). Every view has to handle both, and the UI should say which layout
-a font is rather than showing an empty kerning grid that reads as broken.
+TWO LAYOUTS, NOT ONE, AND ONLY ONE OF THEM SHIPS IN THIS CACHE. The unkerned payload is
+2 + 256 + 5 bytes (FontDefinition.UnkernedLength, :59), while a kerned record carries the edge
+profiles and stores no line-height byte at all, which is why SetLineHeight silently swallows an
+edit on one (FontListDescriptor.cs:148-152). NO FONT IN EITHER CACHE SETS THE KERNING FLAG -
+asserted, not printed, by RealCacheFontTests.NoFontInThisCache_SetsTheKerningFlag (:167). So the
+kerned half is reachable only through synthetic records, the kerning grid will be empty for every
+real font, and the UI has to say which layout a font is rather than leaving an empty grid that
+reads as broken. If that test ever fails, the sweep has started covering ground the synthetic
+records were standing in for, and this item's kerned views become real.
 
 TTF or OTF import is the natural end of this item and is the expensive half: it means rasterising
 glyphs into the index-8 sprite format as well as writing index-13 metrics, so it inherits every
@@ -721,7 +559,7 @@ constraint of item 10 - the palette limit, the black trap, the stored traversal 
 separate wave and do not start it until the grid and the preview work.
 
 Index 13's sweep must stay green throughout. Edits go through the existing descriptor Encode
-(FontListDescriptor.cs:134), which round-trips today.
+(FontListDescriptor.cs:131), which round-trips today.
 
 Screenshot the tab, read the PNG at native resolution, fix what is clipped. Run the suite against
 both caches. Commit.
@@ -739,7 +577,7 @@ already paid for, so picking it up later costs nothing to rediscover.
 
 Why parked rather than dropped: it is the only idea on this page that is better architecture
 rather than a missing feature, but it is also a cutover that touches how every index is stored,
-landing on a codebase that has just reached the point where nearly every index sweeps green. The
+landing on a codebase that has just reached the point where every index sweeps green. The
 value is real and the timing is bad.
 
 Today we edit the packed cache in place. Every save rewrites the dat2 and the reference table of
@@ -753,22 +591,23 @@ there is nothing more readable to convert them to, but their boundaries are stil
 than per-cache.
 
 **We are unusually well placed to do this, and should say why.** A dump-and-repack pipeline is
-only safe if repacking reproduces what was dumped, and this project has already proved exactly
-that for every index that holds content bar indexes 9 and 15: decode, re-encode, compare against
-the stored bytes, over both caches. Building this on top of an unproven codec would silently
-corrupt a cache; on top of these sweeps it is mostly plumbing. The sweeps ARE the prerequisite,
-and items 7 and 16 are the last two of them.
+only safe if repacking reproduces what was dumped, and this project has now proved exactly that
+for **every** index that holds content: decode, re-encode, compare against the stored bytes, over
+both caches. Indexes 9 and 15 were the last two exceptions and both are closed. Building this on
+top of an unproven codec would silently corrupt a cache; on top of these sweeps it is mostly
+plumbing. **The sweeps were the prerequisite and it is now paid**, which is the one thing that
+changed about this entry.
 
-Nothing exists yet: the only export paths in the editor are selection-scoped
-(`Editor.cs:1502`, `:1536`, `:1817`), and there is no bulk dump or repack anywhere.
+Nothing exists yet: the only export paths in the editor are selection-scoped, and there is no bulk
+dump or repack anywhere.
 
 Design notes to settle before starting:
 - What is readable per index. Definitions want a text format; models, sprites, audio and JPEG
   payloads stay binary.
 - Non-canonical encodings are the hazard. The dumped form has to carry every encoding choice the
-  decoder records - opcode order, repetition, aliased values, absent-versus-default, smart widths
-  - or a repack produces different bytes for an untouched record. Every one of those cases is
-  already documented per index.
+  decoder records - opcode order, repetition, aliased values, absent-versus-default, smart widths,
+  and index 9's raw per-opcode payload spans - or a repack produces different bytes for an
+  untouched record. Every one of those cases is already documented per index.
 - Whether the packed cache is a build artefact (gitignored) or committed alongside.
 - How this composes with the JS5 reload handshake: pack, then signal, then reload.
 
@@ -804,7 +643,9 @@ is to build interfaces, not inspect them:
 - Anything the format can represent should be editable
 
 This is the largest single item in this file and should be broken down before it is started.
-The codec already round-trips every component byte-identically, which is the prerequisite.
+The codec already round-trips every component byte-identically, which is the prerequisite, and
+most rows now carry a verified name rather than a bare 32-bit hash (item 12), which is what makes
+a canvas navigable.
 
 ### JS5 and live reloading
 
@@ -857,21 +698,21 @@ realistic target stays edit, reconnect, see the change.
 
 - `ConfigDefinition` (`Definitions/Config/ConfigDefinition.cs:56`) is a second, hand-rolled
   implementation of the opcode-replay pattern alongside `OpcodeStreamDefinition`, with its own
-  `ConfigOpcode` struct and its own decode/encode loop, and 14 subclasses on each side. It was
-  deliberately not migrated when the shared one landed, because its `Encode` is shaped around
-  `WritePayload`/`AddedOpcodes` rather than a pre-built record list.
-- `AnalyseCache` (`Editor.cs:1960`, not the 1064 previously recorded here) is a stub: it assigns
-  `cacheOut` and never reads it, loads `inputCache` inside a `try` and never uses it, and
-  unconditionally returns 0, so `AnalyseCaches` (`:1942-1958`) always reports no differences.
+  `ConfigOpcode` struct (`:15`) and its own decode/encode loop, and 14 subclasses on each side. It
+  was deliberately not migrated when the shared one landed, because its `Encode` is shaped around
+  `WritePayload` (`:140`) and `AddedOpcodes` (`:118`) rather than a pre-built record list.
+- `AnalyseCache` (`Editor.cs:1980`) is a stub: it assigns `cacheOut` and never reads it, loads
+  `inputCache` inside a `try` and never uses it, and unconditionally returns 0, so `AnalyseCaches`
+  (`:1962-1978`) always reports no differences.
 - `MemoryUtils` (`Utils/MemoryUtils.cs:9`) is dead - the only occurrence of the name in the whole
   solution is its own declaration. `RSArchive.Decode` hand-rolls the same idea instead
-  (`RSArchive.cs:136-151`: one reused 4 KB buffer, `new byte[chunkSize]` above that). Adopting the
+  (`RSArchive.cs:136-147`: one reused 4 KB buffer, `new byte[chunkSize]` above that). Adopting the
   pool there is the highest-value site, but `ArrayPool.Rent` over-serves and `Return` does not
   clear, so it needs `try`/`finally` and a slice at every use, not a swap.
 - Migrate the Textures tab and the Console off their bespoke `LoadEditorTab` arms
-  (`Editor.cs:1388`, `:1106`). The four entity grids are covered by item 9; the Track panel has
-  its own worker too (`TrackEditorPanel.cs:197`), and Map and Huffman are deliberately not
-  `DefinitionListPanel` tabs.
+  (`Editor.cs:1408`, `:1126`). The four entity grids are covered by item 9 and sprites by item 2;
+  the Track panel has its own worker too (`TrackEditorPanel.cs:197`), and Map and Huffman are
+  deliberately not `DefinitionListPanel` tabs.
 
 ---
 
@@ -880,29 +721,51 @@ realistic target stays edit, reconnect, see the change.
 Kept short. Detail lives in the git history, in `reference/index-survey/00-WORKLIST.md` and in
 `reference/DOC-CONFLICTS.md`.
 
-- **Nearly every cache index that holds content has a decoder, an encoder and a whole-index
-  byte-identity sweep.** This section previously claimed the coverage was total; it is not, and
-  there are two exceptions, both scheduled above. **Index 9** has a decoder, an evaluator and a
-  gallery but no encoder at all, so its sweep proves consumption rather than identity - item 7.
-  **Index 15** has nothing: no decoder, no definition class, no test and no tab, despite holding
-  176 declared and present groups, which is why it was mistaken for an empty index - item 16.
-  Indexes 34, 35 and 36 really are empty in this cache and are struck off permanently.
+- **Every cache index that holds content now has a decoder, an encoder and a whole-index
+  byte-identity sweep.** The two exceptions this section used to carry are closed. **Index 9**
+  gained `Texture.Encode` and `TextureGraphRecord`, which keeps the per-node version byte, the
+  output-size byte, each opcode's raw payload span in stream order, the child run and the 10-byte
+  trailer, so a graph re-encodes without re-deriving anything - 915 of 915 groups in the vanilla
+  b639 capture and 946 of 946 in the repack (item 7). **Index 15** gained
+  `MidiPatchDefinition`/`MidiPatchEnvelope`, 176 patches byte-identical in both caches, and
+  `SFX3_INDEX` became `MIDI_PATCH_INDEX` (item 16a). Indexes 34, 35 and 36 really are empty in
+  this cache and are struck off permanently.
 - The suite runs against the vanilla b639 capture by default and the private-server repack as a
   second gate, and asserts relationships rather than counts, so it holds on either.
 - Shared foundations: `DefinitionSweep`, `DefinitionListPanel`, `CacheAddressing`, `OpcodeStream`,
   table-driven enumeration, the signed-smart writer, `RSCache.ReadGroup`.
-- **Index 2's config families are all reachable.** `ConfigEditorPanel.Bind` enumerates the open
-  cache's own index-2 reference table and resolves every declared group through `ConfigFamily.For`
-  (`ConfigFamily.cs:413-419`), falling back to a raw reader for anything unmodelled, so no decoded
-  family can be missing from the selector. This file previously listed identity kits, structs,
-  light curves, render animations and quests as unsurfaced; all five are registered
-  (`ConfigFamily.cs:196, 280, 289, 302, 330`). Only the light-curve *preview* remains, in the
-  ideas table above.
+- **The index-26 materials census is asserted rather than printed** (item 1).
+  `materials.declaredTextures` and `materials.presentRecords` were the only `AssertCensus` keys
+  with no entry in either profile; both now sit in both dictionaries, at 915 in the vanilla
+  capture (`RealCacheProfile.cs:271-272`) and 1408 in the repack (`:460-461`), alongside the
+  relationship assertion that was already there.
+- **All seven `*_DocumentsKnownDefect` tests are fixed, and the convention is now carried by its
+  own doc comments rather than by any live test** (item 15). Four store defects: `GetIndexCount`
+  replaced by `HighestContentIndexId` and `ContentIndexIds`, chain termination on shrink plus an
+  in-memory free list, and sector 0 no longer handed out on a fresh dat2. Three texture-evaluator
+  defects: types 21 and 33, the transpose stride, and type 24 - which the old item text called
+  merge-RGB and which is actually `Node_Sub10_Sub16`, `super(1, true)`, a **monochrome** node, so
+  the premise recorded here was itself wrong and the fix ran the other way.
+- **Three new tabs, each a `DefinitionListPanel` descriptor plus a panel registered in
+  `RegisterEditorTabs`**: index 14 SFX2 (item 3, `Editor.cs:844`), index 12 client scripts
+  (item 4, `:910`) and index 32 loading sprites (item 5, `:897`). The index-32 tab also shipped a
+  validating Replace path, which is why item 11 above is down to two questions.
+- **Interface name recovery** (item 12). 27 curated group names became 434 verified group names
+  (`InterfaceNameTable.cs:22`) plus 75 bespoke component names (`:469`), every one of which is
+  re-hashed against the identifier the loaded cache holds before it is shown, so a name that is
+  wrong or right for another build reads as unnamed. The generated routes ship only against a
+  stated corroboration bar, measured against a foreign-identifier null rather than against decoys.
+  The `com_<fileId>` rule resolves 9,249 components in the vanilla capture and 9,219 in the
+  repack - the single figure this file used to carry was the repack's.
+  **Route 4 of the old prompt, "check other OpenRS2 caches for names this one lacks", is struck
+  permanently as structurally void**: index 3's identifier is a 32-bit int and never a string, so
+  another cache can only ever supply more hashes to crack, which is the one thing this work
+  refuses to do.
 - Whole-world map viewer with hover feedback and a vertex affordance for height edits,
   categorised navigation, and the form's autoscaling corrected at source.
 - Textures load off the UI thread and fill progressively without rebuilding the list.
 - Sprite import from the cache's own `.dat` container, validating before it writes
-  (`Editor.cs:1595-1645`). Image-format import is item 10.
+  (`Editor.cs:1615-1665`). Image-format import is item 10.
 - Three live defects fixed: the map save path writing underwater terrain over the surface square,
   a malformed archive able to kill the process uncatchably, and index 26 discarding every field
   edit in silence.
