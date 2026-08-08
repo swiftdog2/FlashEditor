@@ -223,6 +223,8 @@ namespace FlashEditor.Definitions.Editing {
             cache = newCache;
             descriptor = newDescriptor;
 
+            //Emptied before the columns are replaced, never after: a column built for the new
+            //descriptor must never be able to see a row produced by the old one.
             list.ClearObjects();
             rows = Array.Empty<object>();
 
@@ -252,7 +254,39 @@ namespace FlashEditor.Definitions.Editing {
             progress.Height = Math.Max(10, Font.Height);
         }
 
+        /// <summary>
+        ///     Replaces the grid's columns with the bound descriptor's, and drops the sort with them.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The sort has to go first, and this is the whole of the entity page's type-switch
+        ///     crash.</b> ObjectListView remembers what the user sorted by as an object reference -
+        ///     <c>PrimarySortColumn</c>, and <c>SecondarySortColumn</c> beside it - and clearing
+        ///     <c>Columns</c> does not clear either. They go on pointing at an <c>OLVColumn</c> built
+        ///     for the <i>previous</i> descriptor, whose aspect getter is closed over a
+        ///     <see cref="DefinitionColumn"/> typed to that descriptor's row. Nothing happens while
+        ///     the grid is empty. The next <c>SetObjects</c> - the load completing for the family the
+        ///     user switched <i>to</i> - calls <c>BuildList</c>, which re-sorts through that orphaned
+        ///     column, and every row of the new type is handed to a getter typed to the old one:
+        ///     <c>This column reads a ObjectDefinition but was handed a ItemDefinition</c>, thrown out
+        ///     of a <c>RunWorkerCompleted</c> handler where nothing catches it.
+        ///     <para>
+        ///     It only bites once a header has been clicked, because an unsorted grid leaves
+        ///     <c>PrimarySortColumn</c> null and <c>BuildList</c> then sorts nothing - which is why
+        ///     the crash reads as intermittent and as sort-dependent, and it is both.
+        ///     </para>
+        ///     <para>
+        ///     <see cref="ObjectListView.Unsort"/> rather than assigning the properties, because it
+        ///     also rebuilds the list, which is what makes the data source forget the comparer it
+        ///     keeps for <c>AddObject</c>. <see cref="ReplaceRow"/> goes through <c>AddObject</c>, so
+        ///     an import over a row after a type switch reaches the same orphaned column by a second
+        ///     route.
+        ///     </para>
+        /// </remarks>
         private void BuildColumns() {
+            list.SecondarySortColumn = null;
+            list.SecondarySortOrder = SortOrder.None;
+            list.Unsort();
+
             list.AllColumns.Clear();
             list.Columns.Clear();
 
