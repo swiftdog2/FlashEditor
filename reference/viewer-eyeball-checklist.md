@@ -45,7 +45,7 @@ First human pass, 2026-08-09, against the repack (the model list read 63,614).
 | **A** skeletal animation | **PASS.** Readout `0.000 s of 3.360 s` over `frame 0/13`, run observed at about 3.4 s with the shape visibly changing. Rules out the rate conflation, which would have finished in about 0.43 s |
 | **F** particles, model 62810 | **PASS.** `particles 68/2047, emitters 2/2`, against a predicted peak near 73. Cap honoured, both emitters resolved |
 | **D** hover overlay | **OPEN.** Amber and blue marks are present near the shape. Whether they read as `face N` and `vN`, and whether the numbers fall in 0-7 and 0-23, is not yet settled |
-| **H** multi-part entity | **NOT YET RUN, and it is the one to run first.** A human reported the defect it covers - an NPC's jaw, hands and boots coming away under animation - and the merge that fixes it landed on 2026-08-09. The seam half of it is now measured and passes at 0 model units in both caches; what is unverified is whether the body reads as one object and pivots where a joint is |
+| **H** multi-part entity | **PASS, confirmed on the monitor 2026-08-09.** NPC 1 with animation 811, the exact case a human reported as broken - jaw, hands and boots coming away - reads correctly after the composite merge. Both halves now agree: the seam measures 0 model units in both caches, and a person says the body reads as one object. Worth keeping as the pattern: the defect was found by eye, turned into a number, fixed against the number, and then confirmed by eye again |
 | **B, C, E, G, I** | **NOT YET RUN** |
 
 Case H was added after this pass, which is why it moved Layout from H to I. A verdict recorded
