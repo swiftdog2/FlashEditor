@@ -201,8 +201,50 @@ namespace FlashEditor.Rendering
         /// <summary>Cycles run, in seconds.</summary>
         public double ElapsedSeconds => ElapsedCycles * CycleSeconds;
 
+        /// <summary>The animation's whole length in cycles, summed over its stored durations.</summary>
+        public int TotalCycles => animation?.TotalDuration ?? 0;
+
         /// <summary>The animation's whole length in seconds, summed over its stored durations.</summary>
-        public double TotalSeconds => (animation?.TotalDuration ?? 0) * CycleSeconds;
+        public double TotalSeconds => TotalCycles * CycleSeconds;
+
+        /// <summary>Where the playhead sits inside the current pass, in cycles.</summary>
+        /// <remarks>
+        ///     <see cref="ElapsedCycles"/> counts every cycle the player has ever run, so under
+        ///     <see cref="RepeatIndefinitely"/> it grows without bound: a looping two second
+        ///     animation left playing reported <c>51.120 s of 2.000 s</c>, which reads as a broken
+        ///     clock rather than as a run time. Both figures are wanted, for different questions,
+        ///     so this is the one to show against <see cref="TotalSeconds"/>.
+        ///     <para>
+        ///     Derived from the playhead rather than as <c>ElapsedCycles % TotalDuration</c>. A
+        ///     modulo equals the position only while every pass consumes the whole animation, and
+        ///     <c>FrameStep</c> makes a rewound pass shorter than that, so the two part company on
+        ///     exactly the animations that rewind. The playhead is right in both cases.
+        ///     </para>
+        /// </remarks>
+        public int PositionCycles
+        {
+            get
+            {
+                AnimationDefinition? definition = animation;
+
+                if (definition == null || FrameIndex < 0)
+                {
+                    return 0;
+                }
+
+                int cycles = CyclesIntoFrame;
+
+                for (int i = 0; i < FrameIndex && i < definition.FrameCount; i++)
+                {
+                    cycles += DurationAt(definition, i);
+                }
+
+                return cycles;
+            }
+        }
+
+        /// <summary>Where the playhead sits inside the current pass, in seconds.</summary>
+        public double PositionSeconds => PositionCycles * CycleSeconds;
 
         /// <summary>How many times the playhead has run off the end.</summary>
         public int LoopsCompleted { get; private set; }
