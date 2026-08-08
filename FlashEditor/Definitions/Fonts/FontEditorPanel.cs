@@ -453,7 +453,7 @@ namespace FlashEditor.Definitions.Fonts {
                 sheet = FontGlyphSheet.TryLoadSheet(cache, row.Record);
                 joinFailure = sheet == null
                     ? "index 8 declares no group " + row.FontId + ", so this font has no glyphs in this cache"
-                    : sheet.Verify();
+                    : sheet.JoinFailure();
             } catch (Exception ex) {
                 //One font's sheet costs its own detail pane, not the tab. A sprite set that will not
                 //decode is worth seeing the metrics beside.
@@ -477,6 +477,13 @@ namespace FlashEditor.Definitions.Fonts {
         ///     kerned record and an unkerned one are different lengths and hold different fields, and
         ///     a user who cannot tell which they are looking at reads a legitimately absent kerning
         ///     matrix as a broken pane.
+        ///     <para>
+        ///     <b>A failure and an oddity are worded so they cannot be confused.</b>
+        ///     <see cref="FontGlyphSheet.JoinFailure"/> means the glyphs below are not this font's
+        ///     and the views are not to be trusted; <see cref="FontGlyphSheet.Irregularity"/> means
+        ///     the pairing is unusual for this build and the views are fine. Only the first is a
+        ///     defect, and only the first says so.
+        ///     </para>
         /// </remarks>
         /// <param name="row">The selected font.</param>
         /// <param name="joinFailure">Why the glyph sheet is not this font's, or null.</param>
@@ -487,10 +494,21 @@ namespace FlashEditor.Definitions.Fonts {
                 ? "kerned layout: 3 tables of 256 and 2 edge-profile blocks, and NO stored line height"
                 : "unkerned layout: " + FontDefinition.UnkernedLength + " bytes, and no kerning tables";
 
-            string glyphState = joinFailure == null && sheet != null
-                ? "glyph sheet: index 8 group " + row.FontId + ", " + sheet.FrameCount + " frames, canvas " +
-                  sheet.CanvasWidth + "x" + sheet.CanvasHeight + ", baseline at row " + sheet.Baseline
-                : "GLYPH SHEET NOT JOINED - " + joinFailure;
+            if (joinFailure != null || sheet == null) {
+                return "Font " + row.FontId + " (" + name + ") - " + layout + "\r\n" +
+                       "GLYPH SHEET NOT JOINED, so the views below are not this font's glyphs: " +
+                       joinFailure;
+            }
+
+            string glyphState = "glyph sheet: index 8 group " + row.FontId + ", " + sheet.FrameCount +
+                                " frames, canvas " + sheet.CanvasWidth + "x" + sheet.CanvasHeight +
+                                ", baseline at row " + sheet.Baseline;
+
+            string? irregularity = sheet.Irregularity();
+            if (irregularity != null) {
+                glyphState += "\r\nUNUSUAL FOR THIS BUILD, not a join failure - the glyphs below are " +
+                              "still this font's: " + irregularity;
+            }
 
             return "Font " + row.FontId + " (" + name + ") - " + layout + "\r\n" + glyphState;
         }

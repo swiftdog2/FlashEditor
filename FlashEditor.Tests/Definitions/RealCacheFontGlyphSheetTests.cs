@@ -22,11 +22,23 @@ namespace FlashEditor.Tests.Definitions
     ///     "all 25 font ids exist in index 8" would be exactly that mistake again.
     ///     <para>
     ///     What is done instead: every one of the fonts is paired against every one of the sheets, and
-    ///     the pairings that survive <see cref="FontGlyphSheet.Verify"/> are counted. The claim the
-    ///     suite makes is that <b>every correct pairing passes and no incorrect one does</b> - which
-    ///     is a statement no aggregate can be satisfied by, and which fails the moment a relation is
-    ///     weakened. Each relation is also measured on its own so a future reader can see which of
-    ///     them is carrying the discrimination.
+    ///     the pairings that survive are counted. The claim the suite makes is that <b>every correct
+    ///     pairing passes and no incorrect one does</b> - which is a statement no aggregate can be
+    ///     satisfied by, and which fails the moment a relation is weakened. Each relation is also
+    ///     measured on its own so a future reader can see which of them is carrying the
+    ///     discrimination.
+    ///     </para>
+    ///     <para>
+    ///     <b>The relations are split by what kind of claim they are, and the assertions follow that
+    ///     split.</b> Three have a reader in the 637 client and live in
+    ///     <see cref="FontGlyphSheet.JoinFailure"/>; those are asserted against every correct
+    ///     pairing, because failing one is a defect. One - <c>canvasWidth == max(advance)</c> - is
+    ///     only <i>observed</i> to hold, on 25 fonts of each of the two supported caches, and lives
+    ///     in <see cref="FontGlyphSheet.Irregularity"/>; it is measured and printed but never
+    ///     asserted on a correct pairing. Two caches is a sample of two, and a suite that failed a
+    ///     valid font over a packing habit would be a false negative nobody could tell from a real
+    ///     defect. It is still used as a <i>discriminator</i> against wrong pairings, where a false
+    ///     negative is impossible by construction.
     ///     </para>
     ///     <para>
     ///     Nothing here writes down how many fonts there are. The population comes from the index-13
@@ -76,16 +88,27 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
-        ///     Every font joins to the sheet at its own id, and to no other sheet in the index.
+        ///     Every font joins to the sheet at its own id, and no wrong pairing survives.
         /// </summary>
         /// <remarks>
         ///     <b>The load-bearing test of the whole join.</b> The identity half alone would be the
         ///     coverage claim that has already misled this project once; the cross half is what makes
-        ///     it a proof. Measured in both supported caches: 25 of 25 identity pairings pass and 0 of
-        ///     600 cross pairings do.
+        ///     it a proof.
         ///     <para>
-        ///     The cross denominator is <c>n * (n - 1)</c> over whatever the table declares, so this
-        ///     does not depend on there being 25 fonts.
+        ///     The two halves deliberately apply different bars, and the asymmetry is the point. A
+        ///     correct pairing is only ever failed for a <b>client-backed</b> relation
+        ///     (<see cref="FontGlyphSheet.JoinFailure"/>), so this test cannot reject a font that a
+        ///     future cache ships with a differently packed sheet. A wrong pairing is rejected by
+        ///     everything available including the advisory equality, because there is no such thing
+        ///     as a false negative against a pairing that is wrong by construction. Measured in both
+        ///     supported caches: 25 of 25 correct pairings pass the client-backed relations, and 0 of
+        ///     600 wrong ones survive the full set.
+        ///     </para>
+        ///     <para>
+        ///     The client-backed-only cross count is printed beside it, so that if the advisory
+        ///     relation is ever dropped a reader can see exactly what discrimination goes with it.
+        ///     The cross denominator is <c>n * (n - 1)</c> over whatever the table declares, so none
+        ///     of this depends on there being 25 fonts.
         ///     </para>
         /// </remarks>
         [RealCacheFact]
@@ -96,16 +119,19 @@ namespace FlashEditor.Tests.Definitions
             var crossSurvivors = new List<string>();
             int identityPassed = 0;
             int crossTried = 0;
+            int crossSurvivingClientBackedAlone = 0;
 
             foreach (KeyValuePair<int, FontGlyphSheet> font in joined)
             {
                 foreach (KeyValuePair<int, FontGlyphSheet> other in joined)
                 {
                     var pairing = new FontGlyphSheet(font.Value.Metrics, other.Value.Sheet);
-                    string failure = pairing.Verify();
+                    string failure = pairing.JoinFailure();
 
                     if (font.Key == other.Key)
                     {
+                        //Client-backed only. An advisory irregularity on a font's own sheet is
+                        //reported by the panel and must never fail it here.
                         if (failure == null)
                             identityPassed++;
                         else
@@ -114,13 +140,20 @@ namespace FlashEditor.Tests.Definitions
                     }
 
                     crossTried++;
-                    if (failure == null)
+                    if (failure != null)
+                        continue;
+
+                    crossSurvivingClientBackedAlone++;
+                    if (pairing.Irregularity() == null)
                         crossSurvivors.Add($"font {font.Key} accepted the sheet of font {other.Key}");
                 }
             }
 
-            _output.WriteLine($"{identityPassed} of {GroupsDeclared} fonts join to their own sheet; " +
-                              $"{crossSurvivors.Count} of {crossTried} wrong pairings survived");
+            _output.WriteLine($"{identityPassed} of {GroupsDeclared} fonts join to their own sheet on the " +
+                              "client-backed relations alone");
+            _output.WriteLine($"wrong pairings surviving: {crossSurvivingClientBackedAlone}/{crossTried} on " +
+                              $"the client-backed relations, {crossSurvivors.Count}/{crossTried} once the " +
+                              "advisory equality is added");
 
             Assert.Equal(GroupsDeclared * (GroupsDeclared - 1), crossTried);
             Assert.Empty(identityFailures);
@@ -129,19 +162,61 @@ namespace FlashEditor.Tests.Definitions
         }
 
         /// <summary>
-        ///     Each of the four relations on its own, so it is visible which one discriminates.
+        ///     The advisory equality is measured over the loaded cache and never asserted.
         /// </summary>
         /// <remarks>
-        ///     <b>Reported and only partly asserted, deliberately.</b> The identity half of every
-        ///     relation is asserted, because a relation that fails on a correct pairing is a broken
-        ///     decoder. The cross half is printed rather than pinned to a number, because those counts
-        ///     describe how similar this cache's fonts happen to be to one another and would be a
-        ///     figure about the data rather than about the format.
+        ///     <b>Here so that dropping it would be a visible decision rather than a silent one.</b>
+        ///     <c>canvasWidth == max(advance)</c> is exact on all 25 fonts of both supported caches
+        ///     and rejects 44 of 600 wrong pairings on its own, which is worth knowing - but the
+        ///     client never reads a glyph sheet's canvas width when drawing text, so a cache that
+        ///     broke it would still play. Asserting it would turn a packing habit into a test
+        ///     failure on valid data, and a user cannot tell that from a real defect.
         ///     <para>
-        ///     What it exists to show: the ascent relation holds on 25 of 25 and lets 325 of 600 wrong
-        ///     pairings through, so a join built on it would have looked completely convincing and
-        ///     been worth almost nothing. That is the same shape as the track-name join, and it is
-        ///     printed here so nobody weakens
+        ///     The one thing that <i>is</i> asserted is the contract between the two methods: a font
+        ///     paired with its own sheet may report an irregularity, but it must never report a join
+        ///     failure because of one.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void TheAdvisoryEquality_IsReportedAndNeverFailsAFontsOwnSheet()
+        {
+            SortedDictionary<int, FontGlyphSheet> joined = JoinEveryFont();
+            var irregular = new List<string>();
+
+            foreach (KeyValuePair<int, FontGlyphSheet> font in joined)
+            {
+                string irregularity = font.Value.Irregularity();
+                if (irregularity != null)
+                    irregular.Add($"font {font.Key}: {irregularity}");
+
+                Assert.Null(font.Value.JoinFailure());
+            }
+
+            _output.WriteLine($"{joined.Count - irregular.Count} of {GroupsDeclared} fonts have a canvas as " +
+                              "wide as their widest advance");
+            foreach (string line in irregular)
+                _output.WriteLine("  irregular: " + line);
+        }
+
+        /// <summary>
+        ///     Each relation on its own, so it is visible which one is carrying the discrimination.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This table is the evidence, and it survives whatever the assertions do.</b> Every
+        ///     relation is measured against all correct and all wrong pairings and printed. Only the
+        ///     <b>client-backed</b> ones are asserted on the correct pairings, because only those
+        ///     mean something is broken when they fail; the observed-only ones are printed and left
+        ///     alone, so a cache that packs its sheets differently is reported rather than failed.
+        ///     <para>
+        ///     No cross count is asserted at all. Those describe how similar this cache's fonts
+        ///     happen to be to one another, which is a figure about the data rather than about the
+        ///     format.
+        ///     </para>
+        ///     <para>
+        ///     What the table exists to show: the ascent relation holds on 25 of 25 and lets 325 of
+        ///     600 wrong pairings through, so a join built on it would have looked completely
+        ///     convincing and been worth almost nothing. That is the same shape as the track-name
+        ///     join, and it is printed here so nobody weakens
         ///     <see cref="EveryFont_JoinsToItsOwnGlyphSheetAndToNoOther"/> down to it.
         ///     </para>
         /// </remarks>
@@ -150,21 +225,24 @@ namespace FlashEditor.Tests.Definitions
         {
             SortedDictionary<int, FontGlyphSheet> joined = JoinEveryFont();
 
-            var relations = new (string Name, Func<FontDefinition, SpriteDefinition, bool> Holds)[]
+            //Asserted is the client-backed flag. It is not a measure of how well a relation
+            //discriminates - the ascent relation below discriminates worst and the advisory equality
+            //discriminates well - but of whether failing it means anything is wrong.
+            var relations = new (string Name, bool Asserted, Func<FontDefinition, SpriteDefinition, bool> Holds)[]
             {
-                ("the sheet holds one frame per character code",
+                ("CLIENT-BACKED  one frame per character code (Class197.java:193)", true,
                     (font, sheet) => sheet.GetFrameCount() == FontDefinition.CharacterCount),
-                ("every character's ink fits inside its advance",
+                ("CLIENT-BACKED  ink fits inside its advance (RSFont.java:576,599)", true,
                     InkFitsTheAdvance),
-                ("line height plus descent is the canvas height",
+                ("CLIENT-BACKED  lineHeight + descent == canvasHeight (RSFont.java:190,483)", true,
                     (font, sheet) => font.LineHeight + font.Descent == sheet.height),
-                ("the canvas is as wide as the widest advance",
+                ("OBSERVED ONLY  canvasWidth == max(advance), no client reader", false,
                     (font, sheet) => WidestAdvance(font) == sheet.width),
-                ("no ink reaches above the ascent - WEAK, reported not asserted",
+                ("OBSERVED ONLY  no ink above the ascent - and it admits over half the wrong pairings", false,
                     InkWithinTheAscentBand)
             };
 
-            foreach ((string name, var holds) in relations)
+            foreach ((string name, bool asserted, var holds) in relations)
             {
                 int identity = 0;
                 int cross = 0;
@@ -185,7 +263,9 @@ namespace FlashEditor.Tests.Definitions
 
                 _output.WriteLine($"{name}: {identity}/{GroupsDeclared} correct pairings, " +
                                   $"{cross}/{GroupsDeclared * (GroupsDeclared - 1)} wrong ones");
-                Assert.Equal(GroupsDeclared, identity);
+
+                if (asserted)
+                    Assert.Equal(GroupsDeclared, identity);
             }
         }
 

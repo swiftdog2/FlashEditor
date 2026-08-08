@@ -42,15 +42,18 @@ namespace FlashEditor.Tests.Definitions
         //  The join, and each relation that can reject one
         // ===================================================================
 
-        /// <summary>A sheet built to match its metrics joins cleanly.</summary>
+        /// <summary>A sheet built to match its metrics joins cleanly and reports nothing unusual.</summary>
         /// <remarks>
-        ///     The control case. Without it, a <see cref="FontGlyphSheet.Verify"/> that rejected
+        ///     The control case. Without it, a <see cref="FontGlyphSheet.JoinFailure"/> that rejected
         ///     everything would pass every rejection test below.
         /// </remarks>
         [Fact]
         public void AMatchedPair_Joins()
         {
-            Assert.Null(MatchedFont().Verify());
+            FontGlyphSheet font = MatchedFont();
+
+            Assert.Null(font.JoinFailure());
+            Assert.Null(font.Irregularity());
         }
 
         /// <summary>A sprite set that is not 256 frames is not a glyph sheet, whatever its id says.</summary>
@@ -69,17 +72,23 @@ namespace FlashEditor.Tests.Definitions
             var joined = new FontGlyphSheet(metrics, sheet);
 
             Assert.False(joined.IsGlyphSheet);
-            Assert.Contains("not a glyph sheet", joined.Verify());
+            Assert.Contains("not a glyph sheet", joined.JoinFailure());
+
+            //And nothing advisory, because a set this shape cannot be indexed by character code at
+            //all - reporting it as merely unusual would understate it.
+            Assert.Null(joined.Irregularity());
         }
 
         /// <summary>
         ///     Ink that reaches past its character's advance rejects the pairing.
         /// </summary>
         /// <remarks>
-        ///     The per-character relation, and the only one of the four that is checked 256 times
+        ///     The per-character relation, and the only one of the three that is checked 256 times
         ///     rather than once. One character out of range is enough, because in a correct pairing
         ///     every character's glyph is drawn inside the box the metrics reserve for it - which is
-        ///     precisely what lets the layout draw a glyph at the pen without measuring anything.
+        ///     precisely what lets the layout draw a glyph at the pen without measuring anything
+        ///     (<c>RSFont.java:576</c> draws, <c>:599</c> steps by the advance and nothing between
+        ///     them looks at the ink).
         /// </remarks>
         [Fact]
         public void InkPastItsAdvance_IsRejected()
@@ -94,15 +103,18 @@ namespace FlashEditor.Tests.Definitions
                 MetricsFor(advances, lineHeight: 12, descent: 3),
                 SpriteSet(canvasWidth: 20, canvasHeight: 15, frames: frames));
 
-            Assert.Contains("character 65", joined.Verify());
+            Assert.Contains("character 65", joined.JoinFailure());
         }
 
         /// <summary>A canvas that is not the line height plus the descent rejects the pairing.</summary>
         /// <remarks>
-        ///     An exact equality between an index-13 byte and an index-8 short, which is what makes
-        ///     the sheet's own canvas the statement of where the baseline is. Off by one is enough,
-        ///     because in every one of the 50 real font-and-sheet pairs across both caches the two
-        ///     agree to the row.
+        ///     <b>Client-backed, which is why it rejects rather than merely reports.</b> Both draw
+        ///     paths subtract the line height from the y they are handed before placing a glyph
+        ///     (<c>RSFont.java:190</c>, <c>:483</c>) and that y is the baseline - every alignment
+        ///     branch at <c>:421-434</c> builds it as <c>top + ascent</c> or <c>bottom - descent</c>.
+        ///     So the canvas top is <c>baseline - lineHeight</c>, and the ink only lands on the
+        ///     baseline when the canvas is <c>lineHeight + descent</c> rows tall. Off by one is
+        ///     enough: it moves every glyph of the font by a pixel.
         /// </remarks>
         [Fact]
         public void ACanvasThatIsNotTheLineBox_IsRejected()
@@ -111,23 +123,34 @@ namespace FlashEditor.Tests.Definitions
                 MetricsFor(Advances(), lineHeight: 12, descent: 3),
                 SpriteSet(canvasWidth: 20, canvasHeight: 16, frames: MatchedFrames()));
 
-            Assert.Contains("the canvas is 16 rows tall", joined.Verify());
+            Assert.Contains("the canvas is 16 rows tall", joined.JoinFailure());
         }
 
-        /// <summary>A canvas narrower or wider than the widest advance rejects the pairing.</summary>
+        /// <summary>
+        ///     A canvas that is not the widest advance is reported as unusual, and is NOT a join
+        ///     failure.
+        /// </summary>
         /// <remarks>
-        ///     The second exact equality. It is the one relation that reads the whole advance table
-        ///     rather than one entry, so it also fails a metrics record whose advances have been
-        ///     wholesale rescaled while every individual glyph still fits.
+        ///     <b>The distinction this test exists to pin.</b> The equality is exact on all 25 fonts
+        ///     of both supported caches and rejects 44 of 600 wrong pairings, so it is tempting to
+        ///     treat it as a join relation - but the client never reads a glyph sheet's canvas width
+        ///     when drawing text, so a cache that packed one pixel wider would still play. Failing
+        ///     the join over it would be a false negative on valid data, which a user cannot tell
+        ///     from a real defect.
+        ///     <para>
+        ///     Both halves are asserted: that it is reported, and that it does not contaminate
+        ///     <see cref="FontGlyphSheet.JoinFailure"/>. Only the second could regress silently.
+        ///     </para>
         /// </remarks>
         [Fact]
-        public void ACanvasThatIsNotTheWidestAdvance_IsRejected()
+        public void ACanvasThatIsNotTheWidestAdvance_IsUnusualRatherThanAJoinFailure()
         {
             var joined = new FontGlyphSheet(
                 MetricsFor(Advances(), lineHeight: 12, descent: 3),
                 SpriteSet(canvasWidth: 21, canvasHeight: 15, frames: MatchedFrames()));
 
-            Assert.Contains("the canvas is 21 pixels wide", joined.Verify());
+            Assert.Null(joined.JoinFailure());
+            Assert.Contains("the canvas is 21 pixels wide", joined.Irregularity());
         }
 
         /// <summary>The baseline is the canvas bottom less the descent.</summary>
@@ -504,16 +527,6 @@ namespace FlashEditor.Tests.Definitions
             for (int character = 0; character < FontDefinition.CharacterCount; character++)
                 if (profiles.TryGetValue(character, out byte[] profile))
                     record.AddRange(profile);
-        }
-
-        /// <summary>One frame's geometry and its pixel plane, before the set is laid out as bytes.</summary>
-        private sealed class FrameSpec
-        {
-            internal int OffsetX;
-            internal int OffsetY;
-            internal int Width;
-            internal int Height;
-            internal byte[] Pixels = Array.Empty<byte>();
         }
 
         private static SpriteFrame Frame(int offsetX, int offsetY, int width, int height, byte[] pixels = null)
