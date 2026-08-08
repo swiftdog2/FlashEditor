@@ -587,10 +587,15 @@ namespace FlashEditor.Definitions.Sprites
                     if (opcode == 0) { node.IntParam0 = buf.ReadUnsignedByte(); return true; }
                     if (opcode == 1) { node.IntParam1 = buf.ReadUnsignedByte(); return true; }
                     if (opcode == 3) { node.IntParam2 = buf.ReadUnsignedByte(); return true; }
-                    //Node_Sub10_Sub30's arms stop at 0, 1 and 3. Two graphs in this cache carry
-                    //opcodes 2 and 4, which fall through to the base class and read nothing.
-                    //Recognised rather than reported, so the unhandled-opcode check keeps
-                    //meaning "the opcode tables have a gap".
+                    //Node_Sub10_Sub30's arms stop at 0, 1 and 3. Measured over both caches, four
+                    //further opcodes reach here - 2, 4, 5 and 6, two graphs each - and every one
+                    //falls through to the base class and reads nothing. Recognised rather than
+                    //reported, so the unhandled-opcode check keeps meaning "the opcode tables have
+                    //a gap".
+                    //An earlier version of this comment said "opcodes 2 and 4", which was taken
+                    //from the survey rather than measured, and the survey was wrong. The census in
+                    //RealCacheTextureGraphTests prints the real set; read it rather than this line
+                    //if they ever disagree again.
                     return true;
 
                 case 14: // SineWave (Sub17)

@@ -15,8 +15,12 @@ that differs between the two caches must name which one it belongs to.
 the prose.** Three figures inherited from the previous pass were repack-scoped and are corrected
 here with both caches named: index 9's group count and its uncompressed share, and index 3's
 component-name coverage. One structural claim was struck as void rather than deferred (route 4 of
-item 12), and one hand-off note about type 12's swallowed opcodes named four where the code and the
-survey both say two. Every surviving `file:line` was re-resolved at this commit, which moved most
+item 12). One claim was checked against the code, found to disagree, and the **code turned out to
+be the wrong one**: type 12's swallowed opcodes are **2, 4, 5 and 6**, two graphs each, identically
+in both caches, measured by the opcode census in `RealCacheTextureGraphTests`. The decoder's own
+comment and `index-survey/index-009-TEXTURES.md` both said "2 and 4", and a pass that trusted them
+wrote the wrong figure in here as a correction. Reading the code is not measuring the data, and a
+comment is prose wherever it states a count. Every surviving `file:line` was re-resolved at this commit, which moved most
 of them - `Editor.cs` alone gained roughly twenty lines per new tab - and one named the wrong
 directory outright (`MapElementDefinition.cs` is under `Definitions/Config/`, not `WorldMap/`).
 A claim here that is not carrying a `file:line` is a claim nobody has re-checked since.
