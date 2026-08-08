@@ -989,7 +989,11 @@ namespace FlashEditor {
             //
             // groupBox3
             //
-            groupBox3.AutoSize = true;
+            /* Not AutoSize. A GroupBox holding a single Dock.Fill child reports no preferred width
+               at all - the child fills whatever it is given, so it contributes nothing to measure -
+               and an AutoSize GroupBox docked Right then takes a width of zero and disappears,
+               taking Import and both Exports with it. The width is set in BindSpriteColumns from
+               the strip's own font instead, which is a measurement rather than a literal. */
             groupBox3.BackColor = Color.White;
             groupBox3.Controls.Add(SpriteControlsLayout);
             groupBox3.Dock = DockStyle.Right;
@@ -1147,6 +1151,7 @@ namespace FlashEditor {
             //
             // SpriteStoredColumn
             //
+            SpriteStoredColumn.FillsFreeSpace = true;
             SpriteStoredColumn.Text = "Stored";
             //
             // SpriteScaleColumn
@@ -1155,7 +1160,12 @@ namespace FlashEditor {
             //
             // SpriteImageColumn
             //
-            SpriteImageColumn.FillsFreeSpace = true;
+            /* The tile column takes its width from the tile and the Stored column takes what is
+               left. The other way round - the picture filling the free space - is what clipped the
+               tiles to 46 of their 60 pixels the first time this page was drawn: ObjectListView
+               narrows the filling column when the stated ones do not leave it room, and the one
+               column that must never be narrowed is the one holding the picture. */
+            SpriteImageColumn.FillsFreeSpace = false;
             SpriteImageColumn.IsEditable = false;
             SpriteImageColumn.Searchable = false;
             SpriteImageColumn.Sortable = false;

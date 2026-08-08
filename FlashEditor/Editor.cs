@@ -116,8 +116,18 @@ namespace FlashEditor {
         /// </remarks>
         private bool _spriteColumnsBound;
 
-        /// <summary>Whether the sprite page's splitter has been given its proportional position.</summary>
-        private bool _spriteSplitPlaced;
+        /// <summary>Whether the user has moved the sprite page's splitter themselves.</summary>
+        /// <remarks>
+        ///     Until they do, the splitter follows the width the grid's columns need, re-measured on
+        ///     every resize. Placing it once was not enough: the page is first loaded at the size the
+        ///     designer laid it out for and the form is usually maximised afterwards, so a distance
+        ///     computed on the first visit left the grid two thirds of the width it wanted for the
+        ///     rest of the session.
+        /// </remarks>
+        private bool _spriteSplitMovedByHand;
+
+        /// <summary>What the sprite grid needs to show every one of its columns in full.</summary>
+        private int _spriteGridWidth;
 
         /// <summary>What each sprite row is showing, keyed by group id.</summary>
         /// <remarks>
@@ -1368,6 +1378,17 @@ namespace FlashEditor {
                         };
 
                         bgw.RunWorkerCompleted += (_, e) => {
+                            /* A hidden TabPage is not resized until it is shown, and this page is
+                               shown by the same selection that starts this load - so the width the
+                               splitter was measured against on the way in can be the designer's
+                               rather than the window's. Re-placed here, by which time the page has
+                               certainly been laid out. */
+                            PlaceSpriteSplitter();
+
+                            //And the detail pane, which may be showing "not read yet" for a row this
+                            //load has since filled in.
+                            ShowSelectedSprite();
+
                             /* Reading e.Result throws when the worker cancelled or faulted, so both
                                are checked first. LoadEditorTab marks the tab loaded before any work
                                starts, so a fault has to clear that flag or the tab keeps its seeded
@@ -2999,12 +3020,42 @@ namespace FlashEditor {
             //DPI. Measured over ten characters because MeasureText pads a single one.
             int cell = Math.Max(1, TextRenderer.MeasureText(new string('0', 10), SpriteListView.Font).Width / 10);
 
-            SpriteIdColumn.Width = cell * 8;
-            SpriteFrameCountColumn.Width = cell * 10;
-            SpriteCanvasColumn.Width = cell * 11;
-            SpritePlacementColumn.Width = cell * 20;
-            SpriteStoredColumn.Width = cell * 26;
-            SpriteScaleColumn.Width = cell * 7;
+            //Wide enough for the tile and the cell padding around it. Stated rather than filled: a
+            //filling column is the one ObjectListView narrows when the others do not leave it room,
+            //and a narrowed picture column crops the picture.
+            int[] widths = {
+                cell * 9,  //ID, holding a four digit id and the tree glyph drawn beside it
+                cell * 9,  //Frames
+                cell * 10, //Canvas
+                cell * 18, //Frame at
+                cell * 15, //Stored, widened to whatever is left over, being the filling column
+                cell * 6,  //Tile
+                _spriteTileSide + cell
+            };
+
+            SpriteIdColumn.Width = widths[0];
+            SpriteFrameCountColumn.Width = widths[1];
+            SpriteCanvasColumn.Width = widths[2];
+            SpritePlacementColumn.Width = widths[3];
+            SpriteStoredColumn.Width = widths[4];
+            SpriteScaleColumn.Width = widths[5];
+            SpriteImageColumn.Width = widths[6];
+
+            /* What the grid needs to show every column in full: its own columns, plus the tree indent
+               and the vertical scrollbar, neither of which is a column. The splitter is placed from
+               this rather than from a fraction of the page, because a fraction that suited one window
+               left the filling column too narrow to hold "column-major" in another.
+               Summed from what was assigned rather than read back off the columns: a space-filling
+               column answers with the width ObjectListView has currently given it, which before the
+               grid has been laid out is zero - so reading them back measured the page 105 pixels
+               short and put the splitter exactly one column too far left. */
+            _spriteGridWidth = cell * 4 + SystemInformation.VerticalScrollBarWidth;
+            foreach (int width in widths)
+                _spriteGridWidth += width;
+
+            //Measured from the same character width, so the strip holds its widest button caption at
+            //any DPI without either clipping it or reserving a third of the page for it.
+            groupBox3.Width = cell * 30;
 
             /* Every getter answers an empty cell for a null row. ObjectListView evaluates aspects
                for rows being recycled during a scroll and for cells measured before a model is
@@ -3088,8 +3139,16 @@ namespace FlashEditor {
             //An AutoSize label docked to an edge grows sideways and is clipped by its container: it
             //wraps only once its MaximumSize states a width. Re-measured on resize, because that
             //width is the page's and the page follows the form.
-            SpriteEditorTab.SizeChanged += (_, _) => WrapSpriteNotice();
+            SpriteEditorTab.SizeChanged += (_, _) => {
+                WrapSpriteNotice();
+                PlaceSpriteSplitter();
+            };
             WrapSpriteNotice();
+
+            /* Re-placed on every resize rather than once. SplitterMoving is raised only for a drag,
+               so the moment the user states a preference the measurement stops overriding it. */
+            SpriteSplit.SizeChanged += (_, _) => PlaceSpriteSplitter();
+            SpriteSplit.SplitterMoving += (_, _) => _spriteSplitMovedByHand = true;
         }
 
         /// <summary>Gives the sprite notice a width to wrap against.</summary>
@@ -3111,20 +3170,19 @@ namespace FlashEditor {
         ///     make it one more literal the form's DPI scaling multiplies.
         /// </remarks>
         private void PlaceSpriteSplitter() {
-            if (_spriteSplitPlaced || SpriteSplit.Width < 400)
+            if (_spriteSplitMovedByHand || SpriteSplit.Width < 400)
                 return;
 
-            //Set before the assignment, not after: changing a splitter distance lays the page out
-            //again, and this can be reached from that layout.
-            _spriteSplitPlaced = true;
-
             try {
-                //Three fifths to the grid. It carries six text columns and a tile; the preview needs
-                //room for a 400-pixel sprite at 1:1 and gets the rest.
-                SpriteSplit.SplitterDistance = Math.Max(SpriteSplit.Panel1MinSize, SpriteSplit.Width * 3 / 5);
+                //As much as the grid's own columns need, and never more than three quarters of the
+                //page - the preview is what an edit is judged against and cannot be squeezed out of
+                //existence, and it scrolls, so it does not need the width of the largest sprite.
+                SpriteSplit.SplitterDistance = Math.Clamp(_spriteGridWidth,
+                    SpriteSplit.Panel1MinSize, Math.Max(SpriteSplit.Panel1MinSize, SpriteSplit.Width * 3 / 4));
             }
             catch (InvalidOperationException ex) {
-                _spriteSplitPlaced = false;
+                //A distance the panels' minimum sizes will not allow at the current width. Left
+                //where it is; the next resize tries again.
                 Debug("Sprite splitter not placed yet: " + ex.Message, LOG_DETAIL.ADVANCED);
             }
         }
@@ -3185,6 +3243,8 @@ namespace FlashEditor {
         /// </remarks>
         /// <param name="batch">The sets the worker has finished with.</param>
         private void ApplySpriteSets(SpriteSetBatch batch) {
+            bool selectionFilled = false;
+
             foreach (SpriteSetResult result in batch.Sets) {
                 if (!_spriteRows.TryGetValue(result.GroupId, out SpriteDefinition? row)) {
                     //No row means this group was not in the list the grid was seeded from, so there
@@ -3213,9 +3273,18 @@ namespace FlashEditor {
                     _spriteTiles[result.GroupId] = result.Tile;
 
                 _spriteRowStatus[result.GroupId] = status;
+
+                //The pane is bound to a row, not to a batch, so a set that arrives while it is
+                //selected has to redraw it - otherwise it keeps saying the row has not been read.
+                object? selected = SpriteListView.SelectedObject;
+                if (selected != null && ReferenceEquals(SpriteSetBehind(selected), row))
+                    selectionFilled = true;
             }
 
             SpriteListView.Invalidate();
+
+            if (selectionFilled)
+                ShowSelectedSprite();
         }
 
         /// <summary>
@@ -3462,7 +3531,11 @@ namespace FlashEditor {
         /// <param name="frame">The stored frame.</param>
         /// <returns>The summary.</returns>
         private static string DescribeSpriteStorage(SpriteDefinition owner, SpriteFrame frame) {
-            var parts = new List<string> { "pal " + Math.Max(0, owner.PaletteStored.Length - 1) };
+            /* The palette size is deliberately not here. It belongs to the set rather than to the
+               frame, the detail pane states it for whatever is selected, and putting it in front of
+               the three flags cost the column the width it needed to show them - "pal 28, ..." on
+               every row said less than "column-major" on the rows that have it. */
+            var parts = new List<string>();
             if (frame.HasAlphaPlane)
                 parts.Add(frame.AlphaPlaneIsRedundant ? "alpha (opaque)" : "alpha");
             if (frame.IsColumnMajor)
@@ -3470,7 +3543,7 @@ namespace FlashEditor {
             if (owner.Overflows(frame))
                 parts.Add("overflows canvas");
 
-            return string.Join(", ", parts);
+            return parts.Count == 0 ? "-" : string.Join(", ", parts);
         }
 
         /// <summary>What the grid knows about one sprite row.</summary>
@@ -3586,7 +3659,8 @@ namespace FlashEditor {
 
             return "Sprite " + set.index + ", frame " + frameId + " of " + set.GetFrameCount() +
                    ". Canvas " + canvas + ", frame " + placement + ", " + DescribeSpriteStorage(set, frame) +
-                   ", " + set.StoredLength + " bytes stored." + Environment.NewLine +
+                   ", palette " + Math.Max(0, set.PaletteStored.Length - 1) + ", " +
+                   set.StoredLength + " bytes stored." + Environment.NewLine +
                    "Drawn at " + SpritePreview.Zoom + ":1 with the client's colour rule - palette entry 0 is " +
                    "transparent and an alpha plane is blended - over a checkerboard, so a fully transparent " +
                    "sprite is checkerboard rather than a blank box. This is not the client's renderer: it " +

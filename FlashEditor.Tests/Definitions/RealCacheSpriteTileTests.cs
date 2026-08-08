@@ -119,7 +119,7 @@ namespace FlashEditor.Tests.Definitions
                         failures.Add($"set {record.Id} rasterised to {frame.GetWidth()}x{frame.GetHeight()} " +
                                      $"where its canvas is {canvasWidth}x{canvasHeight}");
 
-                    using Bitmap? display = SpritePainter.ToDisplayBitmap(frame);
+                    using Bitmap display = SpritePainter.ToDisplayBitmap(frame);
                     if (display == null)
                         failures.Add($"set {record.Id} is drawable and produced no display bitmap");
                 }
