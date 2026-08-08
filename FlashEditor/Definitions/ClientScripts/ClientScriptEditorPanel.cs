@@ -134,17 +134,13 @@ namespace FlashEditor.Definitions.ClientScripts {
         ///     down is a figure about whichever cache someone measured.
         /// </remarks>
         private const string NoticeText =
-            "The opcode is always the raw number the file stores; a mnemonic is shown beside it, never instead of " +
-            "it, so a name can always be checked against the number. A name is carried only where the 637 client's " +
-            "own dispatch proves it (Class247) - a blank mnemonic means not yet named, not broken. Nothing was taken " +
-            "from RuneStar's table: it is Old School RuneScape, revisions 194-199, and it puts switch on opcode 60 " +
-            "where this build dispatches opcode 51.\n" +
-            "Jump targets are resolved; basic blocks are not. This is a linear listing, so there is no loop or " +
-            "if/else structure here and none is implied.\n" +
-            "The identifier is not a name hash. A few are packed interface hooks; most are unexplained 32-bit values, " +
-            "and no script name has ever been recovered from this index.\n" +
-            "The four counts are editable. Committing one re-encodes the whole script and so changes its archive CRC. " +
-            "A parameter count above its matching local count writes a script the client cannot call.";
+            "The Opcode column is always the raw number; the Mnemonic beside it is this editor's reading of it, " +
+            "carried only where the 637 client's own dispatch proves it - the Client column cites the line. " +
+            "A blank mnemonic means not yet named, not broken.\n" +
+            "Jump targets are resolved and the In column marks a position something jumps to. Basic blocks, loops " +
+            "and if/else structure are not reconstructed: this is a linear listing and implies no structure.\n" +
+            "The identifier is not a name hash - a few are packed interface hooks, most are unexplained. The four " +
+            "counts are editable; committing one re-encodes the whole script and so changes its archive CRC.";
 
         private const string SwitchNoteText =
             "Switch tables. Jump is a delta in instructions rather than bytes, applied once the counter has moved " +
@@ -299,11 +295,14 @@ namespace FlashEditor.Definitions.ClientScripts {
             splittersPlaced = true;
 
             try {
-                //Half rather than the three fifths the other master/detail tabs use. The list's
-                //columns are all fixed-width numbers and it had visible slack at three fifths, while
-                //everything of variable length here - a string operand, the summary line - is on the
-                //other side of the splitter.
-                listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width / 2);
+                //Two fifths to the list. This was half while the instruction grid had five columns,
+                //on the reasoning that the list's columns are all fixed-width numbers with no slack
+                //to give up. The disassembler took that grid to ten columns and inverted it: at a
+                //half split the Flow column fell off the right edge, and a control flow edge that
+                //needs a horizontal scroll to see is one nobody sees. The list loses nothing it was
+                //showing, because it was already scrolling at half.
+                listAndDetail.SplitterDistance =
+                    Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width * 2 / 5);
                 //Two thirds to the stream: 485 of the 4,149 scripts hold a switch table at all, so
                 //the lower pane is empty roughly seven selections out of eight.
                 streamAndSwitches.SplitterDistance =
@@ -338,16 +337,23 @@ namespace FlashEditor.Definitions.ClientScripts {
 
         /* Opcode before Mnemonic, and both always present. The number is the thing the file holds
            and the name is this project's reading of it, so the reading sits beside the evidence and
-           a wrong name is one glance from being caught. */
+           a wrong name is one glance from being caught.
+
+           Ordered so the seven columns that make the stream readable - through Flow - fit the pane
+           at its default half-width split, because a control flow edge that needs a horizontal
+           scroll to see is one nobody sees. Stored width, Effect and the client citation are the
+           ones to scroll for: they answer a question about a particular instruction rather than
+           carrying the listing. Widths are in the grid's own pinned Consolas 9, and the widest
+           mnemonic the table holds is branch_greater_or_equal. */
         private void BuildInstructionColumns() {
-            AddColumn(instructions, "#", 55, row => Instruction(row).Position);
-            AddColumn(instructions, "In", 40, row => Instruction(row).LabelMark);
-            AddColumn(instructions, "Offset", 70, row => Instruction(row).Offset);
-            AddColumn(instructions, "Opcode", 70, row => Instruction(row).Opcode);
-            AddColumn(instructions, "Mnemonic", 180, row => Instruction(row).Mnemonic);
-            AddColumn(instructions, "Operand", 60, row => Instruction(row).OperandWidth);
-            AddColumn(instructions, "Value", 240, row => Instruction(row).Value);
-            AddColumn(instructions, "Flow", 110, row => Instruction(row).Flow);
+            AddColumn(instructions, "#", 45, row => Instruction(row).Position);
+            AddColumn(instructions, "In", 34, row => Instruction(row).LabelMark);
+            AddColumn(instructions, "Offset", 62, row => Instruction(row).Offset);
+            AddColumn(instructions, "Opcode", 62, row => Instruction(row).Opcode);
+            AddColumn(instructions, "Mnemonic", 172, row => Instruction(row).Mnemonic);
+            AddColumn(instructions, "Value", 150, row => Instruction(row).Value);
+            AddColumn(instructions, "Flow", 88, row => Instruction(row).Flow);
+            AddColumn(instructions, "Stored as", 80, row => Instruction(row).OperandWidth);
             AddColumn(instructions, "Effect", 520, row => Instruction(row).Effect);
             AddColumn(instructions, "Client", 150, row => Instruction(row).Citation);
         }
