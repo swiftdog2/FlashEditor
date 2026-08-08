@@ -1162,7 +1162,41 @@ namespace FlashEditor {
                     "The navigation tree lists " + navNodes.Count + " editors but " + editorTabs.Count +
                     " are registered, so at least one cannot be reached.");
 
+            WidenNavigationToFit();
             SyncNavigationToDeck();
+        }
+
+        /// <summary>
+        ///     Gives the navigation tree the width its own longest entry needs.
+        /// </summary>
+        /// <remarks>
+        ///     Measured rather than stated, because the entries are built here and their width is a
+        ///     property of what is registered. The designer's 275 pixels held until the Entities page
+        ///     arrived listing four indexes; that widened the index column for <b>every</b> row, since
+        ///     the two columns are padded to the longest entry, and the tree started clipping - which
+        ///     reads as a truncated caption on an unrelated editor rather than as a page that was just
+        ///     added.
+        ///     <para>
+        ///     Clamped against the split's own bounds. <see cref="SplitContainer.SplitterDistance"/>
+        ///     throws rather than saturating when it is asked for more room than the control has, and
+        ///     this runs from the constructor where the form still has its designer size.
+        ///     </para>
+        /// </remarks>
+        private void WidenNavigationToFit() {
+            int widest = 0;
+            foreach (TreeNode node in navNodes.Values)
+                widest = Math.Max(widest, TextRenderer.MeasureText(node.Text, EditorNavTree.Font).Width);
+
+            //One indent for the level the editors sit at, one for the glyph column, and the vertical
+            //scrollbar the tree grows when it is taller than its panel - which it always is here.
+            int wanted = widest + EditorNavTree.Indent * 2 + SystemInformation.VerticalScrollBarWidth;
+
+            int most = EditorNavSplit.Width - EditorNavSplit.SplitterWidth - EditorNavSplit.Panel2MinSize;
+            if (most <= EditorNavSplit.Panel1MinSize)
+                return;
+
+            EditorNavSplit.SplitterDistance =
+                Math.Clamp(wanted, EditorNavSplit.Panel1MinSize, most);
         }
 
         /// <summary>

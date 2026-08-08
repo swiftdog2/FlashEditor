@@ -128,10 +128,14 @@ namespace FlashEditor.Definitions.Entities {
             toolStrip.Controls.Add(importButton);
             toolStrip.Controls.Add(noticeLabel);
 
+            /* The two cycle buttons sit between the caption and the box rather than after it. The
+               strip wraps, and the widest control on it is the box - so with the box in the middle
+               the first thing to be pushed onto a second row is a bare ">" with no context, which is
+               what a narrow splitter produced. Putting the box last means the box is what wraps. */
             animationStrip.Controls.Add(animationLabel);
-            animationStrip.Controls.Add(animationSelector);
             animationStrip.Controls.Add(previousAnimation);
             animationStrip.Controls.Add(nextAnimation);
+            animationStrip.Controls.Add(animationSelector);
             animationStrip.Controls.Add(animationStatus);
 
             //Docking resolves from the end of the Controls collection backwards, so the filled grid
@@ -142,7 +146,33 @@ namespace FlashEditor.Definitions.Entities {
 
             list.SelectedRowChanged += List_SelectedRowChanged;
 
+            SizeSelectors();
             ShowKind();
+        }
+
+        /// <summary>
+        ///     Keeps the two combo boxes in proportion to the font they draw in.
+        /// </summary>
+        /// <remarks>
+        ///     A <see cref="ComboBox"/> cannot auto-size its width, so these are the only two controls
+        ///     on the page whose size is stated at all - everything beside them is <c>AutoSize</c>.
+        ///     Measured against the widest string each can hold rather than written down, because a
+        ///     literal is only correct at the DPI it was chosen at and this form scales by
+        ///     <c>AutoScaleMode.Dpi</c>. The animation box is the one that matters: its entries are a
+        ///     label and an id, so "Turn on spot - (12345)" is what it has to fit, and a default-width
+        ///     box shows about half of that.
+        /// </remarks>
+        private void SizeSelectors() {
+            int arrow = SystemInformation.VerticalScrollBarWidth;
+            kindSelector.Width = TextRenderer.MeasureText("Objects_", Font).Width + arrow;
+            animationSelector.Width = TextRenderer.MeasureText("Turn on spot - (65535)", Font).Width + arrow;
+        }
+
+        /// <summary>Re-measures the two combo boxes when the font they inherit changes.</summary>
+        /// <param name="e">The event data.</param>
+        protected override void OnFontChanged(EventArgs e) {
+            base.OnFontChanged(e);
+            SizeSelectors();
         }
 
         /// <summary>Raised when the grid's selection moves, or the family being shown changes.</summary>
@@ -281,8 +311,8 @@ namespace FlashEditor.Definitions.Entities {
                decodes its models out of index 7 and re-uploads the viewport's buffers; picking an
                NPC or an object picks up several models at once. */
             noticeLabel.Text = descriptor.IsEditable
-                ? "Index " + descriptor.IndexId + ". Editing a cell stages a write - nothing reaches disk until the cache is saved. Picking a row decodes its models and rebuilds the viewport."
-                : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so this grid is read only. Picking a row decodes the model and rebuilds the viewport.";
+                ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
+                : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
 
             importButton.Enabled = cache != null;
             exportButton.Enabled = cache != null;
