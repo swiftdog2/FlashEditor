@@ -169,7 +169,9 @@ namespace FlashEditor {
                 _animationSelectorPopulating = false;
             }
 
-            AnimationSelectorLabel.Text = ids.Count + " animations";
+            //The count stays beside the caption rather than replacing it: a bare number leaves nothing
+            //on screen saying what the box next to it selects.
+            AnimationSelectorLabel.Text = "Animation (" + ids.Count + ")";
 
             //What picking one costs, which is invisible on screen. The record itself is one file, but
             //posing its first frame decodes a whole index-0 group - index 0 is the largest in the
