@@ -10,6 +10,7 @@ using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Definitions.Sprites;
+using FlashEditor.Rendering;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
@@ -326,9 +327,18 @@ namespace FlashEditor {
             glControl.MouseMove += Gl_MouseMove;
             glControl.MouseWheel += Gl_MouseWheel;
 
-            _fpsTimer.Interval = 1000 / 30;
-            _fpsTimer.Tick += (_, _) => glControl.Invalidate();
-            _fpsTimer.Start();
+            //The redraw rate, taken from the rendering layer rather than restated as 1000/30. The two
+            //were coincidentally equal and independently written down, so a change to one silently
+            //left the other behind. Nothing in the playback arithmetic reads it - an animation
+            //advances on its own stored durations against elapsed wall-clock time, and this only
+            //decides how often that is sampled.
+            _fpsTimer.Interval = 1000 / AnimationPlayer.RenderFramesPerSecond;
+
+            //Not started here, and gated on both halves inside the tick. It used to run from the
+            //constructor until OnFormClosed and invalidate unconditionally, so a session spent on any
+            //other page still repainted a hidden GL surface thirty times a second with nothing
+            //animating on it.
+            _fpsTimer.Tick += (_, _) => ViewportTick();
 
             UpdateView();
             UpdateProjection();
@@ -581,10 +591,19 @@ namespace FlashEditor {
             float elapsed = (float)_animStopwatch.Elapsed.TotalSeconds;
             _modelRenderer.Draw(elapsed, _uTexOffset);
 
+            //After the model and still inside the program, because all three overlays share the model
+            //shader and its twelve-float vertex layout - one attribute binding serves them and no
+            //program switch happens between them.
+            DrawViewportOverlays();
+
             GL.UseProgram(0);
             glControl.SwapBuffers();
             CheckGLError("After SwapBuffers");
 
+            //GDI on top of the swapped surface. The index labels are four short strings and the
+            //control already has a Graphics; putting text through the GL pipeline would mean a glyph
+            //atlas and a second shader for them.
+            PaintIndexLabels(e.Graphics);
         }
 
         public bool IsCacheDirSet() {
@@ -636,6 +655,7 @@ namespace FlashEditor {
             //Load, and it would multiply anything set earlier by the same ratio that shrank the
             //designer's literals in the first place.
             SizeProgressBars();
+            SizeViewerControls();
 
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
             //all and say nothing about it; asking for a folder here would be worse, because the
@@ -724,6 +744,11 @@ namespace FlashEditor {
                 cache = new RSCache(store);
                 LoadXTEAKeys(directory);
                 _textureCache = new GLTextureCache(cache);
+
+                //The viewport's frame, skeleton and particle sources, on the same terms as every
+                //panel bind below: they read through the file store, so one left pointing at the
+                //previous cache would decode out of a store that has just been disposed.
+                BindViewerAnimation(cache);
                 sw.Stop();
 
                 Debug("Loaded cache in " + sw.ElapsedMilliseconds + "ms");
@@ -787,6 +812,23 @@ namespace FlashEditor {
         private void SizeProgressBars() {
             foreach (ProgressBar bar in new[] { ItemProgressBar, ObjectProgressBar, NPCProgressBar })
                 bar.Height = Math.Max(10, bar.Font.Height);
+        }
+
+        /// <summary>
+        ///     Gives the viewport's animation selector a width its own font can fill.
+        /// </summary>
+        /// <remarks>
+        ///     A <see cref="ComboBox"/> cannot auto-size its width, so it is the one control on that
+        ///     strip whose size has to be stated at all - everything beside it is <c>AutoSize</c>.
+        ///     Measured from the font against the widest id the index can hold rather than written
+        ///     into the designer, for the reason <see cref="SizeProgressBars"/> exists: a literal is
+        ///     only right at the DPI it was drawn at, and this form scales by <c>AutoScaleMode.Dpi</c>.
+        /// </remarks>
+        private void SizeViewerControls() {
+            //Room for a five-digit id plus the drop-down arrow. Index 20 declares 15,260 records, so
+            //five digits is the width that never truncates rather than a guess.
+            Size widest = TextRenderer.MeasureText("000000", AnimationSelector.Font);
+            AnimationSelector.Width = widest.Width + SystemInformation.VerticalScrollBarWidth;
         }
 
         /// <summary>
@@ -1479,15 +1521,20 @@ namespace FlashEditor {
                 case RSConstants.MODELS_INDEX: {
                         ProgressBar bar = ModelProgressBar;
                         Label lbl = ModelLoadingLabel;
+                        RSCache openCache = cache;
 
                         bgw.DoWork += (object? s, DoWorkEventArgs args) => {
-                            var list = cache.EnumerateModelReferences().ToList();
-                            args.Result = list;
+                            //Both are table walks with no decode in them, so the animation ids ride
+                            //along on the model enumeration's worker rather than earning one of their
+                            //own. Off the UI thread all the same: index 7 declares 63,607 groups.
+                            var list = openCache.EnumerateModelReferences().ToList();
+                            args.Result = (list, EnumerateAnimationIds(openCache));
                         };
 
                         bgw.RunWorkerCompleted += (_, e) => {
-                            var list = (List<ModelReference>) e.Result!;
+                            var (list, animationIds) = ((List<ModelReference>, List<int>)) e.Result!;
                             ModelListView.SetObjects(list);
+                            PopulateAnimationSelector(animationIds);
                             lbl.Text = $"Models loaded ({list.Count})";
                         };
 
@@ -1509,6 +1556,11 @@ namespace FlashEditor {
         private void EditorTabControl_SelectedIndexChanged(object sender, EventArgs e) {
             SyncNavigationToDeck();
             LoadEditorTab(EditorTabControl.SelectedTab);
+
+            //Half the render timer's gate. Leaving the model page stops the clock rather than leaving
+            //it repainting a surface nobody is looking at, and returning to it starts it again only
+            //if something on the viewport is actually moving.
+            SyncViewportTimer();
         }
 
         /// <summary>The cache index the selected tab edits, or -1 when it names none.</summary>
@@ -2095,6 +2147,7 @@ namespace FlashEditor {
                             _testTexture = 0;
                         }
                         _modelRenderer.Load(def, _textureCache);
+                        SetViewerModels(new[] { def });
                         FrameModel(new[] { def });
                         UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { def });
                     }
@@ -2140,6 +2193,7 @@ namespace FlashEditor {
                                 _testTexture = 0;
                             }
                             _modelRenderer.Load(loaded, _textureCache);
+                            SetViewerModels(new[] { loaded });
                             FrameModel(new[] { loaded });
                             UpdateModelTooltip($"Model {id} (Archive={mr.ArchiveId}, File={mr.FileId})", new[] { id }, new[] { loaded });
                         }
@@ -2276,6 +2330,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                SetViewerModels(t.Result);
                 FrameModel(t.Result);
                 UpdateModelTooltip($"NPC {npc.id} '{npc.name}'", ids, t.Result);
                 glControl.Invalidate();
@@ -2309,6 +2364,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                SetViewerModels(t.Result);
                 FrameModel(t.Result);
                 UpdateModelTooltip($"Item {item.id} '{item.name}' (model {modelId})", new[] { modelId }, t.Result);
                 glControl.Invalidate();
@@ -2346,6 +2402,7 @@ namespace FlashEditor {
                 glControl.MakeCurrent();
                 if (_testTexture != 0) { GL.DeleteTexture(_testTexture); _testTexture = 0; }
                 _modelRenderer.LoadMultiple(t.Result, _textureCache);
+                SetViewerModels(t.Result);
                 FrameModel(t.Result);
                 UpdateModelTooltip($"Object {obj.id} '{obj.name}'", ids, t.Result);
                 glControl.Invalidate();
@@ -2382,8 +2439,12 @@ namespace FlashEditor {
         }
 
         private void Gl_MouseMove(object? sender, MouseEventArgs e) {
-            if (_activeButton == MouseButtons.None)
+            if (_activeButton == MouseButtons.None) {
+                //Hovering rather than dragging. Picking during a drag would flicker the highlight
+                //across every face the cursor swept on its way round the model.
+                UpdateHoverPick(e.Location);
                 return;
+            }
 
             int dx = e.X - _lastMousePos.X;
             int dy = e.Y - _lastMousePos.Y;
@@ -2412,6 +2473,12 @@ namespace FlashEditor {
             //rebinds the tab that happens to be selected, so a reload started from any other tab
             //would otherwise leave that thread decoding out of a disposed file store.
             MapEditorPanel.Bind(null);
+
+            //Same reason again, and the one that runs on a timer rather than a worker: the viewport's
+            //animation and particle sources read frames, skeletons and emitters straight through the
+            //cache on every tick, so the timer has to be stopped and both unbound before the store
+            //goes. Nothing else here stops that clock.
+            BindViewerAnimation(null);
 
             //Same reason, one step weaker: this cancels the definition list's worker rather than
             //joining it, so a load already inside a group read can still see the store close. Every
@@ -2484,6 +2551,13 @@ namespace FlashEditor {
             _fpsTimer.Stop();
             DisposeOldResources();
             _modelRenderer.Dispose();
+
+            //Before the context goes, and on this thread. Every handle it holds is a GL object, and
+            //deleting one from anywhere else is undefined - which is why it is IDisposable rather
+            //than finalised.
+            _viewportOverlay?.Dispose();
+            _viewportOverlay = null;
+            _indexLabelFont.Dispose();
             if (_testTexture != 0)
             {
                 GL.DeleteTexture(_testTexture);
