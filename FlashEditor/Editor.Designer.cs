@@ -788,7 +788,7 @@ namespace FlashEditor {
                 "A FRAME row: one picture replaces that frame and the rest of the set is left exactly as it was.\r\n" +
                 "- the frame keeps its stored traversal order and any flag bit the client does not read.\r\n" +
                 "- Place decides its offset. Keeping the old frame's offset moves no artwork; a picture that would then reach outside the canvas is refused rather than clipped.\r\n" +
-                "- Palette is shared by every frame in the set. Keep existing appends new colours while there is room and approximates the rest, and no other frame changes. Rebuild whole set gets the colours right and RE-INDEXES FRAMES YOU DID NOT EDIT - it asks first and says how many.\r\n" +
+                "- Palette is shared by every frame in the set. Keep existing appends new colours while there is room and approximates the rest, and no other frame changes. Rebuild set gets the colours right and RE-INDEXES FRAMES YOU DID NOT EDIT - it asks first and says how many.\r\n" +
                 "\r\n" +
                 "A SET row: the whole set is replaced. Pick several pictures at once to build a multi-frame set sharing one palette; pick one and it becomes a single frame on its own canvas. A .dat is stored as it is, after decoding it to check that it parses.\r\n" +
                 "\r\n" +
@@ -854,10 +854,13 @@ namespace FlashEditor {
             ImportSpriteBtn.Dock = DockStyle.Fill;
             ImportSpriteBtn.Name = "ImportSpriteBtn";
             ImportSpriteBtn.TabIndex = 0;
-            //Names the formats, because the picker's own filter is the only other place they are
-            //stated and a user has to open the dialog to see it - and names the target, because the
-            //same button writes a whole set or one frame of one depending on which row is selected.
-            ImportSpriteBtn.Text = "Import selection (.png/.dat)";
+            /* Names the target, because the same button writes a whole set or one frame of one
+               depending on which row is selected. It used to name the formats as well and no longer
+               can: a Button word-breaks its caption and does not grow to the second line, so
+               "Import selection (.png/.dat)" rendered as "Import selection" with the rest simply not
+               drawn. The strip holds about 22 characters of Consolas 9pt, which is the budget for
+               every caption on it. The formats are in the picker's filter and in the cost label. */
+            ImportSpriteBtn.Text = "Import into selection";
             ImportSpriteBtn.UseVisualStyleBackColor = false;
             //The button shipped with no handler attached, so it did nothing at all when clicked
             ImportSpriteBtn.Click += ImportSpriteBtn_Click;

@@ -3216,11 +3216,14 @@ namespace FlashEditor {
             /* Populated here rather than in the designer so the caption and the value it selects are
                stated in one place. The first entry of each is the default, and both defaults are the
                choice that changes nothing the user did not select: the palette is left alone, and a
-               replacement frame stays where the frame it displaces was. */
+               replacement frame stays where the frame it displaces was.
+               Every caption is inside the strip's budget of about 22 characters of Consolas 9pt. A
+               ComboBox clips its selected item at the right with no ellipsis and no wrap, so a longer
+               one would read as a different option once chosen. */
             SpritePaletteChoice.Items.AddRange(new object[] {
                 new SpriteImportChoice<SpriteSetPalettePolicy>("Palette: keep existing",
                     SpriteSetPalettePolicy.KeepExistingFrames),
-                new SpriteImportChoice<SpriteSetPalettePolicy>("Palette: rebuild whole set",
+                new SpriteImportChoice<SpriteSetPalettePolicy>("Palette: rebuild set",
                     SpriteSetPalettePolicy.RequantiseWholeSet)
             });
             SpritePaletteChoice.SelectedIndex = 0;
