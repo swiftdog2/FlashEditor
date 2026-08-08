@@ -68,6 +68,11 @@ namespace FlashEditor.Definitions.Editing {
            for the cache lock. */
         private BackgroundWorker? worker;
 
+        /* The published rows, kept beside the list because ObjectListView's own collection is
+           filtered and re-ordered by the user and a tab measuring the whole index needs what was
+           loaded rather than what is currently on screen. */
+        private IReadOnlyList<object> rows = Array.Empty<object>();
+
         /// <summary>Creates an unbound panel.</summary>
         public DefinitionListPanel() {
             Dock = DockStyle.Fill;
@@ -95,6 +100,26 @@ namespace FlashEditor.Definitions.Editing {
         ///     differs per index while everything above does not.
         /// </remarks>
         public event EventHandler? SelectedRowChanged;
+
+        /// <summary>
+        ///     The rows on display, which is empty until a load completes.
+        /// </summary>
+        /// <remarks>
+        ///     Exposed so a tab can state something about the whole index rather than only about the
+        ///     selection - the Client Scripts tab measures how much of its opcode stream it can name
+        ///     from these rows instead of printing a figure someone wrote down, which would be a
+        ///     figure about one cache pinned into a tab that opens either.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public IReadOnlyList<object> Rows => rows;
+
+        /// <summary>Raised on the UI thread once a load has published its rows.</summary>
+        /// <remarks>
+        ///     Not raised for a cancelled or faulted load, so a handler can take <see cref="Rows"/>
+        ///     as complete. Binding a null cache clears the rows without raising it.
+        /// </remarks>
+        public event EventHandler? RowsLoaded;
 
         /// <summary>
         ///     What the status line says when the panel holds no rows.
@@ -138,6 +163,7 @@ namespace FlashEditor.Definitions.Editing {
             descriptor = newDescriptor;
 
             list.ClearObjects();
+            rows = Array.Empty<object>();
 
             if (columnsChanged)
                 BuildColumns();
@@ -232,9 +258,11 @@ namespace FlashEditor.Definitions.Editing {
 
                 //DoWork assigns Result on every path that is not cancelled or faulted
                 var result = (LoadResult) e.Result!;
+                rows = result.Rows;
                 list.SetObjects(result.Rows);
                 progress.Value = 100;
                 status.Text = result.Describe(openDescriptor.RowNoun);
+                RowsLoaded?.Invoke(this, EventArgs.Empty);
             };
 
             loader.RunWorkerAsync();
