@@ -331,7 +331,7 @@ actually changed, resolves the XTEA key, and updates the CRC and reference-table
 to say the opposite. It was written when the only known failure was a table listing a different
 revision's layout (index 16 as "MIDI instrument bank", 18 as "Textures", 19 as "Enums"), so
 "believe `RSConstants`" was the fix. That advice is now wrong: a sweep of every index against the
-637 client found **five constant names that misdescribe what the index holds**, flagged in the
+637 client found **constant names that misdescribe what the index holds**, flagged in the
 Contents column below. Believe what the client does with an index and what the index actually
 contains; treat the constant name as a claim.
 
@@ -362,7 +362,7 @@ table.
    | 12  | CLIENT_SCRIPTS         | Client scripts (CS2)            | 4149   | 4149    |
    | 13  | FONTS                  | Font metrics                    | 25     | 25      |
    | 14  | SFX2                   | Vorbis samples, g0 = codebooks  | 3657   | 3657    |
-   | 15  | SFX3                   | **MIDI patch bank, NAME WRONG** | 176    | 176     |
+   | 15  | MIDI_PATCH             | MIDI patch bank                 | 176    | 176     |
    | 16  | OBJECTS_DEFINITIONS    | Object definitions              | 224    | 56199   |
    | 17  | CLIENTSCRIPT_SETTINGS  | **Enum table, NAME WRONG**      | 14     | 3558    |
    | 18  | NPC_DEFINITIONS        | NPC definitions                 | 106    | 13359   |
@@ -392,14 +392,19 @@ The repack additionally leaves one-byte `main_file_cache.idx34` and `idx35` file
 the vanilla capture does not have at all; `RSFileStore.cs:34-36` skips a missing idx file, so both
 open cleanly.
 
-#### The five wrong names, and the audio family in particular
+#### The wrong names, and the audio family in particular
 
 Established by sweeping every index in the reference cache and matching it against what the 637
-client does with that index.
+client does with that index. Index 15 was one of them and has since been renamed; the rest still
+misdescribe their index.
 
-- **15 is the MIDI instrument/patch bank**, not a third sound bank: 176 groups of ~290 bytes, each
-  a sparse 256-entry table. `Particle_Sub3_Sub5_Sub2.java:99-100` passes it alongside 14 and 4, and
-  `Class355.method3875` maps a MIDI program to samples drawn from those two.
+- **15 is the MIDI instrument/patch bank**, not a third sound bank, and the constant now says so -
+  `MIDI_PATCH_INDEX`. `Particle_Sub3_Sub5_Sub2.java:99-100` passes it alongside 14 and 4, and
+  `Class355.method3875` maps a MIDI program to samples drawn from those two. 176 groups of one
+  file, ids 0-127 then ten drum kits then 255 and 256-292, identical in both caches; 57,708 bytes
+  of payload across the 176, from 273 to 1018 bytes a patch and a mean of 327.9. **A patch is a
+  128-key table, not the 256-entry one this line used to claim** - the client sizes every plane at
+  128, one per MIDI key (`Node_Sub44.java:106-112`).
 - **17 is the enum table.** The client's own field is `enumFileStore` (`Node_Sub10_Sub24.java:9`).
   14 groups x 256 files. **Group 5 is the music track name list**, group 2 the skill names.
 - **35 is referenced nowhere by the client** - absent from the `openFileStore` sequence at

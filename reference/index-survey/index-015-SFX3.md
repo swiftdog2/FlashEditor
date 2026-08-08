@@ -1,12 +1,20 @@
-# Index 15 - SFX3 (misnamed: MIDI instrument/patch bank)
+# Index 15 - the MIDI instrument/patch bank
 
 **Format:** fully-understood  
-**Capability:** none  
+**Capability:** codec and byte-identity sweep landed; no GUI tab, no playback  
 **Effort:** medium
+
+> **Status.** The codec exists: `FlashEditor/Definitions/Audio/MidiPatchDefinition.cs` and
+> `MidiPatchEnvelope.cs`, swept by `FlashEditor.Tests/Definitions/RealCacheMidiPatchTests.cs`
+> through `DefinitionSweep`. All 176 patches decode, consume their buffer exactly and re-encode
+> byte-identically **in both caches**. The constant is now `RSConstants.MIDI_PATCH_INDEX`, and
+> index 15 has a row in `CacheAddressing.TryGetFor` as `GroupPerId`. Still missing: a GUI tab, and
+> anything that plays a note. Two claims below were wrong and are marked; the rest was confirmed
+> by the C# port, independently of the Python one that produced them.
 
 ## What it is
 
-Index 15 is the MIDI instrument/patch bank - the sample-mapping layer that turns a program change in an index-6/11 track into playable samples. It is NOT a third sound-effect bank; `RSConstants.SFX3_INDEX` is a wrong name (AGENTS.md:289 already flags it).
+Index 15 is the MIDI instrument/patch bank - the sample-mapping layer that turns a program change in an index-6/11 track into playable samples. It is NOT a third sound-effect bank.
 
 CLIENT PATH, end to end:
 - `InterfaceSettings.java:171` opens index 15 into `Class119_Sub2.aJS5Archive_4726`.
@@ -30,7 +38,7 @@ I verified the format rather than asserting it: I ported the `Node_Sub44` constr
 
 Nothing format-specific. Index 15 has no decoder, no encoder, no definition class, no test and no GUI tab.
 
-- `FlashEditor/Cache/RSConstants.cs:30` declares `SFX3_INDEX = 15`. A grep for `SFX3_INDEX` across every `.cs` in `FlashEditor/` and `FlashEditor.Tests/` returns exactly that one line - the declaration itself. Zero adoption sites, which per CLAUDE.md means "no feature for that index yet", not "someone used a magic number". The literal `15` is used as an index nowhere either (the only hit is `Editor.Designer.cs:1267`, a `TabIndex`).
+- `FlashEditor/Cache/RSConstants.cs` declared `SFX3_INDEX = 15` with zero adoption sites anywhere, which per CLAUDE.md means "no feature for that index yet", not "someone used a magic number". That is what made the rename free; it is now `MIDI_PATCH_INDEX` and the codec below is its first adoption site.
 - `FlashEditor/Definitions/` holds ItemDefinition, NPCDefinition, ObjectDefinition, ModelDefinition, FloorUnderlay/Overlay, MapSceneIcon, Sprites/, Tracks/. There is no instrument, patch or `Node_Sub44` equivalent.
 - GUI: the tab set is Item, Sprite, NPC, Object, Interface, ModelViewer, TextureViewer, MapEditor, TrackEditor and the Meta console (`Editor.Designer.cs:1469-1577`). No index-15 tab, and `Editor.cs:524` dispatches on a switch keyed to specific index constants which has no case 15.
 - The only place index 15 surfaces at all is metadata: `RSCache.LoadReferenceTables` (`RSCache.cs:542-547`) walks every index, so index 15's reference table is decoded at startup and its row appears in Meta > Reference Tables (`Editor.cs:556`). `RSConstants.cs:80` supplies the (wrong) label "SFX3" via `GetIndexName` (`:111`). No group payload is ever loaded or shown.
@@ -50,7 +58,7 @@ What DOES cover index 15 is the generic byte-level plumbing, and it should not b
 
 TRAPS, in the order they will bite.
 
-1. NON-CANONICAL - the discarded bit. `method1517` (Node_Sub44.java:481-484) computes the sample id as `(v-1)>>2` but branches on `(v-1)&1`. Bit 1 is read and thrown away. Measured over all 176 groups: of 1067 distinct sample references, `(v-1)&3` is 3 in 565 cases, 1 in 488, 0 in 13 and 2 in 1 - so bit 1 is SET in 566 of them and carries real data the client ignores. Decoding to (sampleId, bank) and re-encoding as `(id<<2)|bank|1` corrupts more than half the references. Keep the raw varint.
+1. NON-CANONICAL - the second bit. `method1517` (Node_Sub44.java:481-484) computes the sample id as `(v-1)>>2` but branches on `(v-1)&1`, so within *that* method bit 1 goes unused. **WRONG to call it discarded** - it is consumed at the other end of the constructor. `Node_Sub44.java:217` folds it into the tuning word with `Class202.method2702(32768, (v-1) << 14)`, which is `0x8000 & ((v-1) << 14)`, and `Node_Sub31_Sub2.java:994,997` then tests "is the tuning negative" to give the voice a remaining-ticks counter of -1, which never expires. Bit 1 is therefore the sustain flag, not spare data, and `MidiPatchDefinition.HeldOf` exposes it as one. The conclusion the trap draws is right anyway and for a stronger reason: decoding to (sampleId, bank) and re-encoding loses a live field. Keep the raw reference. Also keep its **width** - measured over all 176 patches, 1060 of the 1151 references are two bytes of variable-length quantity where one would do, so a shortest-form encoder rewrites nearly the whole index.
 
 2. THREE CURSORS, NOT ONE. The record is not read front to back. `Node_Sub44.java:124` and `:136` capture `i_5_` and `i_9_`, skip a region, and come back to read it byte by byte much later (`:227`, `:244`) while the main cursor is elsewhere. Each region is exactly `strlen+1` bytes where strlen is the preceding NUL-terminated run stream. The regions are consumed only as far as there are runs, so the trailing byte of each is typically never read - its value is unconstrained and must be preserved verbatim.
 
@@ -72,4 +80,6 @@ TRAPS, in the order they will bite.
 
 11. NOT ENCRYPTED, and no 637/639 format drift. No XTEA on index 15. And the 637 decoder parses the 639 data exactly: my port consumed 176 of 176 payloads to the final byte, so there is no "the data vetoes" case here.
 
-12. AGENTS.md:289 says "176 groups of ~290 bytes, each a sparse 256-entry table". The size is right (median 289 uncompressed). "256-entry" is wrong - the arrays are 128 wide, one per MIDI key (`Node_Sub44.java:106-112`), across seven parallel arrays. Worth correcting when this work lands.
+12. AGENTS.md said "176 groups of ~290 bytes, each a sparse 256-entry table". "256-entry" was wrong - the arrays are 128 wide, one per MIDI key (`Node_Sub44.java:106-112`), across seven parallel arrays. **Corrected in AGENTS.md when this work landed**, along with the size, which is 57,708 bytes over the 176 patches: 273 minimum, 1018 maximum, 327.9 mean against the 289 median quoted here.
+
+13. `aByteArray4247` is **pan**, not "filter/cutoff" as the field list above guesses. `Node_Sub31_Sub2.java:979` copies it to the voice and `:1109-1118` blends it against the channel's own pan, clamped to 0..128 - there is no filter anywhere on this path. Settled from what the client does with it, never from the field's position. `aByteArray4250` is the **mute group**: `:1001-1009` keeps one voice per group per channel and cuts the previous occupant, which is how a drum kit chokes an open hi-hat. `anInt4249` is the **patch volume**, not "a trailing count" - `:977` multiplies it into every voice's gain.

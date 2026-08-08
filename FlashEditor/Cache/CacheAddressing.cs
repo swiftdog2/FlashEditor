@@ -334,6 +334,13 @@ namespace FlashEditor.cache {
                 //Vorbis setup header as getChildFromFolder(0, 0). Every group declares one file in
                 //both caches.
                 case RSConstants.SFX2_INDEX:
+                //Index 15 the same. Class355.method3875 (Class355.java:15) is
+                //getChildFromFolder(i, ...) followed by new Node_Sub44(bytes), and its one caller
+                //(Node_Sub31_Sub2.java:1141-1146) passes the MIDI program number a track asked
+                //for, so a patch id is a group id. A group holding anything but one file would
+                //throw inside that accessor before the decoder ran; all 176 groups declare
+                //exactly one file, id 0, in both caches.
+                case RSConstants.MIDI_PATCH_INDEX:
                 //Index 32 is the same accessor once more, reached by two different decoders.
                 //Class237_Sub1.java:13-32 fetches a loading image through method2733 and
                 //Class324.method3684 fetches a glyph sheet from the same archive through it, so a

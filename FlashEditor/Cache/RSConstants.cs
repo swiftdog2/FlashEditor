@@ -29,7 +29,12 @@ namespace FlashEditor.cache {
             //Vorbis sound-effect samples. Not the MIDI instrument bank - that is index 15, which
             //Particle_Sub3_Sub5_Sub2.java:99-100 hands to the synth alongside this one and index 4.
             SFX2_INDEX = 14,
-            SFX3_INDEX = 15,
+            //The MIDI patch bank, not a third sound-effect bank: 176 groups of one file, each a
+            //sparse 128-key instrument. Class355.method3875 (Class355.java:15-19) fetches a group
+            //by program number and Node_Sub31_Sub2.java:1141-1146 is its only caller. The name was
+            //SFX3_INDEX and contradicted the comment two lines above it; it had no adoption site
+            //anywhere, so nothing but this line changed.
+            MIDI_PATCH_INDEX = 15,
             OBJECTS_DEFINITIONS_INDEX = 16,
             //The enum table, not client-script settings. The client's own field for the store it
             //opens here is enumFileStore (Node_Sub10_Sub24.java:9); an enum id splits 256 to a
@@ -86,7 +91,7 @@ namespace FlashEditor.cache {
             "CLIENT_SCRIPTS",
             "FONTS",
             "SFX2",
-            "SFX3",
+            "MIDI_PATCH",
             "OBJECTS_DEFINITIONS",
             "CLIENTSCRIPT_SETTINGS",
             "NPC_DEFINITIONS",
