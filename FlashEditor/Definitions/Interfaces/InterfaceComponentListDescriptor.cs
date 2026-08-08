@@ -58,7 +58,7 @@ namespace FlashEditor.Definitions.Interfaces {
 
         /// <summary>The component's name if one is verifiable, otherwise its hash, otherwise nothing.</summary>
         public string ComponentName =>
-            InterfaceNames.ComponentName(FileId, ComponentNameHash)
+            InterfaceNames.ComponentName(GroupId, FileId, ComponentNameHash)
             ?? (ComponentNameHash == InterfaceNames.Unnamed ? "" : ComponentNameHash.ToString());
 
         /// <summary>The component type, named where the client does something with it.</summary>

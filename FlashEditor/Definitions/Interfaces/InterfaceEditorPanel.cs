@@ -274,7 +274,12 @@ namespace FlashEditor.Definitions.Interfaces {
                 int named = 0;
                 foreach (int file in files) {
                     RSFileEntry? child = entry.GetFileEntry(file);
-                    if (child != null && child.GetIdentifier() != InterfaceNames.Unnamed)
+                    //Components a name was actually recovered for, not components that merely carry
+                    //an identifier. The vanilla capture gives all 40,883 of its components an
+                    //identifier, so the second reading would report every interface as fully named
+                    //while the grid beside it showed a column of bare hashes.
+                    if (child != null &&
+                        InterfaceNames.ComponentName(group, file, child.GetIdentifier()) != null)
                         named++;
                 }
 
@@ -551,7 +556,11 @@ namespace FlashEditor.Definitions.Interfaces {
             /// <summary>How many components the table declares.</summary>
             internal int ComponentCount => fileIds.Length;
 
-            /// <summary>How many of those components carry a name hash of their own.</summary>
+            /// <summary>How many of those components a name was recovered for.</summary>
+            /// <remarks>
+            ///     Recovered, not merely hashed. Every component in the vanilla capture carries an
+            ///     identifier, so counting those would print the same number twice and say nothing.
+            /// </remarks>
             internal int NamedComponents { get; }
 
             /// <summary>The interface's name where one is verifiable, otherwise blank.</summary>
