@@ -23,6 +23,15 @@ namespace FlashEditor.Tests.Definitions
     ///     something that is not a JPEG at all.
     ///     </para>
     ///     <para>
+    ///     Measured, not argued. Disabling the policy's component-layout clause on purpose failed
+    ///     exactly one test in the whole index-32 family -
+    ///     <see cref="AThreeComponentFileWithNoJfifHeader_IsStillRefusedForItsComponents"/> - while
+    ///     every cache-backed sweep over both caches' twenty-one images passed clean. That is the
+    ///     shape of the argument for every case here: the sweeps cannot see a rule whose triggering
+    ///     input is absent from the cache, and every input this rule triggers on is absent by
+    ///     definition.
+    ///     </para>
+    ///     <para>
     ///     <b>The first test is the reason the rest exist.</b>
     ///     <c>JpegRaster.ToArgb</c> reads planes 0, 1 and 2 as Y, Cb and Cr whether the file carries
     ///     three components or four, so an ordinary JFIF previews as a perfectly good picture in this
