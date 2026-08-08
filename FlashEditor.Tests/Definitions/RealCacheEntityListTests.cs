@@ -114,6 +114,14 @@ namespace FlashEditor.Tests.Definitions {
         ///     here is: a count agrees with plenty of wrong walks. The row count is not written down -
         ///     index 7 declares 63,607 groups in the vanilla capture and 63,614 in the repack.
         ///     <para>
+        ///     Derived a second way as well, through <c>RSCache.EnumerateModelReferences</c>, which is
+        ///     the walk the Models tab used before this page absorbed it. The two reach the table
+        ///     through different accessors - the descriptor through <c>EnumerateFiles</c> and that
+        ///     through <c>GetArchiveEntries</c> and <c>GetValidFileIds</c> - so agreeing is evidence
+        ///     the migration listed the same models the tab did, which comparing the descriptor
+        ///     against its own source is not.
+        ///     </para>
+        ///     <para>
         ///     And it must cost no group reads at all, which is the point of the opt-out. That is
         ///     asserted by the flag rather than by a timing, because a timing is a property of the
         ///     machine.
@@ -137,7 +145,15 @@ namespace FlashEditor.Tests.Definitions {
                 .ToList();
 
             Assert.Equal(declared, listed);
-            _output.WriteLine($"Index 7 lists {listed.Count} models, table-driven");
+
+            var byReference = cache.EnumerateModelReferences()
+                .Select(reference => (reference.ArchiveId, reference.FileId))
+                .OrderBy(pair => pair.ArchiveId).ThenBy(pair => pair.FileId)
+                .ToList();
+
+            Assert.Equal(byReference, listed);
+            _output.WriteLine($"Index 7 lists {listed.Count} models, table-driven, " +
+                              $"and matches the {byReference.Count} the Models tab enumerated");
         }
 
         /// <summary>
