@@ -87,20 +87,30 @@ namespace FlashEditor {
             equipIdColumn = new OLVColumn();
             membersOnlyColumn = new OLVColumn();
             SpriteEditorTab = new TabPage();
+            SpriteNoticeLabel = new Label();
+            SpriteSplit = new SplitContainer();
+            SpriteDetailLayout = new TableLayoutPanel();
+            SpriteDetailStrip = new FlowLayoutPanel();
+            SpriteZoomLabel = new Label();
+            SpriteZoom = new NumericUpDown();
+            SpriteFrameOutline = new CheckBox();
+            SpriteDetailLabel = new Label();
+            SpriteCostLabel = new Label();
             groupBox3 = new GroupBox();
-            label1 = new Label();
-            numericUpDown1 = new NumericUpDown();
+            SpriteControlsLayout = new TableLayoutPanel();
             SpriteLoadingLabel = new Label();
             SpriteProgressBar = new ProgressBar();
             ExportSpriteBmpBtn = new Button();
             ExportSpriteDatBtn = new Button();
             ImportSpriteBtn = new Button();
             SpriteListView = new TreeListView();
-            ID = new OLVColumn();
-            Frames = new OLVColumn();
-            Width = new OLVColumn();
-            Height = new OLVColumn();
-            Image = new OLVColumn();
+            SpriteIdColumn = new OLVColumn();
+            SpriteFrameCountColumn = new OLVColumn();
+            SpriteCanvasColumn = new OLVColumn();
+            SpritePlacementColumn = new OLVColumn();
+            SpriteStoredColumn = new OLVColumn();
+            SpriteScaleColumn = new OLVColumn();
+            SpriteImageColumn = new OLVColumn();
             NPCEditorTab = new TabPage();
             groupBox6 = new GroupBox();
             NPCControlsLayout = new TableLayoutPanel();
@@ -194,8 +204,15 @@ namespace FlashEditor {
             ItemControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ItemListView).BeginInit();
             SpriteEditorTab.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize) SpriteSplit).BeginInit();
+            SpriteSplit.Panel1.SuspendLayout();
+            SpriteSplit.Panel2.SuspendLayout();
+            SpriteSplit.SuspendLayout();
+            SpriteDetailLayout.SuspendLayout();
+            SpriteDetailStrip.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize) SpriteZoom).BeginInit();
             groupBox3.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize) numericUpDown1).BeginInit();
+            SpriteControlsLayout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) SpriteListView).BeginInit();
             NPCEditorTab.SuspendLayout();
             groupBox6.SuspendLayout();
@@ -850,9 +867,19 @@ namespace FlashEditor {
             membersOnlyColumn.Width = 80;
             // 
             // SpriteEditorTab
-            // 
+            //
+            /* Docking rather than the four anchored, absolutely positioned children this page had.
+               Every one of those literals was measured against a font the form no longer uses and
+               then multiplied by the DPI scale factor at runtime, which is what left the row height
+               and the control strip disagreeing with their own contents. Nothing on this page states
+               a pixel now: the strip auto-sizes, the splitter is placed proportionally in code, and
+               the one measurement that has to be a number - the tile side, which an ImageList-free
+               image column cannot derive - is taken from the grid's own font.
+               Added filled-first because docking resolves from the end of the Controls collection
+               backwards, so the notice ends up outermost and spans the full width. */
+            SpriteEditorTab.Controls.Add(SpriteSplit);
             SpriteEditorTab.Controls.Add(groupBox3);
-            SpriteEditorTab.Controls.Add(SpriteListView);
+            SpriteEditorTab.Controls.Add(SpriteNoticeLabel);
             SpriteEditorTab.Location = new Point(4, 37);
             SpriteEditorTab.Name = "SpriteEditorTab";
             SpriteEditorTab.Padding = new Padding(3);
@@ -860,122 +887,235 @@ namespace FlashEditor {
             SpriteEditorTab.TabIndex = 1;
             SpriteEditorTab.Text = "Sprites";
             SpriteEditorTab.UseVisualStyleBackColor = true;
-            // 
+            //
+            // SpriteNoticeLabel
+            //
+            //Says what the grid is doing to the picture, because a letterboxed tile cannot say it
+            //for itself: an upscaled sprite and a shrunk one look equally like "the sprite".
+            SpriteNoticeLabel.AutoSize = true;
+            SpriteNoticeLabel.Dock = DockStyle.Top;
+            SpriteNoticeLabel.Font = new Font("Consolas", 9F);
+            SpriteNoticeLabel.Name = "SpriteNoticeLabel";
+            SpriteNoticeLabel.TabIndex = 13;
+            SpriteNoticeLabel.Text = "Index 8. Tiles are letterboxed over a checkerboard - never stretched - and magnified by whole numbers with nearest-neighbour sampling. A tile marked with a percentage is not full size; judge it in the pane on the right, which starts at 1:1.";
+            //
+            // SpriteSplit
+            //
+            SpriteSplit.Dock = DockStyle.Fill;
+            SpriteSplit.Name = "SpriteSplit";
+            SpriteSplit.Orientation = Orientation.Vertical;
+            SpriteSplit.Panel1.Controls.Add(SpriteListView);
+            SpriteSplit.Panel2.Controls.Add(SpriteDetailLayout);
+            //The distance is placed in code once the page has a real width. A SplitContainer defaults
+            //to 50 pixels, not to half, and a designer literal would be one more number the form's
+            //DPI scaling multiplies.
+            SpriteSplit.TabIndex = 14;
+            //
+            // SpriteDetailLayout
+            //
+            SpriteDetailLayout.ColumnCount = 1;
+            SpriteDetailLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            SpriteDetailLayout.Controls.Add(SpriteDetailStrip, 0, 0);
+            SpriteDetailLayout.Controls.Add(SpriteDetailLabel, 0, 1);
+            SpriteDetailLayout.Controls.Add(SpritePreview, 0, 2);
+            SpriteDetailLayout.Dock = DockStyle.Fill;
+            SpriteDetailLayout.Name = "SpriteDetailLayout";
+            SpriteDetailLayout.RowCount = 3;
+            SpriteDetailLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteDetailLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteDetailLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            SpriteDetailLayout.TabIndex = 0;
+            //
+            // SpriteDetailStrip
+            //
+            SpriteDetailStrip.AutoSize = true;
+            SpriteDetailStrip.Controls.Add(SpriteZoomLabel);
+            SpriteDetailStrip.Controls.Add(SpriteZoom);
+            SpriteDetailStrip.Controls.Add(SpriteFrameOutline);
+            SpriteDetailStrip.Dock = DockStyle.Fill;
+            SpriteDetailStrip.FlowDirection = FlowDirection.LeftToRight;
+            SpriteDetailStrip.Name = "SpriteDetailStrip";
+            SpriteDetailStrip.TabIndex = 0;
+            SpriteDetailStrip.WrapContents = true;
+            //
+            // SpriteZoomLabel
+            //
+            SpriteZoomLabel.AutoSize = true;
+            SpriteZoomLabel.Font = new Font("Consolas", 9F);
+            SpriteZoomLabel.Name = "SpriteZoomLabel";
+            SpriteZoomLabel.TabIndex = 0;
+            SpriteZoomLabel.Text = "Zoom x";
+            SpriteZoomLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
+            // SpriteZoom
+            //
+            //Whole numbers only, and no way to ask for a fraction: this pane exists to be judged
+            //against, and resampling pixel art invents pixels the file does not hold.
+            SpriteZoom.Font = new Font("Consolas", 9F);
+            SpriteZoom.Maximum = new decimal(new int[] { FlashEditor.Definitions.Sprites.SpriteCanvas.MaximumZoom, 0, 0, 0 });
+            SpriteZoom.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            SpriteZoom.Name = "SpriteZoom";
+            SpriteZoom.TabIndex = 1;
+            SpriteZoom.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            SpriteZoom.ValueChanged += SpriteZoom_ValueChanged;
+            //
+            // SpriteFrameOutline
+            //
+            SpriteFrameOutline.AutoSize = true;
+            SpriteFrameOutline.Checked = true;
+            SpriteFrameOutline.CheckState = CheckState.Checked;
+            SpriteFrameOutline.Font = new Font("Consolas", 9F);
+            SpriteFrameOutline.Name = "SpriteFrameOutline";
+            SpriteFrameOutline.TabIndex = 2;
+            SpriteFrameOutline.Text = "Outline the frame within the canvas";
+            SpriteFrameOutline.UseVisualStyleBackColor = true;
+            SpriteFrameOutline.CheckedChanged += SpriteFrameOutline_CheckedChanged;
+            //
+            // SpriteDetailLabel
+            //
+            SpriteDetailLabel.AutoSize = true;
+            SpriteDetailLabel.Dock = DockStyle.Fill;
+            SpriteDetailLabel.Font = new Font("Consolas", 9F);
+            SpriteDetailLabel.Name = "SpriteDetailLabel";
+            SpriteDetailLabel.TabIndex = 1;
+            SpriteDetailLabel.Text = "Select a sprite set to see its frames.";
+            //
+            // SpritePreview
+            //
+            SpritePreview.Dock = DockStyle.Fill;
+            SpritePreview.Font = new Font("Consolas", 9F);
+            SpritePreview.Name = "SpritePreview";
+            SpritePreview.TabIndex = 2;
+            //
             // groupBox3
-            // 
-            groupBox3.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            groupBox3.AutoSize = true;
             groupBox3.BackColor = Color.White;
-            groupBox3.Controls.Add(label1);
-            groupBox3.Controls.Add(numericUpDown1);
-            groupBox3.Controls.Add(SpriteLoadingLabel);
-            groupBox3.Controls.Add(SpriteProgressBar);
-            groupBox3.Controls.Add(ExportSpriteBmpBtn);
-            groupBox3.Controls.Add(ExportSpriteDatBtn);
-            groupBox3.Controls.Add(ImportSpriteBtn);
-            groupBox3.Font = new Font("Consolas", 12.25F);
-            groupBox3.Location = new Point(875, 3);
+            groupBox3.Controls.Add(SpriteControlsLayout);
+            groupBox3.Dock = DockStyle.Right;
+            groupBox3.Font = new Font("Consolas", 9F);
             groupBox3.Name = "groupBox3";
-            groupBox3.Size = new Size(232, 545);
             groupBox3.TabIndex = 9;
             groupBox3.TabStop = false;
             groupBox3.Text = "Editor Controls";
-            // 
-            // label1
-            // 
-            label1.AutoSize = true;
-            label1.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            label1.Location = new Point(9, 36);
-            label1.Name = "label1";
-            label1.Size = new Size(142, 28);
-            label1.TabIndex = 11;
-            label1.Text = "Row Height";
-            // 
-            // numericUpDown1
-            // 
-            numericUpDown1.Location = new Point(114, 34);
-            numericUpDown1.Maximum = new decimal(new int[] { 256, 0, 0, 0 });
-            numericUpDown1.Name = "numericUpDown1";
-            numericUpDown1.Size = new Size(112, 36);
-            numericUpDown1.TabIndex = 12;
-            numericUpDown1.Value = new decimal(new int[] { 21, 0, 0, 0 });
-            numericUpDown1.ValueChanged += numericUpDown1_ValueChanged_1;
-            // 
+            //
+            // SpriteControlsLayout
+            //
+            //The same rebuild the item and NPC strips got, for the same defect: stated 35-pixel
+            //button heights were scaled down by the form while the font on the caption was not, so
+            //the captions were cut off top and bottom. Nothing here states a pixel.
+            SpriteControlsLayout.ColumnCount = 1;
+            SpriteControlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            SpriteControlsLayout.Controls.Add(ImportSpriteBtn, 0, 0);
+            SpriteControlsLayout.Controls.Add(ExportSpriteDatBtn, 0, 1);
+            SpriteControlsLayout.Controls.Add(ExportSpriteBmpBtn, 0, 2);
+            SpriteControlsLayout.Controls.Add(SpriteCostLabel, 0, 3);
+            SpriteControlsLayout.Controls.Add(SpriteLoadingLabel, 0, 4);
+            SpriteControlsLayout.Controls.Add(SpriteProgressBar, 0, 5);
+            SpriteControlsLayout.Dock = DockStyle.Fill;
+            SpriteControlsLayout.Name = "SpriteControlsLayout";
+            SpriteControlsLayout.RowCount = 6;
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            SpriteControlsLayout.TabIndex = 0;
+            //
+            // SpriteCostLabel
+            //
+            //Says what an import costs, next to the button that does it: the file is stored verbatim
+            //rather than transcoded, and storing it rewrites the group's CRC and so the
+            //reference-table entry of every archive packed beside it.
+            SpriteCostLabel.AutoSize = true;
+            SpriteCostLabel.Dock = DockStyle.Fill;
+            SpriteCostLabel.Font = new Font("Consolas", 9F);
+            SpriteCostLabel.Name = "SpriteCostLabel";
+            SpriteCostLabel.TabIndex = 11;
+            SpriteCostLabel.Text = "Import replaces the selected set with the file's own bytes, after decoding it to check that it parses. It rewrites the group's CRC and the reference-table entry of every archive packed beside it, and only stages the change - nothing reaches disk until the cache is saved.";
+            //
             // SpriteLoadingLabel
-            // 
-            SpriteLoadingLabel.Anchor =  AnchorStyles.Bottom | AnchorStyles.Right;
+            //
+            //AutoSize against the cell width, so a status line longer than the strip wraps rather
+            //than losing its last characters off the edge.
             SpriteLoadingLabel.AutoSize = true;
-            SpriteLoadingLabel.BackColor = Color.White;
-            SpriteLoadingLabel.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
-            SpriteLoadingLabel.Location = new Point(6, 455);
+            SpriteLoadingLabel.BackColor = Color.Transparent;
+            SpriteLoadingLabel.Dock = DockStyle.Fill;
+            SpriteLoadingLabel.Font = new Font("Consolas", 9F);
             SpriteLoadingLabel.Name = "SpriteLoadingLabel";
-            SpriteLoadingLabel.Size = new Size(207, 28);
             SpriteLoadingLabel.TabIndex = 10;
             SpriteLoadingLabel.Text = "Loading Sprites";
-            SpriteLoadingLabel.TextAlign = ContentAlignment.MiddleCenter;
-            // 
+            SpriteLoadingLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
             // SpriteProgressBar
-            // 
-            SpriteProgressBar.Anchor =  AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            //
+            //Anchored rather than docked, so it spans the cell and keeps the height SizeProgressBars
+            //derives from its font. A ProgressBar cannot measure itself.
+            SpriteProgressBar.Anchor =  AnchorStyles.Left | AnchorStyles.Right;
             SpriteProgressBar.BackColor = Color.White;
             SpriteProgressBar.ForeColor = Color.DarkRed;
-            SpriteProgressBar.Location = new Point(6, 477);
             SpriteProgressBar.Name = "SpriteProgressBar";
-            SpriteProgressBar.Size = new Size(220, 62);
             SpriteProgressBar.TabIndex = 8;
-            // 
+            //
             // ExportSpriteBmpBtn
-            // 
+            //
+            ExportSpriteBmpBtn.AutoSize = true;
+            ExportSpriteBmpBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ExportSpriteBmpBtn.BackColor = Color.White;
-            ExportSpriteBmpBtn.Location = new Point(6, 149);
+            ExportSpriteBmpBtn.Dock = DockStyle.Fill;
             ExportSpriteBmpBtn.Name = "ExportSpriteBmpBtn";
-            ExportSpriteBmpBtn.Size = new Size(220, 35);
             ExportSpriteBmpBtn.TabIndex = 4;
             ExportSpriteBmpBtn.Text = "Export Selected (.png)";
             ExportSpriteBmpBtn.UseVisualStyleBackColor = false;
             ExportSpriteBmpBtn.Click += ExportSpriteBmpBtn_Click;
-            // 
+            //
             // ExportSpriteDatBtn
-            // 
+            //
+            ExportSpriteDatBtn.AutoSize = true;
+            ExportSpriteDatBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ExportSpriteDatBtn.BackColor = Color.White;
-            ExportSpriteDatBtn.Location = new Point(6, 108);
+            ExportSpriteDatBtn.Dock = DockStyle.Fill;
             ExportSpriteDatBtn.Name = "ExportSpriteDatBtn";
-            ExportSpriteDatBtn.Size = new Size(220, 35);
             ExportSpriteDatBtn.TabIndex = 1;
             ExportSpriteDatBtn.Text = "Export Selected (.dat)";
             ExportSpriteDatBtn.UseVisualStyleBackColor = false;
             ExportSpriteDatBtn.Click += ExportSpriteDatBtn_Click;
-            // 
+            //
             // ImportSpriteBtn
-            // 
+            //
+            ImportSpriteBtn.AutoSize = true;
+            ImportSpriteBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ImportSpriteBtn.BackColor = Color.White;
-            ImportSpriteBtn.Location = new Point(6, 67);
+            ImportSpriteBtn.Dock = DockStyle.Fill;
             ImportSpriteBtn.Name = "ImportSpriteBtn";
-            ImportSpriteBtn.Size = new Size(220, 35);
             ImportSpriteBtn.TabIndex = 0;
             ImportSpriteBtn.Text = "Import Sprite";
             ImportSpriteBtn.UseVisualStyleBackColor = false;
             //The button shipped with no handler attached, so it did nothing at all when clicked
             ImportSpriteBtn.Click += ImportSpriteBtn_Click;
-            // 
+            //
             // SpriteListView
-            // 
-            SpriteListView.AllColumns.Add(ID);
-            SpriteListView.AllColumns.Add(Frames);
-            SpriteListView.AllColumns.Add(Width);
-            SpriteListView.AllColumns.Add(Height);
-            SpriteListView.AllColumns.Add(Image);
+            //
+            SpriteListView.AllColumns.Add(SpriteIdColumn);
+            SpriteListView.AllColumns.Add(SpriteFrameCountColumn);
+            SpriteListView.AllColumns.Add(SpriteCanvasColumn);
+            SpriteListView.AllColumns.Add(SpritePlacementColumn);
+            SpriteListView.AllColumns.Add(SpriteStoredColumn);
+            SpriteListView.AllColumns.Add(SpriteScaleColumn);
+            SpriteListView.AllColumns.Add(SpriteImageColumn);
             SpriteListView.AlternateRowBackColor = Color.White;
-            SpriteListView.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             SpriteListView.CellEditUseWholeCell = false;
-            SpriteListView.Columns.AddRange(new ColumnHeader[] { ID, Frames, Width, Height, Image });
-            SpriteListView.Font = new Font("Consolas", 11.25F);
+            SpriteListView.Columns.AddRange(new ColumnHeader[] { SpriteIdColumn, SpriteFrameCountColumn, SpriteCanvasColumn, SpritePlacementColumn, SpriteStoredColumn, SpriteScaleColumn, SpriteImageColumn });
+            SpriteListView.Dock = DockStyle.Fill;
+            SpriteListView.Font = new Font("Consolas", 9F);
             SpriteListView.FullRowSelect = true;
             SpriteListView.GridLines = true;
-            SpriteListView.Location = new Point(3, 6);
             SpriteListView.Name = "SpriteListView";
-            SpriteListView.RowHeight = 20;
+            //RowHeight and every column width are set in BindSpriteColumns: a list view's row height
+            //and column widths are pixels that the form's DPI scaling does not touch, so they have to
+            //be measured against the font rather than written down here.
             SpriteListView.ShowGroups = false;
-            SpriteListView.Size = new Size(866, 542);
             SpriteListView.TabIndex = 6;
             SpriteListView.TintSortColumn = true;
             SpriteListView.UseAlternatingBackColors = true;
@@ -984,42 +1124,43 @@ namespace FlashEditor {
             SpriteListView.UseHotControls = false;
             SpriteListView.View = View.Details;
             SpriteListView.VirtualMode = true;
-            // 
-            // ID
-            // 
-            ID.AspectName = "index";
-            ID.Text = "ID";
-            ID.Width = 59;
-            // 
-            // Frames
-            // 
-            Frames.AspectName = "frameCount";
-            Frames.Text = "Frames";
-            Frames.Width = 67;
-            // 
-            // Width
-            // 
-            Width.AspectName = "width";
-            Width.Text = "Width";
-            Width.Width = 61;
-            // 
-            // Height
-            // 
-            Height.AspectName = "height";
-            Height.Text = "Height";
-            Height.Width = 67;
-            // 
-            // Image
-            // 
-            Image.AspectName = "";
-            Image.FillsFreeSpace = true;
-            Image.ImageAspectName = "thumb";
-            Image.IsEditable = false;
-            Image.Searchable = false;
-            Image.Sortable = false;
-            Image.Text = "Sprite";
-            Image.Width = 350;
-            // 
+            SpriteListView.SelectedIndexChanged += SpriteListView_SelectedIndexChanged;
+            //
+            // SpriteIdColumn
+            //
+            //Every aspect on this grid is a getter rather than an AspectName, because the tree holds
+            //two row types: a set, and one of its rendered frames. AspectName "index" reads a frame's
+            //position in its set as though it were a sprite id.
+            SpriteIdColumn.Text = "ID";
+            //
+            // SpriteFrameCountColumn
+            //
+            SpriteFrameCountColumn.Text = "Frames";
+            //
+            // SpriteCanvasColumn
+            //
+            SpriteCanvasColumn.Text = "Canvas";
+            //
+            // SpritePlacementColumn
+            //
+            SpritePlacementColumn.Text = "Frame at";
+            //
+            // SpriteStoredColumn
+            //
+            SpriteStoredColumn.Text = "Stored";
+            //
+            // SpriteScaleColumn
+            //
+            SpriteScaleColumn.Text = "Tile";
+            //
+            // SpriteImageColumn
+            //
+            SpriteImageColumn.FillsFreeSpace = true;
+            SpriteImageColumn.IsEditable = false;
+            SpriteImageColumn.Searchable = false;
+            SpriteImageColumn.Sortable = false;
+            SpriteImageColumn.Text = "Sprite";
+            //
             // NPCEditorTab
             // 
             NPCEditorTab.Controls.Add(groupBox6);
@@ -1830,9 +1971,20 @@ namespace FlashEditor {
             groupBox4.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) ItemListView).EndInit();
             SpriteEditorTab.ResumeLayout(false);
+            SpriteEditorTab.PerformLayout();
+            SpriteSplit.Panel1.ResumeLayout(false);
+            SpriteSplit.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize) SpriteSplit).EndInit();
+            SpriteSplit.ResumeLayout(false);
+            SpriteDetailLayout.ResumeLayout(false);
+            SpriteDetailLayout.PerformLayout();
+            SpriteDetailStrip.ResumeLayout(false);
+            SpriteDetailStrip.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize) SpriteZoom).EndInit();
             groupBox3.ResumeLayout(false);
             groupBox3.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize) numericUpDown1).EndInit();
+            SpriteControlsLayout.ResumeLayout(false);
+            SpriteControlsLayout.PerformLayout();
             ((System.ComponentModel.ISupportInitialize) SpriteListView).EndInit();
             NPCEditorTab.ResumeLayout(false);
             NPCControlsLayout.ResumeLayout(false);
@@ -1876,11 +2028,27 @@ namespace FlashEditor {
         private System.Windows.Forms.GroupBox groupBox1;
         private System.Windows.Forms.TableLayoutPanel MetaControlsLayout;
         private BrightIdeasSoftware.TreeListView SpriteListView;
-        private BrightIdeasSoftware.OLVColumn ID;
-        private BrightIdeasSoftware.OLVColumn Frames;
-        private BrightIdeasSoftware.OLVColumn Width;
-        private BrightIdeasSoftware.OLVColumn Height;
-        private BrightIdeasSoftware.OLVColumn Image;
+        /* Prefixed names. The five columns these replace were called ID, Frames, Width, Height and
+           Image, and the middle three shadowed Control.Width, Control.Height and the System.Drawing
+           .Image type inside every method of this form. */
+        private BrightIdeasSoftware.OLVColumn SpriteIdColumn;
+        private BrightIdeasSoftware.OLVColumn SpriteFrameCountColumn;
+        private BrightIdeasSoftware.OLVColumn SpriteCanvasColumn;
+        private BrightIdeasSoftware.OLVColumn SpritePlacementColumn;
+        private BrightIdeasSoftware.OLVColumn SpriteStoredColumn;
+        private BrightIdeasSoftware.OLVColumn SpriteScaleColumn;
+        private BrightIdeasSoftware.OLVColumn SpriteImageColumn;
+        private System.Windows.Forms.Label SpriteNoticeLabel;
+        private System.Windows.Forms.SplitContainer SpriteSplit;
+        private System.Windows.Forms.TableLayoutPanel SpriteDetailLayout;
+        private System.Windows.Forms.FlowLayoutPanel SpriteDetailStrip;
+        private System.Windows.Forms.Label SpriteZoomLabel;
+        private System.Windows.Forms.NumericUpDown SpriteZoom;
+        private System.Windows.Forms.CheckBox SpriteFrameOutline;
+        private System.Windows.Forms.Label SpriteDetailLabel;
+        private System.Windows.Forms.Label SpriteCostLabel;
+        private System.Windows.Forms.TableLayoutPanel SpriteControlsLayout;
+        private FlashEditor.Definitions.Sprites.SpriteCanvas SpritePreview = new FlashEditor.Definitions.Sprites.SpriteCanvas();
         private System.Windows.Forms.ColorDialog colorDialog1;
         private System.Windows.Forms.GroupBox groupBox3;
         private System.Windows.Forms.Button ExportSpriteDatBtn;
@@ -1962,8 +2130,6 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn npcModelIdsColumn;
         private System.Windows.Forms.ToolStripMenuItem viewToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem alternateRowsToolStripMenuItem;
-        private System.Windows.Forms.Label label1;
-        private System.Windows.Forms.NumericUpDown numericUpDown1;
         private System.Windows.Forms.GroupBox groupBox5;
         private System.Windows.Forms.TableLayoutPanel ObjectControlsLayout;
         private System.Windows.Forms.Label ObjectLoadingLabel;
