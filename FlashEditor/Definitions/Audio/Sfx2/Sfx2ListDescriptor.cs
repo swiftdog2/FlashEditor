@@ -264,7 +264,11 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                 DefinitionColumn.Text<Sfx2Listing>("Looping", row => row.Looping, SetLooping, 80),
                 DefinitionColumn.ReadOnly<Sfx2Listing>("Packets", row => row.PacketCount, 70),
                 DefinitionColumn.ReadOnly<Sfx2Listing>("Audio bytes", row => row.AudioBytes, 90),
-                DefinitionColumn.ReadOnly<Sfx2Listing>("Detail", row => row.Detail, 260)
+                /* Wide enough for the whole of the setup header's summary. At 260 it clipped after
+                   the blocksizes, so the codebook count and the sync verdict - the two things that
+                   say group 0 is what the client believes it is - were both behind an ellipsis on
+                   the only row that has them. */
+                DefinitionColumn.ReadOnly<Sfx2Listing>("Detail", row => row.Detail, 520)
             };
         }
 
