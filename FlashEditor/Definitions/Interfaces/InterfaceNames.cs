@@ -29,28 +29,62 @@ namespace FlashEditor.Definitions.Interfaces {
     ///     <item><see cref="InterfaceNameTable"/>, a table of candidates. Group names came from a
     ///     467-row list keyed by group id in the sibling HydraScape repository - 416 of its rows
     ///     verify at the exact id it states and none names a different group, so the id-keyed and
-    ///     hash-keyed readings of it agree completely - from string literals harvested out of the
-    ///     637 client and the server, and from recombining the vocabulary of whatever was already
-    ///     verified. Component names came from expanding each verified group name with that same
-    ///     vocabulary.</item>
+    ///     hash-keyed readings of it agree completely - and from string literals harvested out of
+    ///     the 637 client and the server. Those routes are <i>attested</i>: a source names the
+    ///     interface and the cache agrees. Everything after them is <i>generated</i>, by recombining
+    ///     the vocabulary of the attested names, and ships only against the bar set out below.
+    ///     Component names are generated, by expanding each verified group name with that same
+    ///     vocabulary, so only the suffix is ever guessed.</item>
     ///     </list>
     ///     <para>
-    ///     <b>Exhaustive cracking is deliberately not done here, and recombination is not cracking.</b>
-    ///     djb2 is 32 bits, so a candidate set large enough will produce a match for any target and
-    ///     the match means nothing. What separates the two is a measured null: generate decoys of the
-    ///     same length and character classes as the candidates, hash them against the real
-    ///     identifiers, and keep a route only while its real hit count towers over its decoy count.
-    ///     Shifting the identifiers instead is <i>not</i> a fair null - djb2 clusters over short
-    ///     strings and a random shift moves the identifier set out of the region the candidates
-    ///     occupy, which flatters every route.
+    ///     <b>Exhaustive cracking is deliberately not done here, and a hash match is not on its own
+    ///     a reason to ship a name.</b> djb2 is 32 bits, so a candidate set large enough will produce
+    ///     a match for any target and the match means nothing. Recombination produced 610,956
+    ///     candidates, which puts it firmly in that territory: for a name whose <i>only</i> evidence
+    ///     is its own hash match, that is a guess wearing a name.
     ///     </para>
     ///     <para>
-    ///     One candidate was withheld under that standard. Group 1069 - the highest group id the
-    ///     vanilla capture holds - has the identifier <c>hash("golden_joystick")</c>, and the string
-    ///     occurs in the corpus exactly once, as <c>"golden_joystick.ws"</c> passed to the CS2
-    ///     open-URL opcode alongside <c>download.ws</c> and <c>kbase/view.ws</c>. That is evidence it
-    ///     is a web path, not an interface name, so the hash match is the kind of coincidence this
-    ///     class exists to refuse. It is recorded here rather than shipped.
+    ///     <b>The bar for adding a generated name, which is the rule and not a note about one
+    ///     batch.</b> A name proposed by any process that enumerates candidates ships only with
+    ///     corroboration independent of its own hash. Two things qualify, and one sibling is not a
+    ///     family:
+    ///     </para>
+    ///     <list type="number">
+    ///     <item>Two or more generated siblings sharing a leading token land on group ids within four
+    ///     of one another. Adjacency is structure the generator never optimised for, so a set of
+    ///     collisions cannot produce it - <c>npcchat_np1_overlay</c> through <c>np4_overlay</c> on
+    ///     ids 90 to 93 is the case that earns its place this way.</item>
+    ///     <item>The leading token already heads a name attested by a source, so the prefix is known
+    ///     to be a real interface-name prefix in this cache rather than one the generator invented.
+    ///     <c>banner_easter09</c> beside the attested <c>banner_easter08</c>, and
+    ///     <c>cws_warning_33</c> beside 28 attested <c>cws_warning_N</c> siblings, qualify here.</item>
+    ///     </list>
+    ///     <para>
+    ///     Applying that bar dropped four otherwise-matching names -
+    ///     <c>zaros_staff_spells</c>, <c>task_main</c>, <c>task_side</c> and <c>black_overlay</c> -
+    ///     whose leading tokens head no attested name, leaving 14 of the 18 recombination found.
+    ///     Anything the bar rejects belongs in this remark, not in the table.
+    ///     </para>
+    ///     <para>
+    ///     <b>How the residual false-positive rate is measured.</b> Not with decoys: a decoy is
+    ///     gibberish whose leading token heads nothing, so the bar rejects it for the wrong reason
+    ///     and the measurement is circular. The null used instead is a <i>foreign identifier set</i>
+    ///     - index 8's 4593 real sprite-name hashes, sampled down to index 3's group count. Those are
+    ///     real names of the same shape from the same naming culture, so a hit is a false positive of
+    ///     exactly the feared kind, and the bar can be applied to it unchanged. Over 60 trials the
+    ///     recombination candidate set scored <b>0.533</b> false hits per run raw and <b>0.000</b>
+    ///     clearing the bar. The component route scored 0.000 over 40 whole-cache trials.
+    ///     (Shifting the real identifiers is <i>not</i> a fair null either: djb2 clusters over short
+    ///     strings, so a random shift moves the identifier set out of the region the candidates
+    ///     occupy and flatters every route.)
+    ///     </para>
+    ///     <para>
+    ///     One further candidate was withheld on evidence rather than on the bar. Group 1069 - the
+    ///     highest group id the vanilla capture holds - has the identifier
+    ///     <c>hash("golden_joystick")</c>, and the string occurs in the corpus exactly once, as
+    ///     <c>"golden_joystick.ws"</c> passed to the CS2 open-URL opcode alongside
+    ///     <c>download.ws</c> and <c>kbase/view.ws</c>. That is evidence it is a web path, not an
+    ///     interface name, so the hash match is the kind of coincidence this class exists to refuse.
     ///     </para>
     /// </remarks>
     public static class InterfaceNames {

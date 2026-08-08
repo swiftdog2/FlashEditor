@@ -19,7 +19,7 @@ namespace FlashEditor.Definitions.Interfaces {
     /// </remarks>
     internal static class InterfaceNameTable {
         /// <summary>Candidate interface names, keyed by group id.</summary>
-        internal static readonly Dictionary<int, string> Groups = new Dictionary<int, string>(438) {
+        internal static readonly Dictionary<int, string> Groups = new Dictionary<int, string>(434) {
             { 0, "100guide_eggs_overlay" },
             { 1, "100guide_flour_overlay" },
             { 2, "100guide_inv_flour" },
@@ -259,7 +259,6 @@ namespace FlashEditor.Definitions.Interfaces {
             { 382, "wilderness_warning" },
             { 386, "wom_telescope" },
             { 387, "wornitems" },
-            { 388, "zaros_staff_spells" },
             { 389, "objdialog" },
             { 393, "poh_hangman" },
             { 398, "poh_house_options" },
@@ -453,11 +452,8 @@ namespace FlashEditor.Definitions.Interfaces {
             { 883, "graphics_confirm" },
             { 892, "cws_warning_33" },
             { 906, "lobbyscreen" },
-            { 917, "task_main" },
             { 952, "bind" },
-            { 969, "black_overlay" },
-            { 983, "castlewars_orb" },
-            { 1056, "task_side" }
+            { 983, "castlewars_orb" }
         };
 
         /// <summary>
