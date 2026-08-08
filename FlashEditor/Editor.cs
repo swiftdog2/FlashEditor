@@ -2677,6 +2677,14 @@ namespace FlashEditor {
         protected override void OnFormClosed(FormClosedEventArgs e) {
             _fpsTimer.Stop();
             DisposeOldResources();
+
+            /* The sprite placeholder and its marker font outlive a cache: the grid's columns are
+               bound once for the form, so releasing them with the rest of the tiles would leave the
+               next cache's rows drawing a disposed bitmap. They belong to the form, so they go here. */
+            _spritePendingTile?.Dispose();
+            _spritePendingTile = null;
+            _spriteMarkerFont?.Dispose();
+            _spriteMarkerFont = null;
             _modelRenderer.Dispose();
             if (_testTexture != 0)
             {
