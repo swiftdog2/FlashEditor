@@ -13,11 +13,6 @@ namespace FlashEditor.Definitions
     public class ObjectDefinition : OpcodeStreamDefinition, ICloneable, IDefinition
     {
         /*───────────────────────────────────────────*
-         *  ▌  Static / shared helpers              ▐
-         *───────────────────────────────────────────*/
-        private static readonly StringBuilder SharedBuilder = new StringBuilder();
-
-        /*───────────────────────────────────────────*
          *  ▌  Public fields (RS cache values)      ▐
          *───────────────────────────────────────────*/
         /// <summary>Unique object identifier.</summary>
@@ -400,16 +395,30 @@ namespace FlashEditor.Definitions
         /*───────────────────────────────────────────*
          *  ▌  Public decode entry-point            ▐
          *───────────────────────────────────────────*/
+        /// <summary>Reads one object definition from its opcode stream.</summary>
+        /// <param name="stream">The record, positioned at its first opcode.</param>
+        /// <param name="xteaKey">Unused here; object definitions are never encrypted.</param>
         public void Decode(JagStream stream, int[] xteaKey = null)
         {
-            SharedBuilder.Clear();
-
             DecodeOpcodeStream(stream);
 
-            for (int i = 0; i < decoded.Length; i++)
-                if (decoded[i]) SharedBuilder.Append(i).Append(' ');
+            /* The opcode dump is built only when it would be printed, and into a local.
+               It used to be assembled on every decode into a STATIC StringBuilder and then
+               handed to Debug at LOG_DETAIL.NONE, which discards it unconditionally - so the
+               work was unavoidable and the output unreachable. The static was the real defect:
+               two threads decoding index 16 at once clear and append to the same instance, and
+               StringBuilder.ToString then throws ArgumentOutOfRangeException on a chunk length
+               that changed underneath it. That is how this was found - one test class surveying
+               index 16 while another decoded it. Nothing in the editor decodes objects on two
+               threads yet, which is why it had never fired. */
+            if (LOG_LEVEL < LOG_DETAIL.INSANE)
+                return;
 
-            Debug($"ObjectDef {id} ({name ?? "null"}) OPCODES: {SharedBuilder}", LOG_DETAIL.NONE);
+            var opcodes = new StringBuilder();
+            for (int i = 0; i < decoded.Length; i++)
+                if (decoded[i]) opcodes.Append(i).Append(' ');
+
+            Debug($"ObjectDef {id} ({name ?? "null"}) OPCODES: {opcodes}", LOG_DETAIL.INSANE);
         }
 
         public static ObjectDefinition DecodeFromStream(JagStream stream)
@@ -851,9 +860,14 @@ namespace FlashEditor.Definitions
             if (decoded[14] || sizeX != 1) Emit(14, () => o.WriteByte(sizeX));
             if (decoded[15] || sizeY != 1) Emit(15, () => o.WriteByte(sizeY));
 
-            /*─── walk-blocking flags (17 / 18) ────────────────────────*/
+            /* Walk-blocking flags (17 / 18). Emitted independently, not as an either/or.
+               Seven objects in both caches carry both - ids 48011-48017, 17 first - and the
+               `else if` this replaced emitted only the 17 for them. That was invisible while
+               nothing had been edited, because the unemitted 18 was replayed from its own
+               recorded bytes; it became a lost byte the moment walkable was turned off and back
+               on, since a suppressed opcode is only restored when the encoder asks for it. */
             if (decoded[17]) Emit(17);
-            else if (decoded[18]) Emit(18);
+            if (decoded[18]) Emit(18);
 
             /*─── 19 – category id ─────────────────────────────────────*/
             if (decoded[19] || category != 0)

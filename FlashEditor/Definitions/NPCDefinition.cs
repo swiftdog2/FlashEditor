@@ -128,28 +128,85 @@ namespace FlashEditor {
         ///     <see cref="animateIdle"/> is.
         ///     <para>
         ///     Zero is also the index the client assumes with neither opcode present, so setting
-        ///     the index to zero drops 158 rather than inventing 159 - inventing it would lengthen
-        ///     every definition that has no main option at all. A definition that already stored
-        ///     159 keeps it, which is what lets those still re-encode to their stored bytes.
+        ///     the index to zero never invents a 159 - that would lengthen every definition with no
+        ///     main option at all. A definition that already stored one keeps it, which is what
+        ///     lets those still re-encode to their stored bytes.
         ///     </para>
         ///     <para>
-        ///     A definition carrying both flags takes its value from whichever came last, as the
-        ///     client does, which is why the getter consults the recorded stream rather than the
-        ///     hit map alone. Only 0 and 1 are representable, because those are the only values
-        ///     the two opcodes produce; any other value set here is stored as 1.
+        ///     A definition carrying both flags takes its value from whichever came <b>last</b>, as
+        ///     the client does, so both accessors have to reason about position rather than
+        ///     presence. That makes this the only accessor in either codec that reads the recorded
+        ///     stream by index, and the only one <see cref="OpcodeStream.Suppress"/> can put out of
+        ///     step with the encoder: a suppressed opcode keeps its place in the stream, so a
+        ///     getter that asked <see cref="LastStreamIndexOf"/> alone went on seeing a 159 the
+        ///     encoder had already stopped writing and reported 0 for a definition it wrote as 1.
+        ///     That misreports the record rather than merely rewriting it - the grid shows a value
+        ///     the file does not hold, and the next edit is made against a reading already wrong.
+        ///     Both accessors therefore ask what <see cref="Encode"/> will actually emit: an opcode
+        ///     counts only while its hit-map entry is set, and one the recorded stream never
+        ///     carried is appended after everything replayed, so it wins.
+        ///     </para>
+        ///     <para>
+        ///     Setting the value restores the recorded spelling wherever the file already spells
+        ///     the wanted value, and suppresses the losing opcode only where it does not. Dropping
+        ///     the opposite flag unconditionally was the defect: a definition storing 159 alone,
+        ///     set to 1 and back to 0, came back with the 159 gone, because nothing ever asked for
+        ///     it again. Only 0 and 1 are representable, because those are the only values the two
+        ///     opcodes produce; any other value set here is stored as 1.
         ///     </para>
         /// </remarks>
         public byte mainOptionIndex {
-            get => decoded[158] && LastStreamIndexOf(158) >= LastStreamIndexOf(159) ? (byte) 1 : (byte) 0;
+            get {
+                //Presence first: an opcode the encoder will not emit cannot decide anything.
+                if (!decoded[158]) return 0;
+                if (!decoded[159]) return 1;
+
+                int at158 = LastStreamIndexOf(158);
+                int at159 = LastStreamIndexOf(159);
+
+                /* An opcode with no place in the recorded stream is appended after everything
+                   replayed, so it is last; with neither recorded they are appended in ascending
+                   order and 159 is still last. Both guards are defensive rather than reachable
+                   through this property - the setter never leaves an opcode flagged in the hit map
+                   that the stream does not carry - so no test fails if they are deleted. Measured,
+                   not assumed: replacing them with a bare `at158 >= at159` leaves the whole suite
+                   green. They are kept because the two accessors have to agree with Encode for any
+                   hit map, and the decoder is not the only thing that writes one. */
+                if (at159 < 0) return 0;
+                if (at158 < 0) return 1;
+                return at158 > at159 ? (byte) 1 : (byte) 0;
+            }
             set {
+                int at158 = LastStreamIndexOf(158);
+                int at159 = LastStreamIndexOf(159);
+
                 if (value != 0) {
-                    //159 has to go: left in place it would be replayed after 158 and reset the
-                    //index the user just set back to zero.
-                    DropOpcode(159);
-                    decoded[158] = true;
+                    if (at158 > at159) {
+                        /* The file already spells 1. Restoring both exactly as recorded is what
+                           makes a set-and-set-back land on the stored bytes; asking for an opcode
+                           again is also what lifts an earlier suppression of it. */
+                        decoded[158] = true;
+                        decoded[159] = at159 >= 0;
+                    }
+                    else {
+                        //159 has to go: left in place it would be replayed after 158 and reset the
+                        //index the user just set.
+                        DropOpcode(159);
+                        decoded[158] = true;
+                    }
                 }
                 else {
-                    DropOpcode(158);
+                    if (at159 > at158) {
+                        //A recorded 159 after the last 158 already spells 0, so both stay.
+                        decoded[158] = at158 >= 0;
+                        decoded[159] = true;
+                    }
+                    else {
+                        //158 is the only one that can be spelling 1 here, so it is the one to drop.
+                        //Any recorded 159 comes back with it, since it cannot change the value.
+                        DropOpcode(158);
+                        decoded[159] = at159 >= 0;
+                    }
                 }
             }
         }
