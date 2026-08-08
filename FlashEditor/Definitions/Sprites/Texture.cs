@@ -380,9 +380,13 @@ namespace FlashEditor.Definitions.Sprites
                     int opcode = buffer.ReadUnsignedByte();
 
                     //Captured either side of the payload rather than derived from the opcode,
-                    //because several opcodes read a variable number of bytes and two of them read
-                    //bytes nothing decodes - a type 29 shape record is skipped by width, and type
-                    //12's opcodes 2 and 4 are recognised while consuming nothing.
+                    //because several opcodes read a variable number of bytes and some read bytes
+                    //nothing decodes - a type 29 shape record is skipped by width, and several type
+                    //12 opcodes are recognised while consuming nothing.
+                    //Capturing the span is also what makes a width error invisible to the
+                    //byte-identity sweep, since wrongly-sized spans still tile the file exactly.
+                    //RealCacheTextureGraphTests.EveryOpcodePayload_IsTheWidthTheClientReads is what
+                    //closes that, by measuring every span against the client's own node classes.
                     long payloadStart = buffer.Position;
 
                     //A few opcodes do not configure the node at all - they overwrite its

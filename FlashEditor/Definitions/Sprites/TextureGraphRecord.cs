@@ -23,7 +23,9 @@ namespace FlashEditor.Definitions.Sprites
     /// <c>Texture.InitNodeDefaults</c> seeds real values - a type 0 node holding 4096 may or may
     /// not have carried opcode 0.</item>
     /// <item>Some payloads are <b>never decoded at all</b>: a type 29 shape record is skipped by
-    /// width, and type 12's opcodes 2 and 4 are recognised while reading nothing.</item>
+    /// width, and several type 12 opcodes are recognised while reading nothing. Which ones is
+    /// measured by the census in <c>RealCacheTextureGraphTests</c> and deliberately not restated
+    /// here - a wrong set was copied between three files before anyone counted.</item>
     /// </list>
     /// Replaying the span sidesteps all five, and an editor changes a value by rewriting the one
     /// span it owns rather than by re-deriving every span in the file.
