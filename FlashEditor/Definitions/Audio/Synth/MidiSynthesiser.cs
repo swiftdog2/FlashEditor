@@ -89,6 +89,7 @@ namespace FlashEditor.Definitions.Audio.Synth {
         private readonly int[] modeBits = new int[Channels];
         private readonly int[] channelMix = new int[Channels];
         private int tickAccumulator;
+        private readonly HashSet<int> patchesSounded = new HashSet<int>();
 
         /// <summary>Overall gain, applied to every voice.</summary>
         /// <remarks><c>Node_Sub31_Sub2.anInt5836</c>, 256 being unity (<c>:218</c>).</remarks>
@@ -99,6 +100,23 @@ namespace FlashEditor.Definitions.Audio.Synth {
 
         /// <summary>How many notes were dropped for want of a sample this player can render.</summary>
         public int DroppedNotes { get; private set; }
+
+        /// <summary>
+        ///     Every index-15 patch a note has actually sounded on.
+        /// </summary>
+        /// <remarks>
+        ///     Which instruments a track reaches is what decides whether it is a useful case for
+        ///     judging the player by ear - a track that only touches four patches isolates far less
+        ///     than one that touches thirty. Recorded on note-on rather than on program change, so a
+        ///     patch selected and never played does not appear.
+        /// </remarks>
+        public IReadOnlyCollection<int> PatchesSounded => patchesSounded;
+
+        /// <summary>How many notes used a mute group, which is the drum-cutting behaviour.</summary>
+        public int MuteGroupNotes { get; private set; }
+
+        /// <summary>How many notes named a key whose sample loops for as long as the note is held.</summary>
+        public int HeldNotes { get; private set; }
 
         /// <summary>The bank the voices draw their patches and samples from.</summary>
         public MidiSoundBank Bank => bank;
@@ -357,6 +375,12 @@ namespace FlashEditor.Definitions.Audio.Synth {
             SynthVoice? previous = keyVoices[channel, note];
             if (previous != null && previous.Held)
                 previous.ReleaseClock = 0;
+
+            patchesSounded.Add(program[channel]);
+            if (voice.MuteGroup >= 0)
+                MuteGroupNotes++;
+            if (voice.Looping)
+                HeldNotes++;
 
             keyVoices[channel, note] = voice;
             UpdateVoice(voice);

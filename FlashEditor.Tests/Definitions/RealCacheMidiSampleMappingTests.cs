@@ -80,6 +80,8 @@ namespace FlashEditor.Tests.Definitions
             int vorbisKeys = 0;
             int effectKeys = 0;
             int heldKeys = 0;
+            int muteGroupKeys = 0;
+            int vibratoKeys = 0;
             var distinctVorbis = new HashSet<int>();
             var distinctEffects = new HashSet<int>();
             var patchesTouchingEffects = new HashSet<int>();
@@ -95,6 +97,13 @@ namespace FlashEditor.Tests.Definitions
                     usedKeys++;
                     if (patch.HeldOf(key))
                         heldKeys++;
+
+                    if (patch.MuteGroupOf(key) >= 0)
+                        muteGroupKeys++;
+
+                    int envelope = patch.EnvelopeOf(key);
+                    if (envelope >= 0 && envelope < patch.Envelopes.Count && patch.Envelopes[envelope].VibratoRate > 0)
+                        vibratoKeys++;
 
                     int sampleId = patch.SampleIdOf(key);
                     MidiSampleBank bank = patch.BankOf(key).Value;
@@ -118,6 +127,7 @@ namespace FlashEditor.Tests.Definitions
             }
 
             _output.WriteLine($"index 15: {patches} patches, {usedKeys} keys naming a sample, {heldKeys} held");
+            _output.WriteLine($"  {muteGroupKeys} keys carry a mute group, {vibratoKeys} name an envelope with vibrato");
             _output.WriteLine($"  index 14 (Vorbis): {vorbisKeys} keys over {distinctVorbis.Count} distinct samples " +
                               $"of {vorbisGroups.Count} declared");
             _output.WriteLine($"  index 4 (effects): {effectKeys} keys over {distinctEffects.Count} distinct samples " +

@@ -40,7 +40,7 @@ namespace FlashEditor.Tests.Definitions
         ///     are simply spread across the index so a defect confined to one arrangement does not
         ///     pass unseen.
         /// </remarks>
-        private static readonly int[] Tracks = { 0, 1, 100, 500, 900 };
+        private static readonly int[] Tracks = { 0, 1, 62, 100, 150, 321, 500, 700, 900, 962 };
 
         private readonly RealCacheFixture _fixture;
         private readonly ITestOutputHelper _output;
@@ -127,7 +127,10 @@ namespace FlashEditor.Tests.Definitions
                     $"{produced} frames rendered, {nonZero} audible, peak {peak}, peak voices {peakVoices}, " +
                     $"{synthesiser.DroppedNotes} notes dropped, " +
                     $"{synthesiser.Bank.UnrenderedEffectKeys} index-4 lookups, " +
-                    $"{synthesiser.Bank.FailedLookups} failed lookups, stereo {differsAcrossChannels}");
+                    $"{synthesiser.Bank.FailedLookups} failed lookups, stereo {differsAcrossChannels}, " +
+                    $"{synthesiser.PatchesSounded.Count} patches sounded, " +
+                    $"{synthesiser.MuteGroupNotes} mute-group notes, {synthesiser.HeldNotes} held notes, " +
+                    $"name '{track.Name}'");
 
                 if (produced <= 0)
                     failures.Add($"track {trackId}: rendered nothing");
