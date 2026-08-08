@@ -164,9 +164,14 @@ namespace FlashEditor {
                 int at158 = LastStreamIndexOf(158);
                 int at159 = LastStreamIndexOf(159);
 
-                //An opcode with no place in the recorded stream is appended after everything
-                //replayed, so it is last. With neither recorded they are appended in ascending
-                //order and 159 is still last, which the first test covers.
+                /* An opcode with no place in the recorded stream is appended after everything
+                   replayed, so it is last; with neither recorded they are appended in ascending
+                   order and 159 is still last. Both guards are defensive rather than reachable
+                   through this property - the setter never leaves an opcode flagged in the hit map
+                   that the stream does not carry - so no test fails if they are deleted. Measured,
+                   not assumed: replacing them with a bare `at158 >= at159` leaves the whole suite
+                   green. They are kept because the two accessors have to agree with Encode for any
+                   hit map, and the decoder is not the only thing that writes one. */
                 if (at159 < 0) return 0;
                 if (at158 < 0) return 1;
                 return at158 > at159 ? (byte) 1 : (byte) 0;
