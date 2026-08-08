@@ -19,12 +19,44 @@ namespace FlashEditor.Definitions.Fonts {
     ///     <para>
     ///     <b>The join is proved per row, not by coverage.</b> Matching ids and matching name hashes
     ///     say the two indexes share an id space; they do not say the payload at that id is this
-    ///     font's glyphs. <see cref="Verify"/> states four content relations that tie one record to
-    ///     one sheet, and <c>RealCacheFontGlyphSheetTests</c> runs every font against every sheet to
-    ///     see how many wrong pairings survive them. Measured over both supported caches: all 25
-    ///     correct pairings pass and <b>none</b> of the 600 wrong ones do. That is the distinction
-    ///     <c>CLAUDE.md</c> draws over the track-name join, which agreed on every aggregate and was
-    ///     still keyed on the wrong field.
+    ///     font's glyphs. Four content relations tie one record to one sheet, and
+    ///     <c>RealCacheFontGlyphSheetTests</c> runs every font against every sheet to see how many
+    ///     wrong pairings survive them. Measured over both supported caches: all 25 correct pairings
+    ///     pass and <b>none</b> of the 600 wrong ones do. That is the distinction <c>CLAUDE.md</c>
+    ///     draws over the track-name join, which agreed on every aggregate and was still keyed on
+    ///     the wrong field.
+    ///     </para>
+    ///     <para>
+    ///     <b>Those four relations are not all the same kind of claim, and they are split by which
+    ///     kind they are.</b> <see cref="JoinFailure"/> holds the ones with a reader in the 637
+    ///     client, and answering it is a statement that this sheet is not this font's glyphs.
+    ///     <see cref="Irregularity"/> holds the ones that are only <i>observed</i> to hold on all 25
+    ///     fonts of both supported caches, and answering it is a statement that a pairing is
+    ///     unusual. The line matters because there are exactly two supported caches, so "holds in
+    ///     both" is a sample of two - and a false negative on valid data is worse than a loose
+    ///     check, since a user cannot tell one from a real defect.
+    ///     <list type="table">
+    ///     <item><term>256 frames - <b>client-backed</b></term><description>Every reader indexes by
+    ///     character code masked to a byte (<c>Class197.java:193</c>), and the client pairs one id
+    ///     to both archives (<c>Class114.java:82,89</c>). A shorter set puts it out of
+    ///     bounds.</description></item>
+    ///     <item><term><c>offsetX + subWidth &lt;= advance</c> - <b>client-backed</b></term>
+    ///     <description>The pen is stepped by the advance table alone and the glyph is drawn at the
+    ///     pen (<c>RSFont.java:576,585,599</c>), so this is what keeps consecutive glyphs from
+    ///     overlapping. Nothing measures the ink.</description></item>
+    ///     <item><term><c>lineHeight + descent == canvasHeight</c> - <b>client-backed</b></term>
+    ///     <description>Both draw paths subtract the line height from the y they are handed before
+    ///     any glyph is placed (<c>RSFont.java:190</c> and <c>:483</c>), and that y is the baseline
+    ///     - every alignment branch at <c>:421-434</c> computes it as <c>top + ascent</c> or
+    ///     <c>bottom - descent</c>. So the canvas top is <c>baseline - lineHeight</c> and the ink
+    ///     sits at the frame's own offset inside it, which lands on the baseline only when the
+    ///     canvas is <c>lineHeight + descent</c> rows tall.</description></item>
+    ///     <item><term><c>canvasWidth == max(advance)</c> - <b>observed only</b></term>
+    ///     <description>Exact on all 25 fonts of both caches and it discriminates well, but the
+    ///     client never reads a glyph sheet's canvas width when drawing text - <c>method3689</c> is
+    ///     the only reader of it and belongs to the cursor path. It is how these sheets were packed,
+    ///     not something a font has to satisfy, so it is advisory.</description></item>
+    ///     </list>
     ///     </para>
     ///     <para>
     ///     <b>The stored ink is near-white and means nothing.</b> Every sheet carries a two-entry
@@ -157,40 +189,35 @@ namespace FlashEditor.Definitions.Fonts {
         }
 
         /// <summary>
-        ///     Checks the four content relations that tie these metrics to this sheet.
+        ///     Why this sheet cannot be these metrics' glyphs, or <c>null</c> when nothing rules it out.
         /// </summary>
         /// <remarks>
-        ///     <b>Every one of them is a per-row statement, and the conjunction is what makes the
-        ///     join self-proving.</b> Measured over both supported caches by pairing all 25 fonts
-        ///     against all 25 sheets, identity pairings against wrong ones:
+        ///     <b>Only the relations with a reader in the client, so that answering this is always a
+        ///     defect and never a peculiarity.</b> Each is cited in the type's own remarks. Measured
+        ///     over both supported caches by pairing all 25 fonts against all 25 sheets:
         ///     <list type="bullet">
-        ///     <item>256 frames - 25/25 identity, 600/600 cross. Alone it says nothing; it is here
-        ///     because everything below indexes by character code.</item>
+        ///     <item>256 frames - 25/25 identity, 600/600 cross. Alone it says nothing; it is a
+        ///     precondition, because everything below indexes by character code.</item>
         ///     <item><c>offsetX + subWidth &lt;= advance</c> for all 256 characters - 25/25 identity,
-        ///     20/600 cross. The ink, at its own left bearing, fits inside the advance box. A
-        ///     one-character shift within a font's own sheet breaks it on all 25.</item>
-        ///     <item><c>lineHeight + descent == canvasHeight</c> - 25/25 identity, 36/600 cross. An
-        ///     exact equality between a byte in index 13 and a short in index 8.</item>
-        ///     <item><c>canvasWidth == max(advance)</c> - 25/25 identity, 44/600 cross. The second
-        ///     exact equality.</item>
+        ///     20/600 cross. A one-character shift within a font's <i>own</i> sheet breaks it on all
+        ///     25, so it is tight rather than merely loose.</item>
+        ///     <item><c>lineHeight + descent == canvasHeight</c> - 25/25 identity, 36/600 cross.</item>
         ///     </list>
-        ///     Together: <b>25 of 25 correct pairings pass and 0 of 600 wrong ones do.</b> Coverage
-        ///     alone would not have earned that - the ascent relation
-        ///     (<c>offsetY &gt;= canvasHeight - ascent - descent</c>) also holds on 25/25 and lets
-        ///     325 of the 600 wrong pairings through, which is exactly the shape of the track-name
-        ///     join that this project got wrong.
+        ///     What was deliberately left out: the ascent relation
+        ///     (<c>offsetY &gt;= canvasHeight - ascent - descent</c>) holds on 25/25 and lets 325 of
+        ///     the 600 wrong pairings through, so a join resting on it would have looked conclusive
+        ///     and been worth almost nothing - the shape of the track-name join this project got
+        ///     wrong. And <see cref="Irregularity"/>, which discriminates well and has no reader.
         /// </remarks>
-        /// <returns>Why the pairing is not a font and its glyphs, or null when all four hold.</returns>
-        public string? Verify() {
+        /// <returns>The reason, or <c>null</c>.</returns>
+        public string? JoinFailure() {
             if (!IsGlyphSheet)
                 return "index 8 group " + FontId + " holds " + FrameCount + " frames, not " +
                        FontDefinition.CharacterCount + ", so it is not a glyph sheet";
 
-            int widest = 0;
             for (int character = 0; character < FontDefinition.CharacterCount; character++) {
                 SpriteFrame frame = sheet.Frames[character];
                 int advance = Metrics.AdvanceOf(character);
-                widest = Math.Max(widest, advance);
 
                 if (frame.OffsetX + frame.SubWidth > advance)
                     return "character " + character + " draws " + frame.SubWidth + " pixels at x=" +
@@ -200,11 +227,41 @@ namespace FlashEditor.Definitions.Fonts {
             if (Metrics.LineHeight + Metrics.Descent != CanvasHeight)
                 return "line height " + Metrics.LineHeight + " plus descent " + Metrics.Descent +
                        " is " + (Metrics.LineHeight + Metrics.Descent) + ", but the canvas is " +
-                       CanvasHeight + " rows tall";
+                       CanvasHeight + " rows tall, so the client's y -= lineHeight would not put the " +
+                       "ink on the baseline (RSFont.java:190,483)";
+
+            return null;
+        }
+
+        /// <summary>
+        ///     What is unusual about this pairing, or <c>null</c> when nothing is.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Not a join failure, and callers must not present it as one.</b> The relation here
+        ///     is exact on all 25 fonts of both supported caches and rejects 44 of 600 wrong
+        ///     pairings on its own - but there are only two supported caches, so that is a sample of
+        ///     two, and the client never reads a glyph sheet's canvas width when drawing text. A
+        ///     third cache whose sheet were packed one pixel wider would be perfectly playable, and
+        ///     reporting it as "not joined" would be a false negative the user could not tell from a
+        ///     real defect.
+        ///     <para>
+        ///     Kept rather than dropped because it is still worth seeing: it is the only signal this
+        ///     project has that a font's sheet was repacked by something other than Jagex's packer.
+        ///     </para>
+        /// </remarks>
+        /// <returns>The observation, or <c>null</c>.</returns>
+        public string? Irregularity() {
+            if (!IsGlyphSheet)
+                return null;
+
+            int widest = 0;
+            for (int character = 0; character < FontDefinition.CharacterCount; character++)
+                widest = Math.Max(widest, Metrics.AdvanceOf(character));
 
             if (widest != CanvasWidth)
                 return "the widest advance is " + widest + " but the canvas is " + CanvasWidth +
-                       " pixels wide";
+                       " pixels wide; every font in both supported caches has these equal, though " +
+                       "the client never reads the canvas width when drawing text";
 
             return null;
         }
