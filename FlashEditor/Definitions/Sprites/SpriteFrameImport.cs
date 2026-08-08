@@ -339,7 +339,7 @@ namespace FlashEditor.Definitions.Sprites {
                     SubHeight = height,
                     //Row-major with the flag clear: a picture has no stored order to preserve.
                     Flags = framePlane ? SpriteFrame.FlagAlpha : 0,
-                    PaletteIndices = MapOntoStored(planes[id], stored, out int black, out _),
+                    PaletteIndices = MapOntoStored(planes[id], stored, out int black, out _, out _),
                     Alpha = framePlane ? AlphaPlane(planes[id]) : null
                 });
                 blackPixels += black;
@@ -384,23 +384,22 @@ namespace FlashEditor.Definitions.Sprites {
 
             Dictionary<int, int> byColour = IndexByDrawnColour(palette);
 
-            int reused = 0, added = 0;
+            int reused = 0;
+            var missing = new List<int>();
             foreach (int colour in SortedColours(wanted)) {
-                if (byColour.ContainsKey(colour)) {
+                if (byColour.ContainsKey(colour))
                     reused++;
-                    continue;
-                }
-
-                if (palette.Count >= MaxPaletteEntries)
-                    continue;
-
-                palette.Add(colour);
-                byColour[colour] = palette.Count - 1;
-                added++;
+                else
+                    missing.Add(colour);
             }
 
+            foreach (int colour in RoomFor(missing, wanted, MaxPaletteEntries - palette.Count))
+                palette.Add(colour);
+
+            int added = palette.Count - Math.Max(1, set.PaletteStored.Length);
             int[] stored = palette.ToArray();
-            byte[] indices = MapOntoStored(pixels, stored, out int blackPixels, out int worstChannelError);
+            byte[] indices = MapOntoStored(pixels, stored, out int blackPixels, out int worstChannelError,
+                                           out int approximated);
 
             var frames = new List<SpriteFrame>(set.Frames.Count);
             for (int id = 0; id < set.Frames.Count; id++) {
@@ -418,7 +417,10 @@ namespace FlashEditor.Definitions.Sprites {
                 PaletteColours = stored.Length - 1,
                 PaletteEntriesReused = reused,
                 PaletteEntriesAdded = added,
-                PaletteEntriesApproximated = wanted.Count - reused - added,
+                //Counted by the mapping rather than as what was left over, because a median cut adds
+                //representatives rather than source colours: a colour can be missing from the palette
+                //before the cut and land on an exact match after it.
+                PaletteEntriesApproximated = approximated,
                 WorstChannelError = worstChannelError,
                 Requantised = false,
                 //Zero by construction rather than by measurement: no existing entry moved and no
@@ -471,7 +473,7 @@ namespace FlashEditor.Definitions.Sprites {
                     : (byte) (NearestIndex(DrawnColour(set.PaletteStored[entry]), palette) + 1);
             }
 
-            byte[] indices = MapOntoStored(pixels, stored, out int blackPixels, out int replacedError);
+            byte[] indices = MapOntoStored(pixels, stored, out int blackPixels, out int replacedError, out _);
             worstChannelError = Math.Max(worstChannelError, replacedError);
 
             var frames = new List<SpriteFrame>(set.Frames.Count);
@@ -599,6 +601,37 @@ namespace FlashEditor.Definitions.Sprites {
             return counts;
         }
 
+        /// <summary>
+        ///     As many of the missing colours as the palette has room for, cut down when it has fewer.
+        /// </summary>
+        /// <remarks>
+        ///     The obvious version of this appends colours in order until the palette is full, and it
+        ///     is badly wrong for the case it exists to handle. A photograph dropped onto a frame of a
+        ///     set with a small palette has thousands of colours, and taking the first 255 in ascending
+        ///     order takes the 255 darkest blues and approximates the whole picture against them. A
+        ///     median cut over the colours that did not match spends the room on the colours the
+        ///     picture is actually made of, which is what the whole-set import already does.
+        /// </remarks>
+        /// <param name="missing">The colours no entry matched, in ascending order.</param>
+        /// <param name="weights">How many pixels hold each colour.</param>
+        /// <param name="room">Entries the palette has left.</param>
+        /// <returns>The colours to append.</returns>
+        private static int[] RoomFor(List<int> missing, Dictionary<int, long> weights, int room) {
+            if (room <= 0 || missing.Count == 0)
+                return Array.Empty<int>();
+            if (missing.Count <= room)
+                return missing.ToArray();
+
+            //Already ascending, which is the order MedianCut's boxes are measured over.
+            var weighted = new ColourCount[missing.Count];
+            for (int at = 0; at < missing.Count; at++) {
+                weights.TryGetValue(missing[at], out long pixels);
+                weighted[at] = new ColourCount(missing[at], pixels);
+            }
+
+            return MedianCut(weighted, room);
+        }
+
         /// <summary>The colours of a harvest in ascending order, so a palette never depends on hashing.</summary>
         /// <param name="counts">The harvest.</param>
         /// <returns>The colours, sorted.</returns>
@@ -656,11 +689,13 @@ namespace FlashEditor.Definitions.Sprites {
         /// <param name="paletteStored">The palette as stored, entry 0 reserved.</param>
         /// <param name="blackPixels">Receives how many pixels held the promoted black.</param>
         /// <param name="worstChannelError">Receives the largest per-channel approximation error.</param>
+        /// <param name="approximated">Receives how many distinct colours took an inexact entry.</param>
         /// <returns>One index per pixel.</returns>
         private static byte[] MapOntoStored(int[] pixels, int[] paletteStored, out int blackPixels,
-                                            out int worstChannelError) {
+                                            out int worstChannelError, out int approximated) {
             blackPixels = 0;
             worstChannelError = 0;
+            approximated = 0;
 
             byte[] indices = new byte[pixels.Length];
             var resolved = new Dictionary<int, byte>();
@@ -687,7 +722,9 @@ namespace FlashEditor.Definitions.Sprites {
                         //this can only happen for a picture whose colours were all dropped, and the
                         //honest answer is the transparent slot rather than a wrong colour.
                         index = 0;
+                        approximated++;
                     } else {
+                        approximated++;
                         index = (byte) (NearestIndex(colour, drawn) + 1);
                         int nearest = drawn[index - 1];
                         for (int shift = 0; shift <= 16; shift += 8) {

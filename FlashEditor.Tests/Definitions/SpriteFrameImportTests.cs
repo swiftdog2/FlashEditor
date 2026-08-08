@@ -353,6 +353,49 @@ namespace FlashEditor.Tests.Definitions
                 Assert.Equal(wasPlane[at] == 0, nowPlane[at] == 0);
         }
 
+        /// <summary>
+        ///     More colours than the palette has room for are cut down rather than taken in order.
+        /// </summary>
+        /// <remarks>
+        ///     The obvious implementation appends colours until the palette is full, and it is at its
+        ///     worst on exactly the picture this feature invites: something with more colours than the
+        ///     set has room for. Sorted ascending, the entries would all come from the low end of the
+        ///     range - here every colour with a red of 201 would be dropped and approximated against a
+        ///     red of 161, a per-channel error of 40 - so the check is that the appended entries reach
+        ///     the top of the picture's range and that the reported error is well under that.
+        /// </remarks>
+        [Fact]
+        public void MoreColoursThanTheRoomLeft_AreMedianCutRatherThanTakenInOrder()
+        {
+            SpriteDefinition before = SmallPaletteSet();
+            int[] colours = DistinctColours(336);
+            using Bitmap picture = Picture(24, 14, colours);
+
+            SpriteFrameImport imported = SpriteImageImporter.ReplaceFrame(before, 1, picture);
+            SpriteDefinition after = imported.Set;
+
+            //Four entries were there, so 252 of the 255 are free and 336 colours do not fit.
+            Assert.Equal(336, imported.SourceColours);
+            Assert.Equal(256, after.PaletteStored.Length);
+            Assert.True(imported.PaletteEntriesApproximated > 0,
+                "336 colours cannot fit 252 free entries, so something has to be approximated");
+
+            int highest = 0;
+            for (int entry = before.PaletteStored.Length; entry < after.PaletteStored.Length; entry++)
+                highest = Math.Max(highest, (after.PaletteStored[entry] >> 16) & 0xFF);
+
+            //Taking the colours in order stops at a red of 161. The lattice reaches 201.
+            Assert.True(highest >= 200,
+                $"the appended entries reach a red of only {highest}, so they were taken in order");
+            Assert.True(imported.WorstChannelError < 40,
+                $"a worst channel error of {imported.WorstChannelError} is what taking them in order costs");
+
+            //And the promise about the other frame holds whatever the palette did.
+            byte[] was = before.Encode().ToArray();
+            byte[] now = after.Encode().ToArray();
+            Assert.Equal(FrameBytes(was, before, 0), FrameBytes(now, after, 0));
+        }
+
         // ===================================================================
         //  The black rule
         // ===================================================================
@@ -762,6 +805,31 @@ namespace FlashEditor.Tests.Definitions
 
             return SpriteDefinition.FromFrames(16, 12,
                 new[] { 0, Blue, StoredBlack, Grey, White }, frames, trailer);
+        }
+
+        /// <summary>
+        ///     A two frame set with room in its palette and a frame big enough to hold a picture with
+        ///     more colours than that room.
+        /// </summary>
+        /// <returns>The set.</returns>
+        private static SpriteDefinition SmallPaletteSet()
+        {
+            var frames = new List<SpriteFrame>
+            {
+                new SpriteFrame
+                {
+                    OffsetX = 0, OffsetY = 0, SubWidth = 2, SubHeight = 2, Flags = 0,
+                    PaletteIndices = new byte[] { 1, 2, 3, 1 }
+                },
+                new SpriteFrame
+                {
+                    OffsetX = 0, OffsetY = 0, SubWidth = 24, SubHeight = 14,
+                    Flags = SpriteFrame.FlagVertical,
+                    PaletteIndices = Enumerable.Repeat((byte) 2, 24 * 14).ToArray()
+                }
+            };
+
+            return SpriteDefinition.FromFrames(24, 14, new[] { 0, Blue, Grey, White }, frames);
         }
 
         /// <summary>A two frame set whose palette is full, so nothing can be appended to it.</summary>
