@@ -392,16 +392,6 @@ namespace FlashEditor {
         /// </remarks>
         private readonly IDefinitionListDescriptor spotAnims = new GraphicListDescriptor();
 
-        /// <summary>
-        ///     What the fonts tab shows, held for the reason <see cref="billboards"/> is.
-        /// </summary>
-        /// <remarks>
-        ///     Index 13 is the third flat list with no wrapper panel of its own, so its descriptor has
-        ///     nowhere else to live. Building one per bind would reload the index on every visit to the
-        ///     tab and throw away the sort and the selection with it.
-        /// </remarks>
-        private readonly IDefinitionListDescriptor fonts = new FontListDescriptor();
-
         /// <summary>The tabs already populated for the cache currently open.</summary>
         private readonly HashSet<TabPage> loadedTabs = new HashSet<TabPage>();
 
@@ -1031,12 +1021,14 @@ namespace FlashEditor {
                says which pre-login screens exist and this holds the art they are made of. */
             Register(LoadingSpriteEditorTab, RSConstants.LOADING_SPRITES, EditorCategory.Media,
                 openCache => LoadingSpritePanel.Bind(openCache));
-            /* Index 13 is one file per group with the group id as the font id, so like indexes 21 and
-               29 the shared list panel is the whole tab. Filed under Media beside Sprites because a
-               font's glyphs are an index-8 sprite set addressed by this same id - the metrics here
-               and the pixels there are one asset split across two indexes. */
+            /* Index 13 is one file per group with the group id as the font id, and it holds no pixels
+               at all. A font's glyphs are a 256-frame index-8 sprite set addressed by that same id, so
+               the metrics here and the pixels there are one asset split across two indexes and the tab
+               joins them: the shared list drives the fonts and the panes beside it show the glyph
+               grid, a live text preview and the kerning matrix. Registered against 13 and filed under
+               Media beside Sprites, which is the other half of what it draws. */
             Register(FontEditorTab, RSConstants.FONTS_INDEX, EditorCategory.Media,
-                openCache => FontPanel.Bind(openCache, fonts));
+                openCache => FontPanel.Bind(openCache));
             /* Index 12 is one compiled CS2 script per group and one file per group, so a script id is
                a group id. Two levels, because a script is an instruction stream: the list is the
                scripts and the panes beside it hold the selected script's instructions and switch

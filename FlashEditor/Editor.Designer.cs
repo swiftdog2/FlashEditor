@@ -1603,11 +1603,13 @@ namespace FlashEditor {
         //screens it categorises - so the panel selects the group and shows a record's fields below.
         private TabPage LoadingScreenEditorTab;
         private FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel LoadingScreenPanel = new FlashEditor.Definitions.LoadingScreens.LoadingScreenEditorPanel();
-        //Index 13, one file per group and the group id is the font id, so the shared list panel is
-        //the whole tab the way it is for indexes 21 and 29. The 256 advance widths are deliberately
-        //not columns: they belong beside the index-8 glyph sheet, where an edited width can be seen.
+        //Index 13, one file per group and the group id is the font id - but the record holds no
+        //pixels, so a flat list of it can only show nine numbers. The glyphs are a 256-frame sprite
+        //set at the same id in index 8, so the panel is master/detail: the shared list drives the
+        //fonts and the panes beside it hold the glyph grid, a live text preview and the kerning
+        //matrix. The 256 advance widths are per-character and belong in that grid, not in columns.
         private TabPage FontEditorTab;
-        private FlashEditor.Definitions.Editing.DefinitionListPanel FontPanel = new FlashEditor.Definitions.Editing.DefinitionListPanel();
+        private FlashEditor.Definitions.Fonts.FontEditorPanel FontPanel = new FlashEditor.Definitions.Fonts.FontEditorPanel();
         //Index 32, the pre-login art store, and the only index holding two unrelated payload formats
         //with no flag to tell them apart: 21 JPEG images and 5 Jagex glyph sheets in the vanilla b639
         //capture. The panel owns the shape dispatch, the preview and the replace path because the two
