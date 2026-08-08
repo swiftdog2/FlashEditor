@@ -64,14 +64,20 @@ namespace FlashEditor.Tests.Rendering
         ///     How far apart two copies of one rest coordinate may end up, in model units.
         /// </summary>
         /// <remarks>
-        ///     Not zero. Merging welds coincident vertices and keeps the <i>first</i> contributor's
-        ///     vertex label (<c>Model.java:1841</c> - <c>method2598</c> rewrites the source mask on a
-        ///     reused vertex and never its label), so a seam whose two parts label it differently
-        ///     follows one bone rather than being pulled apart by both. That is one vertex, not zero
-        ///     distance, and the residue it leaves is small and bounded. A model unit is about
-        ///     1/128th of a tile, so this is a hair either side of the seam rather than a detached limb.
+        ///     Zero, and it has to be. Merging welds coincident vertices into one
+        ///     (<c>Model.method2598</c>, <c>Model.java:1824-1848</c>), so both parts read their posed
+        ///     position out of the same composite vertex and land on the same point by construction
+        ///     rather than by arriving near it.
+        ///     <para>
+        ///     This was 16 for one commit, on the reasoning that keeping the first contributor's label
+        ///     on a disputed seam would leave a small residue. It does not - the weld removes the
+        ///     dispute rather than resolving it - and 16 was measured to swallow a real regression: with
+        ///     the weld disabled and only the pivots merged, this sweep reports a worst gap of 11 and a
+        ///     total of 11, which a tolerance of 16 passes silently. A tolerance that admits a failure
+        ///     does not test for it.
+        ///     </para>
         /// </remarks>
-        private const int MaximumSeamGap = 16;
+        private const int MaximumSeamGap = 0;
 
         private readonly RealCacheFixture fixture;
         private readonly ITestOutputHelper output;
