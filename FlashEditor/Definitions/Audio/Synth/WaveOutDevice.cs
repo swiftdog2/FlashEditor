@@ -1,0 +1,213 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace FlashEditor.Definitions.Audio.Synth {
+    /// <summary>
+    ///     A minimal streaming output device over the Windows multimedia <c>waveOut</c> API.
+    /// </summary>
+    /// <remarks>
+    ///     <b>Why <c>winmm</c> rather than a package.</b> This project had no audio output of any
+    ///     kind, so something had to be chosen. <c>winmm.dll</c> ships with every Windows this
+    ///     application already requires - the project is <c>net9.0-windows</c> with WinForms - so it
+    ///     adds no NuGet reference, no native redistributable and nothing to go stale. The
+    ///     alternatives each cost something this does not: NAudio is a package to track and a
+    ///     licence to carry for a few hundred lines of buffer plumbing, and OpenAL through the
+    ///     OpenTK reference the project already has needs <c>OpenAL32.dll</c> or <c>soft_oal.dll</c>
+    ///     present on the machine, which Windows does not provide.
+    ///     <para>
+    ///     What it costs: <c>waveOut</c> has higher latency than WASAPI and no shared-mode format
+    ///     negotiation. Neither matters for playing a track back in an editor, where the buffer is
+    ///     pre-rendered anyway.
+    ///     </para>
+    ///     <para>
+    ///     Buffers are pinned for as long as the driver holds them. A buffer released while the
+    ///     driver still owns it is a use-after-free inside the audio stack, which is why
+    ///     <see cref="Dispose"/> resets the device before it unprepares anything.
+    ///     </para>
+    /// </remarks>
+    public sealed class WaveOutDevice : IDisposable {
+        private const int MmsyscallNoError = 0;
+        private const int WaveMapper = -1;
+        private const int WaveFormatPcm = 1;
+        private const int WhdrDone = 0x00000001;
+        private const int WhdrPrepared = 0x00000002;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WaveFormatEx {
+            public short FormatTag;
+            public short Channels;
+            public int SamplesPerSecond;
+            public int AverageBytesPerSecond;
+            public short BlockAlign;
+            public short BitsPerSample;
+            public short Size;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WaveHeader {
+            public IntPtr Data;
+            public int BufferLength;
+            public int BytesRecorded;
+            public IntPtr User;
+            public int Flags;
+            public int Loops;
+            public IntPtr Next;
+            public IntPtr Reserved;
+        }
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutOpen(out IntPtr handle, int deviceId, ref WaveFormatEx format,
+            IntPtr callback, IntPtr instance, int flags);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutClose(IntPtr handle);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutReset(IntPtr handle);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutPrepareHeader(IntPtr handle, IntPtr header, int size);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutUnprepareHeader(IntPtr handle, IntPtr header, int size);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutWrite(IntPtr handle, IntPtr header, int size);
+
+        private readonly IntPtr[] headers;
+        private readonly IntPtr[] buffers;
+        private readonly int bufferBytes;
+        private readonly int headerSize;
+        private IntPtr handle;
+        private int next;
+        private bool disposed;
+
+        /// <summary>How many frames each buffer holds.</summary>
+        public int FramesPerBuffer { get; }
+
+        /// <summary>Opens the default output device.</summary>
+        /// <param name="sampleRate">Frames per second.</param>
+        /// <param name="framesPerBuffer">How many frames each queued buffer holds.</param>
+        /// <param name="bufferCount">How many buffers to cycle through.</param>
+        /// <exception cref="InvalidOperationException">The device would not open.</exception>
+        public WaveOutDevice(int sampleRate, int framesPerBuffer, int bufferCount) {
+            FramesPerBuffer = framesPerBuffer;
+            bufferBytes = framesPerBuffer * 2 * sizeof(short);
+            headerSize = Marshal.SizeOf<WaveHeader>();
+
+            var format = new WaveFormatEx {
+                FormatTag = WaveFormatPcm,
+                Channels = 2,
+                SamplesPerSecond = sampleRate,
+                BitsPerSample = 16,
+                BlockAlign = 4,
+                AverageBytesPerSecond = sampleRate * 4,
+                Size = 0
+            };
+
+            int result = waveOutOpen(out handle, WaveMapper, ref format, IntPtr.Zero, IntPtr.Zero, 0);
+            if (result != MmsyscallNoError)
+                throw new InvalidOperationException(
+                    "waveOutOpen failed with " + result + "; there is no usable output device.");
+
+            headers = new IntPtr[bufferCount];
+            buffers = new IntPtr[bufferCount];
+            for (int i = 0; i < bufferCount; i++) {
+                buffers[i] = Marshal.AllocHGlobal(bufferBytes);
+                headers[i] = Marshal.AllocHGlobal(headerSize);
+                Marshal.StructureToPtr(new WaveHeader(), headers[i], false);
+            }
+        }
+
+        /// <summary>Whether the next buffer in the cycle is free for writing.</summary>
+        /// <remarks>
+        ///     The driver sets <c>WHDR_DONE</c> when it has finished with a buffer. Polling it is
+        ///     enough here because the caller renders on its own thread and can afford to sleep;
+        ///     a callback would buy lower latency and cost a marshalled delegate that has to outlive
+        ///     the device.
+        /// </remarks>
+        public bool CanWrite {
+            get {
+                var header = Marshal.PtrToStructure<WaveHeader>(headers[next]);
+                return (header.Flags & WhdrPrepared) == 0 || (header.Flags & WhdrDone) != 0;
+            }
+        }
+
+        /// <summary>Queues one buffer of interleaved stereo frames.</summary>
+        /// <param name="samples">The audio, two shorts per frame.</param>
+        /// <param name="frames">How many frames of it to play.</param>
+        /// <exception cref="InvalidOperationException">The device rejected the buffer.</exception>
+        public void Write(short[] samples, int frames) {
+            if (samples == null)
+                throw new ArgumentNullException(nameof(samples));
+            if (disposed)
+                return;
+
+            IntPtr headerPointer = headers[next];
+            var header = Marshal.PtrToStructure<WaveHeader>(headerPointer);
+            if ((header.Flags & WhdrPrepared) != 0) {
+                int unprepared = waveOutUnprepareHeader(handle, headerPointer, headerSize);
+                if (unprepared != MmsyscallNoError)
+                    throw new InvalidOperationException("waveOutUnprepareHeader failed with " + unprepared + ".");
+            }
+
+            int bytes = Math.Min(bufferBytes, frames * 2 * sizeof(short));
+            Marshal.Copy(samples, 0, buffers[next], bytes / sizeof(short));
+
+            header = new WaveHeader { Data = buffers[next], BufferLength = bytes };
+            Marshal.StructureToPtr(header, headerPointer, false);
+
+            int prepared = waveOutPrepareHeader(handle, headerPointer, headerSize);
+            if (prepared != MmsyscallNoError)
+                throw new InvalidOperationException("waveOutPrepareHeader failed with " + prepared + ".");
+
+            int written = waveOutWrite(handle, headerPointer, headerSize);
+            if (written != MmsyscallNoError)
+                throw new InvalidOperationException("waveOutWrite failed with " + written + ".");
+
+            next = (next + 1) % headers.Length;
+        }
+
+        /// <summary>Stops playback immediately and returns every queued buffer.</summary>
+        public void Stop() {
+            if (handle != IntPtr.Zero)
+                waveOutReset(handle);
+        }
+
+        /// <summary>Closes the device and frees every pinned buffer.</summary>
+        /// <remarks>
+        ///     The reset comes first on purpose: freeing a buffer the driver is still reading is a
+        ///     use-after-free inside the audio stack, which shows up as an intermittent crash a long
+        ///     way from here.
+        /// </remarks>
+        public void Dispose() {
+            if (disposed)
+                return;
+
+            disposed = true;
+
+            if (handle != IntPtr.Zero) {
+                waveOutReset(handle);
+
+                for (int i = 0; i < headers.Length; i++) {
+                    var header = Marshal.PtrToStructure<WaveHeader>(headers[i]);
+                    if ((header.Flags & WhdrPrepared) != 0)
+                        waveOutUnprepareHeader(handle, headers[i], headerSize);
+                }
+
+                waveOutClose(handle);
+                handle = IntPtr.Zero;
+            }
+
+            for (int i = 0; i < headers.Length; i++) {
+                if (buffers[i] != IntPtr.Zero)
+                    Marshal.FreeHGlobal(buffers[i]);
+                if (headers[i] != IntPtr.Zero)
+                    Marshal.FreeHGlobal(headers[i]);
+
+                buffers[i] = IntPtr.Zero;
+                headers[i] = IntPtr.Zero;
+            }
+        }
+    }
+}
