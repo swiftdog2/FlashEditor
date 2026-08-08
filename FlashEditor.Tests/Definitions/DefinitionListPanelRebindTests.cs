@@ -180,10 +180,10 @@ namespace FlashEditor.Tests.Definitions {
         ///     stops it is the completion handler refusing to publish unless it is still the panel's
         ///     current worker.
         ///     <para>
-        ///     Driven by swapping without pumping in between, so the first load's completion is
-        ///     necessarily still queued when the second bind happens. A regression here would show
-        ///     as item rows under object columns - the same crash by a different route - so the
-        ///     assertion is on what the panel published rather than only on the absence of a throw.
+        ///     The first load is waited for until it has decoded every row and <b>not</b> pumped, so
+        ///     its completion is provably queued rather than merely likely to be: swapping without
+        ///     waiting at all instead lets the worker take the cancelled path, and the test then
+        ///     passes with the guard deleted, which was measured rather than assumed.
         ///     </para>
         /// </remarks>
         [Fact]
@@ -193,16 +193,71 @@ namespace FlashEditor.Tests.Definitions {
                 var panel = new DefinitionListPanel();
                 form.Controls.Add(panel);
 
-                panel.Bind(cache, new ItemListDescriptor());
+                var items = new SignallingItemDescriptor(FileIds.Length);
+                panel.Bind(cache, items);
 
-                //No pump: the items load cannot have published, whether or not it has finished.
+                //Waited for, never pumped: the worker runs on the pool, so it finishes without this
+                //thread dispatching anything, and its completion is left sitting in the queue.
+                Assert.True(items.EveryRowDecoded.Wait(TimeSpan.FromSeconds(10)),
+                    "The superseded load never decoded its rows.");
+                Thread.Sleep(100);
+
                 panel.Bind(cache, new ObjectListDescriptor());
                 PumpUntilLoaded(panel, "objects");
 
                 Assert.NotEmpty(panel.Rows);
                 Assert.All(panel.Rows, row => Assert.IsType<ObjectDefinition>(row));
-                _output.WriteLine($"superseded load discarded, {panel.Rows.Count} object rows published");
+                _output.WriteLine($"superseded load discarded after decoding {FileIds.Length} rows, " +
+                                  $"{panel.Rows.Count} object rows published");
             });
+        }
+
+        /// <summary>
+        ///     The item descriptor, with a signal for when its last row has been decoded.
+        /// </summary>
+        /// <remarks>
+        ///     So the test can tell the difference between a load that was cancelled on the way in
+        ///     and one that ran to the end and had its result thrown away at the door. Only the
+        ///     second exercises the guard, and a synthetic index this small takes the first unless
+        ///     something waits.
+        /// </remarks>
+        private sealed class SignallingItemDescriptor : DefinitionListDescriptor<ItemDefinition> {
+            private readonly ItemListDescriptor _inner = new ItemListDescriptor();
+            private readonly int _expected;
+            private int _decoded;
+
+            /// <summary>Signals a descriptor that reports when it has decoded every row.</summary>
+            /// <param name="expected">How many rows the index holds.</param>
+            internal SignallingItemDescriptor(int expected) {
+                _expected = expected;
+            }
+
+            /// <summary>Set once every row has been decoded.</summary>
+            internal ManualResetEventSlim EveryRowDecoded { get; } = new ManualResetEventSlim(false);
+
+            /// <inheritdoc/>
+            public override int IndexId => _inner.IndexId;
+
+            /// <inheritdoc/>
+            public override string RowNoun => _inner.RowNoun;
+
+            /// <inheritdoc/>
+            public override IReadOnlyList<DefinitionColumn> Columns => _inner.Columns;
+
+            /// <inheritdoc/>
+            public override ItemDefinition Decode(RSCache cache, DefinitionAddress address, JagStream payload) {
+                ItemDefinition row = _inner.Decode(cache, address, payload);
+
+                if (Interlocked.Increment(ref _decoded) == _expected)
+                    EveryRowDecoded.Set();
+
+                return row;
+            }
+
+            /// <inheritdoc/>
+            public override DefinitionAddress AddressOf(ItemDefinition row) {
+                return _inner.AddressOf(row);
+            }
         }
 
         /// <summary>The grid the panel docks, which it adds to its own <c>Controls</c>.</summary>
