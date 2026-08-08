@@ -142,6 +142,19 @@ namespace FlashEditor {
             ModelViewerTab = new TabPage();
             splitContainer1 = new SplitContainer();
             glControl = new OpenTK.GLControl.GLControl();
+            ViewerToolPanel = new FlowLayoutPanel();
+            AnimationSelectorLabel = new Label();
+            AnimationSelector = new ComboBox();
+            AnimationPlayButton = new Button();
+            AnimationPauseButton = new Button();
+            AnimationRewindButton = new Button();
+            AnimationLoopCheck = new CheckBox();
+            ViewerWireframeCheck = new CheckBox();
+            ViewerHoverIndexCheck = new CheckBox();
+            ViewerParticleCheck = new CheckBox();
+            ViewerReadoutLabel = new Label();
+            ViewerStatusLabel = new Label();
+            ViewerLimitsLabel = new Label();
             ModelListView = new FastObjectListView();
             ModelID = new OLVColumn();
             ModelLoadingLabel = new Label();
@@ -210,6 +223,7 @@ namespace FlashEditor {
             splitContainer1.Panel1.SuspendLayout();
             splitContainer1.Panel2.SuspendLayout();
             splitContainer1.SuspendLayout();
+            ViewerToolPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) ModelListView).BeginInit();
             TextureViewerTab.SuspendLayout();
             TextureStatusPanel.SuspendLayout();
@@ -1434,11 +1448,15 @@ namespace FlashEditor {
             splitContainer1.Name = "splitContainer1";
             // 
             // splitContainer1.Panel1
-            // 
+            //
+            // Docking is resolved from the end of the Controls collection backwards, so the Fill'd
+            // GL surface has to be added before the bottom strip or it claims the whole panel and
+            // the transport controls get no height at all. Same ordering as TextureViewerTab.
             splitContainer1.Panel1.Controls.Add(glControl);
-            // 
+            splitContainer1.Panel1.Controls.Add(ViewerToolPanel);
+            //
             // splitContainer1.Panel2
-            // 
+            //
             splitContainer1.Panel2.Controls.Add(ModelListView);
             splitContainer1.Panel2.Controls.Add(ModelLoadingLabel);
             splitContainer1.Panel2.Controls.Add(ModelProgressBar);
@@ -1448,18 +1466,146 @@ namespace FlashEditor {
             // 
             // glControl
             // 
-            glControl.Anchor =  AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            // Docked rather than anchored to a literal size, so the strip below it can take the
+            // height it needs. The control is not reparented and no second GLControl is created:
+            // there is one GL context in the application and every path here shares it.
+            glControl.Dock = DockStyle.Fill;
             glControl.API = OpenTK.Windowing.Common.ContextAPI.OpenGL;
             glControl.APIVersion = new Version(3, 3, 0, 0);
             glControl.Flags = OpenTK.Windowing.Common.ContextFlags.Default;
             glControl.IsEventDriven = true;
-            glControl.Location = new Point(3, 3);
             glControl.Name = "glControl";
             glControl.Profile = OpenTK.Windowing.Common.ContextProfile.Core;
             glControl.SharedContext = null;
-            glControl.Size = new Size(856, 548);
             glControl.TabIndex = 0;
-            // 
+            //
+            // ViewerToolPanel
+            //
+            // AutoSize and wrapping rather than a stated height: the strip holds captions, and a
+            // literal height is only correct at the DPI it was measured at. It wraps so a narrow
+            // viewport stacks the readouts instead of clipping them.
+            ViewerToolPanel.AutoSize = true;
+            ViewerToolPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ViewerToolPanel.Dock = DockStyle.Bottom;
+            ViewerToolPanel.FlowDirection = FlowDirection.LeftToRight;
+            ViewerToolPanel.Name = "ViewerToolPanel";
+            ViewerToolPanel.WrapContents = true;
+            ViewerToolPanel.Controls.Add(AnimationSelectorLabel);
+            ViewerToolPanel.Controls.Add(AnimationSelector);
+            ViewerToolPanel.Controls.Add(AnimationPlayButton);
+            ViewerToolPanel.Controls.Add(AnimationPauseButton);
+            ViewerToolPanel.Controls.Add(AnimationRewindButton);
+            ViewerToolPanel.Controls.Add(AnimationLoopCheck);
+            ViewerToolPanel.Controls.Add(ViewerWireframeCheck);
+            ViewerToolPanel.Controls.Add(ViewerHoverIndexCheck);
+            ViewerToolPanel.Controls.Add(ViewerParticleCheck);
+            ViewerToolPanel.Controls.Add(ViewerReadoutLabel);
+            ViewerToolPanel.Controls.Add(ViewerStatusLabel);
+            ViewerToolPanel.Controls.Add(ViewerLimitsLabel);
+            //
+            // AnimationSelectorLabel
+            //
+            AnimationSelectorLabel.AutoSize = true;
+            AnimationSelectorLabel.Name = "AnimationSelectorLabel";
+            AnimationSelectorLabel.Text = "Animation";
+            AnimationSelectorLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
+            // AnimationSelector
+            //
+            // Editable rather than a drop-down list: index 20 declares over fifteen thousand
+            // animations, and scrolling to one of those in a list box is not a selection mechanism -
+            // an id is typed in and Play resolves it. Auto-complete is deliberately off: ListItems
+            // builds its match set from every item, and doing that over fifteen thousand of them
+            // stalls the UI thread on the first keystroke. The combo's own incremental keyboard
+            // search still jumps to a typed id.
+            AnimationSelector.AutoCompleteMode = AutoCompleteMode.None;
+            AnimationSelector.DropDownStyle = ComboBoxStyle.DropDown;
+            AnimationSelector.Name = "AnimationSelector";
+            AnimationSelector.SelectedIndexChanged += AnimationSelector_SelectionChanged;
+            //
+            // AnimationPlayButton
+            //
+            AnimationPlayButton.AutoSize = true;
+            AnimationPlayButton.Name = "AnimationPlayButton";
+            AnimationPlayButton.Text = "Play";
+            AnimationPlayButton.UseVisualStyleBackColor = true;
+            AnimationPlayButton.Click += AnimationPlayButton_Click;
+            //
+            // AnimationPauseButton
+            //
+            AnimationPauseButton.AutoSize = true;
+            AnimationPauseButton.Name = "AnimationPauseButton";
+            AnimationPauseButton.Text = "Pause";
+            AnimationPauseButton.UseVisualStyleBackColor = true;
+            AnimationPauseButton.Click += AnimationPauseButton_Click;
+            //
+            // AnimationRewindButton
+            //
+            AnimationRewindButton.AutoSize = true;
+            AnimationRewindButton.Name = "AnimationRewindButton";
+            AnimationRewindButton.Text = "Rewind";
+            AnimationRewindButton.UseVisualStyleBackColor = true;
+            AnimationRewindButton.Click += AnimationRewindButton_Click;
+            //
+            // AnimationLoopCheck
+            //
+            AnimationLoopCheck.AutoSize = true;
+            AnimationLoopCheck.Name = "AnimationLoopCheck";
+            AnimationLoopCheck.Text = "Loop";
+            AnimationLoopCheck.UseVisualStyleBackColor = true;
+            AnimationLoopCheck.CheckedChanged += AnimationLoopCheck_CheckedChanged;
+            //
+            // ViewerWireframeCheck
+            //
+            ViewerWireframeCheck.AutoSize = true;
+            ViewerWireframeCheck.Name = "ViewerWireframeCheck";
+            ViewerWireframeCheck.Text = "Wireframe";
+            ViewerWireframeCheck.UseVisualStyleBackColor = true;
+            ViewerWireframeCheck.CheckedChanged += ViewerOverlayToggle_CheckedChanged;
+            //
+            // ViewerHoverIndexCheck
+            //
+            ViewerHoverIndexCheck.AutoSize = true;
+            ViewerHoverIndexCheck.Checked = true;
+            ViewerHoverIndexCheck.CheckState = CheckState.Checked;
+            ViewerHoverIndexCheck.Name = "ViewerHoverIndexCheck";
+            ViewerHoverIndexCheck.Text = "Index overlay";
+            ViewerHoverIndexCheck.UseVisualStyleBackColor = true;
+            ViewerHoverIndexCheck.CheckedChanged += ViewerOverlayToggle_CheckedChanged;
+            //
+            // ViewerParticleCheck
+            //
+            ViewerParticleCheck.AutoSize = true;
+            ViewerParticleCheck.Checked = true;
+            ViewerParticleCheck.CheckState = CheckState.Checked;
+            ViewerParticleCheck.Name = "ViewerParticleCheck";
+            ViewerParticleCheck.Text = "Particles";
+            ViewerParticleCheck.UseVisualStyleBackColor = true;
+            ViewerParticleCheck.CheckedChanged += ViewerOverlayToggle_CheckedChanged;
+            //
+            // ViewerReadoutLabel
+            //
+            ViewerReadoutLabel.AutoSize = true;
+            ViewerReadoutLabel.Name = "ViewerReadoutLabel";
+            ViewerReadoutLabel.Text = "frame - / -";
+            ViewerReadoutLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
+            // ViewerStatusLabel
+            //
+            ViewerStatusLabel.AutoSize = true;
+            ViewerStatusLabel.Name = "ViewerStatusLabel";
+            ViewerStatusLabel.Text = "No model loaded.";
+            ViewerStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
+            // ViewerLimitsLabel
+            //
+            // Says what the viewer deliberately does not do, because a user comparing it against the
+            // game has no other way to tell a documented omission from a defect.
+            ViewerLimitsLabel.AutoSize = true;
+            ViewerLimitsLabel.Name = "ViewerLimitsLabel";
+            ViewerLimitsLabel.Text = "Viewer omits frame blending, scene lighting and particle scene collision.";
+            ViewerLimitsLabel.TextAlign = ContentAlignment.MiddleLeft;
+            //
             // ModelListView
             // 
             ModelListView.Columns.AddRange(new ColumnHeader[] { ModelID });
@@ -1846,6 +1992,8 @@ namespace FlashEditor {
             groupBox5.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) GameObjectListView).EndInit();
             ModelViewerTab.ResumeLayout(false);
+            ViewerToolPanel.ResumeLayout(false);
+            ViewerToolPanel.PerformLayout();
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);
             splitContainer1.Panel2.PerformLayout();
@@ -2075,6 +2223,19 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn TextureImage;
         private SplitContainer splitContainer1;
         private OpenTK.GLControl.GLControl glControl;
+        private FlowLayoutPanel ViewerToolPanel;
+        private Label AnimationSelectorLabel;
+        private ComboBox AnimationSelector;
+        private Button AnimationPlayButton;
+        private Button AnimationPauseButton;
+        private Button AnimationRewindButton;
+        private CheckBox AnimationLoopCheck;
+        private CheckBox ViewerWireframeCheck;
+        private CheckBox ViewerHoverIndexCheck;
+        private CheckBox ViewerParticleCheck;
+        private Label ViewerReadoutLabel;
+        private Label ViewerStatusLabel;
+        private Label ViewerLimitsLabel;
         private FastObjectListView ModelListView;
         private OLVColumn ModelID;
         private Label ModelLoadingLabel;
