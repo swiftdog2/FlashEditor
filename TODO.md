@@ -169,6 +169,24 @@ tools/Capture-EditorTab.ps1 on every tab you touch. Capture before and after. Co
 
 ### 19. Cross-navigation: make every id that points somewhere clickable
 
+**The back stack is built and tested** (`FlashEditor/UI/EditorNavigator.cs`), and so is the column
+that raises the click: `DefinitionColumn.Link` draws an activatable id and
+`DefinitionListPanel.CellActivated` fires with the index and the id it named. The Config tab's
+texture column already uses it. **What is left is the routing and the joins.**
+
+Three things the next person needs before starting:
+
+- **`EditorNavigator` deliberately knows nothing about tabs.** It records places in the cache. The
+  form turns a place into a tab and a row, using `Editor.editorTabs`, a
+  `Dictionary<TabPage, EditorTabBinding>` whose binding carries the index id. Selecting the *row*
+  is per-tab work: `DefinitionListPanel.SelectRow` exists and takes the row object, so each tab
+  needs a small "find the row for this id" of its own.
+- **Handle `Navigated` by selecting, and report the user's own selections back through
+  `RecordVisit`.** The navigator already guards the re-entrancy that creates, and there is a test
+  that fails if the guard is removed - without it Back appears to work once and then sticks.
+- **`Clear()` on every cache open**, or the history offers to return to a record id that means
+  something different in the cache now open.
+
 **There is not one "go to" link anywhere in the application.** A repo-wide search for `GoTo`,
 `LinkLabel` or `Hyperlink` finds nothing outside client-script jump arithmetic. The cache is almost
 entirely made of ids pointing at other ids, and every one of them is currently a dead end.
