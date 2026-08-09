@@ -322,10 +322,27 @@ namespace FlashEditor.Tests.Definitions
         ///     Exactly one type 25 node exists in this cache, in texture 911, and its child is a
         ///     monochrome chain - so with the node inert the texture renders grey. The anchor is
         ///     the cache's own declared colour for the texture, which the evaluator plays no part
-        ///     in producing: pass-through renders (82, 82, 82) against a declared (72, 63, 48),
-        ///     and the client's scale renders (77, 64, 45). Both assertions below fail on the
-        ///     pass-through, the second of them by the widest possible margin, since a grey
-        ///     render has zero chroma no matter what the threshold is.
+        ///     in producing.
+        ///
+        ///     <para>
+        ///     Both assertions are on the <em>ratios</em> between the channels rather than on their
+        ///     absolute values, and that is a deliberate re-anchoring. This test used to require the
+        ///     render's mean to sit within 8 of the declared colour, which held while a monochrome
+        ///     type 7 blend evaluated to a flat mid-grey and stopped holding the moment that arm was
+        ///     implemented: 911 carries two of them, in modes 5 and 7, both brighteners, and its
+        ///     mean moved from (78, 64, 46) to (97, 83, 61) against a declared (72, 63, 48). The
+        ///     brightness anchor was therefore calibrated against a defect.
+        ///     </para>
+        ///     <para>
+        ///     Dropping it costs nothing this test exists to buy, because absolute brightness is not
+        ///     what type 25 does. It scales the three channels <em>apart</em>, so what proves it ran
+        ///     is the shape of the result: normalised against its own strongest channel the render
+        ///     is (1.000, 0.856, 0.629) against the declared (1.000, 0.875, 0.667), a worst-channel
+        ///     deviation of 0.038 - and under the old flat-blend render it was 0.077, so the
+        ///     assertion is sharper now as well as still true. A pass-through renders grey, whose
+        ///     ratios are (1, 1, 1) and whose deviation is 0.333, so the defect this was written for
+        ///     still fails it by a factor of nine.
+        ///     </para>
         /// </remarks>
         [RealCacheFact]
         public void ColourKeyNode_TintsTexture911TowardItsDeclaredColour()
@@ -366,16 +383,49 @@ namespace FlashEditor.Tests.Definitions
             }
             int mr = (int)(r / pixels.Length), mg = (int)(g / pixels.Length), mb = (int)(b / pixels.Length);
 
-            double error = ChannelError(mr, mg, mb, TextureManager.RepresentativeRgb(def));
-            Assert.True(error < 8,
-                $"Texture 911 renders ({mr}, {mg}, {mb}), a channel error of {error:F1} against its " +
-                "declared colour. The type 25 colour-key scale is not being applied.");
+            int declared = TextureManager.RepresentativeRgb(def);
+            double deviation = ChannelRatioDeviation(mr, mg, mb, declared);
+            Assert.True(deviation < 0.10,
+                $"Texture 911 renders ({mr}, {mg}, {mb}), whose channel ratios deviate by " +
+                $"{deviation:F3} from its declared colour's. The type 25 colour-key scale is not " +
+                "scaling the channels into the declared proportions.");
 
             int chroma = Math.Max(mr, Math.Max(mg, mb)) - Math.Min(mr, Math.Min(mg, mb));
             Assert.True(chroma >= 20,
                 $"Texture 911 renders ({mr}, {mg}, {mb}), a chroma of {chroma}. Its colour output " +
                 "is a monochrome chain, so the only thing that can give it a colour is the type " +
                 "25 node scaling the channels apart.");
+        }
+
+        /// <summary>
+        ///     How far a render's channel proportions sit from a declared colour's.
+        /// </summary>
+        /// <remarks>
+        ///     Each triple is normalised against its own strongest channel before they are compared,
+        ///     so this measures hue and saturation and ignores brightness entirely. That is the
+        ///     right shape for anything asking whether a node scaled the channels apart, and the
+        ///     wrong one for anything asking how bright a texture is - <see cref="ChannelError"/>
+        ///     is still the measure for that, and the cache-wide sweep above uses it.
+        /// </remarks>
+        /// <param name="r">Rendered mean red.</param>
+        /// <param name="g">Rendered mean green.</param>
+        /// <param name="b">Rendered mean blue.</param>
+        /// <param name="rgb">The declared colour, packed.</param>
+        /// <returns>The largest per-channel difference between the two normalised triples.</returns>
+        private static double ChannelRatioDeviation(int r, int g, int b, int rgb)
+        {
+            int dr = (rgb >> 16) & 0xFF, dg = (rgb >> 8) & 0xFF, db = rgb & 0xFF;
+
+            //A black render or a black declared colour has no proportions at all, so it cannot
+            //agree with anything. Reported as total disagreement rather than as a division by zero.
+            double renderPeak = Math.Max(r, Math.Max(g, b));
+            double declaredPeak = Math.Max(dr, Math.Max(dg, db));
+            if (renderPeak <= 0 || declaredPeak <= 0)
+                return 1.0;
+
+            return Math.Max(Math.Abs(r / renderPeak - dr / declaredPeak),
+                Math.Max(Math.Abs(g / renderPeak - dg / declaredPeak),
+                    Math.Abs(b / renderPeak - db / declaredPeak)));
         }
 
         private static double ChannelError(int r, int g, int b, int rgb) =>
