@@ -520,10 +520,10 @@ behaviour work; 26h is the only one that touches the archive layer.
 | **26a** | The layout resolver: four mode bytes to a pixel rectangle, ported from the client | nothing | **done** |
 | **26b** | The component tree from the parent field, in file-id draw order | nothing | **done** |
 | **26c** | Static rendering of types 0, 3, 4, 5, 6 and 9 onto a canvas | 26a, item 18 | **done** |
-| **26d** | Direct manipulation: select, move, resize, marquee, snap, nudge | 26c | open. Select and pick are done; move, resize, marquee, snap and nudge are not |
-| **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | open, and wants 18.3 |
+| **26d** | Direct manipulation: select, move, resize, marquee, snap, nudge | 26c | **mostly done** - select, move, resize and nudge. **Marquee, multi-select and snap are still open** |
+| **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | **done** for the component's shared colour and its text. The remaining colour fields - outline, and the type-specific ones - are not yet swatched |
 | **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing | **done** |
-| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | open. 26f settled the slot mapping against `unpackConfig`'s read order |
+| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | open, **and the hard half is already paid**. See below |
 | **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | open |
 
 **Three findings from 26a that bind everything after it.** Each was caught by review before any
@@ -543,6 +543,28 @@ code was written, and each would otherwise have become a test asserting a defect
 **And one about the clip rule, which no test that does not draw can see:** a type-9 line extends its
 clip one pixel right and down, because its endpoint is inclusive. Both caches hold 367 lines and the
 omission clips the last pixel off every one.
+
+**26g's hard half is already done, and whoever picks it up should start from it rather than the
+client.** 26f produced the full stored-slot mapping in `ClientScriptOpcodes.AddComponentHooks`: each
+of the twenty wire slots against the CS2 opcode that writes it and the client field it lands in,
+checkable against `RSInterface.unpackConfig`'s read order at `RSInterface.java:1308-1340`. Three
+things it settled that the panel has to respect:
+
+- **Slot 0 has no setter at all.** It is the hook the client fires itself over every component as an
+  interface opens (`Class247.java:4130-4136`). A panel listing "the opcode that sets this" must say
+  "none, the client fires it" rather than leaving the cell blank.
+- **Slots 5, 6, 7, 18 and 19 pair with the five trigger arrays**, and their CS2 setters assign the
+  hook and its triggers in one statement. Showing a hook without its triggers shows half the record.
+- **Ten CS2 opcodes, 1418 to 1427, set hook arrays that are not in the wire format at all.** Do not
+  go looking for them in the bytes, and do not give them a row.
+
+**Do not name the twenty slots after events.** 26f deliberately refused to: which event fires which
+array is decided outside the dispatcher, so `on-click` would be invented rather than derived. Name
+the storage and the setter, which are both checkable.
+
+**Anything that edits geometry must invert the mode, not add a delta**, and must use
+`InterfaceLayoutResolver.ParentExtentsFor` to get the extents to invert against. Both are already
+built and both have a test that fails loudly if they are bypassed.
 
 ```
 Read CLAUDE.md, AGENTS.md, the UI conventions section, and reference/index-architect-03.md first.
