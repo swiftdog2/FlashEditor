@@ -23,6 +23,20 @@
 
 .PARAMETER LaunchSeconds
     How long to wait for the main window to appear and the cache to open.
+
+.PARAMETER SelectRow
+    Zero-based index of a grid row to select once the tab is open, or -1 to select nothing.
+
+    Without this the script captures a master/detail tab with its detail pane EMPTY, because
+    selecting the tab selects no record - so a shot of the Interfaces, Config, Entities or
+    Animation page shows the half of the page that was already working and none of the half
+    being changed. That is a screenshot of nothing, and it reads as a working capture.
+
+    ObjectListView reports through UI Automation as a Table whose rows are ListItems, not as a
+    List, which is why this looks for ListItems directly.
+
+.PARAMETER RowSettleSeconds
+    How long to wait after selecting the row. A detail pane loads on its own worker.
 #>
 [CmdletBinding()]
 param(
@@ -30,6 +44,8 @@ param(
     [Parameter(Mandatory)][string] $Out,
     [int] $SettleSeconds = 12,
     [int] $LaunchSeconds = 25,
+    [int] $SelectRow = -1,
+    [int] $RowSettleSeconds = 10,
     [string] $Exe
 )
 
@@ -105,6 +121,22 @@ try {
     $sel.Select()
     Write-Host "Selected '$($target.Current.Name)', settling $SettleSeconds s"
     Start-Sleep -Seconds $SettleSeconds
+
+    if ($SelectRow -ge 0) {
+        $itemCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::ListItem)
+        $rows = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $itemCond)
+
+        if ($rows.Count -le $SelectRow) {
+            throw "Row $SelectRow was asked for but the page has $($rows.Count) rows."
+        }
+
+        $row = $rows[$SelectRow]
+        $row.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+        Write-Host "Selected row $SelectRow '$($row.Current.Name)', settling $RowSettleSeconds s"
+        Start-Sleep -Seconds $RowSettleSeconds
+    }
 
     $r = New-Object Cap.Win+RECT
     [void][Cap.Win]::GetWindowRect($proc.MainWindowHandle, [ref]$r)
