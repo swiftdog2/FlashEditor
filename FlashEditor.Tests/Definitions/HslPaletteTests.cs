@@ -1,5 +1,6 @@
 using FlashEditor.Definitions;
 using Xunit;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Definitions
 {

@@ -12,6 +12,7 @@ using System.Windows.Forms;
 using System;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor {
     /// <summary>

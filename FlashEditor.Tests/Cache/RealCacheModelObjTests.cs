@@ -1,6 +1,6 @@
 using FlashEditor.Cache;
 using FlashEditor.Definitions;
-using FlashEditor.Definitions.ModelInterchange;
+using FlashEditor.Definitions.Models.Interchange;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
 using System.Collections.Generic;
@@ -8,6 +8,7 @@ using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Cache
 {

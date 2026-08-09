@@ -2,6 +2,7 @@ using FlashEditor;
 using Xunit;
 using FlashEditor.Definitions;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Entities;
 
 namespace FlashEditor.Tests.Definitions
 {

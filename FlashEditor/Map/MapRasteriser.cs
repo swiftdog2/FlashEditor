@@ -9,6 +9,8 @@ using FlashEditor.Definitions;
 using FlashEditor.Definitions.Sprites;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
+using FlashEditor.Definitions.Config;
+using FlashEditor.Definitions.Entities;
 
 namespace FlashEditor.Map {
     /// <summary>Layers a <see cref="MapRasteriser"/> can draw.</summary>

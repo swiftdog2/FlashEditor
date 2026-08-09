@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions
+namespace FlashEditor.Definitions.Entities
 {
     /// <summary>
     /// Represents a single "loc" / world-object definition.

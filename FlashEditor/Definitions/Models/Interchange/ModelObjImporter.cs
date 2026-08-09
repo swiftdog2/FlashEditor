@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     Writes an OBJ's vertices and faces back over a model, and nothing else.
     /// </summary>

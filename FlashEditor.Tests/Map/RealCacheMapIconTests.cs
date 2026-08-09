@@ -10,6 +10,8 @@ using FlashEditor.Map;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Config;
+using FlashEditor.Definitions.Entities;
 
 namespace FlashEditor.Tests.Map
 {

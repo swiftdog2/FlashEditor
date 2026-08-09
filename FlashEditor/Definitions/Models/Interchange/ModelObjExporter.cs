@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     Writes a model out as OBJ: vertices, faces, texture coordinates where there are any, and
     ///     a material per distinct appearance.

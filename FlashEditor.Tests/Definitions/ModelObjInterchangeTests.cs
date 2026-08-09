@@ -1,12 +1,13 @@
 using FlashEditor;
 using FlashEditor.Definitions;
-using FlashEditor.Definitions.ModelInterchange;
+using FlashEditor.Definitions.Models.Interchange;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Xunit;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Definitions
 {

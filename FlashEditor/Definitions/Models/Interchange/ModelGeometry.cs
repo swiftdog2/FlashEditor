@@ -1,6 +1,6 @@
 using System;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     The part of a model OBJ can express: absolute vertex coordinates and the three vertices
     ///     of each face.

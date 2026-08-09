@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FlashEditor.Collections {
+namespace FlashEditor.Utils {
     public static class ArrayUtil {
         /// <summary>
         /// Instantiates a 2-dimensional array for a given Type

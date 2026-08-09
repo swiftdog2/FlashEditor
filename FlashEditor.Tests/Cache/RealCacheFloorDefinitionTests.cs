@@ -6,6 +6,7 @@ using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Config;
 
 namespace FlashEditor.Tests.Cache
 {

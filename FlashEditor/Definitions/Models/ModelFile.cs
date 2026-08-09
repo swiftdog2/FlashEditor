@@ -1,7 +1,7 @@
 using System;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Models {
     /// <summary>
     ///     Which of index 7's three on-disk layouts a model uses.
     /// </summary>

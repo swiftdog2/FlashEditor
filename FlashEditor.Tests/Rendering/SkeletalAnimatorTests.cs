@@ -5,6 +5,7 @@ using FlashEditor.Definitions;
 using FlashEditor.Definitions.Animation;
 using FlashEditor.Rendering;
 using Xunit;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Rendering
 {

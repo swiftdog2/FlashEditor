@@ -4,6 +4,7 @@ using System.Numerics;
 using FlashEditor.Definitions;
 using FlashEditor.Rendering;
 using Xunit;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Rendering
 {

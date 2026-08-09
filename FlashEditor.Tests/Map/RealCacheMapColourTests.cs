@@ -5,6 +5,7 @@ using FlashEditor.Definitions;
 using FlashEditor.Map;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
+using FlashEditor.Definitions.Config;
 
 namespace FlashEditor.Tests.Map
 {

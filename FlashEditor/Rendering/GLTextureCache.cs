@@ -7,7 +7,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using static FlashEditor.Utils.DebugUtil;
 
-namespace FlashEditor
+namespace FlashEditor.Rendering
 {
     /// <summary>
     /// Creates OpenGL texture objects from cache texture definitions and memoises them.

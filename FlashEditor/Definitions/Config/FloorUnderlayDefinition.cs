@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Config {
     /// <summary>
     ///     A floor underlay: the base ground colour of a tile.
     /// </summary>

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using System;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Rendering
 {

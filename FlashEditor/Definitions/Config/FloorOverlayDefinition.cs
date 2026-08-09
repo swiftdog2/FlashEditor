@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Config {
     /// <summary>
     ///     A floor overlay: the shaped patch drawn over a tile's underlay, such as a path, a rug or
     ///     water.

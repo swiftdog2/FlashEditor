@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     The text an export produced: the OBJ, and the material library it names.
     /// </summary>

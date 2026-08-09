@@ -1,6 +1,6 @@
 using System;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     Thrown when an OBJ cannot be read, or when the mesh it holds cannot be written back over
     ///     a model without losing something the format carries and OBJ does not.

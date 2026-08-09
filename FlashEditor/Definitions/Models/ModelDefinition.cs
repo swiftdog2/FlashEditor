@@ -3,7 +3,7 @@ using System;
 using System.IO;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Models {
     /// <summary>
     ///     A model from index 7, in the form the viewer wants it.
     /// </summary>

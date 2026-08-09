@@ -12,6 +12,9 @@ using System.Linq;
 using System.Text;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Config;
+using FlashEditor.Definitions.Entities;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Cache {
     public class RSCache {

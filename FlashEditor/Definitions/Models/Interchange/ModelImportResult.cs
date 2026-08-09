@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>What an import did with one part of a model.</summary>
     public enum ModelImportDisposition {
         /// <summary>Taken from the OBJ, overwriting what the model held.</summary>

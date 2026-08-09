@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     Writes a new mesh into a model, replacing the vertex and face blocks and keeping every
     ///     other array the file already held.

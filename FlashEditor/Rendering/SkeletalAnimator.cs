@@ -3,6 +3,7 @@ using System.Globalization;
 using System;
 using FlashEditor.Definitions.Animation;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Rendering
 {

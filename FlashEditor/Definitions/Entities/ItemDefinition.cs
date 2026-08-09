@@ -5,7 +5,7 @@ using System.Text;
 using FlashEditor.Definitions;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Entities {
     /// <summary>
     /// RuneScape "obj" (item-definition) – rev 639
     /// Opcode table sourced from decompiled rev 640 client (openrs2-nonfree639).

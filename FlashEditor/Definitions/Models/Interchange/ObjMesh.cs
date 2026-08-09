@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FlashEditor.Definitions.ModelInterchange {
+namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
     ///     One <c>v</c> line: a position in the OBJ's own coordinate space.
     /// </summary>

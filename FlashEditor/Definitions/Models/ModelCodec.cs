@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Models {
     /// <summary>
     ///     Reads and writes index 7's three model layouts, byte for byte.
     /// </summary>

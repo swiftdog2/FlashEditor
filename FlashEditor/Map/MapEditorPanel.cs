@@ -9,6 +9,7 @@ using FlashEditor.Definitions;
 using FlashEditor.UI;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
+using FlashEditor.Definitions.Entities;
 
 namespace FlashEditor.Map {
     /// <summary>

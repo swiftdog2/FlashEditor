@@ -5,6 +5,7 @@ using Xunit;
 using Xunit.Abstractions;
 using FlashEditor.Definitions;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Entities;
 
 namespace FlashEditor.Tests.Cache
 {

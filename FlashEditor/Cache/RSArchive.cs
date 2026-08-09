@@ -1,5 +1,4 @@
-﻿using FlashEditor.Collections;
-using FlashEditor.Utils;
+﻿using FlashEditor.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;

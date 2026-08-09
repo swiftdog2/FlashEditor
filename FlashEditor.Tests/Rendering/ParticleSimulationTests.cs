@@ -5,6 +5,7 @@ using FlashEditor.Definitions;
 using FlashEditor.Definitions.Particles;
 using FlashEditor.Rendering;
 using Xunit;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Rendering
 {

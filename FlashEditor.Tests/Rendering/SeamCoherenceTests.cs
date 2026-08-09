@@ -10,6 +10,8 @@ using FlashEditor.Rendering;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.Definitions.Entities;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Rendering
 {

@@ -8,6 +8,7 @@ using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Cache
 {

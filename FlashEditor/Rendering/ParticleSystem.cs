@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System;
 using FlashEditor.Definitions.Particles;
 using FlashEditor.Definitions;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Rendering
 {

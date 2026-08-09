@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using FlashEditor.IO;
 
-namespace FlashEditor.Definitions {
+namespace FlashEditor.Definitions.Config {
     /// <summary>
     ///     A map scene icon: the small picture drawn over a bank, altar, staircase or furnace on the
     ///     minimap and the world map.

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Tests.Definitions
 {

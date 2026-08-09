@@ -8,6 +8,7 @@ using FlashEditor.Cache;
 using FlashEditor.Definitions.Sprites;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>

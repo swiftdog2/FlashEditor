@@ -29,6 +29,7 @@ using FlashEditor.Utils;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
 
 
 namespace FlashEditor {
