@@ -20,8 +20,8 @@ changelog as a footnote.
 
 Checked against the code on 2026-08-10, part way through the item 18 and 26 work.
 
-**Before trusting anything under `reference/index-survey/`, read item 27.** Four documents are
-stale in ways a reader would act on.
+**Item 27 is done**, so the four stale survey documents now carry banners saying so. Read
+`reference/DOC-CONFLICTS.md` before trusting a figure from `reference/`.
 
 ---
 
@@ -66,17 +66,19 @@ with a worked case behind them, or that bind a specific item below.
 
 ## In flight
 
-**Item 18 is most of the way done and item 26 is half done.** What landed, and what each left behind:
+**Item 18 is done bar the label migrations. Item 26 is done bar 26h's write path. Items 19, 20 and
+27 are under way.** What landed, and what each left behind:
 
 | | State | What is left |
 |---|---|---|
 | **18.1** icons and toolbar | Done. `EditorTheme`, `EditorSurface`, `EditorIcon`, `EditorIcons` (33 GDI-drawn icons), `EditorToolStrip` | Nothing. Icons are judged on a contact sheet; four shipped broken in the first pass and the sheet is the only reason they did not stay broken |
 | **18.2** column renderers | Done. `DefinitionCellVisual`, `DefinitionCellRenderer`, three factories on `DefinitionColumn`, proved on the Config tab's floor families | Adopt them on the other pages. Zero descriptors changed, so every adoption is additive |
-| **18.3** asset picker | **Not started.** The thumbnail cache behind it is done (`DefinitionThumbnailCache`) | The dialog itself. This is the one piece of item 18 still missing, and 20, 21 and 26e all want it |
+| **18.3** asset picker | Done. `AssetPickerDialog` over sprites, models, textures, fonts and animations, virtualised to the visible rows | **No caller yet.** 20, 21 and 26e are the consumers. Verified in isolation, not in place |
 | **18.4** info affordance | Control done (`InfoAffordance`), used by the two new interface toolbars | **The twelve label migrations.** See the corrections below - the list in item 18's prompt is wrong in three places |
 | **26a** layout resolver | Done, with 23 unit tests and 4 cache-backed property sweeps, green on both caches | Nothing |
 | **26b** component tree | Done, tree view wired into the tab with two-way selection | Nothing |
-| **26c** canvas | Done for types 0, 3, 4, 5, 6 and 9 | Text uses the editor's font, not the cache's glyph sheets. Models are marked, not drawn |
+| **26c** canvas | Done for types 0, 3, 4, 5, 6 and 9, clipped as the client clips, text in the cache's own glyphs | Models are marked, not drawn - the only route to model pixels is OpenGL. Text breaks only on `
+`; the client's wrap rule is unsettled |
 | **26f** opcode naming | Done. 126 newly named, 71 -> 197 | ~70 deliberately left numbered because the dispatcher does not settle them |
 
 **Corrections to this file's own item 18, found by doing it.** All three would have mis-scoped the
@@ -660,10 +662,13 @@ Run the suite against both caches. Commit.
 
 ---
 
-### 27. Correct the stale reference documents
+### 27. Correct the stale reference documents - DONE
 
-**No prompt, because it is a paragraph of work per file - but it has already cost one wasted
-investigation, and a reader who finds one of these tonight will act on it.** Each was written before
+**All six rows are done.** Kept rather than deleted because the table records what each document
+claimed and what was true, which is the evidence for `reference/DOC-CONFLICTS.md`'s entries.
+
+**No prompt, because it was a paragraph of work per file - but it had already cost one wasted
+investigation.** Each was written before
 the index it describes was built, and each now claims nothing exists for an index that is complete
 with a tab. A survey document is prose: written once, never re-measured.
 
@@ -676,7 +681,7 @@ with a tab. A survey document is prose: written once, never re-measured.
 | ~~`index-survey/index-003-INTERFACE-DEFINITIONS.md`~~ | ~~"nothing exists"~~ | **Done.** Banner-marked superseded by `index-architect-03.md` |
 | ~~`index-survey/index-012-CLIENT-SCRIPTS.md`~~ | ~~"nothing exists"~~ | **Done.** Capability grading corrected |
 | ~~`CLAUDE.md` UI conventions~~ | ~~A `TabPage` strip~~ | **Done**, and the count was wrong in this row too: the deck holds **27** pages and the tree exposes **25**. A page count is two numbers and neither document said which it meant |
-| `Sfx2EditorPanel.cs:55-60` | The tab cannot play audio because no off-the-shelf decoder takes these bytes | A hand-written Vorbis decoder now exists and drives the music player. The label may still be a correct scoping decision, but it is no longer justified by capability - restate it or act on it |
+| ~~`Sfx2EditorPanel.cs:55-60`~~ | ~~The tab cannot play audio~~ | **Done, by acting on it rather than restating it.** The tab plays effects now. The note says what playback does and does not do - chiefly that looping is not applied, so an effect sounds shorter here than in game. **Not yet verified by ear**: `reference/track-player-listening-checklist.md` is the shape that check should take |
 
 `STATE_OF_THE_EDITOR.md` remains historical above its roadmap, which `CLAUDE.md` already says.
 Each correction belongs in `reference/DOC-CONFLICTS.md`, which exists for exactly this.
