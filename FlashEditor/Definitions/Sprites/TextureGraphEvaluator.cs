@@ -459,7 +459,7 @@ namespace FlashEditor.Definitions.Sprites {
         /// than a <see cref="Bitmap"/>, so the bitmap wrapper sits on top of this rather than
         /// the other way round.
         /// </summary>
-        internal static int[] RenderArgb(TextureGraph source, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1) {
+        internal static int[] RenderArgb(TextureGraph source, int width, int height, RSCache cache, bool transpose = false, int textureDefId = -1, bool sampleAlphaOutput = false) {
             if (source == null || source.Nodes == null || source.Nodes.Length == 0) {
                 Debug($"[GraphEval] tex {textureDefId}: null/empty graph", LOG_DETAIL.ADVANCED);
                 return null;
@@ -475,7 +475,7 @@ namespace FlashEditor.Definitions.Sprites {
             _renderNesting++;
 
             try {
-                return RenderArgbCore(source, width, height, cache, transpose, textureDefId);
+                return RenderArgbCore(source, width, height, cache, transpose, textureDefId, sampleAlphaOutput);
             } catch (TextureRenderBudgetException) when (outermost) {
                 //Filtered on the outermost frame so an overrun unwinds the whole composition tree
                 //in one throw. Caught at every level it would instead return null to a caller that
@@ -490,7 +490,7 @@ namespace FlashEditor.Definitions.Sprites {
         /// <summary>
         /// The evaluation itself, run inside the caller's time budget.
         /// </summary>
-        private static int[] RenderArgbCore(TextureGraph source, int width, int height, RSCache cache, bool transpose, int textureDefId) {
+        private static int[] RenderArgbCore(TextureGraph source, int width, int height, RSCache cache, bool transpose, int textureDefId, bool sampleAlphaOutput) {
             //Evaluation caches each row into the nodes, so it works on a copy. The editor
             //renders on 20 threads and composition lets two of them reach the same graph, and
             //the caller has no way to know that happened - so the safety belongs here rather
@@ -549,11 +549,32 @@ namespace FlashEditor.Definitions.Sprites {
             var colourNode = graph.Nodes[colourIdx];
             bool outputIsMono = IsMonochrome(colourNode);
 
-            //Deliberately not sampling the alpha output node. This mirrors the client's
-            //Node_Sub46_Sub19.method1631, the path behind method9 - the one a composed texture
-            //is rendered through - which derives alpha from the colour alone. Sampling the
-            //alpha node is method1633, a separate entry point for GL uploads.
+            //Two client entry points, and which one a caller wants decides this. The default
+            //mirrors Node_Sub46_Sub19.method1631, the path behind method9 that a composed texture
+            //is rendered through: it never touches aClass98_Sub10_6059 and derives alpha from the
+            //colour alone. Sampling the alpha node is method1633 (:309-390), the GL-upload path,
+            //where alpha is is_49_ - the second output byte read at :112 - shifted down four and
+            //clamped, and forced to zero only where the colour is pure black (:368-380).
+            //
+            //The distinction is not cosmetic. A texture whose colour output is opaque noise and
+            //whose alpha output is a radial falloff renders as a hard-edged filled square through
+            //method1631 and as a soft orb through method1633, which is exactly the difference
+            //between a particle that reads as a box and one that reads as smoke.
             TextureNode alphaNode = null;
+
+            if (sampleAlphaOutput) {
+                int alphaIdx = graph.AlphaOutputIndex;
+
+                //Out of range rather than throwing: the client indexes a three-element array with
+                //an unsigned byte and a graph that names a node it does not have is malformed, but
+                //the rest of it still renders. Falling back to the colour-derived alpha loses the
+                //falloff and keeps the pixels.
+                if (alphaIdx >= 0 && alphaIdx < graph.Nodes.Length && graph.Nodes[alphaIdx] != null)
+                    alphaNode = graph.Nodes[alphaIdx];
+                else
+                    Debug($"[GraphEval] tex {textureDefId}: alphaOutputIndex={alphaIdx} names no node " +
+                          $"(nodes={graph.Nodes.Length}) - falling back to colour-derived alpha", LOG_DETAIL.BASIC);
+            }
 
             for (int y = 0; y < height; y++) {
                 //Checked here as well as inside the row evaluators, because a single node can
@@ -930,6 +951,7 @@ namespace FlashEditor.Definitions.Sprites {
                 case 4: EvalBrick(node, output, w, row); break;
                 case 5: EvalBoxBlurMono(node, output, w, row); break;
                 case 6: EvalClampNodeMono(node, output, w, row); break;
+                case 7: EvalMonoBlend(node, output, w, row); break;
                 case 8: EvalCurveTransfer(node, output, w, row); break;
                 case 9: EvalMirrorFlipMono(node, output, w, row); break;
                 case 10: EvalGradientRemap(node, output, w, row); break;
@@ -1217,6 +1239,46 @@ namespace FlashEditor.Definitions.Sprites {
             for (int ch = 0; ch < 3; ch++)
                 for (int x = 0; x < w; x++)
                     output[ch][x] = BlendOp(a[ch][x], b[ch][x], mode);
+        }
+
+        /// <summary>
+        ///     Type 7 on the monochrome side: the same twelve blends over the children's mono rows.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Node_Sub10_Sub7.method990</c> (<c>:73-232</c>) is a second copy of
+        ///     <c>method997</c>'s blend chain reading <c>method1000(row, 0)</c> and
+        ///     <c>method1000(row, 1)</c> - the two children's mono rows - rather than their three
+        ///     colour channels. The node is declared <c>super(2, false)</c> at <c>:69</c>, so it is
+        ///     colour by default and only reaches this arm when opcode 1 sets its mono flag
+        ///     (<c>method991</c>, <c>:250</c>).
+        ///     <para>
+        ///     Without this arm a mono type 7 fell to <see cref="EvalMono"/>'s unknown-node default
+        ///     and returned a flat 2040 whatever its children held, which is not a small
+        ///     approximation: material 812's alpha output reaches the graph through two of them, so
+        ///     every pixel of it came back fully opaque and the cape's smoke drew as a filled square
+        ///     rather than a soft orb. A node type that is silently mid-grey is invisible in the
+        ///     colour channel of a noisy texture and total in the alpha channel of a soft one.
+        ///     </para>
+        /// </remarks>
+        /// <param name="node">The blend node.</param>
+        /// <param name="output">Its mono row buffer.</param>
+        /// <param name="w">Row width.</param>
+        /// <param name="row">Which row.</param>
+        private static void EvalMonoBlend(TextureNode node, int[] output, int w, int row) {
+            if (node.Children == null || node.Children.Length < 2
+                || node.Children[0] == null || node.Children[1] == null) {
+                Array.Fill(output, 2040, 0, w);
+                return;
+            }
+
+            //Both rows are fetched before either is written, because output may alias neither but
+            //GetMono hands back a child's own cache buffer and a blend reads both per pixel.
+            int[] a = GetMono(node.Children[0], row);
+            int[] b = GetMono(node.Children[1], row);
+            int mode = node.BlendMode;
+
+            for (int x = 0; x < w; x++)
+                output[x] = BlendOp(a[x], b[x], mode);
         }
 
         /// <summary>
