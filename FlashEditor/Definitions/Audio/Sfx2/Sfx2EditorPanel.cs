@@ -1,6 +1,9 @@
 using BrightIdeasSoftware;
 using FlashEditor.Cache;
+using FlashEditor.Definitions.Audio.Sfx2.Vorbis;
+using FlashEditor.Definitions.Audio.Synth;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -24,12 +27,20 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
     ///     than a sample's headings left blank.
     ///     </para>
     ///     <para>
-    ///     <b>The editor cannot play any of it, and has to say so.</b> That note is a docked label
-    ///     rather than a disabled button, because a greyed-out play control reads as a bug in the
-    ///     tab. See <see cref="PlaybackNote"/> for why no off-the-shelf decoder takes these bytes.
+    ///     <b>It plays, and it did not used to.</b> This tab carried a note saying no off-the-shelf
+    ///     decoder takes these bytes and that one would have to be written - which was true when it
+    ///     was written and stopped being true when <see cref="Vorbis.Sfx2VorbisDecoder"/> landed and
+    ///     the music player started rendering index-14 samples through it. The note now says what
+    ///     playback here does and does not do rather than that there is none.
     ///     </para>
     ///     <para>
-    ///     <b>Where playback lands when it is written.</b> A transport strip docks into the detail
+    ///     <b>Looping is deliberately not applied.</b> A record carries two loop points and a flag,
+    ///     and the game uses them; playing the buffer once from first sample to last is what lets a
+    ///     user hear the record itself, which is what an editor is for. The note says so, because
+    ///     an effect that sounds shorter than it does in game is otherwise read as a decode fault.
+    ///     </para>
+    ///     <para>
+    ///     <b>Where a full transport lands when it is written.</b> A strip docks into the detail
     ///     half, driven by the selected row plus group 0, and the packet grid becomes the seek bar it
     ///     already looks like. Nothing above that level changes: the list, the descriptor and the
     ///     codec all stay as they are, because none of them assumes the audio is undecodable - only
@@ -53,11 +64,12 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         ///     Vorbis library will accept. See <see cref="Sfx2SetupHeader"/>.
         /// </remarks>
         private const string PlaybackNote =
-            "This tab does not play audio, on purpose. Index 14 is Vorbis, but the setup header in " +
-            "group 0 has no vorbis magic, no channel count and no framing bit, so no off-the-shelf " +
-            "decoder accepts it and one has to be written against the client's Node_Sub13 and " +
-            "Class71. Records here are read and written back byte for byte; nothing turns them into " +
-            "PCM. Rate and the two loop points are editable, the packets are not.";
+            "Index 14 is Vorbis, but not a stream any stock decoder accepts: the setup header in " +
+            "group 0 has no vorbis magic, no channel count and no framing bit, so it was decoded " +
+            "by a Vorbis implementation written against the client. Play uses that. Looping is not " +
+            "applied - an effect plays once, from the first sample to the last, so what you hear is " +
+            "the record rather than the record as the game would loop it. Rate and the two loop " +
+            "points are editable, the packets are not.";
 
         private readonly Label playback = new Label {
             AutoSize = true,
@@ -108,7 +120,20 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select a sound effect to see its header and packets";
 
+        private readonly Button play = new Button {
+            Text = "Play", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
+
         private RSCache? cache;
+
+        /* Decoded once per cache, because every effect shares it: group 0 is the Vorbis setup for
+           the whole index, not a per-record header. Null once it has failed, so a broken group 0
+           does not cost a re-read on every click. */
+        private VorbisSetup? setup;
+        private bool setupFailed;
+
+        private Sfx2Playback? playing;
+
         private bool listSplitterPlaced;
         private bool detailSplitterPlaced;
 
@@ -117,7 +142,85 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             Dock = DockStyle.Fill;
             BuildLayout();
 
-            records.SelectedRowChanged += (_, _) => ShowRecord(records.SelectedRow as Sfx2Listing);
+            records.SelectedRowChanged += (_, _) => {
+                var listing = records.SelectedRow as Sfx2Listing;
+                ShowRecord(listing);
+
+                //Only a sample can be played. Group 0 is the shared setup header and has no audio
+                //of its own, and it is a row in this list like any other.
+                play.Enabled = listing?.Sample != null;
+            };
+
+            play.Click += (_, _) => PlaySelected();
+        }
+
+        /// <summary>
+        ///     Decodes the selected effect and plays it once.
+        /// </summary>
+        /// <remarks>
+        ///     Any effect already playing is stopped first, so clicking down a list of effects plays
+        ///     each rather than layering them - and because two open <c>waveOut</c> devices at
+        ///     different rates is not something to find out about by accident.
+        /// </remarks>
+        private void PlaySelected() {
+            playing?.Dispose();
+            playing = null;
+
+            if (records.SelectedRow is not Sfx2Listing listing || listing.Sample == null || cache == null)
+                return;
+
+            VorbisSetup? header = Setup();
+            if (header == null) {
+                records.ReportStatus("Group 0 could not be decoded, so nothing in this index can be played.");
+                return;
+            }
+
+            try {
+                byte[] pcm = new Sfx2VorbisDecoder(header).Decode(listing.Sample);
+
+                /* THE DECODER PRODUCES 8-BIT PCM, and waveOut is opened for 16. Each sample is
+                   shifted rather than cast: an sbyte assigned straight to a short is a value in
+                   -128..127, which against a 16-bit full scale is silence with a faint buzz - and
+                   that reads as a broken decoder rather than as a scaling mistake. */
+                sbyte[] eightBit = PcmSample.AsSigned(pcm);
+                var samples = new short[eightBit.Length];
+                for (int i = 0; i < eightBit.Length; i++)
+                    samples[i] = (short) (eightBit[i] << 8);
+
+                if (samples.Length == 0) {
+                    records.ReportStatus("Effect " + listing.Sample.Id + " decoded to no samples at all.");
+                    return;
+                }
+
+                playing = new Sfx2Playback(samples, listing.Sample.SampleRate);
+                records.ReportStatus("Playing effect " + listing.Sample.Id + ", " + samples.Length +
+                    " samples at " + listing.Sample.SampleRate + " Hz");
+            }
+            catch (Exception ex) {
+                //Reported rather than thrown: this runs from a button on a tab, and an exception out
+                //of it takes the form down over one record that will not decode.
+                records.ReportStatus("Effect " + listing.Sample.Id + " could not be played: " + ex.Message);
+                Debug("SFX2 playback failed: " + ex);
+            }
+        }
+
+        /// <summary>The shared Vorbis setup from group 0, decoded once per cache.</summary>
+        private VorbisSetup? Setup() {
+            if (setup != null || setupFailed)
+                return setup;
+
+            try {
+                JagStream? group = cache?.ReadFile(RSConstants.SFX2_INDEX, Sfx2SetupHeader.SetupGroupId, 0);
+                if (group != null)
+                    setup = new VorbisSetup(group.ToArray());
+            }
+            catch (Exception ex) {
+                setup = null;
+                Debug("SFX2 setup header could not be decoded: " + ex.Message);
+            }
+
+            setupFailed = setup == null;
+            return setup;
         }
 
         /// <summary>
@@ -133,6 +236,14 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         public void Bind(RSCache? newCache) {
             if (ReferenceEquals(newCache, cache))
                 return;
+
+            //The setup header belongs to the cache being replaced, and an effect mid-flight was
+            //decoded from it.
+            playing?.Dispose();
+            playing = null;
+            setup = null;
+            setupFailed = false;
+            play.Enabled = false;
 
             cache = newCache;
             fields.ClearObjects();
@@ -214,9 +325,21 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
 
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
+            /* The transport sits above the note it qualifies, on its own strip, so the button is
+               beside the sentence explaining what pressing it does and does not do. */
+            var transport = new FlowLayoutPanel {
+                Dock = DockStyle.Top,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false
+            };
+            transport.Controls.Add(play);
+
             Controls.Add(listAndDetail);
             Controls.Add(header);
             Controls.Add(playback);
+            Controls.Add(transport);
 
             //Bound before any cache arrives so the list has its headings from the start.
             records.Bind(null, descriptor);
