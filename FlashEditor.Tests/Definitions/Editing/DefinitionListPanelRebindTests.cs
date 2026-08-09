@@ -98,6 +98,65 @@ namespace FlashEditor.Tests.Definitions.Editing {
         ///     descriptor that no longer exists, and it is only a matter of which row lands next
         ///     before it throws.
         /// </remarks>
+        /// <summary>
+        ///     A record asked for before its rows exist is selected as soon as they arrive.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The case cross-navigation always hits.</b> Following a link almost always means
+        ///     opening a tab that has never loaded, and a tab opens by starting a background worker
+        ///     - so at the moment the destination is known the grid is empty. A <c>SelectRecord</c>
+        ///     that only looked at the rows it could see would silently do nothing, and the link
+        ///     would read as broken while being wired correctly.
+        ///     <para>
+        ///     Asserted by asking <i>before</i> the pump runs, which is exactly the order the form
+        ///     produces: <c>SelectedTab</c> starts the load and the selection is requested on the
+        ///     next line.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void ARecordAskedForBeforeTheLoadFinishesIsSelectedWhenItArrives() {
+            OnUiThread(form => {
+                RSCache cache = CreateCache();
+                var panel = new DefinitionListPanel();
+                form.Controls.Add(panel);
+
+                panel.Bind(cache, new ItemListDescriptor());
+
+                //Before any pumping, so the worker cannot have published yet.
+                Assert.Empty(panel.Rows);
+                panel.SelectRecord(3);
+
+                PumpUntilLoaded(panel, "items");
+
+                Assert.NotNull(panel.SelectedRow);
+                Assert.Equal(3, panel.Descriptor!.AddressOf(panel.SelectedRow!).DefinitionId);
+            });
+        }
+
+        /// <summary>A pending selection belongs to the load that was asked for, not the next one.</summary>
+        /// <remarks>
+        ///     A rebind cancels the load in flight. If the pending record survived it, the record
+        ///     someone asked for on the previous index would be selected in the new one - a row that
+        ///     shares nothing with it but a number.
+        /// </remarks>
+        [Fact]
+        public void APendingSelectionDoesNotSurviveARebind() {
+            OnUiThread(form => {
+                RSCache cache = CreateCache();
+                var panel = new DefinitionListPanel();
+                form.Controls.Add(panel);
+
+                panel.Bind(cache, new ItemListDescriptor());
+                panel.SelectRecord(3);
+
+                //Superseded before the first load could publish.
+                panel.Bind(cache, new ObjectListDescriptor());
+                PumpUntilLoaded(panel, "objects");
+
+                Assert.Null(panel.SelectedRow);
+            });
+        }
+
         [Fact]
         public void SwitchingDescriptorWithASortActiveNeverSortsTheNewRowsThroughTheOldColumns() {
             OnUiThread(form => {

@@ -401,6 +401,17 @@ namespace FlashEditor {
         private readonly Dictionary<TabPage, TreeNode> navNodes = new Dictionary<TabPage, TreeNode>();
 
         /// <summary>
+        ///     Where the user has been, so following a reference can be undone.
+        /// </summary>
+        /// <remarks>
+        ///     Owned by the form because turning a place into a tab and a row is the form's job -
+        ///     <see cref="EditorNavigator"/> itself records places in the cache and knows nothing
+        ///     about tabs, which is what keeps its history correct across a tab that has not loaded
+        ///     and a record that no longer exists.
+        /// </remarks>
+        private readonly EditorNavigator navigator = new EditorNavigator();
+
+        /// <summary>
         ///     Set while the tree and the page deck are being pushed into agreement.
         /// </summary>
         /// <remarks>
@@ -414,6 +425,7 @@ namespace FlashEditor {
             InitializeComponent();
             RegisterEditorTabs();
             BuildNavigationTree();
+            BuildNavigationHistory();
 
             //Added here rather than in the designer so the generated file stays untouched
             ToolStripMenuItem saveAsItem = new ToolStripMenuItem("Save As...");
@@ -822,6 +834,10 @@ namespace FlashEditor {
         private void LoadCache() {
             workers.ForEach(w => w.CancelAsync());
             loadedTabs.Clear();
+
+            //A history kept across a reopen would offer to return to a record id that means
+            //something different, or nothing, in the cache now open.
+            navigator.Clear();
             LoadCache(GetCacheDir());
         }
 
@@ -1576,10 +1592,168 @@ namespace FlashEditor {
             SyncNavigationToDeck();
             LoadEditorTab(EditorTabControl.SelectedTab);
 
+            /* Wired here rather than inside LoadEditorTab because that method returns early on four
+               separate paths, and this has to run whichever one a tab took. It is idempotent, so
+               running it on every visit costs nothing. */
+            if (EditorTabControl.SelectedTab != null)
+                WireNavigation(EditorTabControl.SelectedTab);
+
+            RecordWhereWeAre();
+
             //Half the render timer's gate. Leaving the model page stops the clock rather than leaving
             //it repainting a surface nobody is looking at, and returning to it starts it again only
             //if something on the viewport is actually moving.
             SyncViewportTimer();
+        }
+
+        /// <summary>
+        ///     Wires the back stack to the deck, and puts Back and Forward on the menu.
+        /// </summary>
+        /// <remarks>
+        ///     Built here rather than in the designer, the way the Save As item already is, so the
+        ///     generated file stays untouched.
+        ///     <para>
+        ///     A menu rather than a toolbar because the form has no toolbar and adding one would
+        ///     mean a designer change to the layout every page sits inside. <c>Alt+Left</c> and
+        ///     <c>Alt+Right</c> are what a user will try first anyway, and a menu item is the only
+        ///     control that carries a shortcut on its own.
+        ///     </para>
+        /// </remarks>
+        private void BuildNavigationHistory() {
+            var back = new ToolStripMenuItem("Back", null, (_, _) => navigator.GoBack()) {
+                ShortcutKeys = Keys.Alt | Keys.Left,
+                Enabled = false
+            };
+
+            var forward = new ToolStripMenuItem("Forward", null, (_, _) => navigator.GoForward()) {
+                ShortcutKeys = Keys.Alt | Keys.Right,
+                Enabled = false
+            };
+
+            var go = new ToolStripMenuItem("Go");
+            go.DropDownItems.Add(back);
+            go.DropDownItems.Add(forward);
+            menuStrip1.Items.Add(go);
+
+            navigator.Navigated += (_, location) => ShowLocation(location);
+            navigator.HistoryChanged += (_, _) => {
+                back.Enabled = navigator.CanGoBack;
+                forward.Enabled = navigator.CanGoForward;
+            };
+        }
+
+        /// <summary>
+        ///     Points every definition list on a page at the navigator.
+        /// </summary>
+        /// <remarks>
+        ///     Called as a tab is populated rather than once at startup, because most pages build
+        ///     their panel lazily and there is nothing to subscribe to before that. Subscribing
+        ///     twice is prevented by unsubscribing first, which is safe for a handler that was never
+        ///     attached.
+        /// </remarks>
+        /// <param name="page">The tab being populated.</param>
+        private void WireNavigation(TabPage page) {
+            DefinitionListPanel? grid = GridOf(page);
+            if (grid == null)
+                return;
+
+            grid.CellActivated -= OnCellActivated;
+            grid.CellActivated += OnCellActivated;
+        }
+
+        /// <summary>
+        ///     Follows a reference the user activated in a grid.
+        /// </summary>
+        /// <remarks>
+        ///     A swatch names no other record, so it is left to whichever tab owns it - the
+        ///     Interfaces page opens a colour picker on the same event. Only a link or a thumbnail
+        ///     is a place to go.
+        /// </remarks>
+        private void OnCellActivated(object? sender, DefinitionCellActivatedEventArgs e) {
+            if (e.Visual.Art != DefinitionCellArt.Link && e.Visual.Art != DefinitionCellArt.Thumbnail)
+                return;
+
+            navigator.GoTo(new EditorLocation(e.Visual.IndexId, e.Visual.TargetId));
+        }
+
+        /// <summary>
+        ///     Shows the tab that edits an index, and selects a record in it.
+        /// </summary>
+        /// <remarks>
+        ///     The form's half of cross-navigation: the navigator names a place in the cache and
+        ///     this turns it into a tab and a row. Assigning <c>SelectedTab</c> rather than loading
+        ///     directly, so the deck's own handler stays the single route into
+        ///     <see cref="LoadEditorTab"/> and lazy loading is unchanged.
+        ///     <para>
+        ///     The row selection goes through <c>SelectRecord</c>, which holds the request until the
+        ///     load produces the rows - navigating almost always opens a tab for the first time, so
+        ///     at the moment the destination is known the grid is still empty.
+        ///     </para>
+        /// </remarks>
+        /// <param name="location">The index, and the record within it.</param>
+        private void ShowLocation(EditorLocation location) {
+            TabPage? destination = null;
+
+            foreach (KeyValuePair<TabPage, EditorTabBinding> entry in editorTabs) {
+                if (entry.Value.IndexId != location.IndexId)
+                    continue;
+
+                destination = entry.Key;
+                break;
+            }
+
+            if (destination == null) {
+                //An index with no editor is a real answer rather than a fault - RSConstants names
+                //27 indexes this application has no tab for - so it is logged rather than silently
+                //doing nothing, and the navigator is left where it was.
+                Debug("Cross-navigation: no editor for index " + location.IndexId +
+                    ", so " + location + " cannot be shown.");
+                return;
+            }
+
+            EditorTabControl.SelectedTab = destination;
+
+            if (location.HasRecord)
+                GridOf(destination)?.SelectRecord(location.RecordId);
+        }
+
+        /// <summary>
+        ///     The definition list inside a tab, wherever it sits in that tab's own layout.
+        /// </summary>
+        /// <remarks>
+        ///     Found by walking the page rather than held in a table, because the panel is nested
+        ///     differently on every tab that has one - the Interfaces page keeps it two splitters
+        ///     deep - and a table of them would be one more thing to forget when a tab is added.
+        ///     Six of the twenty-five pages have none, and a null is the honest answer for those.
+        /// </remarks>
+        /// <param name="page">The tab.</param>
+        /// <returns>Its definition list, or null.</returns>
+        private static DefinitionListPanel? GridOf(Control page) {
+            foreach (Control child in page.Controls) {
+                if (child is DefinitionListPanel grid)
+                    return grid;
+
+                DefinitionListPanel? nested = GridOf(child);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        ///     Tells the navigator where the user has just gone of their own accord.
+        /// </summary>
+        /// <remarks>
+        ///     Recorded rather than ignored, or the first Back after browsing would return to
+        ///     wherever the last <i>link</i> was followed from rather than where the user came from.
+        ///     The navigator guards the re-entrancy this creates, since it is what calls back into
+        ///     here while it is navigating.
+        /// </remarks>
+        private void RecordWhereWeAre() {
+            int index = GetEditorType();
+            if (index >= 0)
+                navigator.RecordVisit(new EditorLocation(index));
         }
 
         /// <summary>The cache index the selected tab edits, or -1 when it names none.</summary>

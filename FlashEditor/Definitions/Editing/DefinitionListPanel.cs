@@ -64,6 +64,10 @@ namespace FlashEditor.Definitions.Editing {
         private IDefinitionListDescriptor? descriptor;
         private IDefinitionThumbnailSource? thumbnails;
 
+        /* A record asked for before its rows existed. Navigating to a record usually means opening
+           a tab that has never loaded, so the destination is known while the grid is still empty. */
+        private int pendingRecord = -1;
+
         /* Held so a rebind can cancel the load it is superseding. The tracks panel deliberately
            keeps no handle on its worker, but that one decodes 1404 rows; this one can be asked for
            42,000, and leaving a superseded sweep running competes with the load that replaced it
@@ -242,6 +246,48 @@ namespace FlashEditor.Definitions.Editing {
             list.EnsureModelVisible(row);
         }
 
+        /// <summary>
+        ///     Selects the row for a record id, now or as soon as the load produces it.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The pending half is the whole point.</b> Navigating to a record almost always
+        ///     means selecting a tab that has never been opened, and a tab opens by starting a
+        ///     background load - so at the moment the destination is known the rows do not exist
+        ///     yet. Selecting immediately would silently do nothing, which reads as a link that
+        ///     does not work.
+        ///     <para>
+        ///     Matched through the descriptor's own <c>AddressOf</c>, so this works for any index
+        ///     whose ids are derivable and refuses honestly for the ones where they are not: index
+        ///     2 has no id arithmetic at all and reports -1 for every row, so a request there
+        ///     matches nothing rather than matching the first row by accident.
+        ///     </para>
+        /// </remarks>
+        /// <param name="recordId">The definition id to select.</param>
+        public void SelectRecord(int recordId) {
+            if (recordId < 0)
+                return;
+
+            if (rows.Count == 0 && worker != null) {
+                pendingRecord = recordId;
+                return;
+            }
+
+            pendingRecord = -1;
+
+            if (descriptor == null)
+                return;
+
+            foreach (object row in rows) {
+                if (descriptor.AddressOf(row).DefinitionId != recordId)
+                    continue;
+
+                SelectRow(row);
+                return;
+            }
+
+            status.Text = "No " + descriptor.RowNoun + " with id " + recordId + " in this index";
+        }
+
         /// <summary>Turns alternating row shading on or off, for the form's View menu.</summary>
         /// <param name="enabled">Whether alternate rows are shaded.</param>
         /// <param name="colour">The shade.</param>
@@ -324,6 +370,9 @@ namespace FlashEditor.Definitions.Editing {
             //descriptor must never be able to see a row produced by the old one.
             list.ClearObjects();
             rows = Array.Empty<object>();
+
+            //A pending selection belongs to the load being replaced, not to the new one.
+            pendingRecord = -1;
 
             if (columnsChanged)
                 BuildColumns();
@@ -495,6 +544,11 @@ namespace FlashEditor.Definitions.Editing {
                 progress.Value = 100;
                 status.Text = result.Describe(openDescriptor.RowNoun);
                 RowsLoaded?.Invoke(this, EventArgs.Empty);
+
+                //After RowsLoaded, so a companion view built from the rows is in place before the
+                //selection reaches it.
+                if (pendingRecord >= 0)
+                    SelectRecord(pendingRecord);
             };
 
             loader.RunWorkerAsync();
