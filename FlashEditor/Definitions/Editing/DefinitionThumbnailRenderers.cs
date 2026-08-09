@@ -199,6 +199,22 @@ namespace FlashEditor.Definitions.Editing {
     ///     downscaling of it, so fine detail in a noisy graph is not reduced, it is missed.
     ///     </para>
     /// </remarks>
+    /// <remarks>
+    ///     <b>This renderer produces nothing at all until <c>TextureManager.Load</c> has run, and
+    ///     that happens as a side effect of OpenGL initialisation</b> - <c>GLTextureCache</c>'s
+    ///     constructor is what calls it. So a consumer running before the GL context exists, or in
+    ///     a headless process, gets a null from every id and no diagnostic: the grid shows a
+    ///     screenful of placeholders that never resolve, which reads exactly like a slow decode and
+    ///     is not one. Measured: an asset picker opened over a directly-constructed
+    ///     <c>RSCache</c> in a harness with no GL showed all 915 texture slots empty after sixty
+    ///     seconds.
+    ///     <para>
+    ///     Not worked around here. Calling <c>TextureManager.Load</c> from the producer thread
+    ///     would decode the whole of index 26 and re-enter a static that the UI thread disposes on
+    ///     a cache reopen. The dependency is stated instead, so the next person to see an empty
+    ///     texture grid looks at initialisation order rather than at this file.
+    ///     </para>
+    /// </remarks>
     public sealed class TextureThumbnailRenderer : IDefinitionThumbnailRenderer {
         private readonly RSCache cache;
 
