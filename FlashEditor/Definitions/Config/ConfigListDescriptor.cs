@@ -56,15 +56,8 @@ namespace FlashEditor.Definitions.Config {
     ///     </para>
     /// </remarks>
     public sealed class ConfigListDescriptor : DefinitionListDescriptor<ConfigListing> {
-        private static readonly IReadOnlyList<DefinitionColumn> ConfigColumns = new[] {
-            DefinitionColumn.ReadOnly<ConfigListing>("Id", row => row.FileId, 70),
-            DefinitionColumn.ReadOnly<ConfigListing>("Opcodes", row => row.OpcodeCount, 80),
-            DefinitionColumn.ReadOnly<ConfigListing>("Order", row => row.Record.Order, 190),
-            DefinitionColumn.ReadOnly<ConfigListing>("Summary", row => row.Record.Summary, 420),
-            DefinitionColumn.ReadOnly<ConfigListing>("Bytes", row => row.SizeBytes, 70)
-        };
-
         private readonly ConfigFamily family;
+        private readonly IReadOnlyList<DefinitionColumn> columns;
 
         /// <summary>Lists one config family.</summary>
         /// <remarks>
@@ -76,6 +69,47 @@ namespace FlashEditor.Definitions.Config {
         /// <param name="family">The family to list.</param>
         public ConfigListDescriptor(ConfigFamily family) {
             this.family = family ?? throw new ArgumentNullException(nameof(family));
+            columns = BuildColumns(family);
+        }
+
+        /// <summary>
+        ///     The uniform columns, plus a swatch and a texture link for the families that have them.
+        /// </summary>
+        /// <remarks>
+        ///     The grid stays family-independent for the thirty-odd families that store neither, so
+        ///     one descriptor still serves all thirty-five groups. What changes is that the two
+        ///     floor families stop presenting their colour only as the six hex digits inside a
+        ///     summary string: those two are the source of every material in the game world, and
+        ///     "which id is the lava" is not a question a column of numbers can answer.
+        ///     <para>
+        ///     Built per instance rather than held static, because it now depends on the family.
+        ///     That is safe against the panel's identity check - <c>Bind</c> keys on the descriptor
+        ///     instance, and there is one instance per family already.
+        ///     </para>
+        /// </remarks>
+        /// <param name="family">The family being listed.</param>
+        /// <returns>The columns, left to right.</returns>
+        private static IReadOnlyList<DefinitionColumn> BuildColumns(ConfigFamily family) {
+            var built = new List<DefinitionColumn> {
+                DefinitionColumn.ReadOnly<ConfigListing>("Id", row => row.FileId, 70),
+                DefinitionColumn.ReadOnly<ConfigListing>("Opcodes", row => row.OpcodeCount, 80)
+            };
+
+            if (family.Colour != null) {
+                built.Add(DefinitionColumn.Colour<ConfigListing>("Colour",
+                    row => row.Record.Definition is object record ? family.Colour(record) : null));
+            }
+
+            if (family.Texture != null) {
+                built.Add(DefinitionColumn.Link<ConfigListing>("Texture", RSConstants.TEXTURES,
+                    row => row.Record.Definition is object record ? family.Texture(record) : null));
+            }
+
+            built.Add(DefinitionColumn.ReadOnly<ConfigListing>("Order", row => row.Record.Order, 190));
+            built.Add(DefinitionColumn.ReadOnly<ConfigListing>("Summary", row => row.Record.Summary, 420));
+            built.Add(DefinitionColumn.ReadOnly<ConfigListing>("Bytes", row => row.SizeBytes, 70));
+
+            return built;
         }
 
         /// <inheritdoc/>
@@ -85,7 +119,7 @@ namespace FlashEditor.Definitions.Config {
         public override string RowNoun => family.RowNoun;
 
         /// <inheritdoc/>
-        public override IReadOnlyList<DefinitionColumn> Columns => ConfigColumns;
+        public override IReadOnlyList<DefinitionColumn> Columns => columns;
 
         /// <summary>The family this descriptor lists.</summary>
         public ConfigFamily Family => family;

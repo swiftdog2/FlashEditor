@@ -88,11 +88,13 @@ namespace FlashEditor.Definitions.Editing {
     ///     property, which every raw listing needs.
     /// </remarks>
     public sealed class DefinitionColumn {
-        private DefinitionColumn(string header, int width, Func<object, object?> read, Action<object, object?>? write) {
+        private DefinitionColumn(string header, int width, Func<object, object?> read,
+            Action<object, object?>? write, Func<object, DefinitionCellVisual>? visual = null) {
             Header = header ?? throw new ArgumentNullException(nameof(header));
             Width = width;
             Read = read ?? throw new ArgumentNullException(nameof(read));
             Write = write;
+            Visual = visual;
         }
 
         /// <summary>The column heading.</summary>
@@ -116,6 +118,128 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <summary>Whether this column can be edited in place.</summary>
         public bool IsEditable => Write != null;
+
+        /// <summary>
+        ///     What this column's cell draws besides its text, or null for text only.
+        /// </summary>
+        /// <remarks>
+        ///     Null rather than a delegate that returns <see cref="DefinitionCellArt.None"/>, so
+        ///     the panel can skip attaching a renderer at all for the columns that want the grid's
+        ///     default. A column that renders costs a renderer instance and a second delegate call
+        ///     per paint, and one that does not should cost neither.
+        /// </remarks>
+        public Func<object, DefinitionCellVisual>? Visual { get; }
+
+        /// <summary>Whether activating a cell in this column means anything.</summary>
+        public bool IsActivatable => Visual != null;
+
+        /// <summary>
+        ///     A packed <c>0xRRGGBB</c> colour, shown as a swatch with its hex kept beside it.
+        /// </summary>
+        /// <remarks>
+        ///     <paramref name="read"/> returns null for "this record stores no colour", which is a
+        ///     real state and not the same as black -
+        ///     <see cref="Config.FloorOverlayDefinition"/> distinguishes the two because absent and
+        ///     <c>0x000000</c> are different bytes. A swatch drawn for an absent colour would
+        ///     assert a value the file does not carry, so it draws nothing.
+        ///     <para>
+        ///     The hex stays in the cell text. Item 18 requires the number to remain available, and
+        ///     it is also what keeps sorting, filtering and cell editing working - all three read
+        ///     the aspect and none of them know a renderer exists.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="read">Reads the packed colour off a row, or null when it stores none.</param>
+        /// <param name="write">Writes an edited colour back, or null for a read-only column.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn Colour<TRow>(string header, Func<TRow, int?> read,
+            Action<TRow, int>? write = null, int width = 110) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? Hex(read(typed)) : null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToColourInt(value));
+                },
+                row => Cast<TRow>(row) is TRow typed && read(typed) is int rgb
+                    ? DefinitionCellVisual.Swatch(rgb)
+                    : DefinitionCellVisual.None);
+        }
+
+        /// <summary>An id naming a picture in another index, shown as a tile with the id beside it.</summary>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="indexId">The index the id addresses.</param>
+        /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn Thumbnail<TRow>(string header, int indexId,
+            Func<TRow, int?> read, int width = 120) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
+                null,
+                row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
+                    ? DefinitionCellVisual.Thumbnail(indexId, id)
+                    : DefinitionCellVisual.None);
+        }
+
+        /// <summary>
+        ///     An id naming a record in another index, shown as something the user can follow.
+        /// </summary>
+        /// <remarks>
+        ///     The column says which index the number addresses and nothing else. What following it
+        ///     <i>does</i> is the host's decision, taken from
+        ///     <c>DefinitionListPanel.CellActivated</c>.
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="indexId">The index the id addresses.</param>
+        /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn Link<TRow>(string header, int indexId,
+            Func<TRow, int?> read, int width = 90) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
+                null,
+                row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
+                    ? DefinitionCellVisual.Link(indexId, id)
+                    : DefinitionCellVisual.None);
+        }
+
+        /// <summary>A packed colour as the hex the cache stores it in, or null.</summary>
+        private static object? Hex(int? packed) {
+            return packed.HasValue ? "0x" + packed.Value.ToString("X6", CultureInfo.InvariantCulture) : null;
+        }
+
+        /// <summary>
+        ///     Whatever the cell editor produced, as a packed colour.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="ToInt"/> because this column's text is hexadecimal.
+        ///     <c>Convert.ToInt32</c> on "0x3C1E0A" throws, and on a bare "3C1E0A" it would read
+        ///     decimal and silently store a different colour - which is worse, because the swatch
+        ///     would then show the wrong thing rather than reporting a failure.
+        /// </remarks>
+        /// <param name="value">The editor's value.</param>
+        /// <returns>The packed colour.</returns>
+        private static int ToColourInt(object? value) {
+            if (value == null)
+                return 0;
+
+            if (value is string text) {
+                string trimmed = text.Trim();
+                if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                    trimmed = trimmed.Substring(2);
+                if (trimmed.StartsWith("#", StringComparison.Ordinal))
+                    trimmed = trimmed.Substring(1);
+
+                return int.Parse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            }
+
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
 
         /// <summary>A column that shows a value and cannot be edited.</summary>
         /// <typeparam name="TRow">The row type this column reads.</typeparam>

@@ -108,13 +108,16 @@ namespace FlashEditor.Definitions.Config {
         private readonly Func<int, JagStream, ConfigRecord> read;
 
         private ConfigFamily(int groupId, string name, string rowNoun, string notes, bool modelled,
-            Func<int, JagStream, ConfigRecord> read) {
+            Func<int, JagStream, ConfigRecord> read,
+            Func<object, int?>? colour = null, Func<object, int?>? texture = null) {
             GroupId = groupId;
             Name = name;
             RowNoun = rowNoun;
             Notes = notes;
             IsModelled = modelled;
             this.read = read;
+            Colour = colour;
+            Texture = texture;
         }
 
         /// <summary>The group within index 2 that holds the family.</summary>
@@ -131,6 +134,24 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Whether this editor has a codec for the family.</summary>
         public bool IsModelled { get; }
+
+        /// <summary>
+        ///     Reads the packed <c>0xRRGGBB</c> a record stores, or null for a family that stores none.
+        /// </summary>
+        /// <remarks>
+        ///     Optional per family rather than a column on every one. Index 2 is thirty-five
+        ///     unrelated record types and only a handful of them store a colour at all; a swatch
+        ///     column on the other thirty would be an empty column with a heading that lies.
+        ///     <para>
+        ///     Returning null <i>per record</i> is also meaningful and is not the same as the family
+        ///     having no colour: a floor overlay distinguishes an absent colour from black, because
+        ///     they are different bytes and re-encode differently.
+        ///     </para>
+        /// </remarks>
+        public Func<object, int?>? Colour { get; }
+
+        /// <summary>Reads the index-9 texture a record names, or null for a family that names none.</summary>
+        public Func<object, int?>? Texture { get; }
 
         /// <summary>Decodes one record of this family.</summary>
         /// <param name="fileId">The file id, which is the definition id within the group.</param>
@@ -192,7 +213,11 @@ namespace FlashEditor.Definitions.Config {
                     new ConfigField("Texture scale", definition.TextureScale.ToString()),
                     new ConfigField("Casts shadow", definition.CastsShadow.ToString()),
                     new ConfigField("Occludes", definition.Occludes.ToString())
-                }),
+                },
+                //An underlay always carries a colour: opcode 1 absent leaves Rgb at 0, and black is
+                //a real underlay colour here rather than a stand-in for "none".
+                definition => definition.Rgb,
+                definition => definition.TextureId),
 
             Of<IdentityKitDefinition>(ConfigGroup.IdentityKit, "Identity kits", "identity kit",
                 "The models one body part of a player is built from, with the recolour and retexture" +
@@ -225,7 +250,13 @@ namespace FlashEditor.Definitions.Config {
                     new ConfigField("World map background", definition.IsWorldMapBackground.ToString()),
                     new ConfigField("Water", "tint " + Hex(definition.WaterTintRgb, 6) + ", depth " +
                         definition.WaterDepth + ", alpha " + definition.WaterAlpha)
-                }),
+                },
+                /* Null where the record stores no colour, which is NOT black. HasPrimaryRgb exists
+                   because absent and 0x000000 are different bytes that re-encode differently, and
+                   a swatch drawn for an absent colour would assert a value the file does not
+                   carry. */
+                definition => definition.HasPrimaryRgb ? definition.PrimaryRgb : null,
+                definition => definition.TextureId),
 
             Of<ContainerDefinition>(ConfigGroup.Container, "Item containers", "container",
                 "How many slots one of the game's inventories, banks or shop stocks holds." +
@@ -459,9 +490,12 @@ namespace FlashEditor.Definitions.Config {
         /// <param name="summary">Describes one decoded record in a line.</param>
         /// <param name="fields">Lists one decoded record's fields.</param>
         /// <returns>The family.</returns>
+        /// <param name="colour">Reads the record's packed colour, for a family that stores one.</param>
+        /// <param name="texture">Reads the record's texture id, for a family that names one.</param>
         private static ConfigFamily Legacy<T>(int groupId, string name, string rowNoun, string notes,
             Func<int, JagStream, T> decode, Func<T, List<DecodedOpcode>> opcodes,
-            Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields) where T : class {
+            Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields,
+            Func<T, int?>? colour = null, Func<T, int?>? texture = null) where T : class {
             return new ConfigFamily(groupId, name, rowNoun, notes, true, (id, payload) => {
                 T definition = decode(id, payload);
                 ConfigOpcodeRow[] rows = opcodes(definition)
@@ -469,7 +503,24 @@ namespace FlashEditor.Definitions.Config {
                         entry.Value.ToString(CultureInfo.InvariantCulture)))
                     .ToArray();
                 return new ConfigRecord(definition, summary(definition), rows, fields(definition).ToArray());
-            });
+            }, Widen(colour), Widen(texture));
+        }
+
+        /// <summary>
+        ///     A typed record accessor as one taking the untyped decoded record.
+        /// </summary>
+        /// <remarks>
+        ///     A record of the wrong type yields null rather than throwing. The accessor is reached
+        ///     from a grid cell renderer during a scroll, and the only way a mismatch can arise is
+        ///     the family table pairing an accessor with the wrong decoder - which shows as an empty
+        ///     column immediately rather than as an exception out of a paint handler that takes the
+        ///     form down.
+        /// </remarks>
+        private static Func<object, int?>? Widen<T>(Func<T, int?>? accessor) where T : class {
+            if (accessor == null)
+                return null;
+
+            return record => record is T typed ? accessor(typed) : null;
         }
 
         /// <summary>The opcode rows of a <see cref="ConfigDefinition"/>, payload bytes and all.</summary>

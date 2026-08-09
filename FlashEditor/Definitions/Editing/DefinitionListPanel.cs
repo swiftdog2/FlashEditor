@@ -62,6 +62,7 @@ namespace FlashEditor.Definitions.Editing {
            because someone clicked away and back would also throw away the sort and the selection. */
         private RSCache? cache;
         private IDefinitionListDescriptor? descriptor;
+        private IDefinitionThumbnailSource? thumbnails;
 
         /* Held so a rebind can cancel the load it is superseding. The tracks panel deliberately
            keeps no handle on its worker, but that one decodes 1404 rows; this one can be asked for
@@ -87,6 +88,73 @@ namespace FlashEditor.Definitions.Editing {
 
             list.SelectedIndexChanged += (_, _) => SelectedRowChanged?.Invoke(this, EventArgs.Empty);
             list.CellEditFinished += (_, e) => CommitEdit(e.RowObject);
+            list.CellClick += OnCellClick;
+        }
+
+        /// <summary>
+        ///     Where a thumbnail column's pictures come from, or null to draw ids as plain text.
+        /// </summary>
+        /// <remarks>
+        ///     Null by default, so a descriptor that asks for pictures does not break a tab that has
+        ///     not supplied a source: the cell falls back to the id it was already showing.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public IDefinitionThumbnailSource? Thumbnails {
+            get => thumbnails;
+            set {
+                if (ReferenceEquals(thumbnails, value))
+                    return;
+
+                if (thumbnails != null)
+                    thumbnails.TilesReady -= OnTilesReady;
+
+                thumbnails = value;
+
+                if (thumbnails != null)
+                    thumbnails.TilesReady += OnTilesReady;
+
+                list.Invalidate();
+            }
+        }
+
+        /// <summary>
+        ///     Raised when the user activates a cell that names something elsewhere in the cache.
+        /// </summary>
+        /// <remarks>
+        ///     The panel deliberately does not act on it. What following a reference means - select
+        ///     a tab, select a row, open a picker - is the form's decision, and a panel that decided
+        ///     it would have to know about every tab.
+        /// </remarks>
+        public event EventHandler<DefinitionCellActivatedEventArgs>? CellActivated;
+
+        private void OnCellClick(object? sender, CellClickEventArgs e) {
+            if (e.Model == null || e.Column?.Renderer is not DefinitionCellRenderer hit)
+                return;
+
+            DefinitionCellVisual visual = hit.VisualFor(e.Model);
+            if (visual.Art != DefinitionCellArt.Link && visual.Art != DefinitionCellArt.Thumbnail)
+                return;
+
+            CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(e.Model, visual));
+        }
+
+        /// <summary>
+        ///     Repaints when queued tiles land.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Invalidate</c> rather than <c>RefreshObjects</c>: it needs no map from id back to
+        ///     row, so a column sort cannot make it refresh the wrong rows, and it costs a repaint
+        ///     of what is on screen rather than per-row work over everything that landed.
+        /// </remarks>
+        private void OnTilesReady(object? sender, EventArgs e) {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            if (list.InvokeRequired)
+                list.BeginInvoke(new Action(list.Invalidate));
+            else
+                list.Invalidate();
         }
 
         /// <summary>The row the user has selected, or null when there is none.</summary>
@@ -308,9 +376,29 @@ namespace FlashEditor.Definitions.Editing {
                 if (column.Write != null)
                     olv.AspectPutter = (row, value) => column.Write(row, value);
 
+                //Only where the descriptor asked for one, so every column that does not want art
+                //keeps the grid's own renderer and nothing changes for it.
+                if (column.Visual != null)
+                    olv.Renderer = new DefinitionCellRenderer(column, () => thumbnails);
+
                 list.AllColumns.Add(olv);
                 list.Columns.Add(olv);
             }
+
+            /* Derived from the font and the art, never written as a pixel count - the same rule
+               that sizes this panel's progress bar from Font.Height. -1 hands the measurement back
+               to the grid, which is what every descriptor without art wants. */
+            bool hasArt = false;
+            foreach (DefinitionColumn column in descriptor.Columns) {
+                if (column.Visual == null)
+                    continue;
+                hasArt = true;
+                break;
+            }
+
+            list.RowHeight = hasArt
+                ? Math.Max(list.Font.Height + 4, DefinitionCellRenderer.ArtSide + 4)
+                : -1;
 
             list.CellEditActivation = descriptor.IsEditable
                 ? ObjectListView.CellEditActivateMode.DoubleClick
