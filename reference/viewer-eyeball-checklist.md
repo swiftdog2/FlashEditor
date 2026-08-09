@@ -46,7 +46,13 @@ First human pass, 2026-08-09, against the repack (the model list read 63,614).
 | **F** particles | **PASS, and both halves now confirmed.** The first pass passed model 62810 on its **readout** alone - `particles 68/2047, emitters 2/2` against a predicted peak near 73 - which proves the simulation ran and the emitters resolved and says nothing about whether anything reached the screen, because the readout comes from `ParticleSystem` and not from the framebuffer. On **2026-08-09 a human confirmed model 19074 visibly drawing particles**, which is what promotes this case from "the simulation runs" to "particles render". That confirmation was taken **after** the DPI-awareness change, which altered the process-wide awareness context and which nobody had checked GL survived. It did |
 | **D** hover overlay | **OPEN.** Amber and blue marks are present near the shape. Whether they read as `face N` and `vN`, and whether the numbers fall in 0-7 and 0-23, is not yet settled |
 | **H** multi-part entity | **PASS, confirmed on the monitor 2026-08-09.** NPC 1 with animation 811, the exact case a human reported as broken - jaw, hands and boots coming away - reads correctly after the composite merge. Both halves now agree: the seam measures 0 model units in both caches, and a person says the body reads as one object. Worth keeping as the pattern: the defect was found by eye, turned into a number, fixed against the number, and then confirmed by eye again |
+| **F3/F4** particle position and material | **PASS, both confirmed on the monitor 2026-08-09.** F3: after the clock-unit fix the smoke sits at the cape's hem rather than detached below and behind it. F4: after the type-7 mono blend fix and the material draw, model 59885 renders soft orbs fading to nothing rather than hard opaque squares. Both were reported as defects by a human first, measured second, and confirmed by eye last |
 | **B, C, E, G, I** | **NOT YET RUN** |
+
+**Known limitation, reported 2026-08-09 and not yet fixed:** particles render only while the
+Entities type selector is on **Models**. Selecting an item, NPC or object shows the mesh without
+its particles, so a cape viewed as an item looks like a cape viewed as a model with the effect
+missing. Do not read that as a particle defect while running these cases - pick Models.
 
 Case H was added after this pass, which is why it moved Layout from H to I. A verdict recorded
 against "H" before 2026-08-09 was about layout.
