@@ -11,6 +11,7 @@
 		<UseWindowsForms>true</UseWindowsForms>
 		<ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
 		<StartupObject>FlashEditor.FlashEditorForm</StartupObject>
+		<ApplicationIcon>Flash.ico</ApplicationIcon>
 
 		<!-- ClickOnce / bootstrapper (unchanged) -->
 		<IsWebBootstrapper>false</IsWebBootstrapper>
