@@ -119,11 +119,32 @@ namespace FlashEditor.Definitions.Interfaces {
             Orientation = Orientation.Horizontal
         };
 
+        /* The canvas shares the bottom pane with the field grid rather than taking a pane of its
+           own. Those two answer the same question from opposite ends - where is this component, and
+           what does it store - so they belong side by side, and the alternative was a fourth
+           horizontal band that would have left every pane too short to use. */
+        private readonly SplitContainer canvasAndFields = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical
+        };
+
+        private readonly InterfaceCanvas canvas = new InterfaceCanvas();
+
+        private readonly EditorToolStrip canvasTools = new EditorToolStrip {
+            Dock = DockStyle.Top,
+            GripStyle = ToolStripGripStyle.Hidden
+        };
+
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select an interface to see its components";
 
         private RSCache? cache;
         private bool splittersPlaced;
+
+        /* Owned by the tab and rebuilt per cache, because the tiles it holds are decoded from one
+           particular cache and a reopen must not serve them from the previous one. */
+        private DefinitionThumbnailCache? tiles;
+        private DefinitionThumbnailCache? canvasTiles;
 
         /// <summary>Creates the panel.</summary>
         public InterfaceEditorPanel() {
@@ -132,8 +153,10 @@ namespace FlashEditor.Definitions.Interfaces {
 
             interfaces.SelectedIndexChanged += (_, _) => ShowInterface(interfaces.SelectedObject as InterfaceListing);
             components.SelectedRowChanged += (_, _) => {
-                ShowComponent(components.SelectedRow as InterfaceComponentRow);
-                SelectInTree(components.SelectedRow as InterfaceComponentRow);
+                var row = components.SelectedRow as InterfaceComponentRow;
+                ShowComponent(row);
+                SelectInTree(row);
+                canvas.SelectedFileId = row?.FileId ?? -1;
             };
 
             //Built from the rows the grid already decoded, on the UI thread, once its load has
@@ -141,6 +164,7 @@ namespace FlashEditor.Definitions.Interfaces {
             //double the cost of opening an interface for nothing.
             components.RowsLoaded += (_, _) => BuildStructure();
             structure.AfterSelect += (_, e) => SelectFromTree(e.Node);
+            canvas.ComponentPicked += (_, fileId) => SelectFromCanvas(fileId);
         }
 
         /// <summary>
@@ -158,6 +182,30 @@ namespace FlashEditor.Definitions.Interfaces {
 
             cache = newCache;
 
+            //Rebuilt rather than cleared: the tiles it holds were decoded from the cache being
+            //replaced, and serving one of those for the new cache would show the old sprite under
+            //the new id.
+            tiles?.Dispose();
+            canvasTiles?.Dispose();
+
+            tiles = newCache == null ? null : new DefinitionThumbnailCache(newCache);
+
+            /* A second cache for the canvas, over an UNCOMPOSITED sprite renderer. The grid wants a
+               square tile on the transparency checkerboard, because there the sprite is the
+               subject; the canvas wants the sprite's own pixels with its alpha, because there it is
+               one layer over others and a checkerboard becomes opaque grey squares covering
+               whatever the interface put beneath it. Two caches rather than a mode flag on one,
+               because the key is (index, id, side) and the two would otherwise collide on it and
+               serve each other's pictures. */
+            canvasTiles = newCache == null
+                ? null
+                : new DefinitionThumbnailCache(new IDefinitionThumbnailRenderer[] {
+                    new SpriteThumbnailRenderer(newCache, composited: false)
+                });
+
+            canvas.Thumbnails = canvasTiles;
+            components.Thumbnails = tiles;
+
             interfaces.ClearObjects();
             fields.ClearObjects();
 
@@ -165,6 +213,7 @@ namespace FlashEditor.Definitions.Interfaces {
             //and so never raises RowsLoaded - the tree would otherwise keep the previous cache's
             //structure beside an empty grid.
             structure.Nodes.Clear();
+            canvas.Show(null);
             components.Bind(null, NoInterface);
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
 
@@ -179,6 +228,27 @@ namespace FlashEditor.Definitions.Interfaces {
                 header.Text = "Index 3's reference table could not be read: " + ex.Message;
                 Debug("Interface tab could not list index 3: " + ex);
             }
+        }
+
+        /// <summary>
+        ///     Releases the thumbnail cache, which owns a background thread and a pile of bitmaps.
+        /// </summary>
+        /// <remarks>
+        ///     The cache is the only thing on this panel that is not a child control, so it is the
+        ///     only thing WinForms will not tear down on its own.
+        /// </remarks>
+        /// <param name="disposing">Whether managed state should be released.</param>
+        protected override void Dispose(bool disposing) {
+            if (disposing) {
+                canvas.Thumbnails = null;
+                components.Thumbnails = null;
+                tiles?.Dispose();
+                tiles = null;
+                canvasTiles?.Dispose();
+                canvasTiles = null;
+            }
+
+            base.Dispose(disposing);
         }
 
         /// <summary>Places the splitters once the layout pass has given the containers a real size.</summary>
@@ -204,7 +274,7 @@ namespace FlashEditor.Definitions.Interfaces {
         /// </remarks>
         private void PlaceSplitters() {
             if (splittersPlaced || listAndDetail.Width < 200 || componentsAndFields.Height < 200
-                || treeAndComponents.Width < 200)
+                || treeAndComponents.Width < 200 || canvasAndFields.Width < 200)
                 return;
 
             //Set before the assignments, not after: changing a splitter distance lays the panel out
@@ -220,6 +290,12 @@ namespace FlashEditor.Definitions.Interfaces {
                 //line is a file id, a type and a name, where the grid beside it holds a dozen columns.
                 treeAndComponents.SplitterDistance =
                     Math.Max(treeAndComponents.Panel1MinSize, treeAndComponents.Width / 3);
+
+                /* The canvas gets the larger share. It has a fixed 765x503 to show and the field
+                   grid beside it is a two-column list that reads fine narrow, so splitting evenly
+                   would put a scrollbar on the canvas while leaving the grid half empty. */
+                canvasAndFields.SplitterDistance =
+                    Math.Max(canvasAndFields.Panel1MinSize, canvasAndFields.Width * 3 / 5);
             } catch (InvalidOperationException ex) {
                 //Left for the next layout rather than clamped. A clamped distance sticks, and the
                 //user would see a collapsed pane on a window that later has room for all three.
@@ -238,8 +314,14 @@ namespace FlashEditor.Definitions.Interfaces {
             treeAndComponents.Panel1.Controls.Add(structureTools);
             treeAndComponents.Panel2.Controls.Add(components);
 
+            BuildCanvasTools();
+
+            canvasAndFields.Panel1.Controls.Add(canvas);
+            canvasAndFields.Panel1.Controls.Add(canvasTools);
+            canvasAndFields.Panel2.Controls.Add(fields);
+
             componentsAndFields.Panel1.Controls.Add(treeAndComponents);
-            componentsAndFields.Panel2.Controls.Add(fields);
+            componentsAndFields.Panel2.Controls.Add(canvasAndFields);
 
             //Docking resolves from the end of the Controls collection backwards, so the header has to
             //be added after the filled splitter or the splitter claims the whole panel.
@@ -251,6 +333,33 @@ namespace FlashEditor.Definitions.Interfaces {
 
             //Bound before any cache arrives so the component grid has headings from the start.
             components.Bind(null, NoInterface);
+        }
+
+        private void BuildCanvasTools() {
+            canvasTools.AddToggle(EditorIcon.Hidden, "Also outline the components the client would never draw",
+                Keys.None, (sender, _) => {
+                    if (sender is EditorToolButton button)
+                        canvas.ShowNotDrawn = button.Checked;
+                });
+
+            canvasTools.Items.Add(new ToolStripControlHost(InfoAffordance.For(canvas,
+                InfoKind.Limitation,
+                "This draws what the FILE stores. It is not a picture of the game.\n\n" +
+                "The format carries no per-state appearance at all: a component stores one colour, " +
+                "one sprite and one font, and hover, pressed and selected are produced at runtime by " +
+                "CS2 scripts fired from twenty hook slots. Item icons, counts and every dynamic child " +
+                "are runtime constructions too. A bank window therefore draws here with nothing " +
+                "selected and no items in it, and that is the format rather than a fault in the " +
+                "drawing.\n\n" +
+                "Models are not drawn. The only route to model pixels in this editor is OpenGL on the " +
+                "one UI-thread context, so a type-6 component is marked with a hatched box carrying " +
+                "its model id instead.\n\n" +
+                "Text is drawn in the editor's own font, not the cache's. The font id names an " +
+                "index-13 metric record paired with an index-8 glyph sheet, and laying text out " +
+                "through that pair is not built yet - so the string, the colour and the alignment are " +
+                "right and the letterforms are wrong.")) {
+                Alignment = ToolStripItemAlignment.Right
+            });
         }
 
         private void BuildStructureTools() {
@@ -297,8 +406,10 @@ namespace FlashEditor.Definitions.Interfaces {
                         rows[typed.FileId] = typed;
                 }
 
-                if (rows.Count == 0)
+                if (rows.Count == 0) {
+                    canvas.Show(null);
                     return;
+                }
 
                 int groupId = -1;
                 var definitions = new List<InterfaceComponentDefinition>(rows.Count);
@@ -308,6 +419,11 @@ namespace FlashEditor.Definitions.Interfaces {
                 }
 
                 InterfaceComponentTree tree = InterfaceComponentTree.Build(groupId, definitions);
+
+                //One tree, two consumers. Building a second for the canvas would let the two
+                //disagree about what is a child of what, which is the only thing either of them
+                //shows.
+                canvas.Show(tree);
 
                 foreach (int rootId in tree.Roots)
                     structure.Nodes.Add(BuildNode(tree, rows, rootId));
@@ -410,6 +526,29 @@ namespace FlashEditor.Definitions.Interfaces {
             }
             finally {
                 syncingSelection = false;
+            }
+        }
+
+        /// <summary>
+        ///     Routes a pick on the canvas to the grid, which then drives everything else.
+        /// </summary>
+        /// <remarks>
+        ///     Deliberately goes through the grid rather than setting the tree and the field pane
+        ///     directly. The grid's selection is the one piece of state the other three views read,
+        ///     so routing every pick through it keeps one definition of what is selected instead of
+        ///     three that have to be kept in step.
+        /// </remarks>
+        /// <param name="fileId">The component the user clicked.</param>
+        private void SelectFromCanvas(int fileId) {
+            if (syncingSelection)
+                return;
+
+            foreach (object row in components.Rows) {
+                if (row is not InterfaceComponentRow typed || typed.FileId != fileId)
+                    continue;
+
+                components.SelectRow(typed);
+                return;
             }
         }
 

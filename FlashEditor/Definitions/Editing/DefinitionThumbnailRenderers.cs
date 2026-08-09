@@ -62,10 +62,26 @@ namespace FlashEditor.Definitions.Editing {
         //this repository: a font created per row cost 4,593 GDI objects on the sprite page.
         private readonly Dictionary<int, Font> markerFonts = new Dictionary<int, Font>();
 
+        private readonly bool composited;
+
         /// <summary>Draws sprite sets out of an open cache.</summary>
         /// <param name="cache">The open cache to read from.</param>
-        public SpriteThumbnailRenderer(RSCache cache) {
+        /// <param name="composited">
+        ///     Whether the frame is composited onto a tile with the transparency checkerboard and a
+        ///     marker for an empty or failed record.
+        /// </param>
+        /// <remarks>
+        ///     <b>A grid wants a tile and a canvas wants a sprite, and they are not the same
+        ///     picture.</b> A tile is square, padded, and backed by the checkerboard that tells a
+        ///     user which pixels are transparent - exactly right when the sprite is the subject.
+        ///     On an interface canvas the sprite is a layer over other layers, so the checkerboard
+        ///     becomes opaque grey squares covering whatever the interface put underneath, which
+        ///     reads as a corrupt sprite. Uncomposited keeps the alpha and lets the layers below
+        ///     show through.
+        /// </remarks>
+        public SpriteThumbnailRenderer(RSCache cache, bool composited = true) {
             this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this.composited = composited;
         }
 
         /// <inheritdoc/>
@@ -105,6 +121,19 @@ namespace FlashEditor.Definitions.Editing {
                     picture = SpritePainter.ToDisplayBitmap(set.GetFrame(0));
                     if (picture == null)
                         content = SpriteTileContent.Empty;
+                }
+
+                if (!composited) {
+                    /* The frame itself, at its own size, alpha intact. Not scaled to the requested
+                       side either: a canvas draws a sprite into the rectangle its component
+                       resolved to, and pre-scaling here to a square would distort every sprite
+                       whose component is not square. The caller does the one scale that is wanted. */
+                    if (picture == null)
+                        return null;
+
+                    Bitmap bare = picture;
+                    picture = null;
+                    return bare;
                 }
 
                 return SpritePainter.RenderTile(picture, side, content, marker);
