@@ -1,5 +1,16 @@
 # Index 12 - CLIENT_SCRIPTS (CS2 bytecode)
 
+> **Capability grading corrected 2026-08-09.** "Capability: none" is false. Index 12 has a codec,
+> a whole-index byte-identity sweep, a Client Scripts tab and a disassembler that resolves jump
+> targets and marks labels.
+>
+> Two things this document still gets wrong are already logged in `reference/DOC-CONFLICTS.md`:
+> the four footer count fields are named in the wrong pairs, and the sweep is driven from the
+> reference table rather than from idx12.
+>
+> What remains open is naming the `if_set*`/`cc_set*` opcode family (`TODO.md` item 26f) and
+> structured control flow (a Backlog item). The format sections below are sound.
+
 **Format:** fully-understood  
 **Capability:** none  
 **Effort:** large

@@ -1,5 +1,17 @@
 # Index 2 - CONFIG
 
+> **SUPERSEDED. Corrected 2026-08-09.** The authority on index 2 is
+> `reference/index-architect-02.md`. This document was written before the index was built and its
+> capability grading is false.
+>
+> **All 35 declared groups decode**, through `ConfigFamily.Modelled`
+> (`FlashEditor/Definitions/Config/ConfigFamily.cs:376`): 16 modelled families with a real codec,
+> and the 19 providerless groups handled by `EmptyConfigDefinition`, which refuses any opcode
+> rather than guessing. There is a Config tab. What remains open is that index 2 is entirely
+> **read-only** in the editor - that gap is `TODO.md` item 21, not this document.
+>
+> The format sections below are still sound. The "Current capability" section is not.
+
 **Format:** partially-understood  
 **Capability:** partial-read  
 **Effort:** very-large

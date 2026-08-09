@@ -2,6 +2,22 @@
 
 Derived from the 38 per-index surveys. Order is by index number, per the binding direction. "Full editor" throughout means: decoder, encoder, byte-identity sweep over the whole index, GUI tab.
 
+> **Read this before section 1. Corrected 2026-08-09.**
+>
+> **Section 1 is historical and its "Capability now" column is false on every row.** It was
+> written before any of the indexes it grades were built, and every index that holds content now
+> decodes, encodes and re-encodes byte-identically. A reader who takes a row of section 1 as
+> current fact will conclude that work already finished has not started, which has already cost
+> one wasted investigation.
+>
+> The progress log at the end of this file stops at five indexes and is not a live record either.
+>
+> **What is still live in this file: sections 0, 2, 4 and 5.** Section 4 in particular is the list
+> of shared abstractions, and section 4.7 (per-file name lookup) and 4.9 (a generic blob tab) are
+> both still unbuilt and are scheduled as `TODO.md` item 24.
+>
+> **The live queue is `TODO.md`.** The live statement of per-index capability is the code.
+
 ---
 
 ## 0. Skipped, and why (do not re-investigate)
@@ -19,7 +35,11 @@ Three indexes below the "empty" line are still worth one line of code: nothing m
 
 ---
 
-## 1. Ordered worklist
+## 1. Ordered worklist - HISTORICAL, DO NOT ACT ON
+
+**Every "Capability now" cell below is stale.** Kept because the "Build" column records what each
+index was understood to need before it was built, which is occasionally useful archaeology, and
+because other documents cite rows here by index number. Nothing in this table states current fact.
 
 Effort is the survey's own grading. "Dep" is hard unless marked soft.
 

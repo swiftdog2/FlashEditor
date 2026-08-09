@@ -1,5 +1,18 @@
 # Index 3 - INTERFACE_DEFINITIONS
 
+> **SUPERSEDED. Corrected 2026-08-09.** The authority on index 3 is
+> `reference/index-architect-03.md`, which settles the format end to end with a falsification run
+> first. This document's "Current capability" section says nothing index-3 specific exists, that
+> the TabPage is empty and that there is no definition class. **All of that is now false.**
+>
+> There is a component codec (`FlashEditor/Definitions/Interfaces/InterfaceComponentDefinition.cs`),
+> a populated Interfaces tab, and a whole-index byte-identity sweep: every component across every
+> declared interface re-encodes to the bytes it was read from, with six non-canonical cases
+> captured. The "Gaps" list below is a list of finished work.
+>
+> What is genuinely still missing is the *editor*: no canvas, no layout resolver, no tree, no
+> colour picker, no route from a hook to its script. That is `TODO.md` item 26.
+
 **Format:** partially-understood  
 **Capability:** none  
 **Effort:** large
