@@ -466,6 +466,62 @@ namespace FlashEditor.Tests.Definitions.ClientScripts
         }
 
         /// <summary>
+        ///     Reports the names that no instruction in the loaded index ever exercises.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The figure nothing else here computes, and the one a reader should be suspicious
+        ///     of.</b> Every other coverage number counts what the table gets right about instructions
+        ///     that exist; this one counts rows that no data checks. A name on an opcode the cache
+        ///     never uses is a claim about the client alone, and a table free to grow hundreds of them
+        ///     would look like progress while being unfalsifiable by anything in this suite.
+        ///     <para>
+        ///     Printed rather than bounded. The dispatcher is much larger than this cache's usage -
+        ///     667 explicit arms plus 96 folded twins against the 582 distinct opcodes both caches
+        ///     agree the index holds - so some absent names are legitimate and a ceiling would be a
+        ///     number invented here. What is asserted is only what cannot be argued with: an absent
+        ///     name still describes itself, cites its arm, and is not a folded twin whose own base is
+        ///     in use, because that last case would mean the fold is being applied where the client
+        ///     does not fold.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void TheNamedOpcodesTheIndexNeverUses_AreReported()
+        {
+            var occurring = new SortedSet<int>();
+
+            Sweep().ForEachDecoded((record, script) =>
+            {
+                foreach (ClientScriptInstruction instruction in script.Instructions)
+                    occurring.Add(instruction.Opcode);
+            });
+
+            var absent = new SortedSet<int>();
+            foreach (int opcode in ClientScriptOpcodes.NamedOpcodes)
+                if (!occurring.Contains(opcode))
+                    absent.Add(opcode);
+
+            _output.WriteLine($"{ClientScriptOpcodes.NamedOpcodes.Count - absent.Count} of the " +
+                              $"{ClientScriptOpcodes.NamedOpcodes.Count} named opcodes occur in this cache; " +
+                              $"{absent.Count} never do");
+            _output.WriteLine("named but absent: " + string.Join(", ", absent));
+
+            Assert.NotEmpty(occurring);
+
+            foreach (int opcode in absent)
+            {
+                ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(opcode);
+
+                Assert.False(string.IsNullOrWhiteSpace(info.Summary));
+                Assert.StartsWith("Class247.java:", info.Citation);
+
+                //A twin whose base is in use while the twin is not is fine; a twin named where the
+                //base is not named at all would mean the fold was applied outside the client's ranges.
+                if (ClientScriptOpcodes.TryResolveComponentAlias(opcode, out int twin))
+                    Assert.NotNull(ClientScriptOpcodes.MnemonicOf(twin));
+            }
+        }
+
+        /// <summary>
         ///     Groups the idx file holds and the reference table does not are read and reported, not
         ///     swept.
         /// </summary>

@@ -21,25 +21,274 @@ namespace FlashEditor.Tests.Definitions.ClientScripts
     /// </remarks>
     public sealed class ClientScriptDisassemblyTests
     {
-        /// <summary>Every citation names a line of the client, so every claim can be checked.</summary>
+        /// <summary>
+        ///     Every citation names lines of the client, and the first of them is always the dispatch
+        ///     arm.
+        /// </summary>
+        /// <remarks>
+        ///     The first-entry rule is the sharp half. Most component rows now carry a second
+        ///     citation - the renderer that reads the field, the provider that resolves the id, the
+        ///     resolver that divides with the pair - and a row whose <i>only</i> evidence was that
+        ///     second file would be a name taken from a field label rather than from behaviour, which
+        ///     is exactly the mistake the model dump's field-name table made. Anchoring entry zero to
+        ///     <c>Class247.java</c> makes that unwritable.
+        /// </remarks>
         [Fact]
         public void EveryOpcodeEntry_CitesALineOfTheClient()
         {
-            var pattern = new Regex(@"^Class247\.java:\d+(-\d+)?$");
+            var arm = new Regex(@"^Class247\.java:\d+(-\d+)?$");
+            var clientLine = new Regex(@"^[A-Za-z][A-Za-z0-9_]*\.java:\d+(-\d+)?$");
             var wrong = new List<string>();
 
             foreach (int opcode in ClientScriptOpcodes.NamedOpcodes)
             {
                 ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(opcode);
+                string[] cited = info.Citation.Split(", ");
 
-                if (!pattern.IsMatch(info.Citation))
-                    wrong.Add($"opcode {opcode} cites '{info.Citation}'");
+                if (!arm.IsMatch(cited[0]))
+                    wrong.Add($"opcode {opcode} does not cite its arm first: '{info.Citation}'");
+
+                foreach (string entry in cited)
+                    if (!clientLine.IsMatch(entry))
+                        wrong.Add($"opcode {opcode} cites '{entry}', which is not a client file and line");
+
                 if (string.IsNullOrWhiteSpace(info.Summary))
                     wrong.Add($"opcode {opcode} has no summary");
             }
 
             Assert.NotEmpty(ClientScriptOpcodes.NamedOpcodes);
             Assert.Empty(wrong);
+        }
+
+        /// <summary>
+        ///     A named opcode in a folded range names its stack-addressed twin too.
+        /// </summary>
+        /// <remarks>
+        ///     The two are literally one arm body reached with the component bound differently
+        ///     (<c>Class247.java:408-418</c>), so a set that held only the low form would report every
+        ///     2xxx instruction as unnamed while the grid beside it showed a name, and the coverage
+        ///     line under the tab would under-report by exactly the size of this family.
+        /// </remarks>
+        [Fact]
+        public void NamedOpcodes_CoverTheFoldedTwins()
+        {
+            var missing = new List<string>();
+            var named = new HashSet<int>(ClientScriptOpcodes.NamedOpcodes);
+
+            foreach (int opcode in named)
+            {
+                if (!ClientScriptOpcodes.TryResolveComponentAlias(opcode + 1000, out _))
+                    continue;
+
+                if (ClientScriptOpcodes.Describe(opcode).Addressing !=
+                    ClientScriptComponentAddressing.ActiveComponent)
+                    continue;
+
+                if (!named.Contains(opcode + 1000))
+                    missing.Add($"{opcode} is named but its twin {opcode + 1000} is not");
+            }
+
+            Assert.Empty(missing);
+            Assert.Equal("cc_set_position", ClientScriptOpcodes.MnemonicOf(1000));
+            Assert.Equal("if_set_position", ClientScriptOpcodes.MnemonicOf(2000));
+        }
+
+        /// <summary>
+        ///     A stack-addressed opcode consumes exactly one more value than the twin it shares an arm
+        ///     with, and that value is pushed last.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Class247.java:411</c> pops the packed component before the arm body pops anything
+        ///     else, so in push order it comes after everything. A list that put it first would tell a
+        ///     script author to emit the whole call in the wrong order.
+        /// </remarks>
+        [Fact]
+        public void TheStackAddressedForm_TakesItsComponentLast()
+        {
+            ClientScriptOpcodeInfo active = ClientScriptOpcodes.Describe(1000);
+            ClientScriptOpcodeInfo stack = ClientScriptOpcodes.Describe(2000);
+
+            Assert.Equal(ClientScriptComponentAddressing.ActiveComponent, active.Addressing);
+            Assert.Equal(ClientScriptComponentAddressing.StackComponent, stack.Addressing);
+            Assert.Equal(active.Operands.Slots.Count + 1, stack.Operands.Slots.Count);
+            Assert.Equal("component", stack.Operands.Slots[stack.Operands.Slots.Count - 1].Name);
+            Assert.Equal("x", stack.Operands.Slots[0].Name);
+        }
+
+        /// <summary>
+        ///     An operand list nobody has read is blank, not "nothing".
+        /// </summary>
+        /// <remarks>
+        ///     Roughly three quarters of the reachable dispatch has no row here at all, and a row that
+        ///     has not been read cannot claim the opcode consumes nothing. The two states have to
+        ///     render differently or the grid asserts knowledge it does not have on several hundred
+        ///     rows.
+        /// </remarks>
+        [Fact]
+        public void AnUnreadOperandList_RendersBlankRatherThanAsNothing()
+        {
+            Assert.Equal(string.Empty, ClientScriptOpcodes.Describe(3300).Operands.Text());
+            Assert.False(ClientScriptOpcodes.Describe(3300).Operands.IsStated);
+
+            Assert.Equal("nothing", ClientScriptOpcodes.Describe(101).Operands.Text());
+            Assert.True(ClientScriptOpcodes.Describe(101).Operands.IsStated);
+        }
+
+        /// <summary>
+        ///     Every named component opcode wears the prefix its addressing mode implies.
+        /// </summary>
+        /// <remarks>
+        ///     The prefixes are the only thing on screen that says where an instruction's target comes
+        ///     from, so a <c>cc_</c> on a stack-addressed arm would be a wrong statement about the
+        ///     calling convention rather than a cosmetic slip - a script written from it would leave
+        ///     one value on the stack.
+        /// </remarks>
+        [Fact]
+        public void EveryComponentMnemonic_MatchesItsAddressing()
+        {
+            var wrong = new List<string>();
+
+            foreach (int opcode in ClientScriptOpcodes.NamedOpcodes)
+            {
+                ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(opcode);
+                string mnemonic = info.Mnemonic!;
+
+                switch (info.Addressing)
+                {
+                    case ClientScriptComponentAddressing.ActiveComponent when !mnemonic.StartsWith("cc_"):
+                        wrong.Add($"{opcode} '{mnemonic}' acts on the active component but is not cc_");
+                        break;
+                    case ClientScriptComponentAddressing.StackComponent when !mnemonic.StartsWith("if_"):
+                        wrong.Add($"{opcode} '{mnemonic}' takes its component off the stack but is not if_");
+                        break;
+                    case ClientScriptComponentAddressing.None
+                        when mnemonic.StartsWith("cc_") || mnemonic.StartsWith("if_"):
+                        wrong.Add($"{opcode} '{mnemonic}' claims an addressing mode its row does not state");
+                        break;
+                }
+            }
+
+            Assert.Empty(wrong);
+        }
+
+        /// <summary>
+        ///     The six item opcodes that share one arm body each get their own row.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Class247.java:884</c> is one body reached by six numbers, told apart only by two
+        ///     ternaries inside it. Four of the six are separable and named; 1212 and 1213 set exactly
+        ///     the same pair of values with no test between them, so naming either would be inventing
+        ///     a distinction. What every one of the six must have is its own description, or five of
+        ///     them read on screen as opcodes this project has never looked at.
+        /// </remarks>
+        /// <param name="opcode">One of the six.</param>
+        /// <param name="named">Whether the two ternaries settle a distinct meaning for it.</param>
+        [Theory]
+        [InlineData(1200, true)]
+        [InlineData(1205, true)]
+        [InlineData(1208, true)]
+        [InlineData(1209, true)]
+        [InlineData(1212, false)]
+        [InlineData(1213, false)]
+        public void TheSharedItemArm_DescribesEachOfItsSixOpcodes(int opcode, bool named)
+        {
+            ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(opcode);
+
+            Assert.Equal(named, info.IsNamed);
+            Assert.Contains("item", info.Summary);
+            Assert.Equal("Class247.java:884", info.Citation.Split(", ")[0]);
+            Assert.Equal(2, info.Operands.Slots.Count);
+        }
+
+        /// <summary>
+        ///     A hook setter's arity is decided at run time and the table says so.
+        /// </summary>
+        /// <remarks>
+        ///     One shared body (<c>Class247.java:1219-1250</c>) pops a format string and then reads one
+        ///     value per character of it. Any fixed count on these rows would be wrong for most calls.
+        /// </remarks>
+        [Fact]
+        public void AHookSetter_StatesThatItsArityIsVariadic()
+        {
+            ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(1407);
+
+            Assert.True(info.Operands.IsVariadic);
+            Assert.Null(info.Mnemonic);
+            Assert.Contains("Hooks slot 5", info.Summary);
+            Assert.Contains("Triggers slot 0", info.Summary);
+        }
+
+        /// <summary>
+        ///     Opcode 2506 does not exist, because the arm that would serve it sits outside its guard.
+        /// </summary>
+        /// <remarks>
+        ///     A <c>_DocumentsKnownDefect</c> row per the convention at
+        ///     <c>FlashEditor.Tests/Cache/RSFileStoreTests.cs:12-20</c>. <c>if(i == 1506)</c> is
+        ///     written at <c>Class247.java:1612</c>, inside the <c>i &lt; 2600</c> guard at
+        ///     <c>:1573</c>, which is only entered for 2500..2599. It is a verbatim copy of the live
+        ///     1506 at <c>:1368</c> and can never match where it stands, so the stack-addressed form of
+        ///     that getter is missing from the build. If a later client ever dispatches 2506, this test
+        ///     is the thing that has to change.
+        /// </remarks>
+        [Fact]
+        public void Opcode2506_IsUnreachableInThisBuild_DocumentsKnownDefect()
+        {
+            ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(2506);
+
+            Assert.Null(info.Mnemonic);
+            Assert.Contains("does not exist", info.Summary);
+            Assert.Contains("Class247.java:1612", info.Citation);
+            Assert.Contains("Class247.java:1573", info.Citation);
+        }
+
+        /// <summary>
+        ///     Opcode 1615 does not exist, for the mirror-image reason.
+        /// </summary>
+        /// <remarks>
+        ///     <c>if(i == 2614)</c> is written at <c>Class247.java:1477</c>, inside the
+        ///     <c>i &lt; 1700</c> guard at <c>:1375</c>, which is only entered for 1600..1699. Its
+        ///     evident intent was 1615, the active-component form of "get the model id", so that read
+        ///     is reachable only through the live 2614 at <c>:1706</c>. Neither this nor 2506 is a
+        ///     decompiler artefact: the condition itself is outside the guard, which no missing
+        ///     <c>return</c> could explain.
+        /// </remarks>
+        [Fact]
+        public void Opcode1615_IsUnreachableInThisBuild_DocumentsKnownDefect()
+        {
+            ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(1615);
+
+            Assert.Null(info.Mnemonic);
+            Assert.Contains("does not exist", info.Summary);
+            Assert.Contains("Class247.java:1477", info.Citation);
+
+            //The live one is reachable and takes its component off the stack, with no twin above it.
+            Assert.Equal(ClientScriptComponentAddressing.StackComponent,
+                ClientScriptOpcodes.Describe(2614).Addressing);
+        }
+
+        /// <summary>
+        ///     A number a folded block skips is reported as a hole rather than as unfinished work.
+        /// </summary>
+        /// <remarks>
+        ///     The generic fallback reads "dispatched by method3148", which for 1002, 1121 and 1413 is
+        ///     false: nothing in <c>Class247</c> tests for any of them. Both forms of each get a row so
+        ///     the twin is never synthesised from one that describes a hole.
+        /// </remarks>
+        /// <param name="opcode">A number with no arm.</param>
+        [Theory]
+        [InlineData(1002)]
+        [InlineData(2002)]
+        [InlineData(1121)]
+        [InlineData(2121)]
+        [InlineData(1413)]
+        [InlineData(2413)]
+        public void ANumberWithNoArm_SaysSoRatherThanNamingADispatcher(int opcode)
+        {
+            ClientScriptOpcodeInfo info = ClientScriptOpcodes.Describe(opcode);
+
+            Assert.Null(info.Mnemonic);
+            Assert.StartsWith("No arm.", info.Summary);
+            Assert.Equal(ClientScriptComponentAddressing.None, info.Addressing);
         }
 
         /// <summary>
