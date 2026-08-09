@@ -101,6 +101,42 @@ namespace FlashEditor.Definitions.Interfaces {
             }
         }
 
+        /// <summary>
+        ///     Writes an edited string back to whichever field <see cref="Text"/> read it from.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The precedence here must mirror the getter's exactly, and that is the whole point
+        ///     of the method.</b> The column shows one of three unrelated fields - the message, the
+        ///     tooltip, or the first context option - so a setter that always wrote the message
+        ///     would put a tooltip's new text into a field the component never draws, leave the
+        ///     tooltip unchanged, and present a grid where the edit appears to have worked.
+        ///     <para>
+        ///     An empty component has nowhere unambiguous to put text, so it refuses rather than
+        ///     inventing a field. Which field to create belongs on the field pane, where the choice
+        ///     can be made explicitly.
+        ///     </para>
+        /// </remarks>
+        /// <param name="value">The new text.</param>
+        /// <returns>Whether anything was written.</returns>
+        public bool TrySetText(string value) {
+            if (Component.ComponentType == 4 && !Component.Message.IsEmpty) {
+                Component.Message = InterfaceText.FromText(value);
+                return true;
+            }
+
+            if (!Component.Tooltip.IsEmpty) {
+                Component.Tooltip = InterfaceText.FromText(value);
+                return true;
+            }
+
+            if (Component.ContextOptions.Count > 0) {
+                Component.ContextOptions[0] = InterfaceText.FromText(value);
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>The media the component draws: a sprite id, a model id, or nothing.</summary>
         public string Media => Component.ComponentType switch {
             5 => Component.SpriteId.ToString(),
@@ -165,11 +201,35 @@ namespace FlashEditor.Definitions.Interfaces {
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Parent", row => row.Parent, 60),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Hidden", row => row.Component.IsHidden, 60),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Media", row => row.Media, 70),
-            DefinitionColumn.Text<InterfaceComponentRow>("Text", row => row.Text, null, 240),
+
+            /* Types 3, 4, 5 and 9 all read one colour field, and only one type block runs per
+               component - so the column is meaningful exactly for those and stores nothing for a
+               layer or a model. Null for the others rather than a swatch of whatever happens to be
+               in the field, which would present unread storage as a colour the record has. */
+            DefinitionColumn.Colour<InterfaceComponentRow>("Colour",
+                row => HasColour(row.Component) ? row.Component.Colour : null,
+                (row, value) => row.Component.Colour = value, 110),
+
+            DefinitionColumn.Text<InterfaceComponentRow>("Text", row => row.Text,
+                (row, value) => row.TrySetText(value), 240),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Hooks", row => row.Component.HookArrayCount, 60),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Mask",
                 row => "0x" + row.Component.AccessMask.ToString("X6"), 90)
         };
+
+        /// <summary>
+        ///     Whether a component's type reads the shared colour field at all.
+        /// </summary>
+        /// <remarks>
+        ///     Types 3, 4, 5 and 9 all read one <c>Colour</c>, and only one type block ever runs for
+        ///     a component - so for a layer or a model the field is storage the decoder never wrote.
+        ///     Showing a swatch for those would present unread bytes as a colour the record has.
+        /// </remarks>
+        /// <param name="component">The component.</param>
+        /// <returns>Whether its colour means anything.</returns>
+        private static bool HasColour(InterfaceComponentDefinition component) {
+            return component.ComponentType is 3 or 4 or 5 or 9;
+        }
 
         /// <inheritdoc/>
         public override int IndexId => RSConstants.INTERFACE_DEFINITIONS_INDEX;

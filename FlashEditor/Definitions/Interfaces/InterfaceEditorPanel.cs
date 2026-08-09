@@ -166,6 +166,7 @@ namespace FlashEditor.Definitions.Interfaces {
             structure.AfterSelect += (_, e) => SelectFromTree(e.Node);
             canvas.ComponentPicked += (_, fileId) => SelectFromCanvas(fileId);
             canvas.ComponentGeometryChanged += (_, fileId) => CommitGeometry(fileId);
+            components.CellActivated += (_, e) => PickColour(e);
             canvas.Refused += (_, why) => components.ReportStatus(why);
         }
 
@@ -552,6 +553,49 @@ namespace FlashEditor.Definitions.Interfaces {
                 components.SelectRow(typed);
                 return;
             }
+        }
+
+        /// <summary>
+        ///     Opens a colour picker on an activated swatch and writes what comes back.
+        /// </summary>
+        /// <remarks>
+        ///     The swatch column stays editable as hex as well. A picker is how a colour is chosen
+        ///     and a hex field is how one is transcribed from somewhere else, and an editor for this
+        ///     format needs both - the six digits are what a user reads out of a wiki, a diff or
+        ///     another record.
+        ///     <para>
+        ///     <c>FullOpen</c>, because the client's palette is not the sixteen basic colours and
+        ///     the custom-colour half of the dialog is the only part of it that is any use here.
+        ///     </para>
+        /// </remarks>
+        /// <param name="activated">Which row, and what the cell named.</param>
+        private void PickColour(DefinitionCellActivatedEventArgs activated) {
+            if (activated.Visual.Art != DefinitionCellArt.Swatch
+                || activated.Row is not InterfaceComponentRow row) {
+                return;
+            }
+
+            using var picker = new ColorDialog {
+                Color = activated.Visual.SwatchColour,
+                FullOpen = true,
+                AnyColor = true
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            int packed = (picker.Color.R << 16) | (picker.Color.G << 8) | picker.Color.B;
+            if (packed == row.Component.Colour)
+                return;
+
+            row.Component.Colour = packed;
+            components.CommitRow(row);
+
+            //The canvas draws this colour, so it is wrong until it redraws.
+            canvas.Invalidate();
+
+            if (ReferenceEquals(components.SelectedRow, row))
+                ShowComponent(row);
         }
 
         /// <summary>

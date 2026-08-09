@@ -302,6 +302,69 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.True(exactChecked > 0, "No component was actually round-tripped.");
         }
 
+        /// <summary>
+        ///     Changing a colour or a string and changing it back lands on the original bytes.
+        /// </summary>
+        /// <remarks>
+        ///     The same edit-path check the move test makes, for the two edit paths 26e opened. Both
+        ///     are sharper than they look.
+        ///     <para>
+        ///     The colour is one field shared by four component types and read by none of the
+        ///     others, so writing it on a layer would change bytes the decoder never read and the
+        ///     re-encode would differ from a file nobody edited.
+        ///     </para>
+        ///     <para>
+        ///     The text column is derived from whichever of three unrelated fields is populated, so
+        ///     a setter whose precedence did not mirror the getter's would write the message where
+        ///     the tooltip was read and leave both wrong. This asserts the mirror by round-tripping
+        ///     through the pair.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void ChangingAColourOrATextAndChangingItBack_LandsOnTheOriginalBytes() {
+            int colours = 0;
+            int texts = 0;
+
+            foreach ((int groupId, List<InterfaceComponentDefinition> components) in EveryInterface()) {
+                foreach (InterfaceComponentDefinition component in components) {
+                    var row = new InterfaceComponentRow(
+                        new FlashEditor.Definitions.Editing.DefinitionAddress(groupId, component.FileId),
+                        component, -1, -1);
+
+                    byte[] before = component.Encode().ToArray();
+
+                    if (component.ComponentType is 3 or 4 or 5 or 9) {
+                        int original = component.Colour;
+                        component.Colour = original ^ 0x00FF00;
+                        component.Colour = original;
+
+                        Assert.True(before.AsSpan().SequenceEqual(component.Encode().ToArray()),
+                            $"group {groupId} file {component.FileId} changed after a colour edit " +
+                            "and an equal edit back.");
+                        colours++;
+                    }
+
+                    string originalText = row.Text;
+                    if (row.TrySetText(originalText + "x")) {
+                        Assert.True(row.TrySetText(originalText),
+                            $"group {groupId} file {component.FileId} accepted a text edit but " +
+                            "refused to accept the original back.");
+
+                        Assert.True(before.AsSpan().SequenceEqual(component.Encode().ToArray()),
+                            $"group {groupId} file {component.FileId} changed after a text edit " +
+                            "and an equal edit back - the setter does not mirror the getter.");
+                        texts++;
+                    }
+                }
+            }
+
+            _output.WriteLine($"cache: {_fixture.Profile.Name}");
+            _output.WriteLine($"components round-tripped through a colour edit: {colours}");
+            _output.WriteLine($"components round-tripped through a text edit: {texts}");
+
+            Assert.True(colours > 0 && texts > 0, "One of the two edit paths was never exercised.");
+        }
+
         private static void Count(IDictionary<int, int> census, int mode) {
             census[mode] = census.TryGetValue(mode, out int seen) ? seen + 1 : 1;
         }

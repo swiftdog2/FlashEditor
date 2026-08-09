@@ -133,7 +133,11 @@ namespace FlashEditor.Definitions.Editing {
                 return;
 
             DefinitionCellVisual visual = hit.VisualFor(e.Model);
-            if (visual.Art != DefinitionCellArt.Link && visual.Art != DefinitionCellArt.Thumbnail)
+
+            //A swatch is activatable too, and for the same reason a link is: the cell names
+            //something the user wants to reach, and typing six hex digits from memory is the thing
+            //this whole layer exists to remove.
+            if (visual.Art == DefinitionCellArt.None)
                 return;
 
             CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(e.Model, visual));
