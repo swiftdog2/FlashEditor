@@ -18,7 +18,7 @@ changelog as a footnote.
 > still presents the cache as integers, and someone who does not already know this format cannot
 > build anything with it. Items 18 to 26 are that gap.
 
-Checked against the code on 2026-08-09 at commit `2348641`.
+Checked against the code on 2026-08-10, part way through the item 18 and 26 work.
 
 **Before trusting anything under `reference/index-survey/`, read item 27.** Four documents are
 stale in ways a reader would act on.
@@ -66,7 +66,38 @@ with a worked case behind them, or that bind a specific item below.
 
 ## In flight
 
-Nothing.
+**Item 18 is most of the way done and item 26 is half done.** What landed, and what each left behind:
+
+| | State | What is left |
+|---|---|---|
+| **18.1** icons and toolbar | Done. `EditorTheme`, `EditorSurface`, `EditorIcon`, `EditorIcons` (33 GDI-drawn icons), `EditorToolStrip` | Nothing. Icons are judged on a contact sheet; four shipped broken in the first pass and the sheet is the only reason they did not stay broken |
+| **18.2** column renderers | Done. `DefinitionCellVisual`, `DefinitionCellRenderer`, three factories on `DefinitionColumn`, proved on the Config tab's floor families | Adopt them on the other pages. Zero descriptors changed, so every adoption is additive |
+| **18.3** asset picker | **Not started.** The thumbnail cache behind it is done (`DefinitionThumbnailCache`) | The dialog itself. This is the one piece of item 18 still missing, and 20, 21 and 26e all want it |
+| **18.4** info affordance | Control done (`InfoAffordance`), used by the two new interface toolbars | **The twelve label migrations.** See the corrections below - the list in item 18's prompt is wrong in three places |
+| **26a** layout resolver | Done, with 23 unit tests and 4 cache-backed property sweeps, green on both caches | Nothing |
+| **26b** component tree | Done, tree view wired into the tab with two-way selection | Nothing |
+| **26c** canvas | Done for types 0, 3, 4, 5, 6 and 9 | Text uses the editor's font, not the cache's glyph sheets. Models are marked, not drawn |
+| **26f** opcode naming | Done. 126 newly named, 71 -> 197 | ~70 deliberately left numbered because the dispatcher does not settle them |
+
+**Corrections to this file's own item 18, found by doing it.** All three would have mis-scoped the
+work, and they are logged in `reference/DOC-CONFLICTS.md`:
+
+- "exactly **two** `ToolTip` instances" - there is **one**, attached to two controls, one of which
+  the list missed. The "menu item" is a `ToolTipText` property, a different mechanism. It matters
+  because that instance carries a 30-second `AutoPopDelay`, right for a paragraph and wrong for a
+  toolbar, so inheriting it is a trap.
+- "no icon resources" - `Flash.ico` exists, as `<ApplicationIcon>` and in `Editor.resx`. It is the
+  app icon, so the spirit holds, but the resx path is exercised and a reader would conclude it is not.
+- **`MapEditorPanel.cs:1613` is not a docked label and must be struck from 18.4.** It is
+  `sb.AppendLine` feeding the read-only inspector `TextBox`, rewritten on every mouse move. Moving
+  it behind an (i) would delete a feature. Four other real labels are missing from the list, so the
+  count survives by coincidence.
+
+**And one about the whole application, which changes what any of this can assume:** the process is
+pinned **DPI-unaware** (`FlashEditorForm.cs:46`, an OpenTK crash fix), so `AutoScaleMode.Dpi`
+computes exactly 1.0 everywhere and nothing scales. 16 logical pixels is 16 physical pixels. Drawing
+an icon as a vector buys recolourability, **not** sharpness - Windows bitmap-stretches the whole
+window after paint, so a vector and a raster blur identically.
 
 ---
 
@@ -484,16 +515,34 @@ from a hook to the script it names.
 Eight sub-items with a hard dependency order. **26a and 26b depend on nothing.** 26f gates the
 behaviour work; 26h is the only one that touches the archive layer.
 
-| | Sub-item | Depends on |
-|---|---|---|
-| **26a** | The layout resolver: four mode bytes to a pixel rectangle, ported from the client | nothing |
-| **26b** | The component tree from the parent field, in file-id draw order | nothing |
-| **26c** | Static rendering of types 0, 3, 4, 5, 6 and 9 onto a canvas | 26a, item 18 |
-| **26d** | Direct manipulation: select, move, resize, marquee, snap, nudge | 26c |
-| **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 |
-| **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing |
-| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 |
-| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d |
+| | Sub-item | Depends on | State |
+|---|---|---|---|
+| **26a** | The layout resolver: four mode bytes to a pixel rectangle, ported from the client | nothing | **done** |
+| **26b** | The component tree from the parent field, in file-id draw order | nothing | **done** |
+| **26c** | Static rendering of types 0, 3, 4, 5, 6 and 9 onto a canvas | 26a, item 18 | **done** |
+| **26d** | Direct manipulation: select, move, resize, marquee, snap, nudge | 26c | open. Select and pick are done; move, resize, marquee, snap and nudge are not |
+| **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | open, and wants 18.3 |
+| **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing | **done** |
+| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | open. 26f settled the slot mapping against `unpackConfig`'s read order |
+| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | open |
+
+**Three findings from 26a that bind everything after it.** Each was caught by review before any
+code was written, and each would otherwise have become a test asserting a defect:
+
+- **`(-25945 * 765) >> 14` is -1212, not -1211.** `-1211` is what a truncating `/ 16384` produces.
+  The design document demanded -1211, so a test written from it would have passed against the wrong
+  implementation and pushed whoever fixed it to replace the shift with a division. 117 components in
+  this cache have a negative base position on a shift-mode axis, so this is live arithmetic.
+- **A component can be its own parent.** Group 468 file 1 is, byte-identically in both caches.
+  Anything walking the parent structure must be cycle-proof by construction; there is deliberately
+  no depth cap, because the format permits a 770-level chain in the 771-file group this cache holds.
+- **Sizing modes 3 and 4 occur zero times in either cache**, on both axes, while positioning mode 5
+  occurs 57 times on x and 56 on y. So the aspect-ratio cross-links are defended only by hand-written
+  unit tests, and the positioning catch-all arm is load-bearing rather than defensive.
+
+**And one about the clip rule, which no test that does not draw can see:** a type-9 line extends its
+clip one pixel right and down, because its endpoint is inclusive. Both caches hold 367 lines and the
+omission clips the last pixel off every one.
 
 ```
 Read CLAUDE.md, AGENTS.md, the UI conventions section, and reference/index-architect-03.md first.
@@ -535,13 +584,15 @@ investigation, and a reader who finds one of these tonight will act on it.** Eac
 the index it describes was built, and each now claims nothing exists for an index that is complete
 with a tab. A survey document is prose: written once, never re-measured.
 
+**Four of the six rows below are done.** The two that remain are the last two.
+
 | File | What it claims | What is true |
 |---|---|---|
-| `index-survey/00-WORKLIST.md` §1 | Per-index capability, e.g. "3 INTERFACE_DEFINITIONS \| none (empty TabPage)", "2 CONFIG \| partial-read" | Every row is false. Its progress log stops at five indexes. **Sections 4 and 5 are still worth reading; section 1 is not** - mark it historical or delete it |
-| `index-survey/index-002-CONFIG.md` | 3 of 35 groups decode, "GUI: none" | 35 of 35, with a tab. `reference/index-architect-02.md` supersedes it |
-| `index-survey/index-003-INTERFACE-DEFINITIONS.md` | "nothing exists" | Complete with a tab. `reference/index-architect-03.md` supersedes it |
-| `index-survey/index-012-CLIENT-SCRIPTS.md` | "nothing exists" | Complete with a tab and a disassembler |
-| `CLAUDE.md` UI conventions | A `TabPage` strip, "three of the tabs predate this" | The strip is gone - navigation is a category `TreeView` over a `TabControl` that swallows `TCM_ADJUSTRECT` (`Editor.cs:353-371`), 25 pages in six categories. The three-bespoke-arm count is still right |
+| ~~`index-survey/00-WORKLIST.md` §1~~ | ~~Per-index capability~~ | **Done.** Section 1 banner-marked historical; 0, 2, 4 and 5 declared still live |
+| ~~`index-survey/index-002-CONFIG.md`~~ | ~~3 of 35 groups decode~~ | **Done.** Banner-marked superseded by `index-architect-02.md` |
+| ~~`index-survey/index-003-INTERFACE-DEFINITIONS.md`~~ | ~~"nothing exists"~~ | **Done.** Banner-marked superseded by `index-architect-03.md` |
+| ~~`index-survey/index-012-CLIENT-SCRIPTS.md`~~ | ~~"nothing exists"~~ | **Done.** Capability grading corrected |
+| ~~`CLAUDE.md` UI conventions~~ | ~~A `TabPage` strip~~ | **Done**, and the count was wrong in this row too: the deck holds **27** pages and the tree exposes **25**. A page count is two numbers and neither document said which it meant |
 | `Sfx2EditorPanel.cs:55-60` | The tab cannot play audio because no off-the-shelf decoder takes these bytes | A hand-written Vorbis decoder now exists and drives the music player. The label may still be a correct scoping decision, but it is no longer justified by capability - restate it or act on it |
 
 `STATE_OF_THE_EDITOR.md` remains historical above its roadmap, which `CLAUDE.md` already says.
