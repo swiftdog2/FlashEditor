@@ -7,6 +7,8 @@ using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.Definitions.Models;
+using FlashEditor.Definitions.Models.Interchange;
 
 namespace FlashEditor.Definitions.Entities {
     /// <summary>Which definition family the entity page is showing.</summary>
@@ -94,6 +96,12 @@ namespace FlashEditor.Definitions.Entities {
         private readonly Button exportButton = new Button { AutoSize = true, Text = "Export selected (.dat)" };
         private readonly Button importButton = new Button { AutoSize = true, Text = "Import over selected..." };
 
+        //Shorter than the two beside them on purpose. Six controls plus the notice is already more
+        //than the strip fits at the default splitter width, and the notice is what has to stay on
+        //the first row.
+        private readonly Button exportObjButton = new Button { AutoSize = true, Text = "Export .obj..." };
+        private readonly Button importObjButton = new Button { AutoSize = true, Text = "Import .obj..." };
+
         private readonly Label noticeLabel = new Label { AutoSize = true };
 
         private readonly Label animationLabel = new Label { AutoSize = true, Text = "Animations" };
@@ -108,6 +116,12 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>Set while the animation list is refilled, so the refill does not play anything.</summary>
         private bool animationsPopulating;
 
+        /// <summary>The OBJ export in flight, or null. Held so a rebind can cancel it.</summary>
+        private System.ComponentModel.BackgroundWorker? objExporter;
+
+        /// <summary>Set while an OBJ export runs, so the actions cannot be re-entered.</summary>
+        private bool exporting;
+
         /// <summary>Creates an unbound page.</summary>
         public EntityBrowserPanel() {
             Dock = DockStyle.Fill;
@@ -118,6 +132,8 @@ namespace FlashEditor.Definitions.Entities {
 
             exportButton.Click += ExportButton_Click;
             importButton.Click += ImportButton_Click;
+            exportObjButton.Click += ExportObjButton_Click;
+            importObjButton.Click += ImportObjButton_Click;
 
             animationSelector.SelectedIndexChanged += AnimationSelector_SelectedIndexChanged;
             previousAnimation.Click += (_, _) => StepAnimation(-1);
@@ -127,6 +143,8 @@ namespace FlashEditor.Definitions.Entities {
             toolStrip.Controls.Add(kindSelector);
             toolStrip.Controls.Add(exportButton);
             toolStrip.Controls.Add(importButton);
+            toolStrip.Controls.Add(exportObjButton);
+            toolStrip.Controls.Add(importObjButton);
             toolStrip.Controls.Add(noticeLabel);
 
             /* The two cycle buttons sit between the caption and the box rather than after it. The
@@ -249,6 +267,11 @@ namespace FlashEditor.Definitions.Entities {
         /// </remarks>
         /// <param name="openCache">The open cache, or null to unbind.</param>
         public void Bind(RSCache? openCache) {
+            //Same reason the grid's own worker is cancelled: an OBJ export walks index 7 decoding as
+            //it goes, and one left running across a reload keeps reading out of a store about to be
+            //disposed.
+            objExporter?.CancelAsync();
+
             cache = openCache;
             ClearAnimations();
             ShowKind();
@@ -351,18 +374,41 @@ namespace FlashEditor.Definitions.Entities {
             /* Mark what a selection costs, because none of it is visible on screen. Picking a row
                decodes its models out of index 7 and re-uploads the viewport's buffers; picking an
                NPC or an object picks up several models at once. */
-            noticeLabel.Text = descriptor.IsEditable
-                ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
-                : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
+            noticeLabel.Text = kind == EntityKind.Model
+                ? "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. Staged, not written."
+                : descriptor.IsEditable
+                    ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
+                    : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
 
-            importButton.Enabled = cache != null;
-            exportButton.Enabled = cache != null;
+            UpdateActions();
 
             list.EmptyMessage = cache == null
                 ? "No cache loaded"
                 : "No " + descriptor.RowNoun + "s in index " + descriptor.IndexId;
 
             list.Bind(cache, cache == null ? null : descriptor);
+        }
+
+        /// <summary>The one place any action button's enablement is decided.</summary>
+        /// <remarks>
+        ///     Extracted from <see cref="ShowKind"/> rather than duplicated into the export worker.
+        ///     Two writers of <c>Enabled</c> is how a button ends up permanently disabled after a
+        ///     failed export - the state is computed from the panel's fields here instead, and every
+        ///     caller changes a field and asks again.
+        ///     <para>
+        ///     The OBJ actions are disabled rather than hidden for the other three families. A strip
+        ///     that gains and loses controls reflows, and this one wraps - so hiding them would move
+        ///     the grid under the cursor as the type selector moved.
+        ///     </para>
+        /// </remarks>
+        private void UpdateActions() {
+            bool ready = cache != null && !exporting;
+            bool isModel = kind == EntityKind.Model;
+
+            importButton.Enabled = ready;
+            exportButton.Enabled = ready;
+            exportObjButton.Enabled = ready && isModel;
+            importObjButton.Enabled = ready && isModel;
         }
 
         private void List_SelectedRowChanged(object? sender, EventArgs e) {
@@ -459,6 +505,211 @@ namespace FlashEditor.Definitions.Entities {
         }
 
         /// <summary>
+        ///     Writes the selected models out as Wavefront OBJ, to a location the user picks.
+        /// </summary>
+        /// <remarks>
+        ///     A picker rather than the silent write into the output directory that the <c>.dat</c>
+        ///     button beside it does, because the two are different kinds of thing. That one exports
+        ///     the file; this one exports a lossy derivation of it, as a pair of files, which the user
+        ///     is about to open in a modeller - so where it lands is their call. It matches the MIDI
+        ///     and PNG exports elsewhere in the editor rather than the byte exports.
+        ///     <para>
+        ///     The dialog also supplies two things <see cref="ObjDocument.Save"/> deliberately does
+        ///     not: a directory that exists, and a prompt before an overwrite.
+        ///     </para>
+        /// </remarks>
+        private void ExportObjButton_Click(object? sender, EventArgs e) {
+            if (cache == null || kind != EntityKind.Model || exporting)
+                return;
+
+            var listings = new List<ModelListing>();
+            foreach (object row in list.SelectedRows) {
+                if (row is ModelListing listing)
+                    listings.Add(listing);
+            }
+
+            if (listings.Count == 0) {
+                ReportStatus("Select the models to export first.");
+                return;
+            }
+
+            string directory;
+            string? singlePath = null;
+
+            if (listings.Count == 1) {
+                using SaveFileDialog save = new SaveFileDialog {
+                    Title = "Export model " + listings[0].ModelId + " as OBJ",
+                    Filter = "Wavefront OBJ (*.obj)|*.obj|All files (*.*)|*.*",
+                    FileName = "model_" + listings[0].ModelId + ".obj",
+                    DefaultExt = "obj"
+                };
+
+                if (save.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                singlePath = save.FileName;
+                directory = Path.GetDirectoryName(Path.GetFullPath(singlePath)) ?? string.Empty;
+            }
+            else {
+                using FolderBrowserDialog browse = new FolderBrowserDialog {
+                    Description = "Export " + listings.Count + " models as OBJ",
+                    UseDescriptionForTitle = true
+                };
+
+                if (browse.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                directory = browse.SelectedPath;
+            }
+
+            StartObjExport(cache, listings, directory, singlePath);
+        }
+
+        /// <summary>Runs an OBJ export off the UI thread.</summary>
+        /// <remarks>
+        ///     One code path for a single row and for many, rather than a synchronous arm for the
+        ///     common case - a second branch here would be a second branch nothing exercises.
+        /// </remarks>
+        /// <param name="open">The cache to read, passed rather than read from the field.</param>
+        /// <param name="listings">The models to write.</param>
+        /// <param name="directory">Where they land, for the status line.</param>
+        /// <param name="singlePath">The exact path picked, when exactly one row was selected.</param>
+        private void StartObjExport(RSCache open, IReadOnlyList<ModelListing> listings,
+                string directory, string? singlePath) {
+            var exporter = new System.ComponentModel.BackgroundWorker {
+                WorkerReportsProgress = true,
+                WorkerSupportsCancellation = true
+            };
+
+            objExporter = exporter;
+            exporting = true;
+            UpdateActions();
+            ReportStatus("Exporting " + listings.Count + " model" + (listings.Count == 1 ? string.Empty : "s") + " as OBJ...");
+
+            exporter.ProgressChanged += (_, args) => {
+                if (!ReferenceEquals(objExporter, exporter))
+                    return;
+
+                ReportStatus(args.UserState?.ToString() ?? string.Empty);
+            };
+
+            /* The cache, the rows and the paths are arguments rather than fields, for the reason
+               DefinitionListPanel.DecodeRows takes them: a rebind part way through must not be able
+               to make one export read half of one cache and half of another. */
+            exporter.DoWork += (_, args) =>
+                args.Result = ExportObjBatch(open, listings, directory, singlePath, exporter, args);
+
+            exporter.RunWorkerCompleted += (_, args) => {
+                //A superseded export is discarded whole rather than allowed to report over the one
+                //that replaced it.
+                if (!ReferenceEquals(objExporter, exporter))
+                    return;
+
+                objExporter = null;
+                exporting = false;
+                UpdateActions();
+
+                if (args.Cancelled) {
+                    ReportStatus("OBJ export cancelled");
+                    return;
+                }
+
+                if (args.Error != null) {
+                    //Reported rather than thrown: an exception out of a completion handler takes the
+                    //form down.
+                    Debug("Model OBJ export failed: " + args.Error);
+                    ReportStatus("OBJ export failed: " + args.Error.Message);
+                    return;
+                }
+
+                ReportStatus((string) args.Result!);
+            };
+
+            exporter.RunWorkerAsync();
+        }
+
+        /// <summary>Decodes and writes each model, off the UI thread.</summary>
+        /// <returns>What to say on the status line.</returns>
+        private static string ExportObjBatch(RSCache open, IReadOnlyList<ModelListing> listings,
+                string directory, string? singlePath,
+                System.ComponentModel.BackgroundWorker exporter,
+                System.ComponentModel.DoWorkEventArgs args) {
+            int written = 0;
+            int failed = 0;
+            int files = 0;
+            int percentile = Math.Max(1, listings.Count / 100);
+            string last = string.Empty;
+
+            for (int i = 0; i < listings.Count; i++) {
+                if (exporter.CancellationPending) {
+                    args.Cancel = true;
+                    return string.Empty;
+                }
+
+                ModelListing listing = listings[i];
+
+                try {
+                    string objPath = singlePath ?? Path.Combine(directory, "model_" + listing.ModelId + ".obj");
+
+                    /* The library is named after the OBJ rather than after the model. The exporter's
+                       own default is model_<id>.mtl, so a user who renamed the file in the save
+                       dialog would get widget.obj pointing its mtllib at a file called something
+                       else - correct, and confusing to keep track of. */
+                    ObjDocument document = BuildModelObj(open, listing,
+                        Path.GetFileNameWithoutExtension(objPath) + ".mtl");
+
+                    IReadOnlyList<string> paths = document.Save(objPath);
+                    files += paths.Count;
+                    written++;
+                    last = "Exported model " + listing.ModelId + " to " + objPath +
+                        (paths.Count > 1 ? " and its material library" : string.Empty);
+
+                    foreach (string line in document.Summary)
+                        Debug("model " + listing.ModelId + " OBJ: " + line);
+                }
+                catch (Exception failure) {
+                    //One model that will not decode costs itself and not the rest of the selection.
+                    failed++;
+                    Debug("OBJ export of model " + listing.ModelId + " failed: " + failure.Message);
+                }
+
+                //On percent boundaries only. ReportProgress marshals to the UI thread on every call,
+                //so one post per model would cost more than the decode it is reporting.
+                if ((i + 1) % percentile == 0 || i + 1 == listings.Count)
+                    exporter.ReportProgress(0, "Exported " + (i + 1) + "/" + listings.Count + " models");
+            }
+
+            if (written == 1 && failed == 0)
+                return last;
+
+            return "Exported " + written + " models as " + files + " files to " + directory +
+                (failed > 0 ? ", " + failed + " failed" : string.Empty);
+        }
+
+        /// <summary>Decodes one model out of index 7 and renders it as OBJ text.</summary>
+        /// <remarks>
+        ///     <c>GetModelDefinition</c> rather than <c>ModelCodec.Decode</c>, because the decoded
+        ///     projection is what carries texture coordinates - they are computed from each textured
+        ///     face's reference triangle at decode, and are the only exported quantity that is derived
+        ///     rather than stored. Without one the mesh still exports in full, just with no vt lines.
+        ///     <para>
+        ///     Deliberately not memoised through the form's decoded-model dictionary. That is a
+        ///     <c>SortedDictionary</c> mutated from the UI thread by the form's own model loader, and
+        ///     this runs on a worker - an unsynchronised reader there corrupts the tree rather than
+        ///     throwing. A batch export would also retain a fully projected definition per row for
+        ///     something read exactly once.
+        ///     </para>
+        /// </remarks>
+        /// <param name="open">The cache to read.</param>
+        /// <param name="row">Which model.</param>
+        /// <param name="materialFileName">What to call the material library, or null for the default.</param>
+        /// <returns>The OBJ and its material library, unwritten.</returns>
+        internal static ObjDocument BuildModelObj(RSCache open, ModelListing row, string? materialFileName) {
+            ModelDefinition definition = open.GetModelDefinition(row.Address.GroupId, row.FileId);
+            return ModelObjExporter.Export(definition, materialFileName);
+        }
+
+        /// <summary>
         ///     Stages a file on disk over the selected row.
         /// </summary>
         /// <remarks>
@@ -523,6 +774,166 @@ namespace FlashEditor.Definitions.Entities {
                     Environment.NewLine + failure.Message,
                     "Import", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        ///     Reads an OBJ over the selected model and stages the result.
+        /// </summary>
+        /// <remarks>
+        ///     A separate action from the <c>.dat</c> import rather than another extension on its
+        ///     filter, because the two contracts are opposites. That one stores the file's own bytes
+        ///     verbatim and argues at length that it must; this one has to re-encode, because an OBJ
+        ///     carries a mesh and not a model file. Sharing a filter would also mean choosing the arm
+        ///     by extension, and its second entry is <c>All files</c> - so an OBJ renamed <c>.dat</c>
+        ///     would be stored verbatim over a model and corrupt the entry silently.
+        /// </remarks>
+        private void ImportObjButton_Click(object? sender, EventArgs e) {
+            if (cache == null || kind != EntityKind.Model)
+                return;
+
+            if (list.SelectedRow is not ModelListing listing) {
+                ReportStatus("Select the model to overwrite first.");
+                return;
+            }
+
+            using OpenFileDialog picker = new OpenFileDialog {
+                Title = "Import an OBJ over model " + listing.ModelId,
+                Filter = "Wavefront OBJ (*.obj)|*.obj|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            try {
+                bool staged = StageModelObj(cache, listing, picker.FileName, out ModelImportResult result);
+
+                foreach (ModelImportEntry entry in result.Entries)
+                    Debug("model " + listing.ModelId + " import: " + entry);
+
+                if (!result.Succeeded) {
+                    ReportStatus("Import refused for model " + listing.ModelId + " - " + result.Message);
+                    MessageBox.Show(this, Account(result), "Import model",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!staged) {
+                    ReportStatus("No change to model " + listing.ModelId + " - that OBJ holds the same mesh.");
+                    return;
+                }
+
+                /* The viewport has to re-decode rather than be patched: normals and texture
+                   coordinates are computed at decode and cannot be recomputed in place. The form
+                   memoises decoded models by id, so the stale entry goes before the reselect, or the
+                   viewport redraws the model exactly as it was before the import. */
+                cache.models.Remove(listing.ModelId);
+                EntitySelected?.Invoke(this, new EntitySelectionEventArgs(kind, listing));
+
+                ReportStatus("Staged model " + listing.ModelId + " from " +
+                    Path.GetFileName(picker.FileName) + " - " + result.Message);
+            }
+            catch (Exception failure) {
+                //A malformed file must cost the import and nothing else.
+                Debug("Model OBJ import failed: " + failure);
+                ReportStatus("Import failed: " + failure.Message);
+                MessageBox.Show(this,
+                    "Could not import that OBJ over model " + listing.ModelId + ":" +
+                    Environment.NewLine + failure.Message,
+                    "Import model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        ///     Reads an OBJ over the model at a row and stages the result, unless nothing changed.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Parsed here rather than through <c>ModelObjImporter.ImportFile</c>, for the one thing
+        ///     that call cannot report. Quads and n-gons are fanned into triangles silently, which
+        ///     changes the face count, and a face-count change is the importer's hardest refusal - so
+        ///     the commonest failure this feature will produce arrives as two bare counts with nothing
+        ///     said about the fanning that caused it. Holding the parsed mesh lets the refusal name it.
+        ///     </para>
+        ///     <para>
+        ///     It also removes a trap: <c>ImportFile(model, path)</c> and <c>Import(model, objText)</c>
+        ///     are both <c>(ModelFile, string)</c>, so handing a path to the second compiles and parses
+        ///     the path itself as if it were an OBJ. Neither is called here.
+        ///     </para>
+        /// </remarks>
+        /// <param name="open">The cache to read and stage into.</param>
+        /// <param name="row">Which model is being overwritten.</param>
+        /// <param name="objPath">The OBJ on disk.</param>
+        /// <param name="result">The account of what happened, whatever the outcome.</param>
+        /// <returns>
+        ///     True when bytes were staged. False for a refusal and for an unchanged mesh alike -
+        ///     <see cref="ModelImportResult.Succeeded"/> tells those two apart.
+        /// </returns>
+        internal static bool StageModelObj(RSCache open, ModelListing row, string objPath,
+                out ModelImportResult result) {
+            ModelDefinition definition = open.GetModelDefinition(row.Address.GroupId, row.FileId);
+            ModelFile original = definition.Source
+                ?? throw new InvalidOperationException("Model " + row.ModelId + " has no stored form to import over.");
+
+            //A file that will not parse is a bad file rather than a mesh that disagrees with the
+            //model, so it throws out of here instead of becoming a refusal. The caller reports it
+            //as the failure it is.
+            ObjMesh mesh = ObjParser.ParseFile(objPath);
+            result = ModelObjImporter.Import(original, mesh);
+
+            if (!result.Succeeded) {
+                if (mesh.TriangulatedPolygons > 0)
+                    result = WithFanningNote(result, mesh.TriangulatedPolygons);
+
+                return false;
+            }
+
+            /* An import that changed nothing must write nothing. A rebuild renormalises the strip
+               opcodes and the smart widths, and the format has more than one legal spelling of the
+               same mesh - so the bytes would move for a file nobody edited, and with them the archive
+               CRC and the reference-table entry of every archive packed beside it. */
+            if (!result.GeometryChanged)
+                return false;
+
+            byte[] encoded = result.Model!.Encode().ToArray();
+            byte[] stored = open.ReadFileBytes(RSConstants.MODELS_INDEX, row.Address.GroupId, row.FileId);
+
+            /* Never reached while the check above stands, and not dead: removing that one and
+               re-running the wiring tests showed this catching the unedited case on its own, because
+               re-encoding an untouched model is byte-identical. Which of the two stops a spurious
+               write is therefore not observable from a test, so keep both - this one is the weaker
+               claim, since a model whose re-encode is not byte-stable would slip past it. */
+            if (encoded.AsSpan().SequenceEqual(stored))
+                return false;
+
+            open.WriteFile(RSConstants.MODELS_INDEX, row.Address.GroupId, row.FileId, new JagStream(encoded));
+            return true;
+        }
+
+        /// <summary>Restates a refusal with the triangulation that most likely caused it.</summary>
+        /// <param name="refusal">The refusal as the importer gave it.</param>
+        /// <param name="fanned">How many faces the parser fanned into triangles.</param>
+        /// <returns>The same refusal, with the fanning named.</returns>
+        private static ModelImportResult WithFanningNote(ModelImportResult refusal, int fanned) {
+            string note = fanned + " faces in that OBJ had more than three corners and were fanned " +
+                "into triangles before anything was compared, which is what moved the face count.";
+
+            var entries = new List<ModelImportEntry>(refusal.Entries) {
+                new ModelImportEntry("OBJ polygons", ModelImportDisposition.Refused, note)
+            };
+
+            return new ModelImportResult(false, false, null, refusal.Message + " " + note, entries);
+        }
+
+        /// <summary>Renders an import's account as one block, which is what its rows are shaped for.</summary>
+        /// <param name="result">The account.</param>
+        /// <returns>The message, then one line per row.</returns>
+        private static string Account(ModelImportResult result) {
+            var text = new System.Text.StringBuilder(result.Message).AppendLine().AppendLine();
+
+            foreach (ModelImportEntry entry in result.Entries)
+                text.AppendLine(entry.ToString());
+
+            return text.ToString();
         }
     }
 }
