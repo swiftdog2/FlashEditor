@@ -240,6 +240,28 @@ Verified by eye. Capture every tab you touch. Commit.
 
 ### 20. The map tab as a paint program
 
+**Two of the five sub-items are done: the materials palette (3) and the eyedropper (4).** Together
+they close the loop the item opens with - pick a floor off the palette or off the map, and paint
+with it - so "which number do I want" is no longer answered by paint, look, undo, try 48.
+
+What is left is 1 (tool palette), 2 (context option bar) and 5 (selection and area application),
+plus the set-and-unset check the constraints section requires once an area fill exists.
+
+Three things the finished half established that the rest should not rediscover:
+
+- **The left column cannot take another group.** The palette went there first and `AutoScroll` made
+  `TableLayoutPanel` squeeze the Percent rows to nothing so it never appeared; a minimum height
+  fixed that and clipped the layer list instead. It lives along the bottom now, beside the
+  inspector. **A tool palette replacing the combo is a swap, not an addition, so it is safe** - but
+  anything genuinely new needs a home, not a row.
+- **The underlay cap belongs at the point of picking.** A tile stores an underlay as `id + 81` in
+  one byte, so 174 is the highest that survives, and the palette shows every record the table
+  declares. Picking past the cap refuses out loud. An area fill must do the same rather than
+  clamping, for the same reason.
+- **A tool that reads is not a tool that writes.** The eyedropper runs before `BuildEdit` and never
+  reaches it, and `MapFlashKind.Sampled` exists so a read does not flash the colour that means "the
+  square was written to". Any inspect-like tool added later wants the same treatment.
+
 **The worked example that started this revision.** Asked how to paint all of Varrock with the
 TzHaar lava floor, the honest answer is that four of the five steps have no support at all: there is
 no way to see what a floor material looks like, no selection of any kind, no brush size, and no fill.
