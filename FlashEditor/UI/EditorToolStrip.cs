@@ -328,7 +328,7 @@ namespace FlashEditor.UI {
             }
 
             protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e) {
-                EditorSurface surface = EditorTheme.SurfaceOf(e.ToolStrip.Parent);
+                EditorSurface surface = EditorTheme.SurfaceOf(e.ToolStrip?.Parent);
                 using var pen = new Pen(EditorTheme.Separator(surface));
 
                 Rectangle bounds = e.Item.Bounds;

@@ -145,6 +145,7 @@ namespace FlashEditor.Definitions.Interfaces {
            particular cache and a reopen must not serve them from the previous one. */
         private DefinitionThumbnailCache? tiles;
         private DefinitionThumbnailCache? canvasTiles;
+        private InterfaceTextPainter? textPainter;
 
         /// <summary>Creates the panel.</summary>
         public InterfaceEditorPanel() {
@@ -206,7 +207,11 @@ namespace FlashEditor.Definitions.Interfaces {
                     new SpriteThumbnailRenderer(newCache, composited: false)
                 });
 
+            textPainter?.Dispose();
+            textPainter = newCache == null ? null : new InterfaceTextPainter(newCache);
+
             canvas.Thumbnails = canvasTiles;
+            canvas.TextPainter = textPainter;
             components.Thumbnails = tiles;
 
             interfaces.ClearObjects();
@@ -249,6 +254,9 @@ namespace FlashEditor.Definitions.Interfaces {
                 tiles = null;
                 canvasTiles?.Dispose();
                 canvasTiles = null;
+                canvas.TextPainter = null;
+                textPainter?.Dispose();
+                textPainter = null;
             }
 
             base.Dispose(disposing);

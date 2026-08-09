@@ -41,6 +41,7 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
 
         private InterfaceComponentTree? tree;
         private IDefinitionThumbnailSource? thumbnails;
+        private InterfaceTextPainter? textPainter;
         private int selectedFileId = -1;
         private bool showNotDrawn;
 
@@ -121,6 +122,28 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                     return;
 
                 showNotDrawn = value;
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        ///     Draws text in the cache's own font, or null to fall back to the editor's.
+        /// </summary>
+        /// <remarks>
+        ///     Set by the tab from the open cache. Without it the canvas still draws text, in
+        ///     Consolas, which is wider than any font the cache holds and so wraps captions that fit
+        ///     in the game - the fallback is honest about being a fallback rather than absent.
+        /// </remarks>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(
+            System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public InterfaceTextPainter? TextPainter {
+            get => textPainter;
+            set {
+                if (ReferenceEquals(textPainter, value))
+                    return;
+
+                textPainter = value;
                 Invalidate();
             }
         }
@@ -442,6 +465,19 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 ComponentPicked?.Invoke(this, fileId);
         }
 
+        /// <summary>
+        ///     Draws one component, clipped exactly as the client clips it.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The clip is applied here and it is not decoration.</b> The resolver has always
+        ///     computed <see cref="InterfaceLayoutNode.Clip"/> - the client's own rule, including
+        ///     the two exceptions where a type-2 passes the inherited clip through and a type-9 line
+        ///     extends it a pixel - and the first version of this canvas computed it and then drew
+        ///     without it. The visible result was text spilling out of its box onto whatever was
+        ///     beside it: "Insert a very long name here!" wraps to two lines inside a 140x25
+        ///     component, and unclipped the second line lands on the component below. The client
+        ///     wraps the same way and simply clips the overflow away.
+        /// </remarks>
         private void DrawComponent(Graphics g, InterfaceLayoutNode node) {
             InterfaceComponentDefinition component = node.Component;
             InterfaceRect box = node.Absolute;
@@ -449,8 +485,27 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             if (box.Width <= 0 || box.Height <= 0)
                 return;
 
+            InterfaceRect clip = node.Clip;
+            if (clip.IsEmpty)
+                return;
+
             var rectangle = new Rectangle(box.X, box.Y, box.Width, box.Height);
 
+            /* Intersected, never assigned. Assigning Clip REPLACES what is there, including the
+               clip WinForms set to the invalidated region, so a partial repaint would let a
+               component paint over parts of the control that were not being redrawn. */
+            GraphicsState state = g.Save();
+            try {
+                g.SetClip(new Rectangle(clip.X, clip.Y, clip.Width, clip.Height), CombineMode.Intersect);
+                DrawComponentBody(g, component, rectangle);
+            }
+            finally {
+                g.Restore(state);
+            }
+        }
+
+        private void DrawComponentBody(Graphics g, InterfaceComponentDefinition component,
+            Rectangle rectangle) {
             switch (component.ComponentType) {
                 case 0:
                     //A layer draws nothing of its own. Its outline is the only way to see the
@@ -519,13 +574,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         ///     alignment right and the letterforms wrong, and the canvas note says so - a preview
         ///     that silently used the wrong typeface would be read as the game's.
         /// </remarks>
-        private static void DrawTextComponent(Graphics g, InterfaceComponentDefinition component,
+        private void DrawTextComponent(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
             string text = component.Message.Text;
             if (string.IsNullOrEmpty(text))
                 return;
 
-            using var brush = new SolidBrush(ColourOf(component.Colour, component.Transparency));
+            Color ink = ColourOf(component.Colour, component.Transparency);
+
+            //The cache's own glyphs first. Only when the font will not load does this fall back to
+            //a substitute, which is wider and therefore wraps captions the game fits on one line.
+            if (textPainter != null && textPainter.Draw(g, text, component.FontId, rectangle, ink,
+                    component.HorizontalAlignment, component.VerticalAlignment)) {
+                return;
+            }
+
+            using var brush = new SolidBrush(ink);
             using var format = new StringFormat {
                 Alignment = component.HorizontalAlignment switch {
                     1 => StringAlignment.Center,
@@ -543,36 +607,61 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             g.DrawString(text, EditorTheme.UiFont, brush, rectangle, format);
         }
 
+        /// <summary>
+        ///     The component's sprite, or a mark saying which of two different things is missing.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A sprite id of -1 is a real and common state, not a failure, and the two must not
+        ///     look alike.</b> The seven drop columns of the RuneLink board in interface 36 store no
+        ///     sprite at all - CS2 sets one at runtime depending on whose turn it is - so an id of
+        ///     -1 means "the file leaves this to a script", while a missing tile for a real id means
+        ///     "not read yet". The first draft drew both as an outline captioned with text, and in a
+        ///     32-pixel column "no sprite" clipped to the four middle characters and read as
+        ///     corruption.
+        ///     <para>
+        ///     So: a stored-but-unresolved sprite keeps its outline and its id, and a component the
+        ///     file deliberately leaves empty gets a faint dashed outline and no caption at all
+        ///     unless there is room for one.
+        ///     </para>
+        /// </remarks>
         private void DrawSpriteComponent(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
-            if (component.SpriteId >= 0) {
-                Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId,
-                    Math.Max(8, Math.Min(rectangle.Width, rectangle.Height)));
+            if (component.SpriteId < 0) {
+                using var empty = new Pen(Color.FromArgb(70, 0x78, 0xC8, 0xFF)) { DashStyle = DashStyle.Dot };
+                g.DrawRectangle(empty, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
+                DrawTinyLabel(g, rectangle, "set by script");
+                return;
+            }
 
-                if (tile != null) {
-                    g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                    g.PixelOffsetMode = PixelOffsetMode.Half;
-                    g.DrawImage(tile, rectangle);
-                    return;
-                }
+            Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId,
+                Math.Max(8, Math.Min(rectangle.Width, rectangle.Height)));
+
+            if (tile != null) {
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(tile, rectangle);
+                return;
             }
 
             //An outline and the id while the tile is being read, or when there is no source. A blank
             //box would read as a sprite that failed to decode.
             using var pen = new Pen(Color.FromArgb(120, 0x78, 0xC8, 0xFF));
             g.DrawRectangle(pen, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
-            DrawTinyLabel(g, rectangle, component.SpriteId < 0 ? "no sprite" : component.SpriteId.ToString());
+            DrawTinyLabel(g, rectangle, component.SpriteId.ToString());
         }
 
         /// <summary>A hatched box carrying the model id, because a model cannot be drawn here.</summary>
         private static void DrawModelPlaceholder(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
+            /* Faint. A model box can be most of the interface - model 4608 in the RuneLink board
+               is 299x252 of a 512x334 window - and at the first draft's opacity the hatching read
+               as the interface's background rather than as one component that cannot be drawn. */
             using (var hatch = new HatchBrush(HatchStyle.BackwardDiagonal,
-                Color.FromArgb(40, 0xFF, 0xB8, 0x26), Color.Transparent)) {
+                Color.FromArgb(18, 0xFF, 0xB8, 0x26), Color.Transparent)) {
                 g.FillRectangle(hatch, rectangle);
             }
 
-            using var pen = new Pen(Color.FromArgb(140, 0xFF, 0xB8, 0x26));
+            using var pen = new Pen(Color.FromArgb(90, 0xFF, 0xB8, 0x26));
             g.DrawRectangle(pen, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
             DrawTinyLabel(g, rectangle, "model " + component.RawModelId);
         }
@@ -643,8 +732,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             g.FillRectangle(gripFill, grip);
         }
 
+        /// <summary>
+        ///     A caption inside a component's box, drawn only when the whole of it fits.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Measured against the box rather than trimmed to it.</b> A centred string that does
+        ///     not fit loses characters from both ends, so "no sprite" in a 32-pixel column rendered
+        ///     as "spri" - which reads as corrupt data rather than as a caption that did not fit.
+        ///     Nothing at all is the honest output there: the outline already says what the box is,
+        ///     and the grid beside the canvas has the id.
+        /// </remarks>
         private static void DrawTinyLabel(Graphics g, Rectangle rectangle, string text) {
             if (rectangle.Width < 24 || rectangle.Height < 10)
+                return;
+
+            SizeF needed = g.MeasureString(text, EditorTheme.NoticeFont);
+            if (needed.Width > rectangle.Width - 2 || needed.Height > rectangle.Height)
                 return;
 
             using var brush = new SolidBrush(Color.FromArgb(190, 0xE6, 0xE6, 0xE6));
