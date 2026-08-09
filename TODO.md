@@ -1,97 +1,66 @@
 # FlashEditor TODO
 
-The running work list. `reference/index-survey/00-WORKLIST.md` was the per-index plan and is now
-**largely historical** - see the warning below. This file is the wider product backlog, including
-everything that is not a codec.
+The product backlog: everything that is not a codec.
 
-**Update this at milestones, not every commit.** A finished index, a shipped feature, a
-direction change. If it is updated on every turn it becomes noise and stops being read.
+**Update this at milestones, not every commit.** A finished index, a shipped feature, a direction
+change. Updated every turn it becomes noise and stops being read.
 
 **Do not put volatile numbers here.** Counts of our own code go stale by the next commit and get
 read as targets. Counts *of the cache* are fine, because the cache does not change - but a count
 that differs between the two caches must name which one it belongs to.
 
-**Every claim below was checked against the code on 2026-08-09, at commit `9d883bc`.** The previous
-pass was 62 commits earlier at `64005a6`, and **both items that pass left in the queue have since
-shipped**: item 13 (the JS5 editor handshake) and item 16 (playing a track on the cache's own
-instruments). The queue below is therefore entirely new work, driven by a single observation:
+**Nothing that is finished belongs in this file.** Completed work lives in the git history. The
+exception is a gap a finished item left behind, which belongs in Backlog as work, not in a
+changelog as a footnote.
 
-> **Every index that holds content now decodes, encodes and re-encodes byte-identically. The
-> correctness work is done. What is not done is that the editor still presents the cache as
-> numbers, and a user who does not already know the format cannot build anything with it.**
+> **The premise this queue rests on.** Every index that holds content decodes, encodes and
+> re-encodes byte-identically. The correctness work is done. What is not done is that the editor
+> still presents the cache as integers, and someone who does not already know this format cannot
+> build anything with it. Items 18 to 26 are that gap.
 
-That is the direction change this revision records. The remaining work is overwhelmingly at the
-surface, and the surface has almost nothing to build on: **no icons, no toolbars, and two tooltips
-across twenty-five pages.**
+Checked against the code on 2026-08-09 at commit `2348641`.
 
----
-
-## Documents that are now stale, and must not be trusted
-
-Found while surveying for this revision. Each was written before the index it describes was built.
-
-- **`reference/index-survey/00-WORKLIST.md` section 1** lists capability per index as of its
-  writing - "3 INTERFACE_DEFINITIONS | none (empty TabPage)", "2 CONFIG | partial-read (groups 1,
-  4, 34 done)". Every one of those is now false. Its **progress log** at the foot is also stale, and
-  stops at five indexes. Sections 4 (cross-cutting work) and 5 (risk list) are still worth reading;
-  section 1 is not.
-- **`reference/index-survey/index-002-CONFIG.md`** claims 3 of 35 groups decode and "GUI: none".
-  It is 35 of 35 with a tab. `reference/index-architect-02.md` supersedes it.
-- **`reference/index-survey/index-003-INTERFACE-DEFINITIONS.md`** and
-  **`index-012-CLIENT-SCRIPTS.md`** both say "nothing exists". Both indexes are complete with tabs.
-  `reference/index-architect-03.md` supersedes the first.
-- **`CLAUDE.md` UI conventions** still describes a `TabPage` strip and "three of the tabs predate
-  this". The strip is gone - navigation is a category `TreeView` over a `TabControl` that swallows
-  `TCM_ADJUSTRECT` (`Editor.cs:353-371`), across 25 pages in six categories. The three-bespoke-arm
-  count is still correct: Meta (`Editor.cs:1363`), Sprites (`:1404`), Textures (`:1493`).
-- **`STATE_OF_THE_EDITOR.md`** remains historical above its roadmap, as `CLAUDE.md` already says.
-
-**Fixing these is item 27.** They are listed here rather than silently corrected because a reader
-who finds a survey document tonight needs to know before they act on it.
+**Before trusting anything under `reference/index-survey/`, read item 27.** Four documents are
+stale in ways a reader would act on.
 
 ---
 
 ## Constraints that shape everything below
 
-- **A DWM-composited capture DOES see the OpenGL surface, confirmed 2026-08-09.** This retires a
-  standing constraint. `tools/Capture-EditorTab.ps1` still cannot - it uses `CopyFromScreen` and
-  `PrintWindow`, both of which return whatever GDI last blitted into that rectangle - but the
-  viewport is no longer unobservable. `reference/viewer-eyeball-checklist.md:10` records the working
-  route. **Five of nine checklist cases are now confirmed on a monitor** (A, F, H, F3, F4); D is
-  open and B, C, E, G, I have not been run.
+Standing rules live in `CLAUDE.md` and `AGENTS.md` and are not repeated here. These are the ones
+with a worked case behind them, or that bind a specific item below.
+
 - **Nothing in the test suite covers WinForms or the renderer.** A layout or render defect passes
-  every test. This does not change and it binds every item in the queue below, all of which are UI.
-- **Serialise cache-backed test runs.** Parallelise the editing, serialise the sweeping.
-- **A green filtered run is not a green suite, and a concurrency defect is invisible to anything
-  narrower than the full sweep.** The worked case is `ObjectDefinition.Decode`'s static
-  `StringBuilder` (`ObjectDefinition.cs:405-417`), which survived every narrow run and failed only
-  under a full sweep. A filtered run is a development aid and never a merge gate; static mutable
-  state in a decode path is a defect whether or not anything calls it on two threads today.
-- **Run the merge sweep with a logger that names failures**, because `-v:q` reports only counts and
-  a transient does not come back on request. Use `--logger "console;verbosity=normal"`, and note it
-  prints `Test Run Successful` rather than `Passed!`. **And gate the push on the test command
-  itself** - `tail <log> && git push` pushes whenever `tail` succeeds, which is always.
+  every test. Every item in the queue below is UI, so every one of them is verified by eye.
+- **A DWM-composited capture DOES see the OpenGL surface, confirmed 2026-08-09**, which retires a
+  standing constraint. `tools/Capture-EditorTab.ps1` still cannot - it uses `CopyFromScreen` and
+  `PrintWindow`, both of which return whatever GDI last blitted into that rectangle. The working
+  route is at `reference/viewer-eyeball-checklist.md:10`.
 - **Toggling a flag is an edit the byte-identity sweeps cannot see.** They prove an *unedited*
   record re-encodes to what it was read from, which is a different claim from "an edit that nets
-  nothing writes nothing". Four real defects lived in that gap. Coverage is now 27 of 27 bare-flag
+  nothing writes nothing". Four real defects lived in that gap. Coverage is 27 of 27 bare-flag
   properties in `RealCacheBareFlagEditTests`, with `EveryBareOpcodeInTheCacheIsCoveredOrExempt`
   (`:189`) failing when a payload-free opcode the cache carries is neither tested nor exempted.
   **Add the same third check to any new edit path: set it, set it back, land on the original bytes.**
-  This binds items 20, 21, 22 and 26 directly - all four open new edit paths.
-- **Evidence quality is measured by what a relation rejects, not by what it accepts.** The font join
-  scored every relation on how many of 600 *wrong* pairings it admits; the ascent relation lets 325
-  through while scoring perfectly on the correct ones. The world map icon join is the cautionary
-  case, where a shift sweep over -8..+8 confirmed offset 0 and a sweep over -16..+16 confirmed
-  eleven offsets. **When a sweep is your discriminator, widen it until it breaks.**
-- **A code comment is prose wherever it states a count, and so is a survey document.** Both are
-  written once and never re-measured. The corrections log is `reference/DOC-CONFLICTS.md`; read it
-  before trusting a figure from `reference/`.
+  Binds items 20, 21, 22 and 26 - all four open new edit paths.
 - **A byte-identity sweep cannot see a normalisation whose triggering input is absent from the
   cache**, and **proves only what its encoder re-derives**. Index 14's packet-length rule and index
-  9's replay encoder are the two worked examples. Where an encoder replays stored bytes, name what
-  the sweep is then evidence *of*, and name the other test covering the rest.
-- **A warning count is only comparable against a build of the same scope.** An incremental build
-  does not re-emit the test project's warnings.
+  9's replay encoder are the worked examples. Where an encoder replays stored bytes, name what the
+  sweep is then evidence *of*, and name the other test covering the rest. Binds items 22 and 23.
+- **Evidence quality is measured by what a relation rejects, not by what it accepts.** The font join
+  scored every relation on how many of 600 *wrong* pairings it admits; one that scored perfectly on
+  the correct pairings let 325 wrong ones through. The world map icon join is the cautionary case: a
+  shift sweep over -8..+8 confirmed one offset, and the same sweep over -16..+16 confirmed eleven.
+  **When a sweep is your discriminator, widen it until it breaks.** Binds item 19.
+- **A green filtered run is not a green suite.** `ObjectDefinition.Decode`'s static `StringBuilder`
+  (`ObjectDefinition.cs:405-417`) survived every narrow run and failed only under a full sweep,
+  because xunit parallelises collections. A filtered run is a development aid and never a merge
+  gate.
+- **Run the merge sweep with a logger that names failures**, because `-v:q` reports only counts and
+  a transient does not come back on request. Use `--logger "console;verbosity=normal"`, which prints
+  `Test Run Successful` rather than `Passed!`. **And gate the push on the test command itself** -
+  `tail <log> && git push` pushes whenever `tail` succeeds, which is always.
+- **Serialise cache-backed test runs.** Parallelise the editing, serialise the sweeping.
 
 ---
 
@@ -104,17 +73,16 @@ Nothing.
 ## Next
 
 Each item carries the prompt that resumes it, and **the prompt is the whole brief** - paste it and
-go. Prompts deliberately do not repeat the standing rules; those live in `CLAUDE.md` and
-`AGENTS.md`, and every prompt opens by requiring them.
+go. Prompts deliberately do not repeat the standing rules; every prompt opens by requiring them.
 
-**Numbers are not reused.** Items 1 to 17 are done and their numbers stay retired, because other
+**Numbers are not reused. Items 1 to 17 are complete and their numbers stay retired**, because other
 documents cite items by number and a renumber breaks a cross-reference silently.
 
-**Items 18, 19 and 20 are ordered and the order matters.** 18 builds the shared visual machinery,
-19 and 20 are its first two consumers, and items 21 to 26 all assume it exists. Doing 20 before 18
-means building a tool palette that nothing else can reuse. Items 21 to 25 have no ordering
-constraint against each other. **Item 26 is the largest item in this file** and is scheduled last on
-purpose, but its first sub-item can start any time because it depends on nothing.
+**Items 18, 19 and 20 are ordered and the order matters.** 18 builds the shared visual machinery, 19
+and 20 are its first two consumers, and 21 to 26 all assume it exists. Doing 20 before 18 means
+building a tool palette nothing else can reuse. Items 21 to 25 have no ordering constraint against
+each other. **Item 26 is the largest item in this file** and is scheduled last on purpose, but its
+first sub-item depends on nothing and can start at any time.
 
 ---
 
@@ -123,7 +91,7 @@ purpose, but its first sub-item can start any time because it depends on nothing
 **The foundation, and the highest-leverage change available.** Twenty of twenty-five pages route
 their grid through `DefinitionListPanel`, so a column-renderer extension added there lands on almost
 the whole application at once. Nothing exists to build on: a repo-wide search finds no `ToolStrip`,
-no icon resources, one `ImageList` (which is texture thumbnail data, not icons), and exactly **two**
+no icon resources, one `ImageList` (texture thumbnail data, not icons), and exactly **two**
 `ToolTip` instances - one on the GL control, one on a menu item.
 
 ```
@@ -213,8 +181,8 @@ answer to a question the user was about to ask.
 
 Do NOT invent a join that is not in the list above. The world map icon join is the standing lesson:
 its first evidence rested on two self-proving rows and a shift sweep too narrow to falsify itself,
-and it was wrong. If you want a join that is not listed, prove it the way item 12 and the font join
-were proven - by what the relation REJECTS - and say so.
+and it was wrong. If you want a join that is not listed, prove it by what the relation REJECTS, and
+say so.
 
 Verified by eye. Capture every tab you touch. Commit.
 ```
@@ -275,8 +243,7 @@ Constraints that already exist and must survive:
  - Undo is per-stroke via CompositeEdit. An area fill is one undo step, not ten thousand.
 
 Then add the edit-path check the constraints section requires: paint a selection, paint it back to
-what it was, and land on the original stored bytes. A byte-identity sweep cannot see this and four
-real defects have already lived in exactly that gap.
+what it was, and land on the original stored bytes.
 
 Verified by eye plus tools/Capture-EditorTab.ps1. Run the suite against both caches. Commit.
 ```
@@ -298,7 +265,7 @@ Index 2 holds 35 record types and the editor cannot write one byte of it. Fix th
 sixteen families that mean something readable by someone who has never seen this cache.
 
 EDITING goes on the field pane, not the grid. ConfigListDescriptor.cs:50-56 already states why:
-every grid column summarises several opcodes at once. Work through the field grid.
+every grid column summarises several opcodes at once.
 
 THE FAMILIES THAT NEED A VISUAL REPRESENTATION, in value order:
  - group 1 and 4, floors. Colour as a swatch and a picker; texture id through the item-18 picker.
@@ -403,12 +370,12 @@ Two things the tab must say out loud:
  - INDEX 4 HAS NO RENDERER IN THIS PROJECT, so keys pointing there are silent in the player.
    Measured at 14 of the 21,491 keys, across 10 patches and 6 samples.
    MidiSoundBank.UnrenderedEffectKeys (:18-24) already counts them. Show that count rather than
-   dropping the notes quietly. Porting the index-4 synth is a separate item in the backlog.
+   dropping the notes quietly. Porting the index-4 synth is a separate Backlog item.
 
 The semantic accessors are the risk, not the codec. Encode writes the run-length planes back
 verbatim, so the byte-identity sweep proves the planes survive and says nothing about how they
-expand. The per-key walks were pinned against hand-built plane bytes in item 16; read those tests
-before trusting an accessor, and add one if the tab reaches a path they do not cover.
+expand. The per-key walks are pinned against hand-built plane bytes in RealCacheMidiPatchTests;
+read those before trusting an accessor, and add one if the tab reaches a path they do not cover.
 
 Verified by ear against reference/track-player-listening-checklist.md and by eye. Commit.
 ```
@@ -465,7 +432,7 @@ Run the suite against both caches. Commit.
 ### 25. A read-only structured export of the whole cache
 
 **Cheap, safe, and it unblocks understanding rather than editing.** Distinct from the parked
-working-tree item in the backlog, which is an architecture change - this one writes and never reads.
+working-tree item in Backlog, which is an architecture change - this one writes and never reads.
 
 ```
 Read CLAUDE.md and AGENTS.md first.
@@ -476,11 +443,8 @@ outside the editor: "which floor overlays are red", "which interface components 
 "which models attach billboard 17", "which objects reference a varbit".
 
 This is READ-ONLY and must never be presented as a round trip. The round-trippable version is a
-separate, parked, much larger item, because the dumped form would have to carry every non-canonical
-encoding choice the decoders record - opcode order, opcode repetition, aliased values,
-absent-versus-default, variable-width integer widths, index 9's raw per-opcode payload spans - and
-missing one means an untouched record repacks differently. Say so in the export's own header so
-nobody mistakes it for a source of truth.
+separate, parked, much larger item - see the Backlog entry for why. Say so in the export's own
+header so nobody mistakes it for a source of truth.
 
 What to include per record: the decoded fields, the recorded opcode order, and the resolved
 references. What to leave binary and reference by path: models, sprites, audio, JPEG payloads,
@@ -498,14 +462,15 @@ Verified by re-reading the export and comparing a sample of records against a fr
 
 **The largest single item in this file**, and now the one with the clearest plan. The prerequisites
 are paid: all 42,256 components across 1,078 interfaces re-encode byte-identically, six
-non-canonical cases are captured, and most rows carry a verified name rather than a bare hash.
+non-canonical cases are captured, and most rows carry a name verified by re-hashing it against the
+loaded cache rather than a bare hash.
 
 **What the tab is today**: an interface list, a component grid, and a read-only field pane. Four
 cells edit - X, Y, Width, Height (`InterfaceComponentListDescriptor.cs:157-164`). There is no
 canvas, no rendering of any kind, no tree, no colour picker, no creation or deletion, and no route
 from a hook to the script it names.
 
-**Three findings that decide the design**, and each is worth reading before starting:
+**Three findings that decide the design**, each worth reading before starting:
 
 - **The format carries no per-state appearance.** A component stores one colour, one sprite id, one
   font. Hover, pressed and selected are produced entirely at runtime by CS2 scripts fired from
@@ -516,9 +481,8 @@ from a hook to the script it names.
 - **No layout resolver exists.** The four sizing and positioning mode bytes decode and nothing turns
   them into a pixel rectangle. Until that exists there is no canvas, no hit testing and no drag.
 
-Broken into eight sub-items with a hard dependency order. **26a depends on nothing and can start at
-any time.** 26f is the gate for the behaviour work; 26h is the only one that touches the archive
-layer.
+Eight sub-items with a hard dependency order. **26a and 26b depend on nothing.** 26f gates the
+behaviour work; 26h is the only one that touches the archive layer.
 
 | | Sub-item | Depends on |
 |---|---|---|
@@ -564,14 +528,35 @@ Run the suite against both caches. Commit.
 
 ---
 
+### 27. Correct the stale reference documents
+
+**No prompt, because it is a paragraph of work per file - but it has already cost one wasted
+investigation, and a reader who finds one of these tonight will act on it.** Each was written before
+the index it describes was built, and each now claims nothing exists for an index that is complete
+with a tab. A survey document is prose: written once, never re-measured.
+
+| File | What it claims | What is true |
+|---|---|---|
+| `index-survey/00-WORKLIST.md` §1 | Per-index capability, e.g. "3 INTERFACE_DEFINITIONS \| none (empty TabPage)", "2 CONFIG \| partial-read" | Every row is false. Its progress log stops at five indexes. **Sections 4 and 5 are still worth reading; section 1 is not** - mark it historical or delete it |
+| `index-survey/index-002-CONFIG.md` | 3 of 35 groups decode, "GUI: none" | 35 of 35, with a tab. `reference/index-architect-02.md` supersedes it |
+| `index-survey/index-003-INTERFACE-DEFINITIONS.md` | "nothing exists" | Complete with a tab. `reference/index-architect-03.md` supersedes it |
+| `index-survey/index-012-CLIENT-SCRIPTS.md` | "nothing exists" | Complete with a tab and a disassembler |
+| `CLAUDE.md` UI conventions | A `TabPage` strip, "three of the tabs predate this" | The strip is gone - navigation is a category `TreeView` over a `TabControl` that swallows `TCM_ADJUSTRECT` (`Editor.cs:353-371`), 25 pages in six categories. The three-bespoke-arm count is still right |
+| `Sfx2EditorPanel.cs:55-60` | The tab cannot play audio because no off-the-shelf decoder takes these bytes | A hand-written Vorbis decoder now exists and drives the music player. The label may still be a correct scoping decision, but it is no longer justified by capability - restate it or act on it |
+
+`STATE_OF_THE_EDITOR.md` remains historical above its roadmap, which `CLAUDE.md` already says.
+Each correction belongs in `reference/DOC-CONFLICTS.md`, which exists for exactly this.
+
+---
+
 ## Backlog
 
 Not scheduled. Each is real work with a real reason it is not in the queue.
 
 ### Tabs that want a visual representation rather than a grid
 
-Every one of these is a grid of integers describing something inherently visual. Ordered by how
-much the picture beats the numbers.
+Every one is a grid of integers describing something inherently visual. Ordered by how much the
+picture beats the numbers.
 
 | Index | What it should be | Note |
 |---|---|---|
@@ -585,40 +570,41 @@ much the picture beats the numbers.
 
 ### Missing capability
 
-- **Port the index-4 sound synthesiser.** 10,237 procedural effects that the editor cannot play,
-  and the reason 14 keys in the MIDI patch bank go silent. The client's renderer is about 190 lines
-  of fixed-point DSP with a biquad cascade. The format is the one canonical format in the cache, so
-  there is no encoding-choice work. Blocks a play button on the index-4 tab and completes item 23.
+- **Port the index-4 sound synthesiser.** 10,237 procedural effects the editor cannot play, and the
+  reason 14 of the MIDI patch bank's 21,491 keys are silent in the music player. The client's
+  renderer is about 190 lines of fixed-point DSP with a biquad cascade. The format is the one
+  canonical format in the cache, so there is no encoding-choice work. Blocks a play button on the
+  index-4 tab and completes item 23.
 - **Re-bake the world map from index 5.** Index 23 is pre-baked and the client draws it without
   reading index 5 at all, so the two can legitimately disagree - and after any terrain edit they
-  will. A re-bake is a genuine content pipeline rather than a viewer, and it is the honest answer to
-  "I painted Varrock and the world map still shows grass".
-- **Music import.** Index 6 and 11 export MIDI and play. Replacing a track needs the column-major
+  will. A genuine content pipeline rather than a viewer, and the honest answer to "I painted Varrock
+  and the world map still shows grass".
+- **Music import.** Indexes 6 and 11 export MIDI and play. Replacing a track needs the column-major
   packed form rebuilt from an SMF, which is the inverse of a decoder that is lossy by construction -
   many distinct stored delta streams produce byte-identical MIDI. The tab replaces raw bytes today.
 - **Per-frame sprite import.** A picture describes one frame, so importing into one of the 44
   multi-frame sets keeps one and discards the rest behind a dialog that says so. The honest fix is
   choosing which frame a picture replaces, and letting a set be assembled from several.
 - **Structured control flow in the client-script tab.** The disassembler resolves jump targets and
-  marks labels and says in its own header that it is a listing, not a CFG. Basic blocks, loops and
+  marks labels, and says in its own header that it is a listing, not a CFG. Basic blocks, loops and
   if/else would make a script readable rather than merely decoded. Item 26f is the naming half and
   is scheduled; this is the structural half and is not.
 
 ### An unpacked working tree, packed on deploy - PARKED
 
-**Deliberately not scheduled. Revisit when there is appetite for an architectural change.** Distinct
-from item 25, which is a read-only export.
+**Deliberately not scheduled. Revisit when there is appetite for an architectural change.**
 
 Today we edit the packed cache in place, so every save rewrites the dat2 and the reference table of
 every archive packed alongside, and version control sees one enormous binary change. The
 alternative is to dump every index to readable files, treat those as the source of truth, and pack
 only on deploy.
 
-**The prerequisite is now paid**: a dump-and-repack pipeline is only safe if repacking reproduces
-what was dumped, and that is proven for every index that holds content, over both caches. The
-hazard is entirely in the non-canonical encodings - opcode order, repetition, aliased values,
-absent-versus-default, smart widths, index 9's raw payload spans. Miss one and an untouched record
-repacks differently. Every case is already documented per index.
+**The prerequisite is paid**: a dump-and-repack pipeline is only safe if repacking reproduces what
+was dumped, and that is proven for every index that holds content, over both caches. The hazard is
+entirely in the non-canonical encodings - opcode order, opcode repetition, aliased values,
+absent-versus-default, variable-width integer widths, index 9's raw per-opcode payload spans. Miss
+one and an untouched record repacks differently. Every case is already documented per index. **This
+is also the paragraph item 25 points at for why its export is read-only.**
 
 Still to settle: what is readable per index, whether the packed cache is a build artefact or
 committed alongside, and how it composes with the JS5 reload handshake.
@@ -640,111 +626,17 @@ committed alongside, and how it composes with the JS5 reload handshake.
   implementation of the opcode-replay pattern** alongside `OpcodeStreamDefinition`, with its own
   `ConfigOpcode` struct and 14 subclasses. Deliberately not migrated when the shared one landed,
   because its `Encode` is shaped around `WritePayload` and `AddedOpcodes` rather than a pre-built
-  record list. Mechanical, but it is a separate change with its own sweep to clear.
+  record list. Mechanical, but a separate change with its own sweep to clear.
 - **Three bespoke `LoadEditorTab` arms are left and no more**: Meta (`Editor.cs:1363`), Sprites
   (`:1404`) and Textures (`:1493`). Tracks, Map and Huffman have their own panels deliberately and
   are not migration candidates.
-- **Settle what the client's JVM draws for an index-32 image, or record that it cannot be settled.**
-  Mostly closed: under JDK 8 all 21 payloads decode and match our reading on 97.72% of pixels,
-  never differing by more than 3 levels, while the CMYK reading a marker-less four-component file
-  invites sits 53.84 levels away and matches 4 pixels of 1,176,093. Under JDK 11 `Toolkit`
-  refuses every payload **and the client's own capability probe**, so the client would fall back to
-  index 34. What remains open is only which JVM a given deployment runs.
 - **Run the remaining viewer checklist cases.** B, C, E, G and I have never been run, and D is open
-  - amber and blue marks appear near the shape but whether they read as `face N` and `vN` with
-  numbers in range is unsettled. Now cheaper than it was, because a DWM-composited capture sees the
-  GL surface.
-
----
-
-## 27. Correct the stale documents
-
-Not a queue item with a prompt, because it is a paragraph of work in each file, but it is real and
-it has already cost one wasted investigation.
-
-Correct, in this order of harm:
-
-1. `reference/index-survey/00-WORKLIST.md` - mark section 1 historical, or delete it and keep
-   sections 4 and 5. Bring the progress log to what the code actually holds.
-2. `reference/index-survey/index-002-CONFIG.md`, `index-003-INTERFACE-DEFINITIONS.md` and
-   `index-012-CLIENT-SCRIPTS.md` - each carries a "Current capability" section that is now false in
-   the strongest way, claiming nothing exists for an index that is complete with a tab. Point each
-   at its architect document.
-3. `CLAUDE.md` UI conventions - the tab strip is gone, replaced by a category tree over a
-   `TabControl` that swallows `TCM_ADJUSTRECT`. Update the description; the three-bespoke-arm count
-   is still right.
-4. `Sfx2EditorPanel.cs:55-60` says the tab does not play audio because no off-the-shelf decoder
-   takes these bytes. A hand-written Vorbis decoder now exists and drives the music player. The
-   label may still be a correct scoping decision, but it is no longer justified by capability -
-   restate it or act on it.
-
-Each of these is a claim that a reader would act on. `reference/DOC-CONFLICTS.md` exists for exactly
-this and each correction belongs in it.
-
----
-
-## Done
-
-Kept short. Detail lives in the git history, in `reference/index-survey/00-WORKLIST.md` and in
-`reference/DOC-CONFLICTS.md`. **Where an item shipped with a gap, the gap is named in the same
-bullet** and the actionable ones are also listed under Backlog above.
-
-- **The editor half of the JS5 handshake** (item 13). `Cache/JS5ReloadHandshake.cs` writes
-  `reload.request`, waits for `reload.released` with a timeout and a named failure, saves, then
-  deletes the request - in that order, because the server holds read handles without
-  `FILE_SHARE_DELETE` and the save fails on Windows while it runs. Behind a setting that is off by
-  default, driven through `UI/JS5ReloadProgressDialog.cs:63` so the wait does not freeze the window,
-  and covered by `JS5ReloadHandshakeTests` and `JS5LiveReloadEndToEndTests`, both gated on a
-  declared server.
-- **Playing a track the way the client does** (item 16). The index-14 gate is closed with a
-  hand-written Vorbis decoder for a setup header carrying no magic, no channel count and no framing
-  bit; `MidiSoundBank` wires indexes 15, 14 and 4 the way the client does; `MidiSynthesiser` and
-  `WaveOutDevice` play it; the Tracks tab has transport and states what the player does not
-  reproduce. Verified by ear against `reference/track-player-listening-checklist.md`.
-  *Gap:* index 4 is procedural and has no renderer here, so 14 of the bank's 21,491 keys are
-  silent. `MidiSoundBank.UnrenderedEffectKeys` counts them rather than dropping them quietly.
-- **The 3D viewer became observable, and five of nine checklist cases passed on a monitor.** A
-  DWM-composited capture sees the GL surface; `CopyFromScreen` and `PrintWindow` still do not. Three
-  real render defects were found by eye, turned into numbers, fixed against the numbers, and
-  confirmed by eye again: a multi-part entity coming apart at the joints, particles driven in
-  milliseconds rather than client cycles, and a monochrome type-7 texture blend that made every
-  particle an opaque square.
-- **Models export and import as Wavefront OBJ** from the Entities page, which is the pragmatic
-  answer to mesh editing - edit in Blender.
-- **Every cache index that holds content has a decoder, an encoder and a whole-index byte-identity
-  sweep.** Indexes 9 and 15 were the last two and both are closed. Indexes 34, 35 and 36 are empty
-  in this cache and struck off permanently - and they are three *different* empty states, which
-  nothing may conflate.
-- **Twenty-five pages across six categories**, reached from a category tree rather than a tab strip,
-  with `RegisterEditorTabs` throwing for any page with no registration. Three bespoke
-  `LoadEditorTab` arms are left and no more.
-- **Interface name recovery** (item 12): 434 verified group names plus 75 bespoke component names,
-  every one re-hashed against the loaded cache before it is shown, plus a `com_<fileId>` rule
-  resolving 9,249 components in the vanilla capture.
-- **Index 12 disassembler** (item 14): 68 opcodes named, every one cited to the client line that
-  proves it, nothing taken from RuneStar. *Split off:* basic blocks and structured control flow.
-- **Font glyph editor** (item 17), over an index-13 to index-8 join proven by falsification rather
-  than by coverage - which is where the rejection-column lesson in Constraints came from.
-- **Entities page** (item 9): items, NPCs, objects and models on one page beside one persistent
-  viewport. Putting editable flag columns on real records is what exposed the four bare-flag
-  defects recorded in Constraints.
-- **Sprite tab rebuilt around images** (item 2) and **sprite import from PNG, JPEG and BMP**
-  (item 10), warning before it stages whenever the conversion loses something the result cannot
-  show. *Gap:* a picture describes one frame, so importing into one of the 44 multi-frame sets
-  keeps one.
-- **World Map Overview tab** (item 6), **index 32 replacement validation** (item 11), **three new
-  tabs for indexes 14, 12 and 32** (items 3, 4, 5), **the index-26 materials census asserted rather
-  than printed** (item 1), and **all seven `*_DocumentsKnownDefect` tests fixed** (item 15).
-- **The renderer wired into a tab** (item 8), with the render timer gated on the viewport being
-  visible and on something needing a frame.
-- Shared foundations: `DefinitionSweep`, `DefinitionListPanel`, `CacheAddressing`, `OpcodeStream`,
-  table-driven enumeration, the signed-smart writer, `RSCache.ReadGroup`.
-- The suite runs against the vanilla b639 capture by default and the repack as a second gate, and
-  asserts relationships rather than counts, so it holds on either.
-- Whole-world map viewer with hover feedback and a vertex affordance for height edits, categorised
-  navigation, and the form's autoscaling corrected at source.
-- Three live defects fixed: the map save path writing underwater terrain over the surface square, a
-  malformed archive able to kill the process uncatchably, and index 26 discarding every field edit
-  in silence.
-- The JS5 update server recomputes its master index instead of freezing it at boot, and can release
-  its file handles so a cache can be replaced underneath it.
+  - amber and blue marks appear near the shape, but whether they read as `face N` and `vN` with
+  numbers in range is unsettled. Cheaper than it was, now that a DWM-composited capture sees the GL
+  surface.
+- **Index 32's colour model is settled against a period JVM; only the deployment question is open.**
+  Under JDK 8 all 21 payloads decode and match our reading on 97.72% of pixels, never differing by
+  more than 3 levels, while the CMYK reading a marker-less four-component file invites sits 53.84
+  levels away and matches 4 pixels of 1,176,093. Under JDK 11 `Toolkit` refuses every payload **and
+  the client's own capability probe**, so a client there would fall back to index 34. What remains
+  open is which JVM a given deployment runs.
