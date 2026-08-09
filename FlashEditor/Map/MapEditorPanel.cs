@@ -55,6 +55,11 @@ namespace FlashEditor.Map {
         private readonly Label status = new Label { Dock = DockStyle.Bottom, Height = 22, TextAlign = ContentAlignment.MiddleLeft };
 
         private readonly ComboBox toolBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+
+        /* Every floor material in the cache, as swatches. The tool box and its unlabelled number
+           stay for now - this is what makes them usable rather than what replaces them, and
+           replacing them is the rest of item 20. */
+        private readonly FloorMaterialPalette materials = new FloorMaterialPalette();
         private readonly NumericUpDown toolValue = new NumericUpDown { Minimum = 0, Maximum = 255, Value = 1 };
         private readonly Button undoButton = new Button {
             Text = "Undo", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
@@ -259,6 +264,8 @@ namespace FlashEditor.Map {
             toolBox.SelectedIndexChanged += (_, _) => ApplyToolSelection();
             ApplyToolSelection();
 
+            materials.Picked += (_, pick) => LoadBrush(pick);
+
             view.TileHovered += (_, hit) => {
                 lastHit = hit;
 
@@ -348,6 +355,45 @@ namespace FlashEditor.Map {
             //every number ApplyMeasuredSizes derives.
             if (layersBody != null)
                 ApplyMeasuredSizes();
+        }
+
+        /// <summary>
+        ///     Arms the paint tool for a material the user picked out of the palette.
+        /// </summary>
+        /// <remarks>
+        ///     Selects the tool as well as the value, because picking a colour and then finding the
+        ///     brush still set to "Toggle blocked flag" is the kind of surprise that makes a palette
+        ///     feel unreliable.
+        ///     <para>
+        ///     <b>The underlay cap is honoured here rather than routed around.</b> A tile stores an
+        ///     underlay as id + 81 in a single byte, so 174 is the highest that survives the
+        ///     encoder - and the palette shows every record the table declares, which on the vanilla
+        ///     capture runs past that. A swatch above the cap is refused out loud rather than
+        ///     silently clamped to something the user did not pick.
+        ///     </para>
+        /// </remarks>
+        /// <param name="pick">What the user chose.</param>
+        private void LoadBrush(FloorPick pick) {
+            MapTool wanted = pick.Kind == FloorKind.Underlay
+                ? MapTool.PaintUnderlay
+                : MapTool.PaintOverlay;
+
+            for (int i = 0; i < ToolRows.Length; i++) {
+                if (ToolRows[i].Tool != wanted)
+                    continue;
+
+                toolBox.SelectedIndex = i;
+                break;
+            }
+
+            if (pick.Id > toolValue.Maximum) {
+                ShowMessage(pick.Kind + " " + pick.Id + " is past the " + toolValue.Maximum +
+                    " a tile can store for it, so the brush was left where it was.");
+                return;
+            }
+
+            toolValue.Value = pick.Id;
+            ShowMessage("Brush set to " + pick.Kind.ToString().ToLowerInvariant() + " " + pick.Id);
         }
 
         private MapTool SelectedTool =>
@@ -1078,7 +1124,28 @@ namespace FlashEditor.Map {
                 FixedPanel = FixedPanel.Panel2
             };
             right.Panel1.Controls.Add(view);
-            right.Panel2.Controls.Add(inspector);
+
+            /* THE PALETTE LIVES HERE, NOT IN THE LEFT COLUMN, AND THAT WAS THE SECOND ATTEMPT.
+               394 swatches need WIDTH: the left column is 250 pixels of a window already holding
+               five stacked groups, and putting the palette there either collapsed it to nothing or
+               clipped the layer list. Along the bottom it gets the whole window's width, which is
+               where a row of swatches wants to run anyway. */
+            var bottom = new SplitContainer {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical
+            };
+
+            var materialsGroup = new GroupBox { Text = "Floor materials", Dock = DockStyle.Fill };
+            materialsGroup.Controls.Add(materials);
+
+            bottom.Panel1.Controls.Add(inspector);
+            bottom.Panel2.Controls.Add(materialsGroup);
+
+            //Placed once the container has a real size, for the reason every other splitter here is:
+            //a distance assigned to a 150-pixel-wide default is silently clamped.
+            bottom.HandleCreated += (_, _) => bottom.SplitterDistance = Math.Max(120, bottom.Width / 3);
+
+            right.Panel2.Controls.Add(bottom);
 
             split.Panel1.Controls.Add(BuildLeftColumn());
             split.Panel2.Controls.Add(right);
@@ -1137,6 +1204,7 @@ namespace FlashEditor.Map {
             };
 
             column.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
             column.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -1373,6 +1441,10 @@ namespace FlashEditor.Map {
 
             cache = newCache;
             cacheDirectory = directory;
+
+            //Read straight from the cache rather than from the map store, because the floor tables
+            //are config records and have nothing to do with whether a map square has loaded.
+            materials.Bind(newCache);
 
             //Torn down in dependency order: the service owns the render thread and that thread is
             //the only other user of the rasteriser and the store.
