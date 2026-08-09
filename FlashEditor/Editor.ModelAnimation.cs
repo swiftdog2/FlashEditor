@@ -230,6 +230,7 @@ namespace FlashEditor {
 
             _animator?.SetModels(_viewerModels);
             _particles?.SetModels(_viewerModels);
+            PrewarmParticleMaterials();
 
             //The pose the animator holds belongs to the models that have just been replaced, so the
             //buffers are stale even though the playhead has not moved.
@@ -476,8 +477,54 @@ namespace FlashEditor {
         ///     context is guaranteed current. Called from <see cref="Gl_Paint"/> after the model draw
         ///     and before the buffer swap.
         /// </remarks>
+        /// <summary>
+        ///     Rasterises the materials the newly attached emitters name, off the UI thread.
+        /// </summary>
+        /// <remarks>
+        ///     A particle's material is a procedural graph in index 9, and evaluating one is the
+        ///     kind of work that has its own fifteen-second budget. Doing it inside
+        ///     <see cref="DrawViewportOverlays"/> would freeze the window for as long as it took, on
+        ///     the frame a model was selected. So the evaluation happens here on a pool thread and
+        ///     produces pixels only; the GL upload is a lookup on the paint path.
+        ///     <para>
+        ///     Nothing waits for it. Until a material is warm its quads draw against the flat white
+        ///     texture, which is what every particle looked like before this existed, and the next
+        ///     frame after the warm picks up the real one. Fire and forget is safe because the
+        ///     rasteriser touches no GL and no control - the texture cache's warm store is
+        ///     concurrent for exactly this.
+        ///     </para>
+        /// </remarks>
+        private void PrewarmParticleMaterials() {
+            GLTextureCache? textures = _textureCache;
+            IReadOnlyList<int>? materials = _particles?.AttachedMaterialIds();
+
+            if (textures == null || materials == null || materials.Count == 0)
+                return;
+
+            System.Threading.Tasks.Task.Run(() => {
+                foreach (int material in materials) {
+                    try {
+                        textures.PrewarmParticleMaterial(material);
+                    }
+                    catch (Exception failure) {
+                        //Swallowed deliberately: an unobserved exception on a pool thread takes the
+                        //process down, and a material that will not rasterise is a white quad, not
+                        //a reason to close the editor.
+                        Utils.DebugUtil.Debug("Particle material " + material + " failed to warm: " + failure.Message,
+                            Utils.DebugUtil.LOG_DETAIL.BASIC);
+                    }
+                }
+
+                //The viewport only repaints when the simulation moves, so a warm that lands while
+                //the effect is paused would otherwise not be seen until something else invalidated.
+                if (!glControl.IsDisposed)
+                    glControl.BeginInvoke(new Action(() => glControl.Invalidate()));
+            });
+        }
+
         private void DrawViewportOverlays() {
             _viewportOverlay ??= new ViewportOverlayRenderer();
+            _viewportOverlay.MaterialTextureResolver ??= ResolveParticleMaterialTexture;
 
             if (_viewerPoseDirty && _animator != null) {
                 if (_animator.HasPose)
@@ -514,6 +561,17 @@ namespace FlashEditor {
 
             _viewportOverlay.Draw();
         }
+
+        /// <summary>Hands the overlay renderer a GL texture for one particle material.</summary>
+        /// <remarks>
+        ///     On the paint path, so it must not rasterise anything - see
+        ///     <see cref="PrewarmParticleMaterials"/>. Zero means "not warm yet" and the caller
+        ///     falls back to flat white for the frame.
+        /// </remarks>
+        /// <param name="materialId">The material a batch of quads names.</param>
+        /// <returns>A GL texture handle, or 0.</returns>
+        private int ResolveParticleMaterialTexture(int materialId) =>
+            _textureCache?.GetParticleTexture(materialId) ?? 0;
 
         /// <summary>
         ///     Draws the face and vertex index labels with GDI, over the swapped GL surface.

@@ -1,8 +1,38 @@
 using System.Numerics;
 using System;
+using System.Collections.Generic;
 
 namespace FlashEditor.Rendering
 {
+    /// <summary>
+    ///     A consecutive span of quads that share one material, and so one bound texture.
+    /// </summary>
+    /// <remarks>
+    ///     The client batches particles exactly this way. <c>Class360.java:411-424</c> walks the
+    ///     particle list and breaks the batch the moment <c>anInt6180</c>, the particle's material
+    ///     id, differs from the one the batch opened with; <c>:440-443</c> then binds that material
+    ///     through <c>RenderType_Sub1.method1834</c> and draws. It does <b>not</b> sort by material,
+    ///     and neither does this - the quads are translucent and drawn with depth writes off, so
+    ///     reordering them reorders the blend and changes the picture. More draw calls is the price
+    ///     of keeping the order the simulation produced.
+    /// </remarks>
+    /// <param name="MaterialId">
+    ///     The material every quad in the run names, or <see cref="ParticleMaterialRun.NoMaterial"/>
+    ///     when the emitter declared none.
+    /// </param>
+    /// <param name="FirstQuad">Index of the run's first quad within the frame's buffer.</param>
+    /// <param name="QuadCount">How many quads the run holds.</param>
+    public readonly record struct ParticleMaterialRun(int MaterialId, int FirstQuad, int QuadCount)
+    {
+        /// <summary>The material id an emitter with no opcode 15 leaves on its particles.</summary>
+        /// <remarks>
+        ///     Matches <c>ParticleEmitterDefinition.NoMaterial</c>. A run carrying it has no texture
+        ///     to bind and falls back to the flat white one, which is the pre-existing appearance
+        ///     rather than a new failure mode.
+        /// </remarks>
+        public const int NoMaterial = -1;
+    }
+
     /// <summary>
     ///     Turns live particles into camera-facing quads in the model shader's vertex layout.
     /// </summary>
@@ -72,11 +102,16 @@ namespace FlashEditor.Rendering
         ///     The destination, at least <see cref="FloatsPerParticle"/> per live particle. Supplied by
         ///     the caller and reused, because this runs every frame and the cap is 2047 quads.
         /// </param>
+        /// <param name="runs">
+        ///     Cleared and refilled with one entry per consecutive span of quads sharing a material,
+        ///     in draw order. Null when the caller does not batch, in which case every quad is still
+        ///     written and only the grouping is skipped.
+        /// </param>
         /// <returns>How many particles were written.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="system"/> or <paramref name="buffer"/> is null.</exception>
         /// <exception cref="ArgumentException">The buffer is too small.</exception>
         public static int Build(ParticleSystem system, Vector3 cameraRight, Vector3 cameraUp, Vector3 lightDirection,
-            float[] buffer)
+            float[] buffer, List<ParticleMaterialRun>? runs = null)
         {
             if (system == null)
             {
@@ -103,9 +138,27 @@ namespace FlashEditor.Rendering
                 ? Vector3.Normalize(lightDirection)
                 : Vector3.UnitY;
 
+            runs?.Clear();
+            int runMaterial = 0;
+            int runStart = 0;
+
             for (int index = 0; index < liveParticleCount; index++)
             {
                 Particle particle = system.ParticleAt(index);
+
+                if (runs != null)
+                {
+                    if (index == 0)
+                    {
+                        runMaterial = particle.MaterialId;
+                    }
+                    else if (particle.MaterialId != runMaterial)
+                    {
+                        runs.Add(new ParticleMaterialRun(runMaterial, runStart, index - runStart));
+                        runMaterial = particle.MaterialId;
+                        runStart = index;
+                    }
+                }
 
                 //Positions are stored in twelfths of a model unit, so they shift down before the
                 //conversion into world space.
@@ -136,6 +189,12 @@ namespace FlashEditor.Rendering
                 WriteCorner(buffer, firstVertex + 2, centre + right + up, normal, colour, opacity, 1f, 1f);
                 WriteCorner(buffer, firstVertex + 3, centre - right + up, normal, colour, opacity, 0f, 1f);
             }
+
+            //The last run is closed here rather than in the loop, because nothing inside the loop
+            //can see that it has ended. Omitting this drops the final material's quads from the
+            //draw entirely, and with one emitter alive that is every quad on screen.
+            if (runs != null && liveParticleCount > 0)
+                runs.Add(new ParticleMaterialRun(runMaterial, runStart, liveParticleCount - runStart));
 
             return liveParticleCount;
         }

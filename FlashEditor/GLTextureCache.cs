@@ -84,6 +84,137 @@ namespace FlashEditor
             return handle;
         }
 
+        /// <summary>One material rasterised the way the client rasterises it, before any GL call.</summary>
+        /// <param name="Pixels">Packed ARGB, row-major, <paramref name="Side"/> square.</param>
+        /// <param name="Side">Edge length in pixels.</param>
+        /// <param name="RepeatS">Whether to repeat rather than clamp horizontally.</param>
+        /// <param name="RepeatT">Whether to repeat rather than clamp vertically.</param>
+        /// <param name="Mipmapped">Whether the material asks for mipmaps.</param>
+        private readonly record struct RasterisedMaterial(int[] Pixels, int Side, bool RepeatS, bool RepeatT,
+            bool Mipmapped);
+
+        /// <summary>Materials rasterised off the paint path, keyed by material id.</summary>
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, RasterisedMaterial> _warmed = new();
+
+        /// <summary>GL handles for the warmed materials, created on the paint path.</summary>
+        private readonly Dictionary<int, int> _materialTextures = new();
+
+        /// <summary>
+        ///     Rasterises a material the way the client does, off the thread that paints.
+        /// </summary>
+        /// <remarks>
+        ///     This is the deliberate answer to evaluating a procedural texture graph from
+        ///     <c>Gl_Paint</c>: it is not done there at all. Index 9 holds operation graphs, not
+        ///     pixels, and evaluating one is unbounded work - <c>TextureGraphEvaluator</c> carries a
+        ///     fifteen-second budget precisely because some of them approach it - so a graph
+        ///     evaluated inside a paint handler stalls the UI thread for as long as it takes. It
+        ///     makes no GL calls, so it is safe on any thread; <see cref="GetParticleTexture"/> does
+        ///     the upload later, on the thread that holds the context.
+        ///     <para>
+        ///     Which rasterisation is <c>Class364.method3931</c>'s (<c>:113-121</c>) and it is per
+        ///     material, not per feature: alpha comes from the graph's own alpha output node when
+        ///     <c>anInt1818 == 2</c> or <c>aByte1820</c> is 1 or 7, and is derived from the colour
+        ///     otherwise. The size is 64 when <c>aBoolean1822</c> is set and the renderer's default
+        ///     otherwise (<c>:110</c>), and the wrap modes come from <c>aBoolean1826</c> for S and
+        ///     <c>aBoolean1819</c> for T (<c>Class42_Sub1.method383:11-12</c>) - note that those two
+        ///     are the opposite way round to the argument order.
+        ///     </para>
+        /// </remarks>
+        /// <param name="materialId">The material to rasterise.</param>
+        /// <returns>Whether the material resolved to a graph and was rasterised.</returns>
+        public bool PrewarmParticleMaterial(int materialId)
+        {
+            if (materialId < 0 || _warmed.ContainsKey(materialId))
+                return _warmed.ContainsKey(materialId);
+
+            if (!TextureManager.Textures.TryGetValue(materialId, out TextureDefinition def) || def?.graph == null)
+            {
+                Debug($"Particle material {materialId} has no texture graph", LOG_DETAIL.BASIC);
+                return false;
+            }
+
+            //Class364.method3931:110. The client reads its own default from the renderer; 128 is
+            //what this project has always rendered a texture at.
+            int side = def.field1822 ? 64 : 128;
+
+            bool sampleAlpha = def.field1818 == 2 || def.field1820 == 1 || def.field1820 == 7;
+
+            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, side, side, _cache, def.field1824, materialId,
+                sampleAlpha);
+
+            if (pixels == null)
+            {
+                Debug($"Particle material {materialId} did not rasterise", LOG_DETAIL.BASIC);
+                return false;
+            }
+
+            _warmed[materialId] = new RasterisedMaterial(pixels, side, def.field1826, def.field1819,
+                def.field1832 != 0);
+
+            Debug($"Particle material {materialId} warmed at {side}x{side}, alphaOutput={sampleAlpha}",
+                LOG_DETAIL.BASIC);
+            return true;
+        }
+
+        /// <summary>
+        ///     The GL texture for a particle's material, or 0 when it has not been warmed yet.
+        /// </summary>
+        /// <remarks>
+        ///     Called from the paint handler once per material batch, so it does nothing but a
+        ///     dictionary lookup and, on the first frame after a warm, one upload. It deliberately
+        ///     never rasterises: a material nobody warmed returns 0 and the caller falls back to a
+        ///     flat texture for that frame, which is a visible wrong picture rather than a frozen
+        ///     window.
+        ///     <para>
+        ///     Kept apart from <see cref="GetTexture"/>, which serves the model draw from
+        ///     <c>def.thumb</c>. That path derives alpha from the colour and is shared with the
+        ///     Textures tab's thumbnails, so widening it to the client's per-material rule would
+        ///     change how every model and every thumbnail is drawn - a separate change with its own
+        ///     evidence, not a side effect of teaching particles to sample their material.
+        ///     </para>
+        /// </remarks>
+        /// <param name="materialId">The material named by the particle.</param>
+        /// <returns>A GL texture handle, or 0.</returns>
+        public int GetParticleTexture(int materialId)
+        {
+            if (materialId < 0)
+                return 0;
+
+            if (_materialTextures.TryGetValue(materialId, out int handle))
+                return handle;
+
+            if (!_warmed.TryGetValue(materialId, out RasterisedMaterial warm))
+                return 0;
+
+            handle = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, handle);
+
+            //Mipmaps are generated below when the material asks for them, so the min filter has to
+            //agree - asking for a mipmapped filter without supplying levels leaves the texture
+            //incomplete and every sample comes back black.
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter,
+                warm.Mipmapped ? (int)TextureMinFilter.LinearMipmapLinear : (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter,
+                (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS,
+                warm.RepeatS ? (int)TextureWrapMode.Repeat : (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT,
+                warm.RepeatT ? (int)TextureWrapMode.Repeat : (int)TextureWrapMode.ClampToEdge);
+
+            //Bgra because the pixels are packed ARGB in a little-endian int, which is B, G, R, A in
+            //memory order. Rgba here silently swaps red and blue.
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, warm.Side, warm.Side, 0,
+                OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, warm.Pixels);
+
+            if (warm.Mipmapped)
+                GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+
+            _materialTextures[materialId] = handle;
+            return handle;
+        }
+
         private static int CreateGLTexture(Bitmap bmp)
         {
             int tex = GL.GenTexture();
@@ -106,6 +237,11 @@ namespace FlashEditor
             foreach (var kvp in _textures)
                 GL.DeleteTexture(kvp.Value);
             _textures.Clear();
+
+            foreach (var kvp in _materialTextures)
+                GL.DeleteTexture(kvp.Value);
+            _materialTextures.Clear();
+            _warmed.Clear();
         }
     }
 }

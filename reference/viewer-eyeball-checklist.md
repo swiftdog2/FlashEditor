@@ -263,12 +263,58 @@ cycles, so about one to one and a quarter seconds a particle.
 - **Wrong, rooted off the mesh.** A trail of the right density and colour that starts a body-width
   away from the cape and hangs in space. The attachment is on the wrong face, or the emitter is being
   left at the rest position while the model poses - `ParticleSystem.ApplyPose` not being called.
-- **Wrong, no material.** Hard-edged opaque squares rather than soft smoke. Emitter 157 names index-26
-  material **812** and `Particle.MaterialId` is currently written and never read, so **this is the
-  expected result today** and is a known gap rather than a regression. Recorded here so the two are
-  not confused.
+- **Wrong, no material.** Hard-edged opaque squares rather than soft smoke. That was the expected
+  result until the material draw landed; it is now a regression, and section **F4** below is the
+  case that covers it.
 - **Not a defect.** The trail keeps falling for about a second after the cape stops moving. That is
   the particles' own lifetime, and the client does the same.
+
+### F4. The particle material - soft orbs rather than squares
+
+Same model, same tick box. This section is about **one particle**, so zoom in until a single one
+fills a good part of the frame rather than judging the trail as a whole.
+
+Emitter 157 names index-26 material **812**, whose colour output is an opaque noise field and whose
+*alpha* output is a radial falloff. The falloff is the whole of the effect: the quad is a flat
+camera-facing rectangle and nothing else about it is round.
+
+- **Correct.** Each particle is a **soft round orb whose edge fades out to nothing**, with no
+  boundary you can point at. A cluster of them reads as one **haze** rather than as a number of
+  shapes, which is the difference between this and the client capture. Measured at 64x64, material
+  812 rasterises to 120 distinct alpha values, 255 at the centre and 0 at every corner, with 1018 of
+  its 4096 pixels fully transparent, so a correct draw shows roughly a quarter of each quad as
+  nothing at all.
+- **Wrong, hard-edged opaque squares.** The material is not reaching the draw. Either the prewarm
+  has not run - it is kicked off when the models are set, and until it finishes the quads fall back
+  to flat white on purpose - or `ViewportOverlayRenderer.MaterialTextureResolver` is unwired and
+  every quad is sampling the one white pixel. If they are square and *stay* square after several
+  seconds, it is the second.
+- **Wrong, a visible square boundary around a soft centre.** The falloff is being sampled but the
+  quad extends past it. Either the UVs no longer span 0 to 1 across the sprite, or the wrap mode is
+  clamping where material 812 asks for repeat, which smears the edge row outwards instead of ending
+  the orb.
+- **Wrong, orbs of the wrong size relative to the trail.** The texture is right and the quad is not.
+  This is a size or clock defect, not a material one - go back to **F3**.
+- **Wrong, the wrong sprite entirely.** A recognisable pattern - bark, rope, brick - instead of a
+  soft blob. The material id is being resolved against the wrong table, or the batch is binding a
+  neighbouring material's texture.
+- **Wrong, every particle sharing one material when several are live.** Only visible on a model
+  whose emitters name different materials, so **check it on one from the F2 table with three or more
+  distinct emitters** rather than on the cape, whose three emitters make this hard to see. The
+  batching is a run per consecutive span of one material, so a boundary in the wrong place draws one
+  emitter's particles with another's texture.
+- **Not a defect, and expected on the first frame or two.** Squares that turn into orbs shortly after
+  the model loads. The texture graph is evaluated off the UI thread deliberately, because evaluating
+  one inside the paint handler would freeze the window; the quads draw white until it lands.
+- **Not a defect.** The orbs are *dark*, not grey. Emitter 157 spawns near-black, and the shader
+  multiplies the texture by the particle's own colour and alpha - which is the client's MODULATE
+  combine, `Class238.anInt1821 == 0`, and is what 913 of the vanilla capture's 915 materials ask for.
+
+**What is already pinned numerically and needs no eye**:
+`FlashEditor.Tests/Rendering/ParticleMaterialTests.cs` for the material's alpha profile, its
+rasterisation mode and the combine census, and
+`FlashEditor.Tests/Rendering/ParticleMaterialBatchTests.cs` for the batching. So this section is
+asking a human only for what those cannot see - that the pixels reach the screen at all.
 
 **The peak-live figures in the table above predate the clock fix.** They were measured by driving
 the system at 33 ms advances under the reading of a step as a millisecond, so each advance ran 33

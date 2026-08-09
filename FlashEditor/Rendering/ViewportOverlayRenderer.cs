@@ -1,5 +1,6 @@
 using System.Numerics;
 using System;
+using System.Collections.Generic;
 using OpenTK.Graphics.OpenGL;
 
 namespace FlashEditor.Rendering
@@ -114,6 +115,26 @@ namespace FlashEditor.Rendering
         /// </remarks>
         private float[] particleVertices = Array.Empty<float>();
 
+        /// <summary>The current frame's material batches, in draw order.</summary>
+        private readonly List<ParticleMaterialRun> particleRuns = new List<ParticleMaterialRun>();
+
+        /// <summary>
+        ///     Turns a particle's material id into a GL texture handle, or null while none is wired.
+        /// </summary>
+        /// <remarks>
+        ///     A delegate rather than a reference to the texture cache, because this type is in
+        ///     <c>Rendering</c> and the cache reaches the whole of index 9 and index 26 through an
+        ///     open <c>RSCache</c>. Handing it the one function it needs keeps the overlay renderer
+        ///     free of the cache entirely, which is what lets every other line in it stay
+        ///     arithmetic-free buffer management.
+        ///     <para>
+        ///     A resolver returning 0 means "not ready", not "error". It is called on the paint path,
+        ///     so it must never evaluate a texture graph; the quad falls back to the flat white
+        ///     texture for that frame and picks the real one up once it has been warmed.
+        ///     </para>
+        /// </remarks>
+        public Func<int, int>? MaterialTextureResolver { get; set; }
+
         /// <summary>Whether to draw the wireframe.</summary>
         public bool ShowWireframe { get; set; }
 
@@ -180,6 +201,7 @@ namespace FlashEditor.Rendering
             {
                 ParticleQuadCount = 0;
                 particles.IndexCount = 0;
+                particleRuns.Clear();
                 return;
             }
 
@@ -190,7 +212,8 @@ namespace FlashEditor.Rendering
                 particleVertices = new float[system.MaximumParticles * ParticleBillboards.FloatsPerParticle];
             }
 
-            int quads = ParticleBillboards.Build(system, cameraRight, cameraUp, lightDirection, particleVertices);
+            int quads = ParticleBillboards.Build(system, cameraRight, cameraUp, lightDirection, particleVertices,
+                particleRuns);
             uint[] indices = ParticleBillboards.BuildIndices(quads);
 
             //Only the used prefix of the staging buffer is uploaded; the rest is last frame's data.
@@ -241,8 +264,12 @@ namespace FlashEditor.Rendering
             {
                 GL.DepthMask(flag: false);
                 GL.BindVertexArray(particles.VAO);
-                GL.DrawElements(PrimitiveType.Triangles, particles.IndexCount, DrawElementsType.UnsignedInt, 0);
+                DrawParticleRuns();
                 GL.DepthMask(flag: true);
+
+                //Back to white for whatever draws next. The highlight below shares this texture
+                //unit and expects a sample that changes nothing.
+                GL.BindTexture(TextureTarget.Texture2D, whiteTexture);
             }
 
             if (HasHighlight && highlight.IndexCount > 0)
@@ -280,6 +307,59 @@ namespace FlashEditor.Rendering
             WireframeLineCount = 0;
             ParticleQuadCount = 0;
             HasHighlight = false;
+        }
+
+        /// <summary>Draws the particle quads one material batch at a time.</summary>
+        /// <remarks>
+        ///     Mirrors <c>Class360.java:440-450</c>: bind the run's material, draw the run, repeat.
+        ///     The runs are consecutive spans rather than a sort, so the blend order the simulation
+        ///     produced survives - see <see cref="ParticleMaterialRun"/>.
+        ///     <para>
+        ///     A run whose material does not resolve draws against the flat white texture, which is
+        ///     what the whole overlay pass used before batching existed. That is a visible
+        ///     degradation rather than a hidden one: a hard opaque square is exactly what the caller
+        ///     will see if the prewarm has not reached that material yet.
+        ///     </para>
+        ///     <para>
+        ///     Falls back to a single unbatched draw when the run list is empty but the index buffer
+        ///     is not, which can only happen if a future caller uploads without runs. Drawing
+        ///     nothing there would be a silent blank rather than a wrong picture.
+        ///     </para>
+        /// </remarks>
+        private void DrawParticleRuns()
+        {
+            if (particleRuns.Count == 0)
+            {
+                GL.DrawElements(PrimitiveType.Triangles, particles.IndexCount, DrawElementsType.UnsignedInt, 0);
+                return;
+            }
+
+            Func<int, int>? resolver = MaterialTextureResolver;
+            int bound = -1;
+
+            foreach (ParticleMaterialRun run in particleRuns)
+            {
+                int texture = run.MaterialId == ParticleMaterialRun.NoMaterial || resolver == null
+                    ? whiteTexture
+                    : resolver(run.MaterialId);
+
+                if (texture == 0)
+                    texture = whiteTexture;
+
+                if (texture != bound)
+                {
+                    GL.BindTexture(TextureTarget.Texture2D, texture);
+                    bound = texture;
+                }
+
+                //Byte offset into the element buffer, not an index count. The indices were built
+                //for the whole frame in one array, so a run starts six indices per preceding quad
+                //into it.
+                IntPtr offset = (IntPtr)(run.FirstQuad * ParticleBillboards.IndicesPerParticle * sizeof(uint));
+
+                GL.DrawElements(PrimitiveType.Triangles, run.QuadCount * ParticleBillboards.IndicesPerParticle,
+                    DrawElementsType.UnsignedInt, offset);
+            }
         }
 
         /// <summary>Uploads vertices and indices, growing the buffers only when they are too small.</summary>

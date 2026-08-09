@@ -156,6 +156,32 @@ namespace FlashEditor.Rendering
         /// <summary>How many emitters are attached, whether or not they are spawning.</summary>
         public int EmitterCount => emitters.Count;
 
+        /// <summary>
+        ///     Every material the attached emitters will put on a particle, deduplicated.
+        /// </summary>
+        /// <remarks>
+        ///     Read from the emitter definitions rather than from the live particles, so it is
+        ///     answerable the moment the models are set and before anything has spawned. That is
+        ///     what lets the materials be rasterised off the paint path: a renderer that only
+        ///     learned which material it needed when the first particle appeared would have to
+        ///     evaluate a texture graph inside the frame that needed it.
+        /// </remarks>
+        /// <returns>The material ids, excluding emitters that declare none.</returns>
+        public IReadOnlyList<int> AttachedMaterialIds()
+        {
+            List<int> ids = new List<int>();
+
+            foreach (ParticleEmitterInstance emitter in emitters)
+            {
+                int material = emitter.Runtime.Definition.MaterialId;
+
+                if (material >= 0 && !ids.Contains(material))
+                    ids.Add(material);
+            }
+
+            return ids;
+        }
+
         /// <summary>How many emitters actually produced a particle on the last advance.</summary>
         /// <remarks>
         ///     Below <see cref="EmitterCount"/> whenever an emitter is outside its duty cycle, on a

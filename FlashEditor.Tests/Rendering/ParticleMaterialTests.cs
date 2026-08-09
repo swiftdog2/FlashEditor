@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.cache;
+using FlashEditor.Definitions.Particles;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
@@ -180,6 +181,105 @@ namespace FlashEditor.Tests.Rendering
             finally
             {
                 smoke.graph.ColourOutputIndex = savedColourOutput;
+            }
+        }
+
+        /// <summary>
+        ///     The smoke material selects the alpha-sampling rasterisation and the MODULATE combine.
+        /// </summary>
+        /// <remarks>
+        ///     Both are per-material fields rather than properties of the particle feature, and both
+        ///     were guessed at before they were read.
+        ///     <para>
+        ///     <b>Which rasterisation.</b> <c>Class364.method3931:121</c> takes the alpha-sampling
+        ///     path when <c>anInt1818 == 2 || !Node_Sub10_Sub7.method1023(1, aByte1820)</c>, and
+        ///     <c>method1023</c> (<c>:53-62</c>) is <c>i != 1 &amp;&amp; i != 7</c>. So the condition
+        ///     is <c>field1818 == 2</c> or <c>field1820</c> in {1, 7}. Material 812 satisfies the
+        ///     first.
+        ///     </para>
+        ///     <para>
+        ///     <b>Which combine mode.</b> Not a particle constant. <c>Class360.java:443</c> binds the
+        ///     particle's material through <c>RenderType_Sub1.method1834</c> (<c>:2976</c>), which
+        ///     reaches <c>method1897</c>, and there <c>:4437</c> reads <c>i_285_ =
+        ///     class238.anInt1821</c> and <c>:4449</c> passes it to <c>method1896</c>. So every
+        ///     textured draw takes the mode from the material it binds, and a particle is not
+        ///     special. This asserts the census as well as 812's value, because the shader
+        ///     implements one arm of five.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void SmokeMaterial_TakesTheAlphaRasterisationAndTheModulateCombine()
+        {
+            RSCache cache = _fixture.OpenCache();
+            new TextureManager(cache).Load();
+
+            TextureDefinition smoke = TextureManager.Textures[SmokeMaterialId];
+
+            Assert.Equal(2, smoke.field1818);
+            Assert.True(smoke.field1818 == 2 || smoke.field1820 == 1 || smoke.field1820 == 7,
+                $"material {SmokeMaterialId} would take the colour-derived alpha, which is uniform");
+
+            //Mode 0 is method1896's second arm, method1899(8448, 8960, 8448), which sets
+            //GL_COMBINE_RGB and GL_COMBINE_ALPHA both to GL_MODULATE - note method1899 writes its
+            //third argument to GL_COMBINE_RGB (34161) and its first to GL_COMBINE_ALPHA (34162),
+            //which is the reverse of the reading order. texture.frag already computes exactly that.
+            Assert.Equal(0, smoke.field1821);
+
+            var modes = new SortedDictionary<int, int>();
+            foreach (TextureDefinition def in TextureManager.Textures.Values)
+                modes[def.field1821] = modes.GetValueOrDefault(def.field1821) + 1;
+
+            foreach (var mode in modes)
+                _output.WriteLine($"{_fixture.Profile}: combine mode {mode.Key} on {mode.Value} materials");
+
+            //Recorded rather than required to be {0}. If a later cache does carry another mode the
+            //shader has to grow an arm for it, and this is the line that says so.
+            Assert.True(modes.ContainsKey(0), "no material takes the MODULATE combine");
+
+            //The claim that matters is narrower than "every material is MODULATE", which is false.
+            //It is that every material an emitter can put on a particle is, because that is the set
+            //the overlay shader has to serve. Derived from index 27 rather than assumed.
+            var nonModulate = new SortedSet<int>();
+
+            foreach (TextureDefinition def in TextureManager.Textures.Values)
+                if (def.field1821 != 0)
+                    nonModulate.Add(def.id);
+
+            var used = new SortedSet<int>();
+
+            foreach (int emitterMaterial in EmitterMaterials(cache))
+                if (nonModulate.Contains(emitterMaterial))
+                    used.Add(emitterMaterial);
+
+            _output.WriteLine($"  materials off MODULATE: [{string.Join(", ", nonModulate)}]; "
+                + $"named by an emitter: [{string.Join(", ", used)}]");
+
+            Assert.True(used.Count == 0,
+                $"emitters name materials {string.Join(", ", used)}, which do not take the MODULATE "
+                + "combine, so texture.frag draws them with the wrong texture environment");
+        }
+
+        /// <summary>Every material id declared by an index-27 emitter.</summary>
+        /// <remarks>
+        ///     Read through <see cref="RSCache.ReadGroup"/> rather than file by file, because
+        ///     <c>ReadFile</c> re-decodes the whole group per file and the emitter family is one
+        ///     group of a few hundred.
+        /// </remarks>
+        /// <param name="cache">The open cache.</param>
+        /// <returns>The material ids, including duplicates.</returns>
+        private static IEnumerable<int> EmitterMaterials(RSCache cache)
+        {
+            foreach (KeyValuePair<int, JagStream> file in cache.ReadGroup(RSConstants.CONFIG_PARTICLES,
+                ParticleEmitterDefinition.GroupId))
+            {
+                if (file.Value == null)
+                    continue;
+
+                file.Value.Seek0();
+                ParticleEmitterDefinition emitter = new ParticleEmitterDefinition { Id = file.Key }.Decode(file.Value);
+
+                if (emitter.MaterialId != ParticleEmitterDefinition.NoMaterial)
+                    yield return emitter.MaterialId;
             }
         }
 
