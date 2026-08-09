@@ -334,6 +334,26 @@ namespace FlashEditor.Definitions.Editing {
         }
 
         /// <summary>
+        ///     Frees tiles the thumbnail cache evicted, before anything in this frame is drawn.
+        /// </summary>
+        /// <remarks>
+        ///     This is the other half of the cache's disposal contract and it has to run here rather
+        ///     than at eviction. The producer thread evicts from a background decode and can pick a
+        ///     bitmap the UI thread is currently inside <c>DrawImage</c> on, which is a use-after-free
+        ///     with no exception to catch. Draining at the top of a paint means every tile freed was
+        ///     last drawn in a previous frame, so nothing can still be reading it.
+        ///     <para>
+        ///     On the panel rather than the renderer: a grid can carry several renderers over one
+        ///     cache, and draining per renderer would free the same queue several times per frame.
+        ///     </para>
+        /// </remarks>
+        /// <param name="e">The paint data.</param>
+        protected override void OnPaint(PaintEventArgs e) {
+            thumbnails?.DrainRetired();
+            base.OnPaint(e);
+        }
+
+        /// <summary>
         ///     Keeps the progress bar in proportion to the font the form scaled everything else by.
         /// </summary>
         /// <remarks>
