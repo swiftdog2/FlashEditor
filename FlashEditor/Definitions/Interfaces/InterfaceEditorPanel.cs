@@ -840,9 +840,25 @@ namespace FlashEditor.Definitions.Interfaces {
                     component.RawTargetVerb + ", " + component.RawTargetCursor + ", " +
                     component.RawTargetOperand);
 
-            for (int hook = 0; hook < InterfaceComponentDefinition.HookCount; hook++)
-                if (component.Hooks[hook].Length > 0)
-                    yield return new FieldListing("hooks", "Hook " + hook, DescribeHook(component.Hooks[hook]));
+            /* A hook is the only behaviour the file carries, so it gets two rows rather than one:
+               what it calls, in the form the client actually invokes it, and the raw operands the
+               bytes hold. The first is what a reader wants; the second is what an editor has to be
+               able to show, because the readable form drops the type bytes. */
+            for (int hook = 0; hook < InterfaceComponentDefinition.HookCount; hook++) {
+                if (component.Hooks[hook].Length == 0)
+                    continue;
+
+                yield return new FieldListing("hooks", InterfaceHookSlots.Describe(hook),
+                    InterfaceHookSlots.DescribeCall(component.Hooks[hook]));
+                yield return new FieldListing("hooks", "   stored operands",
+                    DescribeHook(component.Hooks[hook]));
+            }
+
+            if (component.VersionedHook.Length > 0) {
+                yield return new FieldListing("hooks",
+                    "the version-gated twenty-first array, which no file in either supported cache stores",
+                    InterfaceHookSlots.DescribeCall(component.VersionedHook));
+            }
 
             for (int trigger = 0; trigger < InterfaceComponentDefinition.TriggerCount; trigger++)
                 if (component.Triggers[trigger].Length > 0)
