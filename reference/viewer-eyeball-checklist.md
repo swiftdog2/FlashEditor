@@ -49,10 +49,20 @@ First human pass, 2026-08-09, against the repack (the model list read 63,614).
 | **F3/F4** particle position and material | **PASS, both confirmed on the monitor 2026-08-09.** F3: after the clock-unit fix the smoke sits at the cape's hem rather than detached below and behind it. F4: after the type-7 mono blend fix and the material draw, model 59885 renders soft orbs fading to nothing rather than hard opaque squares. Both were reported as defects by a human first, measured second, and confirmed by eye last |
 | **B, C, E, G, I** | **NOT YET RUN** |
 
-**Known limitation, reported 2026-08-09 and not yet fixed:** particles render only while the
-Entities type selector is on **Models**. Selecting an item, NPC or object shows the mesh without
-its particles, so a cape viewed as an item looks like a cape viewed as a model with the effect
-missing. Do not read that as a particle defect while running these cases - pick Models.
+**An item showing no particles is usually correct, not a defect.** An item names several models and
+they are different meshes: the Dungeoneering master cape is item 19709/19710 with inventory model
+**59888** and worn models **59885** and **59887**, and only the WORN pair carries emitters. The
+Entities page shows an item's inventory model, which genuinely has none, so the smoke is absent
+because the data says so. Reported as a bug on 2026-08-09 and settled as expected behaviour.
+
+The useful consequence is a feature rather than a fix: there is no way to choose WHICH of an item's
+models the viewport shows, so the models that carry the effect are only reachable by looking the id
+up and selecting it under Models. Run every particle case under **Models** until that exists.
+
+**Genuinely unverified:** whether an NPC or an object whose models DO carry emitters renders them.
+Nobody has checked, and the item case does not answer it - an NPC is several models merged into one
+mesh by `CompositeModel`, while a lone model is deliberately left unmerged, so the two take
+different paths to the particle system. Emitters anchor to a FACE, and a merge renumbers faces.
 
 Case H was added after this pass, which is why it moved Layout from H to I. A verdict recorded
 against "H" before 2026-08-09 was about layout.
