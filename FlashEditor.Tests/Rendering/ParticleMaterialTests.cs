@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Particles;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Rendering
 {

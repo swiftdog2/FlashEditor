@@ -3,8 +3,9 @@ using System.IO;
 using System;
 using FlashEditor.Utils;
 using FlashEditor.Cache.Util.Crypto;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     public class RSContainer {
         private JagStream stream; //the archive stream
         public int indexId;

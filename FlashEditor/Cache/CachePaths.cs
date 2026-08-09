@@ -4,7 +4,7 @@ using System.IO;
 using FlashEditor.Cache.Util.Crypto;
 using static FlashEditor.Utils.DebugUtil;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     ///     Where the editor looks for a cache, for the two directories it writes to, and for the
     ///     XTEA key file that belongs to whichever cache is actually open.

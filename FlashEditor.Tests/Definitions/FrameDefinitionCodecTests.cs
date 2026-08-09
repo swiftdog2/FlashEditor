@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using FlashEditor.Definitions.Animation;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

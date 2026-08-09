@@ -1,5 +1,5 @@
 using FlashEditor;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Xunit;
+using FlashEditor.Definitions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache
 {

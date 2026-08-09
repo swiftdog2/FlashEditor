@@ -1,5 +1,5 @@
 using System;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Animation;
 using FlashEditor.Rendering;

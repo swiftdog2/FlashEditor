@@ -1,6 +1,6 @@
 using System;
 using System.Threading;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 
 namespace FlashEditor.Definitions.Audio.Synth {
     /// <summary>

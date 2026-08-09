@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Animation;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Editing {
     /// <summary>

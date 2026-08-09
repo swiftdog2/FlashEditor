@@ -1,7 +1,8 @@
 using System;
 using System.IO;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.LoadingSprites {
     /// <summary>

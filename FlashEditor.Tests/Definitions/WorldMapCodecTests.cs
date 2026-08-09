@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using FlashEditor.Definitions.WorldMap;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

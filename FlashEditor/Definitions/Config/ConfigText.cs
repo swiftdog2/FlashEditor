@@ -1,3 +1,4 @@
+using FlashEditor.IO;
 namespace FlashEditor.Definitions.Config {
     /// <summary>
     ///     The single-byte character decode two index 2 families store a type letter as.

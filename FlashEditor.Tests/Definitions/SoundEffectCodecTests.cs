@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using FlashEditor.Definitions.Audio;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

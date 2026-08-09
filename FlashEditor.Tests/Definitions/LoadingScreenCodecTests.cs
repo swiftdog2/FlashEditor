@@ -5,6 +5,7 @@ using FlashEditor;
 using FlashEditor.Definitions.LoadingScreens;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

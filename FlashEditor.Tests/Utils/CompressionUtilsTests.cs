@@ -1,5 +1,6 @@
 using FlashEditor;
 using Xunit;
+using FlashEditor.Utils;
 
 namespace FlashEditor.Tests.Utils
 {

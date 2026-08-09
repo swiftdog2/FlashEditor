@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Tracks;
 using FlashEditor.Tests.Cache.RealCache;
 using System;

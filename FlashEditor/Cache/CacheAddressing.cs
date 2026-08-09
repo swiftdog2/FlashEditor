@@ -1,6 +1,6 @@
 using System;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     ///     How an index relates a definition id to the (group, file) pair that stores it.
     /// </summary>

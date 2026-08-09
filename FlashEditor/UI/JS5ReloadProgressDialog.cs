@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using System;
 using System.Drawing;
 using System.Runtime.ExceptionServices;

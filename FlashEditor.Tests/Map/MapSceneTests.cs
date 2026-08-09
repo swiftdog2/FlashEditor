@@ -5,6 +5,7 @@ using FlashEditor.Map;
 using Xunit;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Map
 {

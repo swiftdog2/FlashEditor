@@ -1,16 +1,15 @@
 ﻿using BrightIdeasSoftware;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
 //RSBufferedImage lives here and derives from SpriteDefinition, so the sprite tab has to be able to
 //tell a rendered frame apart from a set before it writes anything back.
-using FlashEditor.cache.util;
+using FlashEditor.Cache.Util;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Entities;
 using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.SpotAnims;
-using FlashEditor.Definitions.Sprites;
 using FlashEditor.Rendering;
 using FlashEditor.UI;
 using OpenTK.GLControl;
@@ -29,6 +28,7 @@ using System.Windows.Forms;
 using FlashEditor.Utils;
 using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
+using FlashEditor.IO;
 
 
 namespace FlashEditor {

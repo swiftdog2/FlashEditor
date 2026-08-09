@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using FlashEditor.Definitions.Sprites;
 
 namespace FlashEditor.Definitions.Fonts {
     /// <summary>
@@ -220,7 +221,7 @@ namespace FlashEditor.Definitions.Fonts {
         /// <param name="glyph">The placed character.</param>
         /// <returns>The ink's top left in block coordinates.</returns>
         private static SpriteFrameBox BoxOf(FontGlyphSheet font, PlacedGlyph glyph) {
-            cache.sprites.SpriteFrame? frame = font.FrameFor(glyph.Character);
+            SpriteFrame? frame = font.FrameFor(glyph.Character);
             int offsetX = frame?.OffsetX ?? 0;
             int offsetY = frame?.OffsetY ?? 0;
             return new SpriteFrameBox(glyph.PenX + offsetX, glyph.LineTop + offsetY);

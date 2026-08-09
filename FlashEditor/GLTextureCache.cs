@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Sprites;
 using OpenTK.Graphics.OpenGL;
 using System;

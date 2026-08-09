@@ -1,5 +1,5 @@
 using BrightIdeasSoftware;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Animation;
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Editing {
     /// <summary>

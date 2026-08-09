@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Audio;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;

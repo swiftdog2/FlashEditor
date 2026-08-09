@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Tests.Cache.RealCache;

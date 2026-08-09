@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Config {
     /// <summary>One config record as the editor's list shows it, whatever family it belongs to.</summary>

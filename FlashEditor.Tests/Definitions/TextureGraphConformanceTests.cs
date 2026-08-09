@@ -1,4 +1,4 @@
-﻿using FlashEditor.cache;
+﻿using FlashEditor.Cache;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Tests.Cache.RealCache;
 using FlashEditor.Utils;
@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

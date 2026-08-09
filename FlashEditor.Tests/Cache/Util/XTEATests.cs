@@ -1,6 +1,7 @@
 using FlashEditor.Cache.Util.Crypto;
 using FlashEditor;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache.Util
 {

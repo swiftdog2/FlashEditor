@@ -1,6 +1,7 @@
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Entities {
     /// <summary>

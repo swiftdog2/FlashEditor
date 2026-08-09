@@ -1,8 +1,9 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Fonts {
     /// <summary>

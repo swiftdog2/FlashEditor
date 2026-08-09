@@ -4,6 +4,7 @@ using System.IO;
 using FlashEditor;
 using FlashEditor.Definitions.Fonts;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

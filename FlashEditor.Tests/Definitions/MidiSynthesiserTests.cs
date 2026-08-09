@@ -38,7 +38,7 @@ namespace FlashEditor.Tests.Definitions
         /// <returns>A synthesiser whose bank resolves nothing.</returns>
         private static MidiSynthesiser Silent()
         {
-            return new MidiSynthesiser(new MidiSoundBank((FlashEditor.cache.RSCache?) null));
+            return new MidiSynthesiser(new MidiSoundBank((FlashEditor.Cache.RSCache?) null));
         }
 
         /// <summary>

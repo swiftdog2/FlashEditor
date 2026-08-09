@@ -1,4 +1,5 @@
 using System;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Audio {
     /// <summary>

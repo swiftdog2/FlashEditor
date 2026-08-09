@@ -1,5 +1,5 @@
 using System;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 
 namespace FlashEditor.Definitions.QuickChat {
     /// <summary>

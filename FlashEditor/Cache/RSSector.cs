@@ -1,7 +1,8 @@
 ﻿using static FlashEditor.Utils.DebugUtil;
 using System;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     ///     An <seealso cref="RSSector" /> contains a header and data. The header contains information
     ///     used to verify the integrity of the cache like the current file id, index and

@@ -1,5 +1,5 @@
 ﻿using FlashEditor.Cache.Util;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using Xunit;
 
 namespace FlashEditor.Tests.Cache.Util

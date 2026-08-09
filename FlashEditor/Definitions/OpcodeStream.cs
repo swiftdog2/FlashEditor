@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions {
     /// <summary>

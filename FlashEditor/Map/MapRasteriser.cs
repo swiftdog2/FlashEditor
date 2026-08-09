@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util;
 using FlashEditor.Definitions;
-using FlashEditor.cache.sprites;
 using FlashEditor.Definitions.Sprites;
 
 using MapRegion = FlashEditor.Cache.Region.Region;

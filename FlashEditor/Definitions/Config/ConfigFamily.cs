@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Config {
     /// <summary>One decoded field of a config record, as the editor shows it.</summary>

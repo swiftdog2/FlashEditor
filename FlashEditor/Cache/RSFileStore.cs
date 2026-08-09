@@ -3,8 +3,9 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     public class RSFileStore : IDisposable {
         internal StagedDataChannel dataChannel;
         internal SortedDictionary<int, RSIndex> indexChannels = new SortedDictionary<int, RSIndex>();

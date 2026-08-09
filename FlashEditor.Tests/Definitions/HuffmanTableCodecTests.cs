@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using FlashEditor.Definitions.Compression;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

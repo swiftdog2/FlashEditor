@@ -1,8 +1,9 @@
 ﻿using FlashEditor.Utils;
 using System;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     /// An RSIndex represents a series of archive headers.
     /// Sector is the ID of the first sector that stores the archive data in the dat2.

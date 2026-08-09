@@ -2,6 +2,7 @@ using static FlashEditor.Utils.DebugUtil;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions
 {

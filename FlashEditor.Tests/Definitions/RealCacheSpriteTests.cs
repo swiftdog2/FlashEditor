@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

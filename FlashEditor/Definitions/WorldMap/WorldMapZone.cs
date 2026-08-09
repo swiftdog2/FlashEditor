@@ -1,3 +1,4 @@
+using FlashEditor.IO;
 namespace FlashEditor.Definitions.WorldMap {
     /// <summary>
     ///     One rectangle of the world copied onto an area's overview map.

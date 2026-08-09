@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using FlashEditor.Definitions.Animation;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

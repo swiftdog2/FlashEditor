@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using FlashEditor.cache.sprites;
+using FlashEditor.Definitions.Sprites;
 
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>

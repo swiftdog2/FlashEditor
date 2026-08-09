@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Definitions;
 using FlashEditor.Map;

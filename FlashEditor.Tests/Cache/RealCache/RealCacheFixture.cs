@@ -1,8 +1,9 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache.RealCache
 {

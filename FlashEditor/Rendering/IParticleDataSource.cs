@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System;
 using FlashEditor.Definitions.Particles;
-using FlashEditor.cache;
+using FlashEditor.Cache;
+using FlashEditor.IO;
 
 namespace FlashEditor.Rendering
 {

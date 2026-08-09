@@ -1,10 +1,11 @@
 using FlashEditor;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Utils;
 using System;
 using System.IO;
 using System.Threading;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache
 {

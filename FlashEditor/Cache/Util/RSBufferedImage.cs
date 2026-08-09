@@ -1,9 +1,9 @@
-﻿using FlashEditor.cache.sprites;
+﻿using FlashEditor.Definitions.Sprites;
 using FlashEditor.Cache.Util;
 using System;
 using System.Drawing;
 
-namespace FlashEditor.cache.util {
+namespace FlashEditor.Cache.Util {
     /// <summary>
     /// A single rasterised sprite frame backed by a <see cref="Bitmap"/>.
     /// Extends <see cref="SpriteDefinition"/> to participate in the sprite

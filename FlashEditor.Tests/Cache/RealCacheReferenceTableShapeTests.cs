@@ -1,10 +1,11 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Tests.Cache.RealCache;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache
 {

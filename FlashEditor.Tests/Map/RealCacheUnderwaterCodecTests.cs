@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Map
 {

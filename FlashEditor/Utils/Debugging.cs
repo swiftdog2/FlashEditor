@@ -1,4 +1,4 @@
-﻿using FlashEditor.cache;
+﻿using FlashEditor.Cache;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;

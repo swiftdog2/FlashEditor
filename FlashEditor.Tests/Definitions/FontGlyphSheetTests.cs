@@ -2,9 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using FlashEditor;
-using FlashEditor.cache.sprites;
+using FlashEditor.Definitions.Sprites;
 using FlashEditor.Definitions.Fonts;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

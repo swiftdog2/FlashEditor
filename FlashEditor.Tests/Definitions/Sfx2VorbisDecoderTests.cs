@@ -3,6 +3,7 @@ using System.IO;
 using FlashEditor.Definitions.Audio.Sfx2;
 using FlashEditor.Definitions.Audio.Sfx2.Vorbis;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

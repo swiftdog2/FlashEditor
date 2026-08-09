@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using FlashEditor;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

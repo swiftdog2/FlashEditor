@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using FlashEditor.Definitions.LoadingSprites;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

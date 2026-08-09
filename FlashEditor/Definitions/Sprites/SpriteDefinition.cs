@@ -1,11 +1,12 @@
-using FlashEditor.cache.util;
+using FlashEditor.Cache.Util;
 using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
 using System.Drawing;
 using System;
 using FlashEditor;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache.sprites {
+namespace FlashEditor.Definitions.Sprites {
     /// <summary>
     ///     A sprite set from index 8: a shared palette, a canvas size, and one or more frames.
     /// </summary>

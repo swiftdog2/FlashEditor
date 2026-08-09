@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using FlashEditor.Definitions;
+using FlashEditor.IO;
 
-namespace FlashEditor {
+namespace FlashEditor.Definitions {
     /// <summary>
     /// RuneScape NPC definition for rev 639. Stores appearance, interaction
     /// options, sounds, and morph variant data.

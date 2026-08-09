@@ -5,8 +5,9 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache
+namespace FlashEditor.Cache
 {
     public class RSArchive
     {

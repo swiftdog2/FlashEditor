@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Audio.Sfx2;
 using FlashEditor.Definitions.Audio.Sfx2.Vorbis;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

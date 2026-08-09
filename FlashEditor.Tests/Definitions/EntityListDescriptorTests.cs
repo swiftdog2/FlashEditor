@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Entities;

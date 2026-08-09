@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Util;
 using FlashEditor.Definitions.Interfaces;
 using FlashEditor.Tests.Cache.RealCache;

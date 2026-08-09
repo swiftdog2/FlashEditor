@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Audio.Sfx2 {
     /// <summary>

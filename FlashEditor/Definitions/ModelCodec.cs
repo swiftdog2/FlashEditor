@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions {
     /// <summary>

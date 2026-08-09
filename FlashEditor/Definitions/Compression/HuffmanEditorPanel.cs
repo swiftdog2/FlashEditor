@@ -1,5 +1,5 @@
 using BrightIdeasSoftware;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Compression {
     /// <summary>

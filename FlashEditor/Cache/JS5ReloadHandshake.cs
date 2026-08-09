@@ -3,7 +3,7 @@ using System.IO;
 using System.Threading;
 using static FlashEditor.Utils.DebugUtil;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     ///     Asks a running Hydra JS5 update server to let go of the cache files before the editor
     ///     writes over them, and tells it when the write is done.

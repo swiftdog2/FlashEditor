@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     public static class RSConstants {
         /*
          * Compression constants

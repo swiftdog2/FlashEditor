@@ -6,9 +6,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.LoadingSprites {
     /// <summary>

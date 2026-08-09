@@ -4,6 +4,7 @@ using System;
 using System.Buffers;
 using System.IO;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.IO
 {

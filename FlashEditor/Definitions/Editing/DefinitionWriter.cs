@@ -1,5 +1,6 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using System;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Editing {
     /// <summary>

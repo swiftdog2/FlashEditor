@@ -3,6 +3,7 @@ using System.Linq;
 using FlashEditor;
 using FlashEditor.Definitions.Sprites;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

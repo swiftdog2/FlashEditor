@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;

@@ -3,8 +3,8 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
 
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>

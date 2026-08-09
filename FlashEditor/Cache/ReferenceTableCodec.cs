@@ -3,8 +3,9 @@ using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.Utils;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache
+namespace FlashEditor.Cache
 {
     /// <summary>
     /// Static helpers for encoding and decoding <see cref="RSReferenceTable"/> payloads.

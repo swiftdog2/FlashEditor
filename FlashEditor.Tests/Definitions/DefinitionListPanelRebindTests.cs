@@ -8,13 +8,14 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Entities;
 using FlashEditor.Utils;
 using Xunit;
 using Xunit.Abstractions;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions {
     /// <summary>

@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Config;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.Map;

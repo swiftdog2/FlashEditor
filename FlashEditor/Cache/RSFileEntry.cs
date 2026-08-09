@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     /// Represents a single file entry within an archive.
     /// Inherits identifiers and metadata from <see cref="RSArchiveEntry"/>.

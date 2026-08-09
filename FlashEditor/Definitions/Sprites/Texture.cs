@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Sprites
 {

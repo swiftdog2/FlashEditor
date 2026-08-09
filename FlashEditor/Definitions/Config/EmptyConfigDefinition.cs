@@ -1,3 +1,4 @@
+using FlashEditor.IO;
 namespace FlashEditor.Definitions.Config {
     /// <summary>
     ///     A config record that carries no opcodes at all, which is what twenty of index 2's groups

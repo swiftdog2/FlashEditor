@@ -4,9 +4,9 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Sprites {

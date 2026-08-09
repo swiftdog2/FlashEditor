@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Util;
 
 namespace FlashEditor.Definitions.WorldMap {

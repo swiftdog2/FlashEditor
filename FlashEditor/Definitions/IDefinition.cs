@@ -1,4 +1,5 @@
-namespace FlashEditor
+using FlashEditor.IO;
+namespace FlashEditor.Definitions
 {
     /// <summary>
     /// Common interface for cache definitions supporting encode/decode.

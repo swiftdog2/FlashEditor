@@ -2,9 +2,10 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions {
     /// <summary>

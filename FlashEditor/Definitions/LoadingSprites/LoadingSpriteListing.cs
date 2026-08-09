@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.LoadingSprites {
     /// <summary>

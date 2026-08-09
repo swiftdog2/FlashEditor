@@ -1,6 +1,6 @@
 ﻿using System;
 using ICSharpCode.SharpZipLib.Checksum;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 
 namespace FlashEditor.Cache.Util
 {

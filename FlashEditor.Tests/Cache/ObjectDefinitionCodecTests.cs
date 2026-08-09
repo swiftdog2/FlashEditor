@@ -1,6 +1,7 @@
 using FlashEditor;
 using FlashEditor.Definitions;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache
 {

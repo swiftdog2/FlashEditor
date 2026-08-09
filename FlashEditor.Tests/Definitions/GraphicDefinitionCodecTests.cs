@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.Definitions.SpotAnims;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

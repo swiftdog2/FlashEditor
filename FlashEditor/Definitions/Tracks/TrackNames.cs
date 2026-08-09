@@ -1,7 +1,8 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Util;
 using System.Collections.Generic;
 using System.IO;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Tracks {
     /// <summary>

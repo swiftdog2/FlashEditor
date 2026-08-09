@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.Definitions.Billboards;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

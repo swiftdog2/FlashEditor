@@ -1,6 +1,6 @@
 using System;
 
-namespace FlashEditor.cache
+namespace FlashEditor.Cache
 {
     /// <summary>
     /// Lightweight reference to a model within the cache.

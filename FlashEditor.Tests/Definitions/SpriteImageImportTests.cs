@@ -4,11 +4,11 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using FlashEditor.cache.sprites;
-using FlashEditor.cache.util;
 using FlashEditor.Definitions.Sprites;
+using FlashEditor.Cache.Util;
 using Xunit;
 using static FlashEditor.Tests.Definitions.SpritePictures;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Audio.Sfx2;
 using FlashEditor.Definitions.Audio.Sfx2.Vorbis;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Audio.Synth {
     /// <summary>

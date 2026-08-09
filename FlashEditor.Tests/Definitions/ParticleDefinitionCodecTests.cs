@@ -4,6 +4,7 @@ using System.Linq;
 using FlashEditor;
 using FlashEditor.Definitions.Particles;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

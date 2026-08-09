@@ -6,7 +6,7 @@ using ICSharpCode.SharpZipLib.BZip2;
 using ICSharpCode.SharpZipLib.Core;
 using ICSharpCode.SharpZipLib.GZip;
 
-namespace FlashEditor {
+namespace FlashEditor.Utils {
     /// <summary>
     /// Provides GZip and BZip2 compression and decompression utilities
     /// used by the cache container layer.

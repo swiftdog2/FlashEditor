@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Audio {
     /// <summary>

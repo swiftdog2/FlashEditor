@@ -1,6 +1,6 @@
 using BrightIdeasSoftware;
-using FlashEditor.cache;
-using FlashEditor.cache.sprites;
+using FlashEditor.Cache;
+using FlashEditor.Definitions.Sprites;
 using FlashEditor.Definitions.Editing;
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Fonts {
     /// <summary>

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using FlashEditor.Definitions.Audio.Sfx2;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

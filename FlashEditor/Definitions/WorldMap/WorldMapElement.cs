@@ -1,4 +1,5 @@
 using System;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.WorldMap {
     /// <summary>
@@ -13,7 +14,7 @@ namespace FlashEditor.Definitions.WorldMap {
     ///     straight to <c>Node_Sub47</c>, which is the same slot the tile stream fills from an
     ///     object's opcode 107 - so this index's two element references point at different things
     ///     and only this one resolves directly into config group
-    ///     <see cref="FlashEditor.cache.RSConstants.MAP_ELEMENT_GROUP"/>. Measured over the whole index: every
+    ///     <see cref="FlashEditor.Cache.RSConstants.MAP_ELEMENT_GROUP"/>. Measured over the whole index: every
     ///     one of the 869 distinct ids stored here is a declared file of that group, and 38 of them
     ///     are not object ids at all, so the join cannot be the other one.
     ///     </para>

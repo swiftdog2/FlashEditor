@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Sprites {
     /// <summary>

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace FlashEditor {
+namespace FlashEditor.IO {
     /// <summary>
     /// A high-performance, span-based replacement for the old MemoryStream-based JagStream.
     /// </summary>

@@ -1,4 +1,4 @@
-﻿using FlashEditor.cache.sprites;
+﻿using FlashEditor.Definitions.Sprites;
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
 using FlashEditor.Definitions;
@@ -11,8 +11,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     public class RSCache {
         /// <summary>
         ///     Serialises every read and write that goes through this cache.

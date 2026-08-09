@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;

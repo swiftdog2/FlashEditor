@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Map
 {

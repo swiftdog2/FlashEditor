@@ -1,5 +1,5 @@
 using BrightIdeasSoftware;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using System;
 using System.Collections.Generic;

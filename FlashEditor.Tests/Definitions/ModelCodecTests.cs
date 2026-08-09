@@ -3,6 +3,7 @@ using FlashEditor.Definitions;
 using System;
 using System.Collections.Generic;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Definitions
 {

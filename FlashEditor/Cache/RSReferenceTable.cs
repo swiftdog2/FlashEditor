@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using FlashEditor.Utils;
 
-namespace FlashEditor.cache
+namespace FlashEditor.Cache
 {
     ///<summary>
     ///A<seealso cref="RSReferenceTable" /> holds details for all the archives within a single index,

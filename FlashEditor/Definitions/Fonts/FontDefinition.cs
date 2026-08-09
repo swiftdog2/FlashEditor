@@ -1,6 +1,7 @@
 using System;
 using System.IO;
-using FlashEditor.cache;
+using FlashEditor.Cache;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Fonts {
     /// <summary>

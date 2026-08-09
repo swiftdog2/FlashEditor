@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FlashEditor.IO;
 
 namespace FlashEditor.Cache.Region {
     /// <summary>

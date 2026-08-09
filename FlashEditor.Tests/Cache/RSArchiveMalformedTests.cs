@@ -1,8 +1,9 @@
 using System;
 using System.IO;
 using System.Linq;
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using Xunit;
+using FlashEditor.IO;
 
 namespace FlashEditor.Tests.Cache
 {

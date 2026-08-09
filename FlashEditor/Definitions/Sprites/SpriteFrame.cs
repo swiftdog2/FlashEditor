@@ -1,6 +1,6 @@
 using System;
 
-namespace FlashEditor.cache.sprites {
+namespace FlashEditor.Definitions.Sprites {
     /// <summary>
     ///     One frame of a sprite set, held in the form index 8 stores it rather than as pixels.
     /// </summary>

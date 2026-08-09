@@ -1,4 +1,4 @@
-using FlashEditor.cache;
+using FlashEditor.Cache;
 using FlashEditor.Definitions;
 using FlashEditor.Definitions.Animation;
 using FlashEditor.Rendering;
@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Windows.Forms;
 using System;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.IO;
 
 namespace FlashEditor {
     /// <summary>

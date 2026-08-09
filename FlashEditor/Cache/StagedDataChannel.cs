@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     /// <summary>
     ///     Read-through staging layer over <c>main_file_cache.dat2</c>.
     ///

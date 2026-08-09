@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FlashEditor.cache {
+namespace FlashEditor.Cache {
     public class RSArchiveEntry {
         public int identifier = -1;
         public int hash;
