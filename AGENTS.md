@@ -136,7 +136,7 @@ The editor loads, displays, and modifies the RuneScape JS5 cache for revision 63
 #### Nothing in either cache sets the sizes flag, and nothing in either is format 7
 
 Measured over all 35 reference tables in idx255 by
-`FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`. The flags byte is identical
+`FlashEditor.Tests/Cache/RealCache/RealCacheReferenceTableShapeTests.cs`. The flags byte is identical
 index for index in both caches:
 
 | Flag or field | Where it is set |

@@ -75,7 +75,7 @@ machine in hand.
 **`FULL=1` does not widen the map tests, because they were never narrow.** It gates
 `RealCacheFixture.ArchivesToExamine`, and only the conformance and definition suites call it. The
 map suites enumerate through their own `EverySquare` helpers
-(`RealCacheMapDecodeTests.cs:338`, `RealCacheRegionCodecTests.cs:256`), which walk all 256x256
+(`RealCacheMapDecodeTests.cs:339`, `RealCacheRegionCodecTests.cs:277`), which walk all 256x256
 region coordinates and yield every group the table holds, with no reference to the switch. So every
 map square is swept on **every** run, and the sampled and full runs differ by less than the name
 suggests. Do not reach for `FULL=1` to make a map assertion cover more ground - it already covers
@@ -163,13 +163,13 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   sweep says otherwise.
 - **Half the reference-table format is dead in this cache, and the decoder still has to carry it.**
   Measured over all 35 tables in idx255 by
-  `FlashEditor.Tests/Cache/RealCacheReferenceTableShapeTests.cs`: sizes `0x04`
-  (`ReferenceTableCodec.cs:98`) and entry hash `0x08` (`:72`) are set on **no table at all**;
+  `FlashEditor.Tests/Cache/RealCache/RealCacheReferenceTableShapeTests.cs`: sizes `0x04`
+  (`ReferenceTableCodec.cs:99`) and entry hash `0x08` (`:73`) are set on **no table at all**;
   identifiers `0x01` on indexes 3, 5, 6, 8, 10, 12, 13, 23, 30, 31, 32 and 33; whirlpool `0x02` on
   index 30 alone; no table sets a fifth bit. Index 2 has no name hashes, so a config group is
   addressable only by id - the name lookup the map path uses on index 5 has nothing to read there.
   Every table is format 6 bar index 36, a four-byte format-5 stub declaring zero groups, so the
-  format-7 per-archive flags byte (`:112`) - the only in-table statement that an archive is XTEA
+  format-7 per-archive flags byte (`:113`) - the only in-table statement that an archive is XTEA
   encrypted - **exists nowhere on disk here**. That is why the read path infers encryption and the
   write path refuses to guess it. Keep all four branches implemented anyway: the first table that
   does set one is mis-parsed from that field onward, and no sweep would catch it, because no
@@ -193,7 +193,7 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   per-group parser sized from them would skip 8 and 4 bytes and leave 1676 and 724 in the stream.
   This note read "per child", which is exact by `AGENTS.md:57` and reads as "per group" to
   everyone else; say file. The block sits where the per-file identifier block would
-  (`ReferenceTableCodec.cs:141`) with the identifiers flag clear, so nothing reads it; that is the
+  (`ReferenceTableCodec.cs:142`) with the identifiers flag clear, so nothing reads it; that is the
   shape, not proven provenance. A parser must therefore tolerate a tail without ever requiring
   one. Pinned by
   `RealCacheReferenceTableShapeTests.ReferenceTableTrailingBytes_AreAbsentOrFourZeroBytesPerFile`,
@@ -221,8 +221,8 @@ the nearest tab happens to do - three of the tabs still predate it.**
   `LoadEditorTab`.** `FlashEditor/Definitions/Editing/` holds the reusable list: the panel owns the
   worker, the percent-boundary progress, the UI-thread population and the edit commit, and one
   `DefinitionListDescriptor<TRow>` states the index, the enumeration, the decode, the columns and the
-  re-encode. **Three arms are left in that switch and no more**: the console (`Editor.cs:1356`),
-  sprites (`:1397`) and textures (`:1486`). Items, NPCs, objects and models left it with the
+  re-encode. **Three arms are left in that switch and no more**: the console (`Editor.cs:1357`),
+  sprites (`:1398`) and textures (`:1487`). Items, NPCs, objects and models left it with the
   Entities page, which is also the worked example of migrating one - four bespoke workers, their
   progress reporting and their edit commits collapsed into four descriptors, and their
   `SetObjects`-from-`DoWork` cross-thread calls disappeared with them. Reading a group file by file
@@ -231,7 +231,7 @@ the nearest tab happens to do - three of the tabs still predate it.**
   group each time. Earlier versions of this line said four pages, then seven, which is why migration
   items kept getting scoped short - count the `case` labels rather than trusting the number here.
   Three further tabs are **deliberately** not `DefinitionListPanel` and are not migration candidates:
-  Tracks runs its own worker (`TrackEditorPanel.cs:197`), Map is a bespoke `UserControl` with its own
+  Tracks runs its own worker (`TrackEditorPanel.cs:198`), Map is a bespoke `UserControl` with its own
   rasteriser and undo history, and Huffman is one group of one file and says so in its own header.
   The worked examples are the Interfaces, Animation, Sound, Config, SFX2, Client Scripts, Loading
   Sprites, Fonts, World Map Overview and Entities tabs, all master/detail. A detail pane is bound
@@ -325,7 +325,7 @@ the nearest tab happens to do - three of the tabs still predate it.**
   from it - a committed document once asserted already-fixed bugs as live for this reason.
 - **A test named `*_DocumentsKnownDefect` pins behaviour that is known to be wrong**, so a fix
   shows up as a deliberate, visible test change. Convention declared at
-  `FlashEditor.Tests/Cache/RSFileStoreTests.cs:11-19`.
+  `FlashEditor.Tests/Cache/RSFileStoreTests.cs:12-20`.
 - **A semantic name in `reference/` is a claim, not evidence.** The model dump's field-name
   table had five face arrays shuffled - the render type labelled as alpha, alpha as the render
   type, priority as skin - and this project's decoder was right while the doc was wrong for all
@@ -379,7 +379,7 @@ the nearest tab happens to do - three of the tabs still predate it.**
 - **Warning counts here need their method stated or they mean nothing.** `dotnet build -v:n` prints
   every warning twice, once inline and once in the summary, so a naive count doubles it. And
   `CS8618` fires once per uninitialised field while reporting the *constructor's* `file:line:col`
-  every time - `NPCDefinition.cs(325,16)` alone emits it 15 times - so deduplicating by
+  every time - `NPCDefinition.cs(326,16)` alone emits it 15 times - so deduplicating by
   file+line+code **under**counts: 214 unique locations against 261 real diagnostics. Quote the
   summary block, and say which build produced it.
 
@@ -393,7 +393,7 @@ investigation.
   constant does **not** mean someone used a magic number; it means the editor has no feature for
   that index yet. 27 of them have no adoption site anywhere. They are documentation of the index
   map and should stay as such. The one literal left worth swapping is in the test project:
-  `RealCacheLocator.cs:27` hardcodes `"main_file_cache.idx255"`. A second, an `idx6` in
+  `RealCacheLocator.cs:47` hardcodes `"main_file_cache.idx255"`. A second, an `idx6` in
   `RSCacheXteaWriteFileTests` meaning `MAPS_INDEX + 1`, has gone: it seeded a padding index that
   only existed to work around `GetIndexCount` reporting the highest index id as a count, and the
   padding went with the fix.
@@ -405,7 +405,7 @@ investigation.
   wrong byte count and corrupts the archive; and `Return` does **not** clear, so a short read leaks
   the previous file's bytes into the next. Both need `try`/`finally`. Worth doing with a before and
   after allocation measurement, not as a tidy-up.
-- **`AnalyseCache` (`Editor.cs:1064`) is a stub.** It loads the input cache into a local, never
+- **`AnalyseCache` (`Editor.cs:2184`) is a stub.** It loads the input cache into a local, never
   reads the output path at all, and unconditionally returns 0 - so "no differences found" is what
   it always reports, whatever the two caches hold.
 - **The three `C:/Users/CJ/` paths are three different directories, not one repeated.**
