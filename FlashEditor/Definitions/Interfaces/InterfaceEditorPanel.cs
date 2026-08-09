@@ -1,6 +1,8 @@
 using BrightIdeasSoftware;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.Definitions.Interfaces.Layout;
+using FlashEditor.UI;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -79,6 +81,39 @@ namespace FlashEditor.Definitions.Interfaces {
             Orientation = Orientation.Vertical
         };
 
+        /* The tree and the grid are two views of one selection, side by side rather than one above
+           the other: the tree is narrow and deep, the grid is wide and flat, and stacking them
+           would waste the width the grid needs on a control that does not use it.
+
+           And, like the two splitters above it, this one states NO minimum size. Setting one
+           re-checks the current distance immediately, and a container is still at its 150x100
+           default while a field initialiser runs - so Panel1MinSize 120 with Panel2MinSize 200
+           throws out of the constructor and the whole application fails to start before a window
+           has ever been shown. That is not hypothetical: it is how this line was first written,
+           and the comment three declarations above already said so. */
+        private readonly SplitContainer treeAndComponents = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical
+        };
+
+        private readonly TreeView structure = new TreeView {
+            Dock = DockStyle.Fill,
+            Font = GridFont,
+            HideSelection = false,
+            ShowLines = true,
+            ShowRootLines = true
+        };
+
+        private readonly EditorToolStrip structureTools = new EditorToolStrip {
+            Dock = DockStyle.Top,
+            GripStyle = ToolStripGripStyle.Hidden
+        };
+
+        /* Guards the two-way selection between the tree and the grid. Each drives the other, so
+           without it selecting a node selects a row which selects the node again, and a user
+           dragging through the tree with the arrow keys fights their own input. */
+        private bool syncingSelection;
+
         private readonly SplitContainer componentsAndFields = new SplitContainer {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal
@@ -96,7 +131,16 @@ namespace FlashEditor.Definitions.Interfaces {
             BuildLayout();
 
             interfaces.SelectedIndexChanged += (_, _) => ShowInterface(interfaces.SelectedObject as InterfaceListing);
-            components.SelectedRowChanged += (_, _) => ShowComponent(components.SelectedRow as InterfaceComponentRow);
+            components.SelectedRowChanged += (_, _) => {
+                ShowComponent(components.SelectedRow as InterfaceComponentRow);
+                SelectInTree(components.SelectedRow as InterfaceComponentRow);
+            };
+
+            //Built from the rows the grid already decoded, on the UI thread, once its load has
+            //published them. Reading index 3 a second time to draw a tree of the same records would
+            //double the cost of opening an interface for nothing.
+            components.RowsLoaded += (_, _) => BuildStructure();
+            structure.AfterSelect += (_, e) => SelectFromTree(e.Node);
         }
 
         /// <summary>
@@ -116,6 +160,11 @@ namespace FlashEditor.Definitions.Interfaces {
 
             interfaces.ClearObjects();
             fields.ClearObjects();
+
+            //Cleared here as well as on a load, because binding a null cache does not publish rows
+            //and so never raises RowsLoaded - the tree would otherwise keep the previous cache's
+            //structure beside an empty grid.
+            structure.Nodes.Clear();
             components.Bind(null, NoInterface);
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
 
@@ -154,7 +203,8 @@ namespace FlashEditor.Definitions.Interfaces {
         ///     </para>
         /// </remarks>
         private void PlaceSplitters() {
-            if (splittersPlaced || listAndDetail.Width < 200 || componentsAndFields.Height < 200)
+            if (splittersPlaced || listAndDetail.Width < 200 || componentsAndFields.Height < 200
+                || treeAndComponents.Width < 200)
                 return;
 
             //Set before the assignments, not after: changing a splitter distance lays the panel out
@@ -165,6 +215,11 @@ namespace FlashEditor.Definitions.Interfaces {
                 listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width / 3);
                 componentsAndFields.SplitterDistance =
                     Math.Max(componentsAndFields.Panel1MinSize, componentsAndFields.Height * 3 / 5);
+
+                //A third of the width to the tree: it holds one line per component and its longest
+                //line is a file id, a type and a name, where the grid beside it holds a dozen columns.
+                treeAndComponents.SplitterDistance =
+                    Math.Max(treeAndComponents.Panel1MinSize, treeAndComponents.Width / 3);
             } catch (InvalidOperationException ex) {
                 //Left for the next layout rather than clamped. A clamped distance sticks, and the
                 //user would see a collapsed pane on a window that later has room for all three.
@@ -177,7 +232,13 @@ namespace FlashEditor.Definitions.Interfaces {
             BuildInterfaceColumns();
             BuildFieldColumns();
 
-            componentsAndFields.Panel1.Controls.Add(components);
+            BuildStructureTools();
+
+            treeAndComponents.Panel1.Controls.Add(structure);
+            treeAndComponents.Panel1.Controls.Add(structureTools);
+            treeAndComponents.Panel2.Controls.Add(components);
+
+            componentsAndFields.Panel1.Controls.Add(treeAndComponents);
             componentsAndFields.Panel2.Controls.Add(fields);
 
             //Docking resolves from the end of the Controls collection backwards, so the header has to
@@ -190,6 +251,179 @@ namespace FlashEditor.Definitions.Interfaces {
 
             //Bound before any cache arrives so the component grid has headings from the start.
             components.Bind(null, NoInterface);
+        }
+
+        private void BuildStructureTools() {
+            structureTools.AddAction(EditorIcon.Expand, "Expand every branch", Keys.None,
+                (_, _) => structure.ExpandAll());
+            structureTools.AddAction(EditorIcon.Collapse, "Collapse to the roots", Keys.None,
+                (_, _) => structure.CollapseAll());
+
+            structureTools.Items.Add(new ToolStripControlHost(InfoAffordance.For(structure,
+                InfoKind.Limitation,
+                "This tree is what the interface FILE says. It is not what a running client shows.\n\n" +
+                "Draw order is file-id order within a parent and is not a stored field, so the order " +
+                "here is the order the client would draw in - but 'send to back' would be a renumber, " +
+                "not a property change.\n\n" +
+                "Two things exist only at runtime and cannot appear here. CS2 scripts create dynamic " +
+                "children into a separate array the file knows nothing about, and interfaces are " +
+                "mounted into other interfaces by the server. A component with no children here may " +
+                "be full of them in game.")) {
+                Alignment = ToolStripItemAlignment.Right
+            });
+        }
+
+        /// <summary>
+        ///     Rebuilds the structure tree from the rows the component grid has just published.
+        /// </summary>
+        /// <remarks>
+        ///     Driven off <c>RowsLoaded</c> rather than off the cache, so there is exactly one decode
+        ///     of a group however many views of it the tab grows.
+        ///     <para>
+        ///     Every component gets a node, including the ones no root reaches. A tree that showed
+        ///     only the reachable ones would silently drop records the file holds - and index 3 does
+        ///     hold one component that is its own parent, in both supported caches, so this is a live
+        ///     case rather than defensive coding.
+        ///     </para>
+        /// </remarks>
+        private void BuildStructure() {
+            structure.BeginUpdate();
+            try {
+                structure.Nodes.Clear();
+
+                var rows = new Dictionary<int, InterfaceComponentRow>();
+                foreach (object row in components.Rows) {
+                    if (row is InterfaceComponentRow typed)
+                        rows[typed.FileId] = typed;
+                }
+
+                if (rows.Count == 0)
+                    return;
+
+                int groupId = -1;
+                var definitions = new List<InterfaceComponentDefinition>(rows.Count);
+                foreach (InterfaceComponentRow row in rows.Values) {
+                    definitions.Add(row.Component);
+                    groupId = row.GroupId;
+                }
+
+                InterfaceComponentTree tree = InterfaceComponentTree.Build(groupId, definitions);
+
+                foreach (int rootId in tree.Roots)
+                    structure.Nodes.Add(BuildNode(tree, rows, rootId));
+
+                //Everything a root cannot reach, gathered rather than dropped, so the count of nodes
+                //in the tree always equals the number of components in the file.
+                var stranded = new List<int>();
+                foreach (int fileId in rows.Keys) {
+                    InterfaceParentage how = tree.ParentageOf(fileId);
+                    if (how == InterfaceParentage.Dangling || how == InterfaceParentage.Cyclic)
+                        stranded.Add(fileId);
+                }
+
+                if (stranded.Count > 0) {
+                    stranded.Sort();
+                    var orphans = new TreeNode("not reachable from any root (" + stranded.Count + ")");
+
+                    foreach (int fileId in stranded) {
+                        TreeNode node = BuildNode(tree, rows, fileId);
+                        node.Text += tree.ParentageOf(fileId) == InterfaceParentage.Cyclic
+                            ? "  - in a parent cycle"
+                            : "  - parent " + rows[fileId].Component.RawParentId + " does not exist";
+                        orphans.Nodes.Add(node);
+                    }
+
+                    structure.Nodes.Add(orphans);
+                }
+
+                //Roots only. A 771-component interface expanded to every leaf is a wall of text, and
+                //the expand-all tool is one click away for anyone who wants it.
+                foreach (TreeNode node in structure.Nodes)
+                    node.Expand();
+            }
+            finally {
+                structure.EndUpdate();
+            }
+        }
+
+        private TreeNode BuildNode(InterfaceComponentTree tree,
+            IReadOnlyDictionary<int, InterfaceComponentRow> rows, int fileId) {
+            InterfaceComponentRow row = rows[fileId];
+            var node = new TreeNode(TreeLabelFor(row)) { Tag = row };
+
+            foreach (int childId in tree.ChildrenOf(fileId)) {
+                //Guards the one component in this cache that is its own parent. Without it the walk
+                //recurses until the stack runs out, on a real interface in both caches.
+                if (childId == fileId)
+                    continue;
+
+                node.Nodes.Add(BuildNode(tree, rows, childId));
+            }
+
+            return node;
+        }
+
+        /// <summary>
+        ///     A component's label in the tree.
+        /// </summary>
+        /// <remarks>
+        ///     Both halves come off the row rather than being recomputed here, so the tree and the
+        ///     grid beside it can never disagree about what a component is called or what type it is.
+        ///     That matters most for the name: <see cref="InterfaceComponentRow.ComponentName"/>
+        ///     yields a name only where re-hashing a candidate reproduces the stored hash, and falls
+        ///     back to the bare hash otherwise, so a second implementation here would be a second
+        ///     chance to present a number as a name.
+        /// </remarks>
+        /// <param name="row">The component.</param>
+        /// <returns>The label.</returns>
+        private static string TreeLabelFor(InterfaceComponentRow row) {
+            string name = row.ComponentName;
+            return row.FileId + "  " + row.TypeName + (string.IsNullOrEmpty(name) ? "" : "  " + name);
+        }
+
+        private void SelectInTree(InterfaceComponentRow? row) {
+            if (syncingSelection || row == null)
+                return;
+
+            TreeNode? found = FindNode(structure.Nodes, row);
+            if (found == null)
+                return;
+
+            syncingSelection = true;
+            try {
+                structure.SelectedNode = found;
+                found.EnsureVisible();
+            }
+            finally {
+                syncingSelection = false;
+            }
+        }
+
+        private void SelectFromTree(TreeNode? node) {
+            if (syncingSelection || node?.Tag is not InterfaceComponentRow row)
+                return;
+
+            syncingSelection = true;
+            try {
+                components.SelectRow(row);
+                ShowComponent(row);
+            }
+            finally {
+                syncingSelection = false;
+            }
+        }
+
+        private static TreeNode? FindNode(TreeNodeCollection nodes, InterfaceComponentRow row) {
+            foreach (TreeNode node in nodes) {
+                if (ReferenceEquals(node.Tag, row))
+                    return node;
+
+                TreeNode? nested = FindNode(node.Nodes, row);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
         }
 
         private void BuildInterfaceColumns() {

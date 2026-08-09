@@ -214,6 +214,30 @@ namespace FlashEditor.Definitions.Editing {
             list.SelectedObject = newRow;
         }
 
+        /// <summary>
+        ///     Selects a row and scrolls it into view, for a companion control driving the list.
+        /// </summary>
+        /// <remarks>
+        ///     For a tree, a canvas or a navigation link beside the grid: the user picks a thing
+        ///     over there and the grid has to follow. Setting <c>SelectedObject</c> alone selects
+        ///     without scrolling, so a selection five thousand rows down looks like nothing
+        ///     happened.
+        ///     <para>
+        ///     A row the grid does not hold clears the selection rather than throwing, because the
+        ///     user's filter box can legitimately have hidden it.
+        ///     </para>
+        /// </remarks>
+        /// <param name="row">The row to select, or null to clear the selection.</param>
+        public void SelectRow(object? row) {
+            if (row == null) {
+                list.SelectedObjects = null;
+                return;
+            }
+
+            list.SelectObject(row, true);
+            list.EnsureModelVisible(row);
+        }
+
         /// <summary>Turns alternating row shading on or off, for the form's View menu.</summary>
         /// <param name="enabled">Whether alternate rows are shaded.</param>
         /// <param name="colour">The shade.</param>
