@@ -130,6 +130,28 @@ namespace FlashEditor.Definitions.Editing {
         /// <returns>The tile, or null.</returns>
         Bitmap? TryGet(int indexId, int id, int side);
 
+        /// <summary>
+        ///     Disposes tiles evicted since the last call. <b>UI thread, at the top of a paint,
+        ///     only.</b>
+        /// </summary>
+        /// <remarks>
+        ///     Eviction cannot dispose on the spot. The producer thread can evict a bitmap that the
+        ///     UI thread is inside <c>DrawImage</c> on, which is a use-after-free with no exception
+        ///     to catch, so evicted tiles queue and are freed here instead - before anything in the
+        ///     current frame has been drawn, by which point nothing painted in the previous frame
+        ///     can still be in use. The same reasoning, and the same shape, as
+        ///     <c>Map.MapTileCache.DrainRetired</c>.
+        ///     <para>
+        ///     Defaulted so an implementation that holds nothing does not have to say so, and so
+        ///     that adding this to the interface could not break one that already existed. A host
+        ///     that never calls it does not leak: see the retirement bound on
+        ///     <see cref="DefinitionThumbnailCache"/>, which drops the reference and lets the
+        ///     finaliser reclaim the handle rather than growing without limit.
+        ///     </para>
+        /// </remarks>
+        /// <returns>How many tiles were disposed.</returns>
+        int DrainRetired() => 0;
+
         /// <summary>Raised, coalesced, when at least one queued tile has landed.</summary>
         event EventHandler? TilesReady;
     }
