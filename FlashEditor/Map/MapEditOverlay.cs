@@ -26,7 +26,18 @@ namespace FlashEditor.Map {
         Removal,
 
         /// <summary>The tool declined and nothing was written. Grey.</summary>
-        Rejected
+        Rejected,
+
+        /// <summary>
+        ///     A tile was READ rather than changed. Green.
+        /// </summary>
+        /// <remarks>
+        ///     Its own kind rather than reusing <see cref="Edit"/>, because every other mark on this
+        ///     overlay means the square was written to and the eyedropper writes nothing. Flashing
+        ///     amber for a read would tell a user their map had changed when it had not, on a tab
+        ///     whose whole difficulty is knowing which edits have happened.
+        /// </remarks>
+        Sampled
     }
 
     /// <summary>
@@ -432,6 +443,8 @@ namespace FlashEditor.Map {
                     return Color.FromArgb(255, 255, 116, 106);
                 case MapFlashKind.Rejected:
                     return Color.FromArgb(255, 206, 208, 216);
+                case MapFlashKind.Sampled:
+                    return Color.FromArgb(255, 138, 226, 138);
                 default:
                     return Color.FromArgb(255, 255, 206, 92);
             }

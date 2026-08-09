@@ -156,6 +156,7 @@ namespace FlashEditor.Map {
         /// <summary>What a click on the canvas does.</summary>
         private enum MapTool {
             Inspect,
+            Eyedropper,
             PaintUnderlay,
             PaintOverlay,
             CycleOverlayShape,
@@ -171,6 +172,7 @@ namespace FlashEditor.Map {
 
         private static readonly (string Label, MapTool Tool)[] ToolRows = {
             ("Inspect", MapTool.Inspect),
+            ("Eyedropper - pick up a tile's floor", MapTool.Eyedropper),
             ("Paint underlay", MapTool.PaintUnderlay),
             ("Paint overlay", MapTool.PaintOverlay),
             ("Cycle overlay shape", MapTool.CycleOverlayShape),
@@ -396,6 +398,52 @@ namespace FlashEditor.Map {
             ShowMessage("Brush set to " + pick.Kind.ToString().ToLowerInvariant() + " " + pick.Id);
         }
 
+        /// <summary>
+        ///     Takes a tile's floor into the brush.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The tool that turns the hardest question in this tab into an easy one.</b> Every
+        ///     paint tool needs a number, and nothing about a number says what it draws; but a user
+        ///     looking at the map already knows which patch of ground they want to copy. Pointing at
+        ///     it is the answer.
+        ///     <para>
+        ///     An overlay is preferred over the underlay beneath it when the tile has one, because
+        ///     that is what the tile visibly is - the overlay is drawn on top. The shape and
+        ///     rotation are reported rather than stored: the brush paints shape 0, and telling the
+        ///     user what the source tile actually used is what lets them reach for the cycle tools
+        ///     rather than wonder why their copy looks different.
+        ///     </para>
+        /// </remarks>
+        /// <param name="square">The map square under the pointer.</param>
+        /// <param name="hit">Which tile.</param>
+        private void PickUpFloor(MapRegion square, TileHit hit) {
+            int p = hit.Plane, x = hit.LocalX, y = hit.LocalY;
+
+            int overlay = square.GetOverlayId(p, x, y);
+            if (overlay != 0) {
+                LoadBrush(new FloorPick(FloorKind.Overlay, overlay));
+
+                int shape = square.GetOverlayShape(p, x, y);
+                int rotation = square.GetOverlayRotation(p, x, y);
+
+                ShowMessage("Picked up overlay " + overlay + ", shape " + shape +
+                    ", rotation " + rotation + " - the brush paints shape 0");
+                view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Sampled, "overlay " + overlay);
+                return;
+            }
+
+            int underlay = square.GetUnderlayId(p, x, y);
+            if (underlay == 0) {
+                view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Rejected, "no floor");
+                ShowMessage("That tile stores neither an overlay nor an underlay, so there is " +
+                    "nothing to pick up.");
+                return;
+            }
+
+            LoadBrush(new FloorPick(FloorKind.Underlay, underlay));
+            view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Sampled, "underlay " + underlay);
+        }
+
         private MapTool SelectedTool =>
             toolBox.SelectedIndex >= 0 ? ToolRows[toolBox.SelectedIndex].Tool : MapTool.Inspect;
 
@@ -448,6 +496,13 @@ namespace FlashEditor.Map {
             MapRegion square = scene.SquareAt(hit.WorldX - scene.BaseX, hit.WorldY - scene.BaseY);
             if (square == null)
                 return;
+
+            //Before BuildEdit, because this one READS a tile rather than changing it - there is no
+            //edit to build, nothing to undo, and it must work on a square nobody intends to modify.
+            if (SelectedTool == MapTool.Eyedropper) {
+                PickUpFloor(square, hit);
+                return;
+            }
 
             IMapEdit? edit = BuildEdit(SelectedTool, square, hit);
             if (edit == null) {
