@@ -524,7 +524,7 @@ behaviour work; 26h is the only one that touches the archive layer.
 | **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | **done** for the component's shared colour and its text. The remaining colour fields - outline, and the type-specific ones - are not yet swatched |
 | **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing | **done** |
 | **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | **done as a reading**, in `InterfaceHookSlots` and the field pane. What is left is the *panel*: hooks are rows in the field grid, not a surface of their own, and nothing yet links a hook to its script in the Client Scripts tab - that link is item 19's job |
-| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | open |
+| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | **model done, not wired.** `InterfaceComponentEdits` plans the renumbering and the parent fix-up, tested on the invariant. **Applying one needs a group-level write the cache does not have** - see below |
 
 **Three findings from 26a that bind everything after it.** Each was caught by review before any
 code was written, and each would otherwise have become a test asserting a defect:
@@ -565,6 +565,27 @@ the storage and the setter, which are both checkable.
 **Anything that edits geometry must invert the mode, not add a delta**, and must use
 `InterfaceLayoutResolver.ParentExtentsFor` to get the extents to invert against. Both are already
 built and both have a test that fails loudly if they are bypassed.
+
+**26h needs one thing this project does not have: a way to change which files a group contains.**
+`RSCache` exposes `WriteFile` and nothing else - no delete, no group rewrite - so a renumbering
+cannot be committed however correct the plan is. That is the whole remaining cost of 26h and it is
+archive-layer work, not interface work:
+
+- Writing a group whose **file set** differs from the stored one, which changes the reference
+  table's per-file id list and file count, not just a payload.
+- The client reads a group's file count as `maxFileId + 1` and throws the explicit id list away
+  when the two agree (`VersionTable.java:183,185`), so the numbering must stay dense - which is
+  what forces the renumbering in the first place.
+- **The invariant that a save changing nothing writes nothing has to survive it.** Re-encoding
+  rewrites the archive CRC and drags in the reference-table entry of every archive packed
+  alongside, so a no-op structural edit must be detected before the group is rewritten, not after.
+
+**And one thing no amount of care inside this project can fix:** a component is addressed from
+outside its interface as `(interface << 16) | file`, by CS2 scripts in index 12 and by hook
+arguments in other interfaces. Renumbering repoints all of those at a different component. The
+planner reports the references it can see and says plainly that the rest exist; finding the CS2
+ones means scanning 4,149 compiled scripts for a constant, which is its own item and would make
+26h materially safer.
 
 ```
 Read CLAUDE.md, AGENTS.md, the UI conventions section, and reference/index-architect-03.md first.
