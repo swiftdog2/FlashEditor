@@ -137,6 +137,11 @@ namespace FlashEditor.Definitions.ClientScripts {
             "The Opcode column is always the raw number; the Mnemonic beside it is this editor's reading of it, " +
             "carried only where the 637 client's own dispatch proves it - the Client column cites the line. " +
             "A blank mnemonic means not yet named, not broken.\n" +
+            "The cc_ and if_ prefixes name an addressing mode: cc_ acts on the interpreter's active component and " +
+            "if_ pops its target off the stack. The client writes cc_ itself, in opcode 101's exception message; " +
+            "if_ appears nowhere in it and is the conventional spelling for a mechanism this editor re-derived. " +
+            "For a cc_ instruction the Value column shows which of the two active-component registers the operand " +
+            "byte selects, .active or active, beside the raw byte.\n" +
             "Jump targets are resolved and the In column marks a position something jumps to. Basic blocks, loops " +
             "and if/else structure are not reconstructed: this is a linear listing and implies no structure.\n" +
             "The identifier is not a name hash - a few are packed interface hooks, most are unexplained. The four " +
@@ -341,9 +346,10 @@ namespace FlashEditor.Definitions.ClientScripts {
 
            Ordered so the seven columns that make the stream readable - through Flow - fit the pane
            at its default split, because a control flow edge that needs a horizontal scroll to see
-           is one nobody sees. Stored width, Effect and the client citation are the ones to scroll
-           for: they answer a question about a particular instruction rather than carrying the
-           listing. */
+           is one nobody sees. Stored width, the stack operands, Effect and the client citation are
+           the ones to scroll for: they answer a question about a particular instruction rather than
+           carrying the listing. Stored as and Takes sit together because both describe the calling
+           convention - one the byte in the file, the other what the arm pulls off the stacks. */
         private void BuildInstructionColumns() {
             AddColumn(instructions, "#", 45, row => Instruction(row).Position);
             AddColumn(instructions, "In", 34, row => Instruction(row).LabelMark);
@@ -353,6 +359,7 @@ namespace FlashEditor.Definitions.ClientScripts {
             AddColumn(instructions, "Value", 150, row => Instruction(row).Value);
             AddColumn(instructions, "Flow", 88, row => Instruction(row).Flow);
             AddColumn(instructions, "Stored as", 80, row => Instruction(row).OperandWidth);
+            AddColumn(instructions, "Takes", 240, row => Instruction(row).StackOperands);
             AddColumn(instructions, "Effect", 520, row => Instruction(row).Effect);
             AddColumn(instructions, "Client", 150, row => Instruction(row).Citation);
         }
@@ -663,8 +670,47 @@ namespace FlashEditor.Definitions.ClientScripts {
                 }
             }
 
-            /// <summary>The operand, quoted when it is text so an empty string is visible as one.</summary>
-            internal object? Value => present ? line!.OperandText() : null;
+            /// <summary>
+            ///     The operand, quoted when it is text so an empty string is visible as one, and named
+            ///     where the byte is a selector rather than a value.
+            /// </summary>
+            /// <remarks>
+            ///     Every opcode at or above 100 stores a one-byte operand, and for the component family
+            ///     that byte is not a value at all: it picks which of the interpreter's two
+            ///     active-component registers the arm reads or writes, which the client spells
+            ///     <c>.active-component</c> and <c>active-component</c> in the one message that names
+            ///     either (<c>Class247.java:246</c>, <c>:249</c>). The raw byte stays on screen beside
+            ///     the name, because nothing proves the flag is only ever 0 or 1 in shipped data and a
+            ///     third value would otherwise be invisible.
+            /// </remarks>
+            internal object? Value {
+                get {
+                    if (!present)
+                        return null;
+
+                    string stored = line!.OperandText();
+
+                    if (line.Info.Addressing != ClientScriptComponentAddressing.ActiveComponent)
+                        return stored;
+
+                    return line.Instruction.IntegerOperand switch {
+                        0 => "active (" + stored + ")",
+                        1 => ".active (" + stored + ")",
+                        _ => stored
+                    };
+                }
+            }
+
+            /// <summary>
+            ///     What the instruction consumes off the two stacks, in the order a script pushes it.
+            /// </summary>
+            /// <remarks>
+            ///     Blank where this project has not read the arm, which is most opcodes, rather than
+            ///     "nothing" - the two are different claims and only one of them is knowledge. A
+            ///     trailing <c>$</c> marks a value that comes off the string stack rather than the
+            ///     integer one.
+            /// </remarks>
+            internal object? StackOperands => present ? line!.Info.Operands.Text() : null;
 
             /// <summary>
             ///     Where control goes from here, for the instructions that decide it.
