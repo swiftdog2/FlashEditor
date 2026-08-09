@@ -929,6 +929,8 @@ namespace FlashEditor.Definitions.Sprites {
             return cached;
         }
 
+        internal static bool MeasureLegacyMonoBlend;
+
         private static int Clamp12(int v) {
             if (v < 0) return 0;
             if (v > 4080) return 4080;
@@ -951,7 +953,9 @@ namespace FlashEditor.Definitions.Sprites {
                 case 4: EvalBrick(node, output, w, row); break;
                 case 5: EvalBoxBlurMono(node, output, w, row); break;
                 case 6: EvalClampNodeMono(node, output, w, row); break;
-                case 7: EvalMonoBlend(node, output, w, row); break;
+                case 7:
+                    if (MeasureLegacyMonoBlend) { Array.Fill(output, 2040, 0, w); break; }
+                    EvalMonoBlend(node, output, w, row); break;
                 case 8: EvalCurveTransfer(node, output, w, row); break;
                 case 9: EvalMirrorFlipMono(node, output, w, row); break;
                 case 10: EvalGradientRemap(node, output, w, row); break;
