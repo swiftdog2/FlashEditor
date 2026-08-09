@@ -210,13 +210,30 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 **This is the reference for anything with a user interface. Follow it rather than copying whatever
 the nearest tab happens to do - three of the tabs still predate it.**
 
+- **Navigation is a category `TreeView` over a `TabControl`, not a tab strip.** The strip is gone.
+  `PageDeck : TabControl` (`Editor.cs:353-371`) swallows `TCM_ADJUSTRECT` so the page gets the full
+  client area and no strip is drawn, and `EditorNavTree` (`Editor.cs:1120-1176`) is what the user
+  navigates with. **The deck holds 27 `TabPage`s and the tree exposes 25** - `Reference Tables` and
+  `Containers` are in the deck and not in the tree - so a page count is two different numbers and
+  anything quoting one has to say which. Earlier versions of this section described a strip, which
+  is why prompts written from it kept describing a surface that no longer exists.
 - **A tab states its own cache index; its position states nothing.** `Editor.RegisterEditorTabs`
   maps each `TabPage` to an index and, for the self-contained tabs, to the delegate that binds their
   panel. It replaced a `static int[] editorTypes` read as `editorTypes[SelectedIndex]`, where
   inserting a page anywhere but the end silently pointed every later tab at the wrong index. The
-  constructor **throws** for a page in the strip with no registration, so forgetting one is caught on
+  constructor **throws** for a page in the deck with no registration, so forgetting one is caught on
   the next launch rather than by a tab quietly showing another index's contents. Add the line, do
   not reintroduce a parallel array.
+- **The colours, fonts and chrome metrics are stated once, in `EditorTheme`
+  (`FlashEditor/UI/EditorTheme.cs`).** Do not add a colour literal to a control. There are exactly
+  two chrome surfaces - a near-white page and a band of dark canvases - and `EditorTheme.SurfaceOf`
+  classifies a control by the **luminance** of its effective background rather than by matching
+  known colours, because **the page colour cannot be read from a constant**: 24 of the 25 tab pages
+  set `UseVisualStyleBackColor`, so what they paint belongs to the running Windows visual style and
+  a control hardcoding `#FFFFFF` is visibly wrong under High Contrast. Icons come from
+  `EditorIcons.Render`, are drawn with GDI, and are tinted per surface. A toolbar is
+  `EditorToolStrip`; it must state its own `ImageScalingSize`, because the menu strip sets 24 and
+  the framework default is 16.
 - **A new index editor should be a `DefinitionListPanel` descriptor, not another arm in
   `LoadEditorTab`.** `FlashEditor/Definitions/Editing/` holds the reusable list: the panel owns the
   worker, the percent-boundary progress, the UI-thread population and the edit commit, and one
@@ -249,6 +266,17 @@ the nearest tab happens to do - three of the tabs still predate it.**
   reintroduce fixed sizes on anything holding text. One further consequence worth knowing: a list
   view column's width does **not** scale while the list view around it does, so under a bad factor
   every grid shrinks while its columns keep full width and overflow.
+
+  **What this rule does not say, and a reader kept inferring: nothing in this application scales,
+  and 16 logical pixels is 16 physical pixels on every machine.** The process is pinned DPI-unaware
+  at `FlashEditorForm.cs:46` - a crash fix, because OpenTK's `GLControl` otherwise changes the
+  awareness context mid-session and `SetParent` then fails with `ERROR_INVALID_STATE` so no further
+  tab opens - and a DPI-unaware process is always told 96 dpi, so `AutoScaleMode.Dpi` against
+  `(96, 96)` computes a factor of exactly 1.0 everywhere. The advice above stands unchanged, because
+  it is what stops the *next* factor change doing the same damage; but do not write scaling code,
+  do not size an asset for a scaled display, and do not expect a vector drawn at request to be
+  sharper than a raster - on a scaled display Windows bitmap-stretches the whole window after it is
+  painted, so both are blurred equally.
 - **A public property on a `Control` subclass needs `[Browsable(false)]` and
   `[DesignerSerializationVisibility(Hidden)]`** if it is runtime-only, or analyzer `WFO1000`
   fails the build. Attach them to the declaration, not to a doc comment above a same-named
