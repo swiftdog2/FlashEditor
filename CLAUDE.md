@@ -408,12 +408,31 @@ investigation.
 - **`AnalyseCache` (`Editor.cs:2184`) is a stub.** It loads the input cache into a local, never
   reads the output path at all, and unconditionally returns 0 - so "no differences found" is what
   it always reports, whatever the two caches hold.
-- **The three `C:/Users/CJ/` paths are three different directories, not one repeated.**
-  `CACHE_DIRECTORY` is the cache being read, `CACHE_OUTPUT_DIRECTORY` is where edits and item
-  exports are written, `CACHE_ORIGINAL_COPY` is a pristine copy to revert to. Compare-to-output
-  needs the first two to differ to mean anything, and the two reload buttons
-  (`Editor.cs:1102,1107`) select between the last two. Repointing them at one path breaks the
-  compare feature rather than fixing anything.
+- **The three cache directories are three different things, and none of them is a compile-time
+  constant inlined into its callers any more.** `CachePaths`
+  (`FlashEditor/Cache/CachePaths.cs`) resolves each at runtime:
+  an environment variable first (`FLASHEDITOR_CACHE`, `FLASHEDITOR_CACHE_OUTPUT`,
+  `FLASHEDITOR_CACHE_ORIGINAL`), then a walk up from the running application looking for a
+  directory holding both `main_file_cache.dat2` and `.idx255`, and only last the `C:/Users/CJ/`
+  literals at `CachePaths.cs:46-48` - which are themselves skipped unless their parent directory
+  exists, so a fallback naming an absent tree is never returned as a default. `Input` is the cache
+  being read, `Output` is where edits and item exports are written, `Pristine` is the untouched
+  copy to revert to. `Output` and `Pristine` **refuse to resolve to `Input`**, because
+  compare-to-output would otherwise compare a cache with itself and report no differences whatever
+  either holds. `Editor.GetCacheDir` reads the persisted user setting before any of this, so
+  `CachePaths` is the fallback and not the source of truth.
+- **The two reload buttons are live, and they do not go through `RSConstants`.** "Reload Original"
+  is `button5_Click` (`Editor.cs:2200`) and "Reload Output" is `button6_Click` (`:2205`); both call
+  `ReopenAt` (`:2222`), which checks the directory actually holds a cache **before** writing the
+  persisted setting - the pristine copy is one the user takes rather than one the editor makes, so
+  it legitimately may not exist, and pointing the saved setting at an empty directory would leave
+  the editor unable to open anything on the next launch either. Because both call `CachePaths`
+  directly, `RSConstants.CACHE_ORIGINAL_COPY` (`RSConstants.cs:157`) has **no callers at all**. It
+  is the one forwarding property of the three that is dead, and it is dead for that reason rather
+  than because the feature is missing - so this is the exception to the `RSConstants` rule above,
+  where an unreferenced constant means no feature exists yet. `CACHE_DIRECTORY` is read at
+  `Editor.cs:2185`, and `CACHE_OUTPUT_DIRECTORY` at `Editor.cs:1678`, `:2186` and
+  `EntityBrowserPanel.cs:470`.
 
 ## Claims not yet verified in this repo
 
@@ -445,9 +464,10 @@ measurement here confirms it.
 `STATE_OF_THE_EDITOR.md` is a findings record with an assessment header dated 2026-07-31, and
 most of it above the roadmap is a historical write-up rather than current fact - sections 1, 2
 and 7 in particular describe a build and a test suite that no longer exist. **The live queue is
-`P2` onward**, plus the one unfinished `P1` item (the three hardcoded `C:/Users/CJ/...`
-constants still in `RSConstants.cs`). Sections `7a` to `7f` are where the design rationale for
-the container, trailer and XTEA rules lives, and are worth reading before touching any of them.
+`P2` onward.** `P1` is complete: the last item on it, the three hardcoded `C:/Users/CJ/...`
+constants, became `CachePaths` and no longer live in `RSConstants.cs` at all. Sections `7a` to
+`7f` are where the design rationale for the container, trailer and XTEA rules lives, and are
+worth reading before touching any of them.
 
 ## Conventions
 

@@ -404,11 +404,17 @@ both projects retain stale .NET Framework 4.7.2 / ClickOnce bootstrapper baggage
 3. ~~Make `MappedDataChannel` open the source dat2 **read-only**; stage all writes and
    flush both dat2 and idx together on an explicit Save.~~ Done 2026-08-02 in `99f4f25` -
    it became `StagedDataChannel`, and `RSFileStore.SaveTo` promotes dat2 before idx.
-4. **Partly done.** Save All now targets the directory that was actually opened and is
+4. ~~**Partly done.** Save All now targets the directory that was actually opened and is
    wrapped so a failure reports instead of killing the app (`99f4f25`). Still outstanding:
    all three hardcoded `C:/Users/CJ/...` constants remain in `RSConstants.cs:117-119` and
    still drive Export-to-.dat (`Editor.cs:941,947`), Compare-to-Output (`:1056-1057`) and
-   both Reload buttons (`:1093,1098`).
+   both Reload buttons (`:1093,1098`).~~ Done 2026-08-04 in `d905347` - the three constants
+   became `CachePaths`, which resolves each from an environment variable, then a search up
+   from the running application, and only last from the literals, now private to
+   `CachePaths.cs:46-48` and skipped unless their parent exists. `RSConstants` keeps the
+   three names as forwarding properties so nothing calling them had to change. Both Reload
+   buttons (`Editor.cs:2200,2205`) call `CachePaths` directly, which is why
+   `CACHE_ORIGINAL_COPY` now has no callers.
 5. ~~Add the end-to-end write round-trip test that doesn't exist: write -> reopen ->
    read -> byte-compare, including grow, shrink and new-archive cases.~~ Done 2026-08-02
    in `99f4f25` - grow, shrink and new-archive Write cases plus SaveTo reopen-and-compare.
