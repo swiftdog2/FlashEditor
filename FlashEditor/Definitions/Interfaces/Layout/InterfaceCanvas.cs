@@ -44,6 +44,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         private int selectedFileId = -1;
         private bool showNotDrawn;
 
+        private DragKind dragging = DragKind.None;
+        private Point dragFrom;
+        private Point dragOrigin;
+
+        /// <summary>What a drag in progress is doing.</summary>
+        private enum DragKind {
+            /// <summary>Nothing is being dragged.</summary>
+            None,
+
+            /// <summary>The selected component is being moved.</summary>
+            Move,
+
+            /// <summary>The selected component is being resized from its corner grip.</summary>
+            Resize
+        }
+
         /// <summary>Creates an empty canvas.</summary>
         public InterfaceCanvas() {
             Dock = DockStyle.Fill;
@@ -52,8 +68,24 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             AutoScroll = true;
         }
 
+        /// <summary>The side of the resize grip drawn on a selected component's bottom-right corner.</summary>
+        private const int GripSide = 8;
+
         /// <summary>Raised when the user picks a component on the canvas.</summary>
         public event EventHandler<int>? ComponentPicked;
+
+        /// <summary>
+        ///     Raised when a drag or a nudge has changed a component's stored geometry.
+        /// </summary>
+        /// <remarks>
+        ///     The canvas mutates the component and then asks to be saved; it does not save. The
+        ///     write path belongs to the panel that owns the descriptor, and routing through it is
+        ///     what keeps the "an edit that changes nothing writes nothing" rule in one place.
+        /// </remarks>
+        public event EventHandler<int>? ComponentGeometryChanged;
+
+        /// <summary>Says what a drag or a nudge could not do, for the status line.</summary>
+        public event EventHandler<string>? Refused;
 
         /// <summary>The component the canvas is highlighting, or -1.</summary>
         [System.ComponentModel.Browsable(false)]
@@ -177,6 +209,43 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             DrawSelection(g);
         }
 
+        /// <summary>
+        ///     Moves the selected component by whole pixels, or resizes it with Shift held.
+        /// </summary>
+        /// <remarks>
+        ///     A nudge is the only way to place a component exactly when its positioning mode stores
+        ///     a fraction of its parent, because a drag on a narrow parent cannot reach every pixel.
+        /// </remarks>
+        /// <param name="e">The key data.</param>
+        protected override void OnKeyDown(KeyEventArgs e) {
+            base.OnKeyDown(e);
+
+            if (selectedFileId < 0 || !resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? node))
+                return;
+
+            int step = e.Control ? 10 : 1;
+            int dx = e.KeyCode switch { Keys.Left => -step, Keys.Right => step, _ => 0 };
+            int dy = e.KeyCode switch { Keys.Up => -step, Keys.Down => step, _ => 0 };
+
+            if (dx == 0 && dy == 0)
+                return;
+
+            e.Handled = true;
+
+            if (e.Shift)
+                ApplyResize(node, node.Relative.Width + dx, node.Relative.Height + dy);
+            else
+                ApplyMove(node, node.Relative.X + dx, node.Relative.Y + dy);
+        }
+
+        /// <summary>The arrow keys reach the canvas rather than moving focus off it.</summary>
+        /// <param name="keyData">The key.</param>
+        /// <returns>Whether the key is an input key.</returns>
+        protected override bool IsInputKey(Keys keyData) {
+            Keys code = keyData & Keys.KeyCode;
+            return code is Keys.Left or Keys.Right or Keys.Up or Keys.Down || base.IsInputKey(keyData);
+        }
+
         /// <summary>Picks the topmost component under the pointer.</summary>
         /// <param name="e">The mouse data.</param>
         protected override void OnMouseDown(MouseEventArgs e) {
@@ -185,6 +254,16 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
 
             int x = e.X - AutoScrollPosition.X - CanvasInset;
             int y = e.Y - AutoScrollPosition.Y - CanvasInset;
+
+            //A press inside the selected component's grip starts a resize rather than reselecting
+            //whatever is underneath, so the grip stays usable when it overlaps a sibling.
+            if (selectedFileId >= 0 && resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? current)
+                && GripOf(current.Absolute).Contains(x, y)) {
+                dragging = DragKind.Resize;
+                dragFrom = new Point(x, y);
+                dragOrigin = new Point(current.Relative.Width, current.Relative.Height);
+                return;
+            }
 
             /* Backwards through paint order, because the last thing drawn is the thing on top and
                that is what a click means. A layer is skipped unless nothing above it was hit: a
@@ -207,10 +286,154 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 }
 
                 Select(drawOrder[i]);
+                BeginMove(x, y);
                 return;
             }
 
             Select(layerHit);
+
+            if (layerHit >= 0)
+                BeginMove(x, y);
+        }
+
+        /// <summary>Tracks a drag in progress, or finishes one.</summary>
+        /// <param name="e">The mouse data.</param>
+        protected override void OnMouseMove(MouseEventArgs e) {
+            base.OnMouseMove(e);
+
+            int x = e.X - AutoScrollPosition.X - CanvasInset;
+            int y = e.Y - AutoScrollPosition.Y - CanvasInset;
+
+            if (dragging == DragKind.None) {
+                if (selectedFileId >= 0 && resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? hovered))
+                    Cursor = GripOf(hovered.Absolute).Contains(x, y) ? Cursors.SizeNWSE : Cursors.Default;
+                else
+                    Cursor = Cursors.Default;
+
+                return;
+            }
+
+            if (!resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? node))
+                return;
+
+            int dx = x - dragFrom.X;
+            int dy = y - dragFrom.Y;
+
+            //A drag is applied from where it STARTED, not accumulated frame by frame. Accumulating
+            //would compound the rounding a fractional positioning mode does on every mouse move,
+            //so a slow drag would land somewhere a fast one did not.
+            if (dragging == DragKind.Move)
+                ApplyMove(node, dragOrigin.X + dx, dragOrigin.Y + dy);
+            else
+                ApplyResize(node, dragOrigin.X + dx, dragOrigin.Y + dy);
+        }
+
+        /// <summary>Ends a drag.</summary>
+        /// <param name="e">The mouse data.</param>
+        protected override void OnMouseUp(MouseEventArgs e) {
+            base.OnMouseUp(e);
+            dragging = DragKind.None;
+        }
+
+        private void BeginMove(int x, int y) {
+            if (selectedFileId < 0 || !resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? node))
+                return;
+
+            dragging = DragKind.Move;
+            dragFrom = new Point(x, y);
+            dragOrigin = new Point(node.Relative.X, node.Relative.Y);
+        }
+
+        /// <summary>
+        ///     Puts a component's top-left corner at a wanted position and asks for it to be saved.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The wanted pixel is turned into a stored base through the mode's inverse, never
+        ///     added to it.</b> Only mode 0 stores a pixel: mode 2 measures from the far edge so the
+        ///     stored number moves the other way, and the shift modes store a fraction of the parent
+        ///     where one pixel is about 21 units. Adding a delta to the base would move a mode-2
+        ///     component backwards and barely move a mode-3 one.
+        /// </remarks>
+        private void ApplyMove(InterfaceLayoutNode node, int wantedX, int wantedY) {
+            if (tree == null)
+                return;
+
+            (int parentWidth, int parentHeight) = InterfaceLayoutResolver.ParentExtentsFor(
+                tree, resolved, node.Component.FileId, InterfaceRect.FixedModeCanvas);
+            InterfaceComponentDefinition component = node.Component;
+
+            component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(
+                component.XMode, wantedX, parentWidth, node.Relative.Width);
+            component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(
+                component.YMode, wantedY, parentHeight, node.Relative.Height);
+
+            Reresolve();
+            ComponentGeometryChanged?.Invoke(this, component.FileId);
+        }
+
+        /// <summary>
+        ///     Gives a component a wanted extent, where its sizing mode has an inverse at all.
+        /// </summary>
+        /// <remarks>
+        ///     Sizing modes 3 and 4 never read their stored base - 3 keeps the previous extent and 4
+        ///     derives it from the aspect pair - so writing one would produce a file the client
+        ///     ignores and an editor that looked like it had saved nothing. Refused out loud
+        ///     instead. Neither mode occurs in either supported cache, so this is a guard rather
+        ///     than a live path.
+        /// </remarks>
+        private void ApplyResize(InterfaceLayoutNode node, int wantedWidth, int wantedHeight) {
+            if (tree == null)
+                return;
+
+            InterfaceComponentDefinition component = node.Component;
+
+            if (!InterfaceLayoutResolver.SizeModeUsesItsBase(component.WidthMode)
+                || !InterfaceLayoutResolver.SizeModeUsesItsBase(component.HeightMode)) {
+                Refused?.Invoke(this, "Component " + component.FileId + " sizes itself from mode "
+                    + component.WidthMode + "/" + component.HeightMode + ", which ignores the stored"
+                    + " size, so it cannot be resized by dragging.");
+                return;
+            }
+
+            (int parentWidth, int parentHeight) = InterfaceLayoutResolver.ParentExtentsFor(
+                tree, resolved, node.Component.FileId, InterfaceRect.FixedModeCanvas);
+
+            //Clamped at 0 rather than allowed negative. The format permits a negative extent and the
+            //resolver reproduces one, but nothing should be able to CREATE one by dragging past the
+            //corner - that is a mis-drag, not an intent.
+            component.BaseWidth = InterfaceLayoutResolver.BaseForSize(
+                component.WidthMode, Math.Max(0, wantedWidth), parentWidth, component.BaseWidth);
+            component.BaseHeight = InterfaceLayoutResolver.BaseForSize(
+                component.HeightMode, Math.Max(0, wantedHeight), parentHeight, component.BaseHeight);
+
+            Reresolve();
+            ComponentGeometryChanged?.Invoke(this, component.FileId);
+        }
+
+        /// <summary>
+        ///     Recomputes every rectangle after an edit, rather than moving the one that changed.
+        /// </summary>
+        /// <remarks>
+        ///     A component's box is not independent: resizing a layer changes the content extents
+        ///     its children resolve against, so every proportionally-positioned descendant moves.
+        ///     Nudging only the edited rectangle would show the user a layout the client would never
+        ///     produce, and it is the resolver's job to know that rather than the canvas's.
+        /// </remarks>
+        private void Reresolve() {
+            if (tree == null)
+                return;
+
+            resolved.Clear();
+            foreach (KeyValuePair<int, InterfaceLayoutNode> entry in
+                     InterfaceLayoutResolver.ResolveGroup(tree, InterfaceRect.FixedModeCanvas)) {
+                resolved[entry.Key] = entry.Value;
+            }
+
+            Invalidate();
+        }
+
+        private static Rectangle GripOf(InterfaceRect box) {
+            return new Rectangle(box.Right - GripSide / 2, box.Bottom - GripSide / 2, GripSide, GripSide);
         }
 
         private void Select(int fileId) {
@@ -411,6 +634,13 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
 
             using var over = new Pen(EditorTheme.Accent(EditorSurface.Canvas)) { DashStyle = DashStyle.Dash };
             g.DrawRectangle(over, rectangle);
+
+            //One grip, on the bottom-right. Eight would be the usual thing and most of them would
+            //be unusable here: components run down to a few pixels, and eight grips on a 6x6 sprite
+            //would leave nothing of the component to grab for a move.
+            Rectangle grip = GripOf(box);
+            using var gripFill = new SolidBrush(EditorTheme.Accent(EditorSurface.Canvas));
+            g.FillRectangle(gripFill, grip);
         }
 
         private static void DrawTinyLabel(Graphics g, Rectangle rectangle, string text) {

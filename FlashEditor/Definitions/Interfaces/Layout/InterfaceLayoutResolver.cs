@@ -282,6 +282,122 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         }
 
         /// <summary>
+        ///     The stored base that would put a component's edge at a wanted pixel.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The inverse of <see cref="ResolvePosition"/>, and the reason dragging a component
+        ///     is not simply adding a delta to its base.</b> Only mode 0 stores a pixel offset.
+        ///     Mode 2 measures from the far edge, so dragging right <i>decreases</i> the stored
+        ///     value; modes 3, 4 and 5 store a Q0.14 fraction of the parent, so a one-pixel drag is
+        ///     a change of <c>16384 / parent</c> in the stored number. An editor that added the
+        ///     pixel delta to the base would move a mode-2 component the wrong way and move a
+        ///     mode-3 component by about a two-hundredth of what was asked.
+        ///     <para>
+        ///     <b>The shift modes are lossy and that is inherent, not a shortcut.</b> A base is an
+        ///     integer, so on a 765-wide parent one unit of base is 0.047 of a pixel and the wanted
+        ///     pixel is reachable exactly; on a narrow parent it is not, and the nearest
+        ///     representable position is stored. Callers should re-resolve and show the result
+        ///     rather than assuming the drag landed where the pointer did - which the canvas does,
+        ///     because it redraws from the resolver after every edit.
+        ///     </para>
+        /// </remarks>
+        /// <param name="mode">The positioning mode for the axis.</param>
+        /// <param name="wanted">The pixel the edge should land on, relative to the parent's content origin.</param>
+        /// <param name="parentExtent">The parent's content extent on that axis.</param>
+        /// <param name="ownExtent">The component's own resolved extent on that axis.</param>
+        /// <returns>The base value to store.</returns>
+        public static int BaseForPosition(int mode, int wanted, int parentExtent, int ownExtent) {
+            switch (mode) {
+                case 0:
+                    return wanted;
+
+                case 1:
+                    //resolved = base + (parent - own) / 2
+                    return wanted - (parentExtent - ownExtent) / 2;
+
+                case 2:
+                    //resolved = parent - own - base
+                    return parentExtent - ownExtent - wanted;
+
+                case 3:
+                    //resolved = (base * parent) >> 14
+                    return ToFraction(wanted, parentExtent);
+
+                case 4:
+                    //resolved = ((parent * base) >> 14) + (parent - own) / 2
+                    return ToFraction(wanted - (parentExtent - ownExtent) / 2, parentExtent);
+
+                default:
+                    //resolved = (parent - own) - ((base * parent) >> 14)
+                    return ToFraction(parentExtent - ownExtent - wanted, parentExtent);
+            }
+        }
+
+        /// <summary>
+        ///     The stored base that would give a component a wanted extent.
+        /// </summary>
+        /// <remarks>
+        ///     The inverse of <see cref="ResolveSize"/> for the three modes that have one. Modes 3
+        ///     and 4 do not: mode 3 leaves the extent at whatever it already was, and mode 4 derives
+        ///     it from the aspect pair, so neither reads the base at all and no stored value would
+        ///     produce the wanted size. Both return the base unchanged, and a caller resizing such a
+        ///     component has to say that nothing happened rather than write a number the client will
+        ///     ignore. Neither occurs in either supported cache.
+        /// </remarks>
+        /// <param name="mode">The sizing mode for the axis.</param>
+        /// <param name="wanted">The extent the component should resolve to.</param>
+        /// <param name="parentExtent">The parent's content extent on that axis.</param>
+        /// <param name="current">The base currently stored, returned for the modes with no inverse.</param>
+        /// <returns>The base value to store.</returns>
+        public static int BaseForSize(int mode, int wanted, int parentExtent, int current) {
+            switch (mode) {
+                case 0:
+                    return wanted;
+
+                case 1:
+                    //resolved = parent - base
+                    return parentExtent - wanted;
+
+                case 2:
+                    return ToFraction(wanted, parentExtent);
+
+                default:
+                    return current;
+            }
+        }
+
+        /// <summary>Whether a sizing mode reads its stored base at all.</summary>
+        /// <param name="mode">The sizing mode.</param>
+        /// <returns>Whether resizing by writing the base would do anything.</returns>
+        public static bool SizeModeUsesItsBase(int mode) {
+            return mode is 0 or 1 or 2;
+        }
+
+        /// <summary>
+        ///     A pixel value as the Q0.14 fraction of a parent extent that resolves closest to it.
+        /// </summary>
+        /// <remarks>
+        ///     Rounded rather than truncated, so a drag lands on the nearer of the two representable
+        ///     positions instead of always the lower one - which over a series of small drags would
+        ///     otherwise creep steadily towards the origin.
+        ///     <para>
+        ///     A zero parent extent has no fraction that means anything, so the base is left at
+        ///     zero rather than dividing.
+        ///     </para>
+        /// </remarks>
+        private static int ToFraction(int pixels, int parentExtent) {
+            if (parentExtent == 0)
+                return 0;
+
+            long scaled = (long) pixels << 14;
+            long half = parentExtent / 2;
+
+            return (int) (scaled >= 0
+                ? (scaled + half) / parentExtent
+                : (scaled - half) / parentExtent);
+        }
+
+        /// <summary>
         ///     The content extents a layer offers its children.
         /// </summary>
         /// <remarks>
@@ -313,6 +429,53 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             int height = layer.ScrollMaxVertical != 0 ? layer.ScrollMaxVertical : resolved.Height;
 
             return (width, height);
+        }
+
+        /// <summary>
+        ///     The extents a component was resolved against.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Needed by anything that inverts the layout, and easy to get wrong in a way that
+        ///     looks right.</b> A root resolves against the canvas, but a child resolves against its
+        ///     parent's <i>content</i> box - which is the scroll extent where the parent scrolls, not
+        ///     the parent's own rectangle. Feeding the canvas size in for a child produces a base
+        ///     that resolves somewhere else entirely, and for a mode-2 component it produces one at
+        ///     roughly the opposite end of the parent, because that mode measures from the far edge.
+        ///     <para>
+        ///     Shared rather than reimplemented per caller for exactly that reason: the first test
+        ///     written against <see cref="BaseForPosition"/> passed the canvas extents for every
+        ///     component and failed on the first mode-2 child it reached.
+        ///     </para>
+        /// </remarks>
+        /// <param name="tree">The interface's tree.</param>
+        /// <param name="resolved">The resolved nodes, as <see cref="ResolveGroup"/> returned them.</param>
+        /// <param name="fileId">The component.</param>
+        /// <param name="canvas">The box a root resolves against.</param>
+        /// <returns>The parent extents that component was laid out against.</returns>
+        public static (int Width, int Height) ParentExtentsFor(InterfaceComponentTree tree,
+            IReadOnlyDictionary<int, InterfaceLayoutNode> resolved, int fileId, InterfaceRect canvas) {
+            if (tree == null)
+                throw new ArgumentNullException(nameof(tree));
+            if (resolved == null)
+                throw new ArgumentNullException(nameof(resolved));
+
+            if (!tree.Components.TryGetValue(fileId, out InterfaceComponentDefinition? component))
+                return (canvas.Width, canvas.Height);
+
+            int parentId = component.RawParentId;
+
+            /* A dangling or cyclic parent falls back to the canvas, which is exactly what
+               ResolveGroup did for the same component - so the inverse is consistent with the
+               forward pass rather than merely plausible. */
+            if (parentId == InterfaceComponentDefinition.NoParent
+                || !tree.Components.TryGetValue(parentId, out InterfaceComponentDefinition? parent)
+                || !resolved.TryGetValue(parentId, out InterfaceLayoutNode? parentNode)
+                || !resolved.TryGetValue(fileId, out InterfaceLayoutNode? own)
+                || !own.IsDrawn) {
+                return (canvas.Width, canvas.Height);
+            }
+
+            return ContentExtentsOf(parent, parentNode.Absolute);
         }
 
         /// <summary>

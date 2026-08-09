@@ -222,6 +222,86 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.NotEmpty(cyclic);
         }
 
+        /// <summary>
+        ///     Moving a component and moving it back lands on the bytes it was read from.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The check the constraints section requires of every new edit path, and the one a
+        ///     byte-identity sweep cannot make.</b> The sweeps prove an <i>unedited</i> record
+        ///     re-encodes to what it was read from, which is a different claim from "an edit that
+        ///     nets to nothing writes nothing" - four real defects have lived in that gap.
+        ///     <para>
+        ///     It is a sharper test than it looks, because a drag does not add a delta to the stored
+        ///     base. It converts a wanted pixel into a base through the mode's inverse, and for the
+        ///     three shift modes that conversion is lossy. So this asserts something specific: for
+        ///     the modes whose inverse is exact, a there-and-back drag is byte-neutral; for the
+        ///     lossy ones it is not required to be, and those are counted and printed rather than
+        ///     quietly folded in - a count that silently included them would let a broken exact mode
+        ///     hide.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void MovingAComponentAndMovingItBack_LandsOnTheOriginalBytes() {
+            int exactChecked = 0;
+            int lossySkipped = 0;
+
+            foreach ((int groupId, List<InterfaceComponentDefinition> components) in EveryInterface()) {
+                InterfaceComponentTree tree = InterfaceComponentTree.Build(groupId, components);
+                IReadOnlyDictionary<int, InterfaceLayoutNode> resolved =
+                    InterfaceLayoutResolver.ResolveGroup(tree, InterfaceRect.FixedModeCanvas);
+
+                foreach (InterfaceComponentDefinition component in components) {
+                    //Only the modes whose inverse is exact. A shift mode stores a fraction, so the
+                    //nearest representable base for a pixel is not always the one already there.
+                    if (component.XMode is not (0 or 1 or 2) || component.YMode is not (0 or 1 or 2)) {
+                        lossySkipped++;
+                        continue;
+                    }
+
+                    byte[] before = component.Encode().ToArray();
+                    InterfaceLayoutNode node = resolved[component.FileId];
+
+                    /* The extents the component was actually laid out against, not the canvas. A
+                       child resolves against its parent's content box, and inverting against the
+                       wrong one puts a mode-2 component at the opposite end of its parent - which
+                       is how this test failed first time. */
+                    (int parentWidth, int parentHeight) = InterfaceLayoutResolver.ParentExtentsFor(
+                        tree, resolved, component.FileId, InterfaceRect.FixedModeCanvas);
+
+                    int originalX = component.BasePositionX;
+                    int originalY = component.BasePositionY;
+
+                    //Out by an arbitrary amount, then back to exactly where it started, both times
+                    //through the same inverse the canvas uses.
+                    component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(
+                        component.XMode, node.Relative.X + 17, parentWidth, node.Relative.Width);
+                    component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(
+                        component.YMode, node.Relative.Y - 9, parentHeight, node.Relative.Height);
+
+                    component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(
+                        component.XMode, node.Relative.X, parentWidth, node.Relative.Width);
+                    component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(
+                        component.YMode, node.Relative.Y, parentHeight, node.Relative.Height);
+
+                    Assert.Equal(originalX, component.BasePositionX);
+                    Assert.Equal(originalY, component.BasePositionY);
+
+                    byte[] after = component.Encode().ToArray();
+                    Assert.True(before.AsSpan().SequenceEqual(after),
+                        $"group {groupId} file {component.FileId} did not re-encode identically after " +
+                        "a move and an equal move back.");
+
+                    exactChecked++;
+                }
+            }
+
+            _output.WriteLine($"cache: {_fixture.Profile.Name}");
+            _output.WriteLine($"components round-tripped through an exact inverse: {exactChecked}");
+            _output.WriteLine($"components on a lossy shift mode, excluded: {lossySkipped}");
+
+            Assert.True(exactChecked > 0, "No component was actually round-tripped.");
+        }
+
         private static void Count(IDictionary<int, int> census, int mode) {
             census[mode] = census.TryGetValue(mode, out int seen) ? seen + 1 : 1;
         }

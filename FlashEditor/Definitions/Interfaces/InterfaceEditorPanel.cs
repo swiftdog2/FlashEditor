@@ -165,6 +165,8 @@ namespace FlashEditor.Definitions.Interfaces {
             components.RowsLoaded += (_, _) => BuildStructure();
             structure.AfterSelect += (_, e) => SelectFromTree(e.Node);
             canvas.ComponentPicked += (_, fileId) => SelectFromCanvas(fileId);
+            canvas.ComponentGeometryChanged += (_, fileId) => CommitGeometry(fileId);
+            canvas.Refused += (_, why) => components.ReportStatus(why);
         }
 
         /// <summary>
@@ -548,6 +550,33 @@ namespace FlashEditor.Definitions.Interfaces {
                     continue;
 
                 components.SelectRow(typed);
+                return;
+            }
+        }
+
+        /// <summary>
+        ///     Saves a component the canvas has just moved or resized.
+        /// </summary>
+        /// <remarks>
+        ///     Through <c>DefinitionListPanel.CommitRow</c>, which is the same path a cell edit
+        ///     takes - including the comparison that writes nothing when the re-encoded bytes match
+        ///     what is stored. That comparison is why dragging a component one pixel away and back
+        ///     leaves the cache untouched, and it would have to be reimplemented here if the canvas
+        ///     wrote directly.
+        /// </remarks>
+        /// <param name="fileId">The component that changed.</param>
+        private void CommitGeometry(int fileId) {
+            foreach (object row in components.Rows) {
+                if (row is not InterfaceComponentRow typed || typed.FileId != fileId)
+                    continue;
+
+                components.CommitRow(typed);
+
+                //The field pane shows the geometry that just changed, so it is stale until it is
+                //rebuilt. The grid refreshes itself inside CommitRow.
+                if (ReferenceEquals(components.SelectedRow, typed))
+                    ShowComponent(typed);
+
                 return;
             }
         }

@@ -632,6 +632,22 @@ namespace FlashEditor.Definitions.Editing {
         }
 
         /// <summary>
+        ///     Writes a row back after something other than a cell editor changed it.
+        /// </summary>
+        /// <remarks>
+        ///     For a companion surface that edits the same records - a canvas being dragged, a
+        ///     colour picker, a property pane. It is deliberately the <b>same</b> path a cell edit
+        ///     takes, including the comparison that writes nothing when the bytes have not changed,
+        ///     because a second write path would be a second place for that rule to be forgotten.
+        /// </remarks>
+        /// <param name="row">The row that was changed.</param>
+        public void CommitRow(object? row) {
+            CommitEdit(row);
+            if (row != null)
+                list.RefreshObject(row);
+        }
+
+        /// <summary>
         ///     Writes an edited row back, unless re-encoding it produces the bytes already stored.
         /// </summary>
         /// <remarks>

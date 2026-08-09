@@ -386,6 +386,116 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.False(resolved[0].IsDrawn);
         }
 
+        /// <summary>
+        ///     Asking for a pixel and resolving the answer lands on that pixel, for every
+        ///     positioning mode that stores a pixel exactly.
+        /// </summary>
+        /// <remarks>
+        ///     This is the property direct manipulation rests on: drag to a pixel, store a base,
+        ///     resolve it again, and be where the pointer was. Modes 0, 1 and 2 are exact by
+        ///     construction; the shift modes are covered separately because they are not.
+        /// </remarks>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(2)]
+        public void AskingForAPixelAndResolvingItAgainIsExact_ForTheNonShiftModes(int mode) {
+            InterfaceComponentDefinition component = Component();
+            component.XMode = (sbyte) mode;
+
+            for (int wanted = -40; wanted <= 700; wanted += 37) {
+                component.BasePositionX =
+                    InterfaceLayoutResolver.BaseForPosition(mode, wanted, 765, 65);
+
+                Assert.Equal(wanted,
+                    InterfaceLayoutResolver.ResolvePosition(component, 765, 503, 65, 10).X);
+            }
+        }
+
+        /// <summary>
+        ///     A shift mode lands within one pixel, and rounds to the nearer of the two it can reach.
+        /// </summary>
+        /// <remarks>
+        ///     Not exact, and it cannot be: the base is an integer fraction of the parent, so only
+        ///     certain pixels are representable. What must hold is that the error is under a pixel
+        ///     and does not accumulate in one direction - truncating instead of rounding would creep
+        ///     a component towards the origin over a series of small drags.
+        /// </remarks>
+        [Theory]
+        [InlineData(3)]
+        [InlineData(4)]
+        [InlineData(5)]
+        public void AShiftModeLandsWithinOnePixelOfWhatWasAsked(int mode) {
+            InterfaceComponentDefinition component = Component();
+            component.XMode = (sbyte) mode;
+
+            for (int wanted = 0; wanted <= 700; wanted += 23) {
+                component.BasePositionX =
+                    InterfaceLayoutResolver.BaseForPosition(mode, wanted, 765, 65);
+
+                int landed = InterfaceLayoutResolver.ResolvePosition(component, 765, 503, 65, 10).X;
+                Assert.InRange(landed, wanted - 1, wanted + 1);
+            }
+        }
+
+        /// <summary>Asking for an extent and resolving it lands on that extent, for modes 0, 1 and 2.</summary>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(2)]
+        public void AskingForAnExtentAndResolvingItAgainIsExactEnough(int mode) {
+            InterfaceComponentDefinition component = Component();
+            component.WidthMode = (sbyte) mode;
+
+            for (int wanted = 1; wanted <= 700; wanted += 41) {
+                component.BaseWidth = InterfaceLayoutResolver.BaseForSize(mode, wanted, 765, 0);
+
+                int landed = Size(component, 765, 503).Width;
+
+                //Modes 0 and 1 are exact; mode 2 is a fraction and lands within a pixel.
+                Assert.InRange(landed, wanted - 1, wanted + 1);
+            }
+        }
+
+        /// <summary>
+        ///     The two sizing modes that never read their base are reported, not silently written.
+        /// </summary>
+        /// <remarks>
+        ///     Mode 3 keeps whatever extent the component already had and mode 4 derives it from the
+        ///     aspect pair, so no stored base produces a wanted size. A resize handle on such a
+        ///     component has to say nothing happened; writing a number the client ignores would look
+        ///     like a save that did not take.
+        /// </remarks>
+        [Fact]
+        public void ASizingModeThatIgnoresItsBaseIsReportedRatherThanWritten() {
+            Assert.True(InterfaceLayoutResolver.SizeModeUsesItsBase(0));
+            Assert.True(InterfaceLayoutResolver.SizeModeUsesItsBase(1));
+            Assert.True(InterfaceLayoutResolver.SizeModeUsesItsBase(2));
+            Assert.False(InterfaceLayoutResolver.SizeModeUsesItsBase(3));
+            Assert.False(InterfaceLayoutResolver.SizeModeUsesItsBase(4));
+
+            Assert.Equal(77, InterfaceLayoutResolver.BaseForSize(3, 400, 765, 77));
+            Assert.Equal(77, InterfaceLayoutResolver.BaseForSize(4, 400, 765, 77));
+        }
+
+        /// <summary>
+        ///     Dragging a mode-2 component right decreases its stored base, because it is measured
+        ///     from the far edge.
+        /// </summary>
+        /// <remarks>
+        ///     Pinned on its own because it is the case an implementer gets wrong by adding the
+        ///     pixel delta to the base, and the result - a component that moves the wrong way -
+        ///     looks like an inverted mouse axis rather than an inverted formula.
+        /// </remarks>
+        [Fact]
+        public void DraggingAFarEdgeComponentRightLowersItsStoredBase() {
+            int atLeft = InterfaceLayoutResolver.BaseForPosition(2, 100, 765, 65);
+            int atRight = InterfaceLayoutResolver.BaseForPosition(2, 300, 765, 65);
+
+            Assert.True(atRight < atLeft,
+                $"Moving right should lower a mode-2 base, but {atLeft} became {atRight}.");
+        }
+
         /// <summary>Children are walked in file-id order, because that is the client's draw order.</summary>
         /// <remarks>
         ///     Z-order is not a stored field. The client draws a parent's children in array index
