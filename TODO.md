@@ -523,7 +523,7 @@ behaviour work; 26h is the only one that touches the archive layer.
 | **26d** | Direct manipulation: select, move, resize, marquee, snap, nudge | 26c | **mostly done** - select, move, resize and nudge. **Marquee, multi-select and snap are still open** |
 | **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | **done** for the component's shared colour and its text. The remaining colour fields - outline, and the type-specific ones - are not yet swatched |
 | **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing | **done** |
-| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | open, **and the hard half is already paid**. See below |
+| **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | **done as a reading**, in `InterfaceHookSlots` and the field pane. What is left is the *panel*: hooks are rows in the field grid, not a surface of their own, and nothing yet links a hook to its script in the Client Scripts tab - that link is item 19's job |
 | **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | open |
 
 **Three findings from 26a that bind everything after it.** Each was caught by review before any
