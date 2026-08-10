@@ -24,6 +24,7 @@ namespace FlashEditor.UI {
     /// </remarks>
     public sealed class EditorToolButton : ToolStripButton {
         private readonly List<EditorToolButton> radioGroup;
+        private EditorIcon icon;
 
         /// <summary>Creates a tool.</summary>
         /// <param name="icon">The icon to draw.</param>
@@ -35,7 +36,7 @@ namespace FlashEditor.UI {
         /// </param>
         internal EditorToolButton(EditorIcon icon, string tooltip, Keys shortcut,
             List<EditorToolButton>? radioGroup) {
-            Icon = icon;
+            this.icon = icon;
             Shortcut = shortcut;
             this.radioGroup = radioGroup ?? new List<EditorToolButton>(0);
 
@@ -44,16 +45,49 @@ namespace FlashEditor.UI {
             DisplayStyle = ToolStripItemDisplayStyle.None;
             Margin = new Padding(1, 1, 1, 1);
 
-            /* The shortcut belongs in the tooltip because there is nowhere else for it to appear.
-               ToolStripButton has no ShortcutKeys property and no shortcut display - those live on
-               ToolStripMenuItem - so a shortcut nobody writes down is a shortcut nobody finds. */
-            ToolTipText = shortcut == Keys.None
-                ? tooltip
-                : tooltip + "  (" + DescribeShortcut(shortcut) + ")";
+            Describe(tooltip);
         }
 
-        /// <summary>Which icon this tool draws.</summary>
-        public EditorIcon Icon { get; }
+        /// <summary>
+        ///     Which icon this tool draws.
+        /// </summary>
+        /// <remarks>
+        ///     Settable, because a transport's play control is one button with two meanings rather
+        ///     than two buttons of which one is hidden. Two buttons is the obvious alternative and
+        ///     it is worse: the strip's width changes as they swap unless both are always present,
+        ///     the tab order gains a control the user can never reach, and every caller that wants
+        ///     to enable or disable "the play button" has to remember there are two of them.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public EditorIcon Icon {
+            get => icon;
+            set {
+                if (icon == value)
+                    return;
+
+                icon = value;
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        ///     Restates what the tool does, keeping its shortcut on the end.
+        /// </summary>
+        /// <remarks>
+        ///     The shortcut belongs in the tooltip because there is nowhere else for it to appear:
+        ///     <see cref="ToolStripButton"/> has no <c>ShortcutKeys</c> property and no shortcut
+        ///     display - those live on <see cref="ToolStripMenuItem"/> - so a shortcut nobody writes
+        ///     down is a shortcut nobody finds. A caller that changes the caption through
+        ///     <see cref="ToolStripItem.ToolTipText"/> instead drops it, which is why this is here
+        ///     rather than left to the constructor.
+        /// </remarks>
+        /// <param name="tooltip">What the tool does, in a few words.</param>
+        public void Describe(string tooltip) {
+            ToolTipText = Shortcut == Keys.None
+                ? tooltip
+                : tooltip + "  (" + DescribeShortcut(Shortcut) + ")";
+        }
 
         /// <summary>The key that arms this tool, or <see cref="Keys.None"/>.</summary>
         public Keys Shortcut { get; }

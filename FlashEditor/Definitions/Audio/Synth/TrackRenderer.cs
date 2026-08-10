@@ -31,6 +31,7 @@ namespace FlashEditor.Definitions.Audio.Synth {
         private readonly MidiSynthesiser synthesiser;
         private readonly int[] mix = new int[MidiSynthesiser.ControlTick * 2];
 
+        private volatile bool loop;
         private int eventIndex;
         private long lastTick;
         private double lastEventSample;
@@ -47,7 +48,18 @@ namespace FlashEditor.Definitions.Audio.Synth {
         public MidiSynthesiser Synthesiser => synthesiser;
 
         /// <summary>Whether to restart the sequence when it runs out rather than stopping.</summary>
-        public bool Loop { get; set; }
+        /// <remarks>
+        ///     The one member of this class that may be touched from another thread, and the
+        ///     backing field is <c>volatile</c> for that reason. It is what a Loop control in a
+        ///     transport is bound to, so it is written from the UI thread while
+        ///     <see cref="Render"/> reads it on the playback thread; an ordinary field could be
+        ///     hoisted out of that loop and the change would never be seen. Everything else here is
+        ///     sequencer state and remains single-threaded.
+        /// </remarks>
+        public bool Loop {
+            get => loop;
+            set => loop = value;
+        }
 
         /// <summary>Binds a sequence to a synthesiser.</summary>
         /// <param name="sequence">The events to play.</param>

@@ -66,6 +66,12 @@ namespace FlashEditor.Definitions.Audio.Synth {
         private static extern int waveOutReset(IntPtr handle);
 
         [DllImport("winmm.dll")]
+        private static extern int waveOutPause(IntPtr handle);
+
+        [DllImport("winmm.dll")]
+        private static extern int waveOutRestart(IntPtr handle);
+
+        [DllImport("winmm.dll")]
         private static extern int waveOutPrepareHeader(IntPtr handle, IntPtr header, int size);
 
         [DllImport("winmm.dll")]
@@ -212,6 +218,37 @@ namespace FlashEditor.Definitions.Audio.Synth {
 
                 return true;
             }
+        }
+
+        /// <summary>
+        ///     Holds playback where it is, keeping every queued buffer.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This is what makes a pause a pause rather than a stop.</b> <see cref="Stop"/> is
+        ///     <c>waveOutReset</c>, which hands back every buffer the driver has not finished with,
+        ///     so what was still queued is discarded and resuming would have to re-render it -
+        ///     which is only possible if the source can be rewound to the exact sample, and a
+        ///     synthesiser cannot be. <c>waveOutPause</c> stops the write position advancing and
+        ///     leaves the queue intact, so <see cref="Resume"/> carries on from the sample it
+        ///     stopped on with no gap and no repeat.
+        ///     <para>
+        ///     Pausing a device with nothing queued is documented as having no effect, so there is
+        ///     no ordering requirement against the first <see cref="Write"/>.
+        ///     </para>
+        /// </remarks>
+        public void Pause() {
+            if (handle != IntPtr.Zero)
+                waveOutPause(handle);
+        }
+
+        /// <summary>Continues a paused device from where it stopped.</summary>
+        /// <remarks>
+        ///     Harmless on a device that is not paused, which is what lets the caller drive this
+        ///     from a flag rather than having to track the device's state a second time.
+        /// </remarks>
+        public void Resume() {
+            if (handle != IntPtr.Zero)
+                waveOutRestart(handle);
         }
 
         /// <summary>Stops playback immediately and returns every queued buffer.</summary>
