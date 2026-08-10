@@ -168,6 +168,19 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>The sweep in flight, or null. Held so a rebind can cancel it.</summary>
         private System.ComponentModel.BackgroundWorker? skeletonIndexer;
 
+        /// <summary>
+        ///     Stops the sweep, separately from the worker that runs it.
+        /// </summary>
+        /// <remarks>
+        ///     <c>BackgroundWorker.CancelAsync</c> only raises a flag the work has to poll, and the
+        ///     sweep is a walk over index 20 and index 0 that hands control back at nothing finer
+        ///     than a group boundary. A token is what <c>AnimationSkeletonIndex.Build</c> checks
+        ///     there. The first version stopped it by throwing from the progress callback instead,
+        ///     which worked only because the callback happens to be invoked outside every try in
+        ///     that loop, and would have stopped working silently for a caller passing no callback.
+        /// </remarks>
+        private System.Threading.CancellationTokenSource? skeletonIndexStop;
+
         /// <summary>How far the sweep has got, for the status line while it runs.</summary>
         private int skeletonIndexPercent;
 
@@ -396,6 +409,8 @@ namespace FlashEditor.Definitions.Entities {
                index 0, which is the largest index in the cache, so it is the longest-running reader
                on the page. The index it produced belongs to the cache it was built from - a sequence
                id means a different record in the two caches on disk - so it goes with it. */
+            skeletonIndexStop?.Cancel();
+            skeletonIndexStop = null;
             skeletonIndexer?.CancelAsync();
             skeletonIndexer = null;
             skeletonIndex = null;
@@ -609,18 +624,16 @@ namespace FlashEditor.Definitions.Entities {
             skeletonIndexer = indexer;
             skeletonIndexPercent = 0;
 
+            var stop = new System.Threading.CancellationTokenSource();
+            skeletonIndexStop = stop;
+
             indexer.DoWork += (_, args) => {
                 var frames = new CacheAnimationDataSource(open);
 
-                args.Result = AnimationSkeletonIndex.Build(open, frames, percent => {
-                    /* Build has no cancellation of its own and the report callback is the only point
-                       at which it hands control back, so throwing from it is what stops a sweep whose
-                       cache is being closed underneath it. */
-                    if (indexer.CancellationPending)
-                        throw new OperationCanceledException();
-
-                    indexer.ReportProgress(percent);
-                });
+                //A token rather than throwing from the progress callback. Build checks it between
+                //groups, so a sweep started with no callback is still interruptible.
+                args.Result = AnimationSkeletonIndex.Build(open, frames,
+                    percent => indexer.ReportProgress(percent), stop.Token);
             };
 
             indexer.ProgressChanged += (_, args) => {

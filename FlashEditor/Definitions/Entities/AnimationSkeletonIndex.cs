@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Animation;
 using FlashEditor.IO;
@@ -135,9 +136,11 @@ namespace FlashEditor.Definitions.Entities {
         /// <param name="cache">The open cache.</param>
         /// <param name="frames">Where frames are read from, so its cache is shared.</param>
         /// <param name="report">Called with a percentage as the sweep runs, or null.</param>
+        /// <param name="cancel">Stops the sweep between groups.</param>
         /// <returns>The index.</returns>
+        /// <exception cref="OperationCanceledException">The token was signalled.</exception>
         public static AnimationSkeletonIndex Build(RSCache cache, IAnimationDataSource frames,
-            Action<int>? report = null) {
+            Action<int>? report = null, CancellationToken cancel = default) {
             if (cache == null) throw new ArgumentNullException(nameof(cache));
             if (frames == null) throw new ArgumentNullException(nameof(frames));
 
@@ -164,6 +167,13 @@ namespace FlashEditor.Definitions.Entities {
             int lastPercent = -1;
 
             foreach (int group in groups) {
+                /* Checked here rather than left to the caller. Without a token the only point this
+                   sweep hands control back is the progress callback, so a caller wanting to stop it
+                   had to throw from inside that - which works only while the callback is invoked
+                   outside every try in this loop, and silently stops working for any caller that
+                   passes no callback at all. */
+                cancel.ThrowIfCancellationRequested();
+
                 /* One group read rather than one read per file. RSCache.ReadFile releases the group
                    as soon as it has handed back the file it was asked for, so walking a 128-file
                    config group file by file re-inflates it 128 times. */
