@@ -37,27 +37,43 @@ namespace FlashEditor.Definitions.Config {
         /// </remarks>
         public int TextRgb { get; set; } = 0xFFFFFF;
 
-        /// <summary>Opcode 3. First sprite layer, a group in JS5 index 8, or -1.</summary>
+        /// <summary>Opcode 3. Leftmost sprite of the splat, a group in JS5 index 8, or -1.</summary>
         /// <remarks>
-        ///     Loaded through <c>Class86.method847</c> (:215-252) from
+        ///     <c>anInt641</c>, loaded through <c>Class86.method847</c> (:215-252) from
         ///     <c>aClass121_644.aJS5Archive_1005</c>, which InterfaceSettings.java:265-266 gives as
-        ///     index 8. The three layers are drawn one over the next in the order 3, 4, 6
-        ///     (IntegerNode.java:403, 438, 455).
+        ///     index 8.
+        ///     <para>
+        ///     <b>The four sprites are laid out left to right, not stacked.</b> An earlier version of
+        ///     this file called opcodes 3, 4 and 6 "layers drawn one over the next", which is wrong
+        ///     and matters here because it is what decides which one identifies a record.
+        ///     IntegerNode.java:596-624 runs a single x cursor <c>i_85_</c> through the pieces in
+        ///     order - opcode 3, opcode 4, opcode 5, the damage number, opcode 6 - recording an
+        ///     offset for each and advancing by that piece's width, and :719-740 draws each at the
+        ///     offset it was given. This one is first, so it is what the grid's tile shows. The names
+        ///     of the other two are kept as they were rather than renumbered, because they are what
+        ///     the editor's field pane and every existing note call them.
+        ///     </para>
         /// </remarks>
         public int SpriteLayer1Id { get; set; } = -1;
 
-        /// <summary>Opcode 4. Second sprite layer, drawn over the first.</summary>
+        /// <summary>Opcode 4. Second sprite, drawn immediately to the right of the first.</summary>
         public int SpriteLayer2Id { get; set; } = -1;
 
-        /// <summary>Opcode 5. A fourth sprite, preloaded but drawn by nothing in this client.</summary>
+        /// <summary>Opcode 5. The strip tiled behind the damage number, or -1.</summary>
         /// <remarks>
-        ///     <c>anInt652</c>. <c>method847</c> loads it alongside the three layers and
-        ///     <c>method852</c> (:335-356) hands it back, but that accessor has no caller anywhere in
-        ///     the 637 source. Recorded rather than named.
+        ///     <c>anInt652</c>, handed back by <c>method852</c> (:335-356).
+        ///     <b>It is drawn, and an earlier version of this file said it was not</b> - the claim
+        ///     that the accessor has no caller is false, and it is called twice
+        ///     (IntegerNode.java:421 for the mark and :487 for the second one of a stacked pair).
+        ///     What makes it unlike the other three is that it repeats: IntegerNode.java:588-590
+        ///     computes <c>i_83_ = numberWidth / spriteWidth + 1</c> and :729-736 draws that many
+        ///     copies side by side, so it is a one-sprite-wide fill sized to the number rather than a
+        ///     picture. The name is left alone because renaming it would rewrite the field pane and
+        ///     every note citing it for no gain in the bytes.
         /// </remarks>
         public int PreloadedSpriteId { get; set; } = -1;
 
-        /// <summary>Opcode 6. Third sprite layer, drawn over the second.</summary>
+        /// <summary>Opcode 6. Rightmost sprite, drawn after the damage number.</summary>
         public int SpriteLayer3Id { get; set; } = -1;
 
         /// <summary>Opcode 7. Horizontal drift, in pixels, decaying to zero over the lifetime.</summary>

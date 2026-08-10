@@ -73,14 +73,19 @@ namespace FlashEditor.Definitions.Config {
         }
 
         /// <summary>
-        ///     The uniform columns, plus a swatch and a texture link for the families that have them.
+        ///     The uniform columns, plus a thumbnail, a swatch and a texture link for the families
+        ///     that have them.
         /// </summary>
         /// <remarks>
-        ///     The grid stays family-independent for the thirty-odd families that store neither, so
-        ///     one descriptor still serves all thirty-five groups. What changes is that the two
-        ///     floor families stop presenting their colour only as the six hex digits inside a
+        ///     The grid stays family-independent for the thirty-odd families that store none of the
+        ///     three, so one descriptor still serves all thirty-five groups. What changes is that the
+        ///     two floor families stop presenting their colour only as the six hex digits inside a
         ///     summary string: those two are the source of every material in the game world, and
-        ///     "which id is the lava" is not a question a column of numbers can answer.
+        ///     "which id is the lava" is not a question a column of numbers can answer. The four
+        ///     sprite-naming families - cursors, map scene icons, world map elements and damage marks
+        ///     - get the same treatment for the same reason, through
+        ///     <see cref="ConfigFamily.Sprite"/>, which also states which sprite a record naming
+        ///     several is drawn from.
         ///     <para>
         ///     Built per instance rather than held static, because it now depends on the family.
         ///     That is safe against the panel's identity check - <c>Bind</c> keys on the descriptor
@@ -94,6 +99,11 @@ namespace FlashEditor.Definitions.Config {
                 DefinitionColumn.ReadOnly<ConfigListing>("Id", row => row.FileId, 70),
                 DefinitionColumn.ReadOnly<ConfigListing>("Opcodes", row => row.OpcodeCount, 80)
             };
+
+            if (family.Sprite != null) {
+                built.Add(DefinitionColumn.Thumbnail<ConfigListing>("Sprite", RSConstants.SPRITES_INDEX,
+                    row => row.Record.Definition is object record ? family.Sprite(record) : null));
+            }
 
             if (family.Colour != null) {
                 built.Add(DefinitionColumn.Colour<ConfigListing>("Colour",
