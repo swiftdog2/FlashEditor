@@ -687,15 +687,10 @@ namespace FlashEditor.Definitions.Interfaces {
         /// <param name="width">The column width, in the grid's own pinned font.</param>
         /// <param name="read">Reads the displayed value off a row.</param>
         private static void AddColumn(FastObjectListView list, string heading, int width, Func<object, object?> read) {
-            var column = new OLVColumn(heading, null) {
-                Width = width,
-                Groupable = false,
-                IsEditable = false,
-                AspectGetter = row => read(row)
-            };
-
-            list.AllColumns.Add(column);
-            list.Columns.Add(column);
+            //Delegated so the null-row guard has one implementation. Ten copies of this method
+            //existed and not one of them had it, which is how closing a cache crashed the
+            //interfaces list.
+            DetailGrid.AddColumn(list, heading, width, read);
         }
 
         private static InterfaceListing Listing(object row) {

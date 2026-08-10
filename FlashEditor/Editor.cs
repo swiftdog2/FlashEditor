@@ -1404,7 +1404,7 @@ namespace FlashEditor {
                         (List<RSReferenceTable> refTables, List<RSContainer> containers) =
                             ((List<RSReferenceTable>, List<RSContainer>)) args.Result;
 
-                        CompressCol.AspectGetter = (x) => ((RSContainer) x).GetCompressionString();
+                        CompressCol.AspectGetter = (x) => x == null ? null : ((RSContainer) x).GetCompressionString();
 
                         RefTableListView.SetObjects(refTables);
                         ContainerListView.SetObjects(containers);

@@ -1,4 +1,5 @@
 using BrightIdeasSoftware;
+using FlashEditor.Definitions.Editing;
 using FlashEditor.Cache;
 using System;
 using System.Collections.Generic;
@@ -235,15 +236,10 @@ namespace FlashEditor.Definitions.Compression {
         /// <param name="width">The column width, in the grid's own pinned font.</param>
         /// <param name="read">Reads the displayed value off a row.</param>
         private void AddColumn(string heading, int width, Func<HuffmanEntryRow, object?> read) {
-            var column = new OLVColumn(heading, null) {
-                Width = width,
-                Groupable = false,
-                IsEditable = false,
-                AspectGetter = row => read((HuffmanEntryRow) row)
-            };
-
-            entries.AllColumns.Add(column);
-            entries.Columns.Add(column);
+            //Delegated so the null-row guard has one implementation. This wrapper differs from the
+            //other ten only in taking a typed reader, which is why a sweep over their shape found
+            //it last.
+            DetailGrid.AddColumn(entries, heading, width, row => read((HuffmanEntryRow) row));
         }
 
         /// <summary>
@@ -260,7 +256,7 @@ namespace FlashEditor.Definitions.Compression {
                 Width = 60,
                 Groupable = false,
                 IsEditable = true,
-                AspectGetter = row => ((HuffmanEntryRow) row).BitLength,
+                AspectGetter = row => row == null ? null : (object) ((HuffmanEntryRow) row).BitLength,
                 AspectPutter = (row, value) => ApplyBitLength(row, value)
             };
 

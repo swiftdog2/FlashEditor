@@ -92,7 +92,9 @@ namespace FlashEditor.Definitions.Editing {
                 Width = width,
                 Groupable = false,
                 IsEditable = false,
-                AspectGetter = row => read(row)
+                //Null is what the grid hands an aspect getter for a row it is recycling, for a
+                //cell measured before a model is attached, and while a bind tears the list down.
+                AspectGetter = row => row == null ? null : read(row)
             };
 
             AllColumns.Add(column);
