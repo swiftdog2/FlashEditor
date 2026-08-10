@@ -441,16 +441,7 @@ namespace FlashEditor.Definitions.Config {
                     new ConfigField("Fade start", definition.FadeStartMillis + " ms"),
                     new ConfigField("Opcode 12 field", definition.Unknown12.ToString())
                 },
-                /* A hit splat is four sprites and one number laid out LEFT TO RIGHT, not stacked, so
-                   no single tile is the record. IntegerNode.java:596-624 walks one x cursor through
-                   opcode 3, opcode 4, opcode 5 repeated to the width of the number, the number
-                   itself, then opcode 6, and :719-740 draws them at those offsets.
-                   Opcode 3 is the tile because it is the leftmost and first-drawn piece, and
-                   because it is the only one of the four that is a picture in its own right: opcode
-                   5 is a one-tile-wide strip repeated behind the digits and reads as a sliver, and
-                   opcodes 4 and 6 are the ends of the frame around them. All four ids stay in the
-                   detail pane's Sprite layers field. */
-                sprite: definition => definition.SpriteLayer1Id)
+                sprite: definition => LeadingDamageMarkSprite(definition))
         };
 
         /// <summary>
@@ -804,6 +795,40 @@ namespace FlashEditor.Definitions.Config {
             for (int i = 0; i < shared; i++)
                 pairs.Add(from[i] + " -> " + to[i]);
             return string.Join(", ", pairs);
+        }
+
+        /// <summary>
+        ///     The leftmost sprite a damage mark actually carries, which is the one tile that stands
+        ///     for the record.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A hit splat is four sprites and a number laid out left to right, not stacked</b>, so
+        ///     no single one of them is the record. IntegerNode.java:596-624 walks one x cursor
+        ///     <c>i_85_</c> through opcode 3, opcode 4, opcode 5 repeated to the width of the number,
+        ///     the number itself and then opcode 6, and :719-740 draws each at the offset it was
+        ///     given.
+        ///     <para>
+        ///     Taking the leftmost piece <i>present</i> rather than opcode 3 outright, because opcode
+        ///     3 is optional and the group exercises that: in the vanilla capture nine of the first
+        ///     twenty-five records store opcodes 4, 5 and 6 with no 3. Fixing the tile to opcode 3
+        ///     drew "-1, no picture" over a third of the grid for records that carry three sprites
+        ///     each, which is the column asserting something false rather than declining to answer.
+        ///     A record naming none of the four still reports -1, and that is then true.
+        ///     </para>
+        ///     <para>
+        ///     The cost is that the cell does not say which opcode supplied the tile, so two rows'
+        ///     tiles are not always the same piece of the splat. The detail pane's Sprite layers
+        ///     field lists all four ids, and the Order column shows which opcodes the record stored,
+        ///     so the row itself carries the answer.
+        ///     </para>
+        /// </remarks>
+        /// <param name="definition">The decoded record.</param>
+        /// <returns>The sprite group, or -1 when the record names none.</returns>
+        private static int LeadingDamageMarkSprite(DamageMarkDefinition definition) {
+            if (definition.SpriteLayer1Id >= 0) return definition.SpriteLayer1Id;
+            if (definition.SpriteLayer2Id >= 0) return definition.SpriteLayer2Id;
+            if (definition.PreloadedSpriteId >= 0) return definition.PreloadedSpriteId;
+            return definition.SpriteLayer3Id;
         }
 
         private static string DescribeMapElement(MapElementDefinition definition) {
