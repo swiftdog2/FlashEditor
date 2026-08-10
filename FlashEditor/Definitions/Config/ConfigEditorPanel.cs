@@ -95,6 +95,7 @@ namespace FlashEditor.Definitions.Config {
         private const string NoSelectionText = "Select a config group to see its records";
 
         private RSCache? cache;
+        private DefinitionThumbnailCache? tiles;
         private bool splittersPlaced;
 
         /// <summary>Creates the panel.</summary>
@@ -128,6 +129,15 @@ namespace FlashEditor.Definitions.Config {
 
             cache = newCache;
 
+            /* Rebuilt rather than cleared: the tiles it holds were decoded from the cache being
+               replaced, and serving one of those for the new cache would show the old sprite under
+               the new id. Detached from the grid first, because the property unhooks the event the
+               producer raises and a disposed cache must not be left wired to a live panel. */
+            records.Thumbnails = null;
+            tiles?.Dispose();
+            tiles = newCache == null ? null : new DefinitionThumbnailCache(newCache);
+            records.Thumbnails = tiles;
+
             fields.ClearObjects();
             opcodes.ClearObjects();
             groups.Items.Clear();
@@ -154,6 +164,24 @@ namespace FlashEditor.Definitions.Config {
                 header.Text = "Index 2's reference table could not be read: " + ex.Message;
                 Debug("Config tab could not list index 2: " + ex);
             }
+        }
+
+        /// <summary>
+        ///     Releases the thumbnail cache, which owns a background thread and a pile of bitmaps.
+        /// </summary>
+        /// <remarks>
+        ///     The cache is the only thing on this panel that is not a child control, so it is the
+        ///     only thing WinForms will not tear down on its own.
+        /// </remarks>
+        /// <param name="disposing">Whether managed state should be released.</param>
+        protected override void Dispose(bool disposing) {
+            if (disposing) {
+                records.Thumbnails = null;
+                tiles?.Dispose();
+                tiles = null;
+            }
+
+            base.Dispose(disposing);
         }
 
         /// <summary>Places the splitters once the layout pass has given the containers a real size.</summary>

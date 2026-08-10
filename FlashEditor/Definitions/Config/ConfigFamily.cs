@@ -109,7 +109,8 @@ namespace FlashEditor.Definitions.Config {
 
         private ConfigFamily(int groupId, string name, string rowNoun, string notes, bool modelled,
             Func<int, JagStream, ConfigRecord> read,
-            Func<object, int?>? colour = null, Func<object, int?>? texture = null) {
+            Func<object, int?>? colour = null, Func<object, int?>? texture = null,
+            Func<object, int?>? sprite = null) {
             GroupId = groupId;
             Name = name;
             RowNoun = rowNoun;
@@ -118,6 +119,7 @@ namespace FlashEditor.Definitions.Config {
             this.read = read;
             Colour = colour;
             Texture = texture;
+            Sprite = sprite;
         }
 
         /// <summary>The group within index 2 that holds the family.</summary>
@@ -152,6 +154,33 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Reads the index-9 texture a record names, or null for a family that names none.</summary>
         public Func<object, int?>? Texture { get; }
+
+        /// <summary>
+        ///     Reads the one index-8 sprite group a record is recognised by, or null for a family
+        ///     that names none.
+        /// </summary>
+        /// <remarks>
+        ///     Four families name a sprite and each of them is otherwise a row of numbers - a cursor,
+        ///     a minimap stamp, a world map marker and a hit splat are all things a user identifies by
+        ///     looking at them, and "which record is the crosshair" is not a question a column of ids
+        ///     can answer.
+        ///     <para>
+        ///     <b>One sprite, deliberately, even where a record names several.</b> Which one each
+        ///     family gives is decided at its registration in <see cref="WithProviders"/> and argued
+        ///     there; the rest stay in the detail pane, which is where a record's whole sprite set
+        ///     belongs.
+        ///     </para>
+        ///     <para>
+        ///     <b>Returning a negative id is the family saying "this record stores no sprite", and it
+        ///     is a different answer from a sprite that would not read.</b> A negative reaches the
+        ///     grid as <see cref="Editing.DefinitionCellArt.None"/>, so the cell shows the stored id
+        ///     with no tile beside it; a real id that will not decode reaches
+        ///     <c>SpriteThumbnailRenderer</c> and comes back as a marked tile, and one still being
+        ///     read draws as an empty outline. Three states, three appearances. Do not fold "none"
+        ///     into null - null means the accessor could not read the record at all.
+        ///     </para>
+        /// </remarks>
+        public Func<object, int?>? Sprite { get; }
 
         /// <summary>Decodes one record of this family.</summary>
         /// <param name="fileId">The file id, which is the definition id within the group.</param>
@@ -347,7 +376,13 @@ namespace FlashEditor.Definitions.Config {
                     new ConfigField("Sprite group", definition.SpriteGroupId.ToString()),
                     new ConfigField("Tint", Hex(definition.TintRgb, 6)),
                     new ConfigField("Stretch to footprint", definition.StretchToFootprint.ToString())
-                }),
+                },
+                /* One sprite and no choice to make: opcode 1 is the icon and opcode 4 is the
+                   explicit "none", which the client honours by drawing nothing at all
+                   (Class122.java:93 gates the whole draw on anInt114 != -1). The tile is the sprite
+                   untinted, because opcode 2's tint is applied by the client at draw time
+                   (Class122.java:118-120) rather than being part of the stored picture. */
+                sprite: definition => definition.SpriteGroupId),
 
             Of<CursorDefinition>(ConfigGroup.Cursor, "Cursors", "cursor",
                 "The sprite drawn as the mouse pointer and the pixel within it that is the hotspot." +
@@ -357,7 +392,13 @@ namespace FlashEditor.Definitions.Config {
                 definition => new[] {
                     new ConfigField("Sprite", definition.SpriteId.ToString()),
                     new ConfigField("Hotspot", definition.HotspotX + ", " + definition.HotspotY)
-                }),
+                },
+                /* The only sprite a cursor names, and the only one of these four families with no
+                   "none" to represent: the field has no -1 encoding - Class231.anInt1735 starts at
+                   Java's 0, which is a real index-8 group - and all 175 records carry opcode 1
+                   anyway. The tile is the pointer image itself, which is what
+                   Class231.java:127 hands the platform through RSFont.java:82-95. */
+                sprite: definition => definition.SpriteId),
 
             Of<QuestDefinition>(ConfigGroup.Quest, "Quests", "quest",
                 "The quest name, its requirement lists and the sprite a chat line draws beside a name" +
@@ -373,7 +414,15 @@ namespace FlashEditor.Definitions.Config {
                 " interest. Class341.java:141 names the group; object definition opcode 107 is a file" +
                 " id in it.",
                 definition => DescribeMapElement(definition),
-                definition => MapElementFields(definition)),
+                definition => MapElementFields(definition),
+                /* Opcode 1 of the three sprite opcodes, because it is the only one the client will
+                   draw on its own. Node_Sub40.java:116-119 gates the whole sprite on
+                   anInt245 != -1 and only then swaps in opcode 2's anInt225, and only while the
+                   marker is hovered, so opcode 2 is a second state of this picture rather than a
+                   record of its own. Opcode 18's anInt231 occurs in no file of either cache and
+                   what selects it is not settled, so a tile drawn from it would be a guess. Both of
+                   the others stay in the detail pane's Sprite field. */
+                sprite: definition => definition.SpriteId),
 
             Of<DamageMarkDefinition>(ConfigGroup.DamageMark, "Damage marks", "damage mark",
                 "The sprites, font, colour and lifetime of one hit splat drawn over a mobile." +
@@ -391,7 +440,8 @@ namespace FlashEditor.Definitions.Config {
                     new ConfigField("Lifetime", definition.LifetimeMillis + " ms"),
                     new ConfigField("Fade start", definition.FadeStartMillis + " ms"),
                     new ConfigField("Opcode 12 field", definition.Unknown12.ToString())
-                })
+                },
+                sprite: definition => LeadingDamageMarkSprite(definition))
         };
 
         /// <summary>
@@ -458,16 +508,18 @@ namespace FlashEditor.Definitions.Config {
         /// <param name="notes">What is known about the family.</param>
         /// <param name="summary">Describes one decoded record in a line.</param>
         /// <param name="fields">Lists one decoded record's fields.</param>
+        /// <param name="sprite">Reads the record's index-8 sprite group, for a family that names one.</param>
         /// <returns>The family.</returns>
         private static ConfigFamily Of<T>(int groupId, string name, string rowNoun, string notes,
-            Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields)
+            Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields,
+            Func<T, int?>? sprite = null)
             where T : ConfigDefinition, new() {
             return new ConfigFamily(groupId, name, rowNoun, notes, true, (id, payload) => {
                 var definition = new T { Id = id };
                 definition.Decode(payload);
                 return new ConfigRecord(definition, summary(definition), OpcodesOf(definition),
                     fields(definition).ToArray());
-            });
+            }, sprite: Widen(sprite));
         }
 
         /// <summary>
@@ -492,10 +544,12 @@ namespace FlashEditor.Definitions.Config {
         /// <returns>The family.</returns>
         /// <param name="colour">Reads the record's packed colour, for a family that stores one.</param>
         /// <param name="texture">Reads the record's texture id, for a family that names one.</param>
+        /// <param name="sprite">Reads the record's index-8 sprite group, for a family that names one.</param>
         private static ConfigFamily Legacy<T>(int groupId, string name, string rowNoun, string notes,
             Func<int, JagStream, T> decode, Func<T, List<DecodedOpcode>> opcodes,
             Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields,
-            Func<T, int?>? colour = null, Func<T, int?>? texture = null) where T : class {
+            Func<T, int?>? colour = null, Func<T, int?>? texture = null,
+            Func<T, int?>? sprite = null) where T : class {
             return new ConfigFamily(groupId, name, rowNoun, notes, true, (id, payload) => {
                 T definition = decode(id, payload);
                 ConfigOpcodeRow[] rows = opcodes(definition)
@@ -503,7 +557,7 @@ namespace FlashEditor.Definitions.Config {
                         entry.Value.ToString(CultureInfo.InvariantCulture)))
                     .ToArray();
                 return new ConfigRecord(definition, summary(definition), rows, fields(definition).ToArray());
-            }, Widen(colour), Widen(texture));
+            }, Widen(colour), Widen(texture), Widen(sprite));
         }
 
         /// <summary>
@@ -741,6 +795,40 @@ namespace FlashEditor.Definitions.Config {
             for (int i = 0; i < shared; i++)
                 pairs.Add(from[i] + " -> " + to[i]);
             return string.Join(", ", pairs);
+        }
+
+        /// <summary>
+        ///     The leftmost sprite a damage mark actually carries, which is the one tile that stands
+        ///     for the record.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A hit splat is four sprites and a number laid out left to right, not stacked</b>, so
+        ///     no single one of them is the record. IntegerNode.java:596-624 walks one x cursor
+        ///     <c>i_85_</c> through opcode 3, opcode 4, opcode 5 repeated to the width of the number,
+        ///     the number itself and then opcode 6, and :719-740 draws each at the offset it was
+        ///     given.
+        ///     <para>
+        ///     Taking the leftmost piece <i>present</i> rather than opcode 3 outright, because opcode
+        ///     3 is optional and the group exercises that: in the vanilla capture nine of the first
+        ///     twenty-five records store opcodes 4, 5 and 6 with no 3. Fixing the tile to opcode 3
+        ///     drew "-1, no picture" over a third of the grid for records that carry three sprites
+        ///     each, which is the column asserting something false rather than declining to answer.
+        ///     A record naming none of the four still reports -1, and that is then true.
+        ///     </para>
+        ///     <para>
+        ///     The cost is that the cell does not say which opcode supplied the tile, so two rows'
+        ///     tiles are not always the same piece of the splat. The detail pane's Sprite layers
+        ///     field lists all four ids, and the Order column shows which opcodes the record stored,
+        ///     so the row itself carries the answer.
+        ///     </para>
+        /// </remarks>
+        /// <param name="definition">The decoded record.</param>
+        /// <returns>The sprite group, or -1 when the record names none.</returns>
+        private static int LeadingDamageMarkSprite(DamageMarkDefinition definition) {
+            if (definition.SpriteLayer1Id >= 0) return definition.SpriteLayer1Id;
+            if (definition.SpriteLayer2Id >= 0) return definition.SpriteLayer2Id;
+            if (definition.PreloadedSpriteId >= 0) return definition.PreloadedSpriteId;
+            return definition.SpriteLayer3Id;
         }
 
         private static string DescribeMapElement(MapElementDefinition definition) {

@@ -35,6 +35,17 @@
     ObjectListView reports through UI Automation as a Table whose rows are ListItems, not as a
     List, which is why this looks for ListItems directly.
 
+.PARAMETER SelectComboItem
+    Text to match against the items of the first combo box on the page, selected before the row.
+
+    The Config tab is one grid driven by a group selector, so a capture of it without this shows
+    whichever of index 2's thirty-five families the reference table happens to declare first -
+    never the one being changed. -SelectRow alone cannot reach the others.
+
+.PARAMETER ComboSettleSeconds
+    How long to wait after selecting the combo item, before the row selection. Changing the
+    group rebinds the grid and reloads it on a worker.
+
 .PARAMETER RowSettleSeconds
     How long to wait after selecting the row. A detail pane loads on its own worker.
 #>
@@ -45,6 +56,8 @@ param(
     [int] $SettleSeconds = 12,
     [int] $LaunchSeconds = 25,
     [int] $SelectRow = -1,
+    [string] $SelectComboItem,
+    [int] $ComboSettleSeconds = 12,
     [int] $RowSettleSeconds = 10,
     [string] $Exe
 )
@@ -121,6 +134,41 @@ try {
     $sel.Select()
     Write-Host "Selected '$($target.Current.Name)', settling $SettleSeconds s"
     Start-Sleep -Seconds $SettleSeconds
+
+    if ($SelectComboItem) {
+        $comboCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::ComboBox)
+        $combo = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $comboCond)
+        if (-not $combo) { throw "No combo box on the '$($target.Current.Name)' page." }
+
+        # Expanded first. A WinForms DropDownList builds no ListItem elements until its list has
+        # been dropped, so the item search finds nothing at all against a closed one.
+        $expand = $combo.GetCurrentPattern(
+            [System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        $expand.Expand()
+        Start-Sleep -Milliseconds 600
+
+        $optCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::ListItem)
+        $options = $combo.FindAll([System.Windows.Automation.TreeScope]::Descendants, $optCond)
+
+        $optionNames = @()
+        $option = $null
+        foreach ($o in $options) {
+            $optionNames += $o.Current.Name
+            if (-not $option -and $o.Current.Name -like "*$SelectComboItem*") { $option = $o }
+        }
+        if (-not $option) {
+            throw "No combo item matching '$SelectComboItem'. Available: $($optionNames -join ' | ')"
+        }
+
+        $option.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+        $expand.Collapse()
+        Write-Host "Selected group '$($option.Current.Name)', settling $ComboSettleSeconds s"
+        Start-Sleep -Seconds $ComboSettleSeconds
+    }
 
     if ($SelectRow -ge 0) {
         $itemCond = New-Object System.Windows.Automation.PropertyCondition(
