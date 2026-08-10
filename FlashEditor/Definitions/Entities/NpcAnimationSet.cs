@@ -18,21 +18,48 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>Names one animation of the set.</summary>
         /// <param name="label">What the client plays it for.</param>
         /// <param name="animationId">The index-20 animation id.</param>
-        public NpcAnimation(string label, int animationId) {
-            Label = label ?? throw new ArgumentNullException(nameof(label));
-            AnimationId = animationId;
+        public NpcAnimation(string label, int animationId)
+            : this(label, animationId, -1) {
         }
 
-        /// <summary>What the client plays this animation for.</summary>
+        /// <summary>Names one animation, and which skeleton it was found to animate.</summary>
+        /// <remarks>
+        ///     The skeleton is carried so that an entry offered by
+        ///     <see cref="AnimationSkeletonIndex"/> can say <b>why</b> it was offered. That list is a
+        ///     heuristic, and an entry with no visible reason for being there is indistinguishable
+        ///     from one the editor is asserting the NPC plays - which is exactly the reading the
+        ///     filter must not invite.
+        /// </remarks>
+        /// <param name="label">What the client plays it for, or empty when nothing in the cache says.</param>
+        /// <param name="animationId">The index-20 animation id.</param>
+        /// <param name="skeletonId">The index-1 skeleton, or -1 when it was never resolved.</param>
+        public NpcAnimation(string label, int animationId, int skeletonId) {
+            Label = label ?? throw new ArgumentNullException(nameof(label));
+            AnimationId = animationId;
+            SkeletonId = skeletonId;
+        }
+
+        /// <summary>What the client plays this animation for, or empty when nothing states it.</summary>
         public string Label { get; }
 
         /// <summary>The index-20 animation id.</summary>
         public int AnimationId { get; }
 
-        /// <summary>The label and the id, which is what the selector shows.</summary>
+        /// <summary>The index-1 skeleton this animation's first frame names, or -1.</summary>
+        public int SkeletonId { get; }
+
+        /// <summary>The label, the id and the skeleton, which is what the selector shows.</summary>
         /// <returns>The entry as one line.</returns>
         public override string ToString() {
-            return Label + " (" + AnimationId + ")";
+            if (SkeletonId < 0)
+                return Label + " (" + AnimationId + ")";
+
+            //A sequence reached through the skeleton filter has no label, because the cache says
+            //nothing about what it is for. Leading with the id rather than an empty pair of
+            //brackets is what keeps the line readable.
+            return Label.Length == 0
+                ? "Animation " + AnimationId + " (skeleton " + SkeletonId + ")"
+                : Label + " (" + AnimationId + ", skeleton " + SkeletonId + ")";
         }
     }
 
