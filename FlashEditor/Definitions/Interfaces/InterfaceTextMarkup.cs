@@ -34,9 +34,14 @@ namespace FlashEditor.Definitions.Interfaces {
     ///     </item>
     ///     </list>
     ///     <para>
-    ///     <b>An unterminated <c>&lt;</c> is literal.</b> The client only treats one as a tag when a
-    ///     <c>&gt;</c> follows it, so a stray angle bracket in a sentence stays a character rather
-    ///     than swallowing the rest of the line.
+    ///     <b>An unterminated <c>&lt;</c> swallows the rest of the string</b>, and that is the
+    ///     client's behaviour rather than an accident of this parser. <c>:205-207</c> records the
+    ///     position of every <c>&lt;</c> and <c>:278</c> emits a character only while no tag is
+    ///     open, so a <c>&lt;</c> with no <c>&gt;</c> after it leaves the scanner inside a tag until
+    ///     the string ends. Keeping it literal instead would have been the friendlier choice and
+    ///     would show text the game does not draw, which is the one thing a preview must not do.
+    ///     A second <c>&lt;</c> inside an open tag restarts it (<c>:206</c>), so <c>&lt;a&lt;b&gt;</c>
+    ///     is the tag <c>b</c> and not the tag <c>a&lt;b</c>.
     ///     </para>
     /// </remarks>
     public sealed class InterfaceTextMarkup {
@@ -72,10 +77,25 @@ namespace FlashEditor.Definitions.Interfaces {
             int images = 0;
             bool sawMarkup = false;
 
+            /* The client's scanner, kept as a scanner rather than turned into a search for the next
+               '>'. The difference shows on "<a<b>": a search finds the first '>' and calls the tag
+               "a<b", where the client restarts the tag at every '<' and calls it "b". */
+            int open = -1;
+
             for (int i = 0; i < stored.Length; i++) {
                 char c = stored[i];
 
-                if (c != '<') {
+                if (c == '<') {
+                    open = i;
+                    continue;
+                }
+
+                if (c != '>' || open < 0) {
+                    //Inside an open tag nothing is emitted, which is what makes an unterminated
+                    //'<' swallow everything after it.
+                    if (open >= 0)
+                        continue;
+
                     if (c == '\n')
                         lines++;
 
@@ -83,16 +103,8 @@ namespace FlashEditor.Definitions.Interfaces {
                     continue;
                 }
 
-                int close = stored.IndexOf('>', i + 1);
-                if (close < 0) {
-                    //No closing bracket, so this is a literal character rather than a tag. The
-                    //client does the same: it only acts on '>' while a '<' is open.
-                    text.Append(c);
-                    continue;
-                }
-
-                string tag = stored.Substring(i + 1, close - i - 1);
-                i = close;
+                string tag = stored.Substring(open + 1, i - open - 1);
+                open = -1;
                 sawMarkup = true;
 
                 switch (tag) {
@@ -107,6 +119,8 @@ namespace FlashEditor.Definitions.Interfaces {
                         text.Append('>');
                         continue;
                     case "nbsp":
+                        //U+00A0 rather than a plain space, which is the whole point of the tag:
+                        //the wrapper breaks at ' ' and must not break here.
                         text.Append(' ');
                         continue;
                     case "shy":
