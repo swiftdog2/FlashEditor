@@ -420,6 +420,47 @@ namespace FlashEditor.UI {
                     });
                     break;
 
+                /* The transport four are the only solid glyphs in the set apart from the pointer
+                   and the dropper bulb, and that is deliberate rather than a lapse. Outlined at
+                   16px a play triangle is a 1px wireframe arrow that reads as Forward, which is
+                   already in the set two rows away; filled, it reads as a play button on sight.
+                   The same argument makes the pause bars solid: two 1px rectangles side by side
+                   are four vertical lines, which is Sound. */
+
+                case EditorIcon.Play:
+                    /* Back edge on 5 rather than on 4.5, and the same goes for every coordinate in
+                       these four. A vertical edge on a half pixel is anti-aliased into a column of
+                       50% grey, which at 16px is a quarter of the glyph's width spent looking
+                       smudged - the first draft put all four back edges on halves and the contact
+                       sheet showed a grey seam down each one. Only the sloped edges need the
+                       smoothing. */
+                    PlayHead(g, brush, 5f, 13f, 3f, 13f);
+                    break;
+
+                case EditorIcon.Pause:
+                    /* Two on, two off, two on. A 1px gap closes up against the anti-aliased edges
+                       either side of it and the pair reads as one thick bar. */
+                    Bar(g, brush, 5, 3, 2, 10);
+                    Bar(g, brush, 9, 3, 2, 10);
+                    break;
+
+                /* Previous and next are one shape mirrored about x = 8, for the reason Undo and
+                   Redo are: they sit next to each other on the same strip, and two independently
+                   placed pairs read as two unrelated marks.
+                   The trailing head's tip lands exactly on the leading head's back edge rather than
+                   half a pixel short of it. Short of it, the sliver between them anti-aliases to a
+                   grey column and the pair reads as one blob with a crease; touching, the notch is
+                   cut by the sloped edges themselves and stays a notch at 16px. */
+                case EditorIcon.PreviousTrack:
+                    PlayHead(g, brush, 8f, 3f, 3f, 13f);
+                    PlayHead(g, brush, 13f, 8f, 3f, 13f);
+                    break;
+
+                case EditorIcon.NextTrack:
+                    PlayHead(g, brush, 8f, 13f, 3f, 13f);
+                    PlayHead(g, brush, 3f, 8f, 3f, 13f);
+                    break;
+
                 default:
                     //A named icon with no painter draws a box rather than nothing, so the gap is
                     //visible on screen instead of showing as a tool that lost its picture.
@@ -454,10 +495,49 @@ namespace FlashEditor.UI {
 
         /// <summary>A 2x2 mark, which is the smallest dot that reads as deliberate at this size.</summary>
         private static void Dot(Graphics g, Brush brush, int x, int y) {
+            Bar(g, brush, x, y, 2, 2);
+        }
+
+        /// <summary>
+        ///     A solid axis-aligned block on the pixel grid.
+        /// </summary>
+        /// <remarks>
+        ///     Integer coordinates and no half-pixel offset, which is the opposite of
+        ///     <see cref="Line"/> and correct for the same reason: a 1px pen is centred on its
+        ///     coordinate and a fill is not, so a fill from x to x + width covers exactly those
+        ///     columns. Smoothing is forced off so the edges stay on the grid.
+        /// </remarks>
+        private static void Bar(Graphics g, Brush brush, int x, int y, int width, int height) {
             SmoothingMode previous = g.SmoothingMode;
             g.SmoothingMode = SmoothingMode.None;
-            g.FillRectangle(brush, x, y, 2, 2);
+            g.FillRectangle(brush, x, y, width, height);
             g.SmoothingMode = previous;
+        }
+
+        /// <summary>
+        ///     A solid triangle pointing left or right, the transport set's one shape.
+        /// </summary>
+        /// <remarks>
+        ///     Stated as the flat edge's x, the tip's x and the two ends of the flat edge, for the
+        ///     reason <see cref="Chevron"/> takes three explicit points: a form taking an origin
+        ///     and a signed reach lets a caller silently draw the mirror of what it meant, and a
+        ///     next button pointing backwards is the kind of defect that ships. Here the direction
+        ///     is not a sign but a consequence of which of two named coordinates is larger, so a
+        ///     caller cannot state it and mean the other thing.
+        /// </remarks>
+        /// <param name="g">The surface.</param>
+        /// <param name="brush">The ink.</param>
+        /// <param name="backX">Where the flat edge stands.</param>
+        /// <param name="tipX">Where the point is; left or right of <paramref name="backX"/>.</param>
+        /// <param name="top">The flat edge's upper end.</param>
+        /// <param name="bottom">The flat edge's lower end.</param>
+        private static void PlayHead(Graphics g, Brush brush,
+            float backX, float tipX, float top, float bottom) {
+            Smooth(g, () => g.FillPolygon(brush, new[] {
+                new PointF(backX, top),
+                new PointF(tipX, (top + bottom) / 2f),
+                new PointF(backX, bottom)
+            }));
         }
 
         /// <summary>

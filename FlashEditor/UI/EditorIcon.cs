@@ -112,6 +112,23 @@ namespace FlashEditor.UI {
         Resize,
 
         /// <summary>Take a value off whatever is under the pointer.</summary>
-        Eyedropper
+        Eyedropper,
+
+        /* The transport set. Named for what the control does rather than for the glyph, which
+           matters more here than anywhere else in the set: the double triangle means "previous
+           track" on one player and "rewind" on the next, and the two are different verbs. These
+           four are the skip-and-hold verbs; nothing here scrubs or seeks. */
+
+        /// <summary>Start, or resume, playing the selected record.</summary>
+        Play,
+
+        /// <summary>Hold playback where it is, keeping everything needed to carry on from it.</summary>
+        Pause,
+
+        /// <summary>Select the record before this one and play it from the start.</summary>
+        PreviousTrack,
+
+        /// <summary>Select the record after this one and play it from the start.</summary>
+        NextTrack
     }
 }

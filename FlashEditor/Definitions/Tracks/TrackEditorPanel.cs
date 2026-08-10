@@ -9,6 +9,7 @@ using System.IO;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.Tracks {
     /// <summary>
@@ -30,6 +31,15 @@ namespace FlashEditor.Definitions.Tracks {
     ///     packed form has more than one encoding that projects to the same MIDI, so going the other
     ///     way is a re-authoring problem rather than an inverse, and one this codec does not solve.
     ///     Offering it would produce plausible files that are not what the client reads.
+    ///
+    ///     <para>
+    ///     <b>There is no Stop, and that is a choice with a consequence worth knowing.</b> The
+    ///     transport is the three controls a media player has, so the way to silence a track is to
+    ///     pause it - and a paused playback deliberately keeps its thread, its <c>waveOut</c>
+    ///     device and its decoded sample bank, because that is what lets it carry on from the
+    ///     sample it stopped on. It is released when another track is started, when the cache is
+    ///     rebound, or when the panel goes away, and not before.
+    ///     </para>
     /// </remarks>
     public sealed class TrackEditorPanel : UserControl {
         /// <summary>
@@ -86,30 +96,26 @@ namespace FlashEditor.Definitions.Tracks {
             Enabled = false
         };
 
-        /* Playback is a different kind of operation from the two above it: it runs until it is
-           stopped rather than completing, so the pair is a mode rather than two commands and both
-           buttons are present at once with only one of them enabled. */
-        private readonly Button playButton = new Button {
-            Text = "Play (cache instruments)",
-            Dock = DockStyle.Top,
-            Height = 32,
-            Font = new Font("Consolas", 9F),
-            Enabled = false
+        /* The transport, and the reason it is a strip of icons rather than the two captioned
+           buttons that were here before. Playback is not a command that completes, it is a mode -
+           so the controls that drive it are a state the user reads at a glance, which is what a
+           transport is for and what "Play (cache instruments)" above a "Stop" was not. The strip
+           is an EditorToolStrip because CLAUDE.md says a toolbar is one; it gets the theme's ink,
+           its hover and pressed fills, and tooltips for the captions the icons replace. */
+        private readonly EditorToolStrip transport = new EditorToolStrip {
+            Dock = DockStyle.None,
+            AutoSize = true
         };
 
-        private readonly Button stopButton = new Button {
-            Text = "Stop",
-            Dock = DockStyle.Top,
-            Height = 32,
-            Font = new Font("Consolas", 9F),
-            Enabled = false
-        };
+        private readonly EditorToolButton previousButton;
+        private readonly EditorToolButton playPauseButton;
+        private readonly EditorToolButton nextButton;
 
         private readonly CheckBox loopCheck = new CheckBox {
             Text = "Loop",
-            Dock = DockStyle.Top,
+            Anchor = AnchorStyles.None,
             AutoSize = true,
-            Font = new Font("Consolas", 9F)
+            Font = EditorTheme.UiFont
         };
 
         /* States what the player does not reproduce, in the view, because a user comparing it
@@ -152,13 +158,30 @@ namespace FlashEditor.Definitions.Tracks {
         /// <summary>Creates the panel.</summary>
         public TrackEditorPanel() {
             Dock = DockStyle.Fill;
+
+            /* Built here rather than in a field initialiser because AddAction is an instance
+               method on the strip: a field initialiser cannot reach another field. */
+            previousButton = transport.AddAction(EditorIcon.PreviousTrack, "Previous track",
+                Keys.None, (_, _) => Step(-1));
+            playPauseButton = transport.AddAction(EditorIcon.Play, "Play the selected track",
+                Keys.None, (_, _) => TogglePlayPause());
+            nextButton = transport.AddAction(EditorIcon.NextTrack, "Next track",
+                Keys.None, (_, _) => Step(1));
+
             BuildLayout();
 
             list.SelectedIndexChanged += (_, _) => ShowDetails(list.SelectedObject as Track);
             exportButton.Click += (_, _) => ExportSelected();
             replaceButton.Click += (_, _) => ReplaceSelected();
-            playButton.Click += (_, _) => PlaySelected();
-            stopButton.Click += (_, _) => StopPlayback("Playback stopped");
+
+            //Applied to whatever is already playing, not only to the next play
+            loopCheck.CheckedChanged += (_, _) => {
+                TrackPlayback? running = playback;
+                if (running != null)
+                    running.Loop = loopCheck.Checked;
+            };
+
+            UpdateTransport();
         }
 
         /// <summary>Stops playback when the panel goes away.</summary>
@@ -173,6 +196,68 @@ namespace FlashEditor.Definitions.Tracks {
         // ===================================================================
         //  Playback
         // ===================================================================
+
+        /// <summary>
+        ///     The one control the transport is built around: play, hold, carry on.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The hold is a real pause and the caption is honest about it.</b>
+        ///     <see cref="TrackPlayback.Pause"/> keeps the sequencer position, every sounding
+        ///     voice's envelope, the controller state and the bank's decoded samples, and the
+        ///     device keeps the buffers it has already been handed - so resuming carries on from
+        ///     the sample it stopped on rather than from the top. A button labelled Pause that
+        ///     restarted the track would be a lie, and it is worth saying that this one is not.
+        /// </remarks>
+        private void TogglePlayPause() {
+            TrackPlayback? running = playback;
+
+            if (running == null) {
+                PlaySelected();
+                return;
+            }
+
+            if (running.IsPaused) {
+                running.Resume();
+                status.Text = "Resumed";
+            }
+            else {
+                running.Pause();
+                status.Text = "Paused";
+            }
+
+            UpdateTransport();
+        }
+
+        /// <summary>
+        ///     Moves the selection by one row and plays what it lands on.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Through the list's displayed order, not through the model.</b>
+        ///     <c>SelectedIndex</c> and <c>GetItemCount</c> both count rows as they are on screen,
+        ///     so a sorted or filtered list steps the way the user sees it. Reading the underlying
+        ///     collection instead would jump around the grid whenever a column had been sorted.
+        ///     <para>
+        ///     It wraps, which is why neither button is ever disabled while the list has rows. A
+        ///     transport whose Next goes dead on the last row reads as broken, and the panel
+        ///     already has a Loop control saying repetition is expected here.
+        ///     </para>
+        /// </remarks>
+        /// <param name="delta">-1 for the previous row, 1 for the next.</param>
+        private void Step(int delta) {
+            int count = list.GetItemCount();
+            if (count == 0)
+                return;
+
+            int at = list.SelectedIndex;
+            int moved = at < 0
+                ? (delta > 0 ? 0 : count - 1)
+                : (((at + delta) % count) + count) % count;
+
+            list.SelectedIndex = moved;
+            list.EnsureVisible(moved);
+
+            PlaySelected();
+        }
 
         /// <summary>
         ///     Plays the selected track through the cache's own instruments.
@@ -203,8 +288,7 @@ namespace FlashEditor.Definitions.Tracks {
                 return;
             }
 
-            playButton.Enabled = false;
-            stopButton.Enabled = true;
+            UpdateTransport();
             status.Text = "Playing " + LabelFor(track.IndexId).ToLowerInvariant() + " track " + track.Id +
                           (loopCheck.Checked ? " (looping)" : string.Empty);
         }
@@ -219,10 +303,46 @@ namespace FlashEditor.Definitions.Tracks {
             if (IsDisposed)
                 return;
 
-            playButton.Enabled = cache != null && list.SelectedObjects.Count == 1;
-            stopButton.Enabled = false;
+            UpdateTransport();
             if (message != null)
                 status.Text = message;
+        }
+
+        /// <summary>
+        ///     Puts the transport into the state the playback is actually in.
+        /// </summary>
+        /// <remarks>
+        ///     One method rather than an enable line at each of the five places that change
+        ///     something, which is what the panel did with its two captioned buttons. Three of
+        ///     those five rebuilt the play button's enabled state from its conditions rather than
+        ///     just clearing it, and the three had already drifted: <c>ShowDetails</c> required
+        ///     <c>MidiLength &gt; 0</c> and the other two did not, so a track that had built no
+        ///     MIDI was unplayable until anything else re-enabled the button.
+        ///     <para>
+        ///     Runs on the UI thread only. <see cref="OnPlaybackEnded"/> marshals before it gets
+        ///     here.
+        ///     </para>
+        /// </remarks>
+        private void UpdateTransport() {
+            TrackPlayback? running = playback;
+            bool held = running != null && running.IsPaused;
+
+            //Never disabled while there are rows: Step wraps, so there is always somewhere to go.
+            previousButton.Enabled = list.GetItemCount() > 0;
+            nextButton.Enabled = previousButton.Enabled;
+
+            bool startable = cache != null && list.SelectedObjects.Count == 1 &&
+                             list.SelectedObject is Track track && track.MidiLength > 0;
+            playPauseButton.Enabled = running != null || startable;
+
+            /* Pause only while it is actually running. A held playback shows Play, because the
+               next click resumes it - the icon states what the button will do, not what the
+               player is doing. */
+            bool showPause = running != null && !held;
+            playPauseButton.Icon = showPause ? EditorIcon.Pause : EditorIcon.Play;
+            playPauseButton.Describe(showPause
+                ? "Pause, keeping the position and everything still sounding"
+                : held ? "Resume" : "Play the selected track");
         }
 
         /// <summary>
@@ -245,8 +365,7 @@ namespace FlashEditor.Definitions.Tracks {
                     return;
 
                 playback = null;
-                playButton.Enabled = cache != null && list.SelectedObjects.Count == 1;
-                stopButton.Enabled = false;
+                UpdateTransport();
                 status.Text = error == null ? "Playback finished" : "Playback failed: " + error.Message;
             }));
         }
@@ -277,7 +396,7 @@ namespace FlashEditor.Definitions.Tracks {
             details.Clear();
             exportButton.Enabled = false;
             replaceButton.Enabled = false;
-            playButton.Enabled = false;
+            UpdateTransport();
 
             if (cache == null) {
                 status.Text = "No cache loaded";
@@ -316,15 +435,13 @@ namespace FlashEditor.Definitions.Tracks {
             var detailGroup = new GroupBox { Text = "Track", Dock = DockStyle.Fill };
             detailGroup.Controls.Add(details);
             /* Docked controls are laid out from the last added to the first, so this list reads
-               bottom to top: the note sits directly above the Track box and the Play button ends up
+               bottom to top: the note sits directly above the Track box and the transport ends up
                at the top of the strip. */
             side.Controls.Add(detailGroup);
             side.Controls.Add(playerNote);
             side.Controls.Add(exportButton);
             side.Controls.Add(replaceButton);
-            side.Controls.Add(loopCheck);
-            side.Controls.Add(stopButton);
-            side.Controls.Add(playButton);
+            side.Controls.Add(BuildTransportRow());
 
             split.Panel1.Controls.Add(list);
             split.Panel2.Controls.Add(side);
@@ -337,6 +454,49 @@ namespace FlashEditor.Definitions.Tracks {
             split.HandleCreated += (_, _) => split.SplitterDistance = Math.Max(200, split.Width - 340);
 
             status.Text = "No cache loaded";
+        }
+
+        /// <summary>
+        ///     The transport and the Loop control, centred over the side panel.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A table rather than a docked strip, because centring is the whole point.</b> A
+        ///     control docked to the top of a panel fills its width, so the strip would sit hard
+        ///     against the left edge and read as a toolbar rather than as a transport. Two percent
+        ///     columns either side of an auto-sized one centre it without anyone stating a pixel:
+        ///     the middle column is as wide as whatever is in it and the halves split the rest.
+        ///     <para>
+        ///     Every size here is measured, per the layout rule in <c>CLAUDE.md</c> - the table
+        ///     auto-sizes to its rows, the strip auto-sizes to its buttons, and the check box
+        ///     auto-sizes to its caption. Nothing holding text has a fixed height, which is what
+        ///     turned a caption into "Tmnort NPC" the last time a scale factor moved.
+        ///     </para>
+        /// </remarks>
+        /// <returns>The row, ready to dock.</returns>
+        private TableLayoutPanel BuildTransportRow() {
+            var row = new TableLayoutPanel {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 2
+            };
+
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            row.Controls.Add(transport, 1, 0);
+
+            /* Loop stays, under the transport rather than beside it: it is a mode and not a
+               command, so it does not belong among the three buttons. It applies to whatever is
+               already playing as well as to the next play - TrackRenderer.Loop is volatile and is
+               read on every pass - so ticking it in the last bar of a track still repeats it. */
+            row.Controls.Add(loopCheck, 1, 1);
+
+            return row;
         }
 
         private static OLVColumn Column(string text, string aspect, int width) {
@@ -377,6 +537,9 @@ namespace FlashEditor.Definitions.Tracks {
                 list.SetObjects(tracks);
                 progress.Value = 100;
                 status.Text = $"{tracks.Count} tracks";
+
+                //The transport's step buttons are gated on the row count, which was zero until now
+                UpdateTransport();
             };
 
             worker.RunWorkerAsync();
@@ -437,8 +600,7 @@ namespace FlashEditor.Definitions.Tracks {
         private void ShowDetails(Track? track) {
             exportButton.Enabled = list.SelectedObjects.Count > 0;
             replaceButton.Enabled = cache != null && list.SelectedObjects.Count == 1 && track != null;
-            playButton.Enabled = cache != null && list.SelectedObjects.Count == 1 && track != null &&
-                                 playback == null && track.MidiLength > 0;
+            UpdateTransport();
 
             if (track == null) {
                 details.Clear();
