@@ -85,23 +85,40 @@ namespace FlashEditor.Definitions.Audio.Synth {
         /// <summary>How many frames each buffer holds.</summary>
         public int FramesPerBuffer { get; }
 
+        /// <summary>How many samples make up one frame.</summary>
+        public int Channels { get; }
+
         /// <summary>Opens the default output device.</summary>
+        /// <remarks>
+        ///     <b>The channel count is a parameter because the two callers disagree</b>, and it used
+        ///     to be hardcoded to 2. The synthesiser renders interleaved stereo; an index-14 sound
+        ///     effect is one mono channel. A mono buffer handed to a stereo device is read as half a
+        ///     buffer of frames, so <c>Write</c> copied twice as many samples as the array held and
+        ///     threw on the very first call - which is why no sound effect made any noise at all.
+        /// </remarks>
         /// <param name="sampleRate">Frames per second.</param>
         /// <param name="framesPerBuffer">How many frames each queued buffer holds.</param>
         /// <param name="bufferCount">How many buffers to cycle through.</param>
+        /// <param name="channels">Samples per frame: 1 for mono, 2 for interleaved stereo.</param>
         /// <exception cref="InvalidOperationException">The device would not open.</exception>
-        public WaveOutDevice(int sampleRate, int framesPerBuffer, int bufferCount) {
+        public WaveOutDevice(int sampleRate, int framesPerBuffer, int bufferCount, int channels = 2) {
+            if (channels != 1 && channels != 2)
+                throw new ArgumentOutOfRangeException(nameof(channels), channels, "Mono or stereo only.");
+
             FramesPerBuffer = framesPerBuffer;
-            bufferBytes = framesPerBuffer * 2 * sizeof(short);
+            Channels = channels;
+
+            int blockAlign = channels * sizeof(short);
+            bufferBytes = framesPerBuffer * blockAlign;
             headerSize = Marshal.SizeOf<WaveHeader>();
 
             var format = new WaveFormatEx {
                 FormatTag = WaveFormatPcm,
-                Channels = 2,
+                Channels = (short) channels,
                 SamplesPerSecond = sampleRate,
                 BitsPerSample = 16,
-                BlockAlign = 4,
-                AverageBytesPerSecond = sampleRate * 4,
+                BlockAlign = (short) blockAlign,
+                AverageBytesPerSecond = sampleRate * blockAlign,
                 Size = 0
             };
 
@@ -151,7 +168,7 @@ namespace FlashEditor.Definitions.Audio.Synth {
                     throw new InvalidOperationException("waveOutUnprepareHeader failed with " + unprepared + ".");
             }
 
-            int bytes = Math.Min(bufferBytes, frames * 2 * sizeof(short));
+            int bytes = Math.Min(bufferBytes, frames * Channels * sizeof(short));
             Marshal.Copy(samples, 0, buffers[next], bytes / sizeof(short));
 
             header = new WaveHeader { Data = buffers[next], BufferLength = bytes };
@@ -166,6 +183,35 @@ namespace FlashEditor.Definitions.Audio.Synth {
                 throw new InvalidOperationException("waveOutWrite failed with " + written + ".");
 
             next = (next + 1) % headers.Length;
+        }
+
+        /// <summary>Whether every queued buffer has finished playing.</summary>
+        /// <remarks>
+        ///     <b>A caller that plays a finite sound has to wait for this before disposing.</b>
+        ///     <see cref="Dispose"/> resets the device, which hands back every buffer the driver has
+        ///     not finished with, so a sound short enough to still be queued is discarded rather than
+        ///     played. Every index-14 effect is short enough: four 1024-frame buffers hold about
+        ///     185 ms at 22 kHz, and most effects are shorter than that, so they were thrown away in
+        ///     their entirety and the tab made no noise.
+        /// </remarks>
+        public bool Drained {
+            get {
+                if (handle == IntPtr.Zero)
+                    return true;
+
+                for (int i = 0; i < headers.Length; i++) {
+                    var header = Marshal.PtrToStructure<WaveHeader>(headers[i]);
+
+                    //Never queued at all, so there is nothing outstanding on this one.
+                    if ((header.Flags & WhdrPrepared) == 0)
+                        continue;
+
+                    if ((header.Flags & WhdrDone) == 0)
+                        return false;
+                }
+
+                return true;
+            }
         }
 
         /// <summary>Stops playback immediately and returns every queued buffer.</summary>

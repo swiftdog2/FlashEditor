@@ -74,7 +74,10 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             var buffer = new short[FramesPerBuffer];
 
             try {
-                device = new WaveOutDevice(sampleRate, FramesPerBuffer, BufferCount);
+                //Mono, matching the record. The device used to be stereo only, and a mono buffer
+                //handed to it is read as half a buffer of frames - twice as many samples as the
+                //array holds - so the first Write threw and nothing ever played.
+                device = new WaveOutDevice(sampleRate, FramesPerBuffer, BufferCount, channels: 1);
 
                 int position = 0;
                 while (!stopping && position < samples.Length) {
@@ -95,6 +98,15 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                     device.Write(buffer, FramesPerBuffer);
                     position += frames;
                 }
+
+                /* Wait for the driver to finish what is queued before the finally block disposes
+                   the device, because disposing resets it and a reset hands back every buffer the
+                   driver has not played yet. Four 1024-frame buffers are about 185 ms at 22 kHz and
+                   most effects are shorter than that, so without this wait the entire sound was
+                   discarded and the tab was silent. Bounded, so a driver that never reports done
+                   cannot hang the thread. */
+                for (int spin = 0; spin < 500 && !stopping && !device.Drained; spin++)
+                    Thread.Sleep(10);
 
                 if (!stopping)
                     Completed?.Invoke();

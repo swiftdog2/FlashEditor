@@ -162,6 +162,26 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         ///     each rather than layering them - and because two open <c>waveOut</c> devices at
         ///     different rates is not something to find out about by accident.
         /// </remarks>
+        /// <summary>
+        ///     Puts a message on the status line from the playback thread.
+        /// </summary>
+        /// <remarks>
+        ///     The events fire on <c>Sfx2Playback</c>'s own thread, and the status line is a control.
+        ///     Marshalled rather than called directly, and dropped outright once the handle has gone
+        ///     - a device that fails while the tab is closing must not take the form down with it.
+        /// </remarks>
+        private void ReportFromPlaybackThread(string message) {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            try {
+                BeginInvoke(new Action(() => records.ReportStatus(message)));
+            }
+            catch (ObjectDisposedException) {
+                //The panel went away between the check and the post. Nothing to report to.
+            }
+        }
+
         private void PlaySelected() {
             playing?.Dispose();
             playing = null;
@@ -192,8 +212,19 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                     return;
                 }
 
-                playing = new Sfx2Playback(samples, listing.Sample.SampleRate);
-                records.ReportStatus("Playing effect " + listing.Sample.Id + ", " + samples.Length +
+                int id = listing.Sample.Id;
+                var started = new Sfx2Playback(samples, listing.Sample.SampleRate);
+
+                /* Subscribed, because nothing was. The playback thread reports a device failure
+                   through this event and the first version of this panel ignored it, so a throw on
+                   the very first buffer left the status line reading "Playing effect N" while the
+                   machine stayed silent - a defect that presented as "the audio does not work"
+                   with no clue anywhere as to why. */
+                started.Failed += error => ReportFromPlaybackThread(
+                    "Effect " + id + " could not be played: " + error.Message);
+
+                playing = started;
+                records.ReportStatus("Playing effect " + id + ", " + samples.Length +
                     " samples at " + listing.Sample.SampleRate + " Hz");
             }
             catch (Exception ex) {
