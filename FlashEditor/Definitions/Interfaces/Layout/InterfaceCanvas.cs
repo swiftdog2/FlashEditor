@@ -621,7 +621,8 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             //The cache's own glyphs first. Only when the font will not load does this fall back to
             //a substitute, which is wider and therefore wraps captions the game fits on one line.
             if (textPainter != null && textPainter.Draw(g, text, component.FontId, rectangle, ink,
-                    component.HorizontalAlignment, component.VerticalAlignment)) {
+                    component.HorizontalAlignment, component.VerticalAlignment,
+                    component.LineHeight)) {
                 return;
             }
 

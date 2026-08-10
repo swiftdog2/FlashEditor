@@ -63,9 +63,12 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         /// <param name="ink">The colour to draw the glyphs in.</param>
         /// <param name="horizontal">0 left, 1 centred, 2 right.</param>
         /// <param name="vertical">0 top, 1 centred, 2 bottom.</param>
+        /// <param name="lineHeightOverride">
+        ///     The component's stored line height, or 0 to use the font's own.
+        /// </param>
         /// <returns>Whether the cache's font was used.</returns>
         public bool Draw(Graphics graphics, string text, int fontId, Rectangle box, Color ink,
-            int horizontal, int vertical) {
+            int horizontal, int vertical, int lineHeightOverride = 0) {
             if (graphics == null)
                 throw new ArgumentNullException(nameof(graphics));
 
@@ -80,7 +83,24 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                breaks the line. Measuring the raw string counts every tag as characters, which in
                the worst cases overstates the width by more than the box. */
             InterfaceTextMarkup markup = InterfaceTextMarkup.Parse(text);
-            string wrapped = Wrap(sheet, markup.Text, box.Width);
+
+            /* A stored line height of 0 means "the font's own". The client's test for it reads
+               (i_38_ ^ 0xffffffff) == -1 at RSFont.drawText:382, which is ~x == -1, so x == 0 -
+               not x == -1, which is what it looks like and what the byte could never hold anyway
+               since it is read unsigned. */
+            int lineHeight = lineHeightOverride != 0 ? lineHeightOverride : sheet.Metrics.LineHeight;
+
+            /* <b>Wrapping happens only when the box could hold two lines.</b> RSFont.drawText:387-393
+               passes the width to the splitter under exactly this test and passes null otherwise,
+               and null means the string is broken on <br> and on nothing else however wide it is.
+               Wrapping unconditionally is visibly wrong rather than merely eager: interface 72
+               stores "76 Hunter" in a 32x32 box whose font has a 35-pixel line height, so the box
+               cannot hold even one full line, and wrapping it produced "76", "Hunt" and "er"
+               stacked down the page where the client draws one line and lets it overflow. */
+            bool wraps = sheet.Metrics.Ascent + sheet.Metrics.Descent + lineHeight <= box.Height
+                || lineHeight + lineHeight <= box.Height;
+
+            string wrapped = wraps ? Wrap(sheet, markup.Text, box.Width) : markup.Text;
 
             FontTextLayout.Layout layout = FontTextLayout.Measure(sheet.Metrics, wrapped);
             if (layout.Glyphs.Count == 0)
@@ -145,11 +165,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         ///     Breaks lines that do not fit the width they are given.
         /// </summary>
         /// <remarks>
-        ///     Greedy, at spaces, which is what the client's splitter does: it tracks the last
-        ///     break opportunity and cuts there once the running width exceeds the limit. A single
-        ///     word wider than the box is left whole rather than broken mid-word - the client does
-        ///     the same, and the clip then shows it does not fit, which is the honest result for a
-        ///     caption that genuinely is too long.
+        ///     Greedy, which is what <c>Class197.method2675</c> does: it tracks the last break
+        ///     opportunity and cuts there the moment the running width exceeds the limit.
+        ///     <para>
+        ///     <b>A word with no break opportunity in it is cut mid-word</b>, at
+        ///     <c>method2675:+162-171</c>, which takes the substring ending at the character that
+        ///     overflowed. An earlier version of this comment claimed the client left such a word
+        ///     whole; it does not, and the code here was already right.
+        ///     </para>
+        ///     <para>
+        ///     A hyphen is a break opportunity as well as a space (<c>:+186-190</c>), and the two
+        ///     are consumed differently: the space is dropped and the hyphen is kept on the line it
+        ///     ended. The client also records a hyphen only <i>after</i> testing the width and a
+        ///     space <i>before</i>, so a hyphen sitting exactly on the overflow does not rescue that
+        ///     line but is available to the next - which is why this walks the string in that order
+        ///     rather than collecting both up front.
+        ///     </para>
         /// </remarks>
         /// <param name="sheet">The font, for measuring.</param>
         /// <param name="text">The text, stripped of markup, with newlines for the hard breaks.</param>
@@ -180,9 +211,9 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                         wrapped.Append('\n');
                     firstPiece = false;
 
-                    int fits = LongestPrefixThatFits(sheet, remaining, width);
-                    wrapped.Append(remaining, 0, fits);
-                    remaining = remaining.Substring(fits).TrimStart(' ');
+                    (int keep, int skip) = LongestPrefixThatFits(sheet, remaining, width);
+                    wrapped.Append(remaining, 0, keep);
+                    remaining = remaining.Substring(Math.Min(remaining.Length, keep + skip));
                 }
             }
 
@@ -197,18 +228,43 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         ///     included: the font carries a kerning matrix, and a sum of bare advances overestimates
         ///     every line and wraps earlier than the client does.
         /// </remarks>
-        private static int LongestPrefixThatFits(FontGlyphSheet sheet, string line, int width) {
-            int lastSpace = -1;
+        /// <param name="sheet">The font, for measuring.</param>
+        /// <param name="line">The line to cut.</param>
+        /// <param name="width">The width to fit.</param>
+        /// <returns>
+        ///     How many characters stay on this line, and how many to drop before the next.
+        /// </returns>
+        private static (int Keep, int Skip) LongestPrefixThatFits(FontGlyphSheet sheet, string line,
+            int width) {
+            int keepAtBreak = -1;
+            int skipAtBreak = 0;
 
             for (int i = 1; i <= line.Length; i++) {
-                if (FontTextLayout.Measure(sheet.Metrics, line.Substring(0, i)).Width > width)
-                    return lastSpace > 0 ? lastSpace : Math.Max(1, i - 1);
+                char c = line[i - 1];
 
-                if (line[i - 1] == ' ')
-                    lastSpace = i - 1;
+                //Recorded before the width test, so a space at the overflow still breaks the line.
+                if (c == ' ') {
+                    keepAtBreak = i - 1;
+                    skipAtBreak = 1;
+                }
+
+                /* A growing prefix rather than a sum of per-character advances, so the font's
+                   kerning matrix is included. Summing bare advances overstates every line and wraps
+                   earlier than the client does. */
+                if (FontTextLayout.Measure(sheet.Metrics, line.Substring(0, i)).Width > width) {
+                    return keepAtBreak > 0
+                        ? (keepAtBreak, skipAtBreak)
+                        : (Math.Max(1, i - 1), 0);
+                }
+
+                //Recorded after it, and kept on this line rather than dropped.
+                if (c == '-') {
+                    keepAtBreak = i;
+                    skipAtBreak = 0;
+                }
             }
 
-            return line.Length;
+            return (line.Length, 0);
         }
 
         /// <summary>Releases every glyph sheet loaded.</summary>
