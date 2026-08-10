@@ -45,13 +45,15 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
     /// <summary>One component's resolved geometry.</summary>
     public sealed class InterfaceLayoutNode {
         internal InterfaceLayoutNode(InterfaceComponentDefinition component, int depth,
-            InterfaceRect relative, InterfaceRect absolute, InterfaceRect clip, bool isDrawn,
-            InterfaceParentage parentage, InterfaceLayoutDiagnostics diagnostics) {
+            InterfaceRect relative, InterfaceRect absolute, InterfaceRect clip,
+            InterfaceRect inheritedClip, bool isDrawn, InterfaceParentage parentage,
+            InterfaceLayoutDiagnostics diagnostics) {
             Component = component;
             Depth = depth;
             Relative = relative;
             Absolute = absolute;
             Clip = clip;
+            InheritedClip = inheritedClip;
             IsDrawn = isDrawn;
             Parentage = parentage;
             Diagnostics = diagnostics;
@@ -70,14 +72,41 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         public InterfaceRect Absolute { get; }
 
         /// <summary>
-        ///     The rectangle it is clipped to.
+        ///     The rectangle this component passes down to its children.
         /// </summary>
         /// <remarks>
         ///     Not simply <see cref="Absolute"/> intersected with the inherited clip: type 2 passes
         ///     the inherited clip through untouched, and type 9 extends the right and bottom by one
         ///     pixel because a line's endpoint is inclusive.
+        ///     <para>
+        ///     <b>This is not what the component itself is drawn against</b>, which is
+        ///     <see cref="InheritedClip"/>. The client computes this value at
+        ///     <c>Node_Sub10_Sub24.java:190-203</c> and passes it to the recursive call for a
+        ///     layer's children (<c>:414</c>) and nowhere else - the scissor in force while the
+        ///     component itself is drawn was set once for the whole list at <c>:85</c>.
+        ///     </para>
         /// </remarks>
         public InterfaceRect Clip { get; }
+
+        /// <summary>
+        ///     The rectangle this component is actually drawn against.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A component is clipped by its parent, not by its own box</b>, and the difference
+        ///     is visible. Interface 35 stores three paragraphs of four lines each in components
+        ///     34 pixels tall; four lines of font 494 need 42, so clipping each to its own box cuts
+        ///     the last line in half. The client draws all four - they fit the 59-pixel gap between
+        ///     the paragraphs, which is evidently what the boxes were sized against.
+        ///     <para>
+        ///     Three arms narrow the scissor to their own rectangle before drawing and restore it
+        ///     after: a tiled sprite (<c>:601</c> and <c>:634</c>), a line (<c>:837</c>,
+        ///     <c>:868</c>), and text - but text only when the <c>clipcomponents</c> dev toggle is
+        ///     on (<c>Class153.aBoolean1230</c>, <c>false</c> in the shipped client and flipped only
+        ///     by a debug command). So a stretched sprite, a model, a rectangle and text are all
+        ///     drawn against this and may overflow their own boxes.
+        ///     </para>
+        /// </remarks>
+        public InterfaceRect InheritedClip { get; }
 
         /// <summary>Whether the client would lay this component out and draw it at all.</summary>
         public bool IsDrawn { get; }
@@ -582,7 +611,8 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 diagnostics |= InterfaceLayoutDiagnostics.ParentIsNotALayer;
 
             return new InterfaceLayoutNode(component, depth, relative, absolute,
-                ClipFor(component, absolute, inheritedClip), isDrawn, parentage, diagnostics);
+                ClipFor(component, absolute, inheritedClip), inheritedClip, isDrawn, parentage,
+                diagnostics);
         }
 
         /// <summary>

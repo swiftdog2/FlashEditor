@@ -210,7 +210,8 @@ namespace FlashEditor.Tools.RenderInterface {
                     " " + node.Absolute.Width + "x" + node.Absolute.Height +
                     " clip=" + node.Clip.X + "," + node.Clip.Y +
                     " " + node.Clip.Width + "x" + node.Clip.Height +
-                    (node.IsDrawn ? "" : " NOTDRAWN") + detail);
+                    (node.IsDrawn ? "" : " NOTDRAWN") +
+                    (c.IsHidden ? " HIDDEN" : "") + detail);
             }
         }
     }

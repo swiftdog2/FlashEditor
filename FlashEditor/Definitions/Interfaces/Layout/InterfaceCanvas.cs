@@ -487,14 +487,28 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         ///     Draws one component, clipped exactly as the client clips it.
         /// </summary>
         /// <remarks>
-        ///     <b>The clip is applied here and it is not decoration.</b> The resolver has always
-        ///     computed <see cref="InterfaceLayoutNode.Clip"/> - the client's own rule, including
-        ///     the two exceptions where a type-2 passes the inherited clip through and a type-9 line
-        ///     extends it a pixel - and the first version of this canvas computed it and then drew
-        ///     without it. The visible result was text spilling out of its box onto whatever was
-        ///     beside it: "Insert a very long name here!" wraps to two lines inside a 140x25
-        ///     component, and unclipped the second line lands on the component below. The client
-        ///     wraps the same way and simply clips the overflow away.
+        ///     <b>A component is clipped by its parent, not by its own box.</b> This canvas used to
+        ///     clip every component to <see cref="InterfaceLayoutNode.Clip"/>, and an earlier
+        ///     version of this comment asserted that was the client's rule. It is not. The client
+        ///     sets its scissor once per component list, to the clip the list inherited
+        ///     (<c>Node_Sub10_Sub24.java:85</c>); the narrower own-box intersection it computes at
+        ///     <c>:190-203</c> is passed to the recursive call for a layer's children
+        ///     (<c>:414</c>) and used for nothing else.
+        ///     <para>
+        ///     Three arms narrow it themselves and restore it afterwards, and those are the only
+        ///     three: a tiled sprite (<c>:601</c>, <c>:634</c>), a line (<c>:837</c>, <c>:868</c>),
+        ///     and text - but text only while the <c>clipcomponents</c> dev toggle is on, which is
+        ///     <c>false</c> in the shipped client and reachable only from a debug command. So a
+        ///     stretched sprite, a model, a rectangle and text all overflow their own boxes when
+        ///     they are bigger than them, and the game shows the overflow.
+        ///     </para>
+        ///     <para>
+        ///     Clipping to the box instead was visibly wrong rather than merely conservative:
+        ///     interface 35 stores three paragraphs of four lines in components 34 pixels tall,
+        ///     four lines of font 494 need 42, and every paragraph lost the bottom half of its last
+        ///     line. They fit the 59-pixel gap between the paragraphs, which is what the layout was
+        ///     evidently designed around.
+        ///     </para>
         /// </remarks>
         private void DrawComponent(Graphics g, InterfaceLayoutNode node) {
             InterfaceComponentDefinition component = node.Component;
@@ -503,7 +517,11 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             if (box.Width <= 0 || box.Height <= 0)
                 return;
 
-            InterfaceRect clip = node.Clip;
+            /* A line is the one leaf whose own rectangle is the clip in the client too, and its
+               clip is a pixel wider and taller than its box because the endpoint is inclusive -
+               which is exactly what ClipFor already builds. A tiled sprite also self-clips, but it
+               does that inside its own draw so that the clip is in force only while it repeats. */
+            InterfaceRect clip = component.ComponentType == 9 ? node.Clip : node.InheritedClip;
             if (clip.IsEmpty)
                 return;
 
