@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using FlashEditor.Cache;
+using FlashEditor.Definitions.Models;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.IO;
 
@@ -271,6 +272,60 @@ namespace FlashEditor.Definitions.Editing {
             graphics.Clear(Color.FromArgb(0xFF, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF));
 
             return tile;
+        }
+    }
+
+    /// <summary>
+    ///     Draws models, on the CPU.
+    /// </summary>
+    /// <remarks>
+    ///     <b>This replaces a stated limitation rather than adding a feature.</b> Every surface
+    ///     outside the 3D viewer used to draw a labelled box for a model, because the only path to
+    ///     model pixels was OpenGL on the one UI-thread context. <see cref="ModelPreviewRasteriser"/>
+    ///     is a small software rasteriser written for exactly this, so a model id can now be
+    ///     recognised at a glance in a grid, a picker or an interface preview.
+    ///     <para>
+    ///     <b>It is not the client's renderer and the surfaces using it should say so.</b> Flat
+    ///     per-face colour, a depth buffer, no textures, no lighting and no priorities. It gets the
+    ///     silhouette, the colours and the orientation right, which is what identifies a model; it
+    ///     will not match the game pixel for pixel and is not trying to.
+    ///     </para>
+    ///     <para>
+    ///     <b>Models are the most expensive thing this cache can be asked to draw</b> - a decode
+    ///     plus a rasterise per tile, on the one producer thread - which is the reason the queue is
+    ///     LIFO and bounded: a fast scroll through index 7 abandons what it has passed rather than
+    ///     working through sixty thousand of them in order.
+    ///     </para>
+    /// </remarks>
+    public sealed class ModelThumbnailRenderer : IDefinitionThumbnailRenderer {
+        private readonly RSCache cache;
+
+        /// <summary>Draws models out of an open cache.</summary>
+        /// <param name="cache">The open cache to read from.</param>
+        public ModelThumbnailRenderer(RSCache cache) {
+            this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        }
+
+        /// <inheritdoc/>
+        public bool Handles(int indexId) => indexId == RSConstants.MODELS_INDEX;
+
+        /// <inheritdoc/>
+        public Bitmap? Render(int indexId, int id, int side) {
+            try {
+                /* Index 7 is one file per group and the file id is not always 0, so it is read off
+                   the table rather than assumed - the same reason the sprite renderer does. */
+                int[] fileIds = cache.GetFileIds(RSConstants.MODELS_INDEX, id);
+                if (fileIds.Length == 0)
+                    return null;
+
+                ModelDefinition model = cache.GetModelDefinition(id, fileIds[0]);
+                return ModelPreviewRasteriser.Render(model, side, side);
+            }
+            catch (Exception) {
+                //A model that will not decode costs its tile and nothing else. The caller draws a
+                //placeholder, which is the right answer for a record this cannot read.
+                return null;
+            }
         }
     }
 }

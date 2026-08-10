@@ -531,7 +531,7 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                     break;
 
                 case 6:
-                    DrawModelPlaceholder(g, component, rectangle);
+                    DrawModelComponent(g, component, rectangle);
                     break;
 
                 case 9:
@@ -650,7 +650,32 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             DrawTinyLabel(g, rectangle, component.SpriteId.ToString());
         }
 
-        /// <summary>A hatched box carrying the model id, because a model cannot be drawn here.</summary>
+        /// <summary>
+        ///     The component's model, or a marked box while it is being read.
+        /// </summary>
+        /// <remarks>
+        ///     Models are rasterised on the CPU now rather than skipped. It is not the client's
+        ///     renderer - flat shading, no textures, no lighting - and the canvas note says so, but
+        ///     a recognisable model beats a box captioned with a number.
+        /// </remarks>
+        private void DrawModelComponent(Graphics g, InterfaceComponentDefinition component,
+            Rectangle rectangle) {
+            if (component.RawModelId >= 0) {
+                Bitmap? drawn = thumbnails?.TryGet(RSConstants.MODELS_INDEX, component.RawModelId,
+                    Math.Max(8, Math.Min(rectangle.Width, rectangle.Height)));
+
+                if (drawn != null) {
+                    g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.DrawImage(drawn, rectangle);
+                    return;
+                }
+            }
+
+            DrawModelPlaceholder(g, component, rectangle);
+        }
+
+        /// <summary>A hatched box carrying the model id, for a model still being read.</summary>
         private static void DrawModelPlaceholder(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
             /* Faint. A model box can be most of the interface - model 4608 in the RuneLink board

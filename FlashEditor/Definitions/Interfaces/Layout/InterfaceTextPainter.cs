@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Text;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.Sprites;
@@ -17,13 +18,18 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
     ///     and is a defect in the preview. Getting the glyphs right is the only way the canvas can
     ///     answer "will this caption fit", which is most of what a text component is for.
     ///     <para>
-    ///     <b>Only <c>\n</c> breaks a line.</b> <see cref="FontTextLayout.Measure"/> places glyphs
-    ///     and breaks on nothing else, which is what the client's own layout does with a stored
-    ///     string; the interface draw path also carries a line step, so the client can lay a
-    ///     paragraph out across several lines, but the rule that decides where it breaks is not
-    ///     settled here. Not guessing is the safer error: an unwrapped line that runs past its box
-    ///     is clipped and visibly too long, where an invented wrap silently shows a layout the game
-    ///     never produces.
+    ///     <b>The client wraps to the component's width, and so does this.</b> Settled from
+    ///     <c>Class197.method2675</c>, which <c>RSFont.drawText</c> calls before drawing anything:
+    ///     it splits the string into lines on the <c>&lt;br&gt;</c> tag and then breaks any line
+    ///     still wider than the width it was given. An earlier version of this painter broke only
+    ///     on <c>\n</c> and left the rest to the clip, which is why "Dragontooth Island" rendered
+    ///     as "ragontooth Islan" - its component is 130 wide and 54 tall, three lines of room, and
+    ///     one unwrapped centred line hung off both ends and lost a character at each.
+    ///     </para>
+    ///     <para>
+    ///     <b>Each line is aligned on its own.</b> Centring a wrapped paragraph by the width of its
+    ///     widest line leaves every shorter line offset by half the difference, which reads as a
+    ///     ragged edge rather than as centred text.
     ///     </para>
     ///     <para>
     ///     <b>The sheets are cached per cache, and they are not small.</b> A glyph sheet is a
@@ -70,21 +76,28 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             if (sheet == null)
                 return false;
 
-            FontTextLayout.Layout layout = FontTextLayout.Measure(sheet.Metrics, text);
+            /* The stored string is markup: tags are interpreted rather than drawn, and one of them
+               breaks the line. Measuring the raw string counts every tag as characters, which in
+               the worst cases overstates the width by more than the box. */
+            InterfaceTextMarkup markup = InterfaceTextMarkup.Parse(text);
+            string wrapped = Wrap(sheet, markup.Text, box.Width);
+
+            FontTextLayout.Layout layout = FontTextLayout.Measure(sheet.Metrics, wrapped);
             if (layout.Glyphs.Count == 0)
                 return true;
-
-            int offsetX = horizontal switch {
-                1 => (box.Width - layout.Width) / 2,
-                2 => box.Width - layout.Width,
-                _ => 0
-            };
 
             int offsetY = vertical switch {
                 1 => (box.Height - layout.Height) / 2,
                 2 => box.Height - layout.Height,
                 _ => 0
             };
+
+            var lineWidths = new Dictionary<int, int>();
+            foreach (FontTextLayout.PlacedGlyph glyph in layout.Glyphs) {
+                int end = glyph.PenX + glyph.Advance;
+                if (!lineWidths.TryGetValue(glyph.LineTop, out int widest) || end > widest)
+                    lineWidths[glyph.LineTop] = end;
+            }
 
             foreach (FontTextLayout.PlacedGlyph glyph in layout.Glyphs) {
                 using Bitmap? rendered = sheet.RenderInk(glyph.Character, ink);
@@ -95,6 +108,12 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 if (frame == null)
                     continue;
 
+                int offsetX = horizontal switch {
+                    1 => (box.Width - lineWidths[glyph.LineTop]) / 2,
+                    2 => box.Width - lineWidths[glyph.LineTop],
+                    _ => 0
+                };
+
                 /* The frame's own offsets place the ink inside the glyph's box - a comma sits low
                    and a quote sits high - so they are added rather than the bitmap being drawn at
                    the pen position, which would sit every glyph on the same top edge. */
@@ -104,6 +123,76 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             }
 
             return true;
+        }
+
+        /// <summary>
+        ///     Breaks lines that do not fit the width they are given.
+        /// </summary>
+        /// <remarks>
+        ///     Greedy, at spaces, which is what the client's splitter does: it tracks the last
+        ///     break opportunity and cuts there once the running width exceeds the limit. A single
+        ///     word wider than the box is left whole rather than broken mid-word - the client does
+        ///     the same, and the clip then shows it does not fit, which is the honest result for a
+        ///     caption that genuinely is too long.
+        /// </remarks>
+        /// <param name="sheet">The font, for measuring.</param>
+        /// <param name="text">The text, stripped of markup, with newlines for the hard breaks.</param>
+        /// <param name="width">The width to fit.</param>
+        /// <returns>The text with soft breaks inserted.</returns>
+        private static string Wrap(FontGlyphSheet sheet, string text, int width) {
+            if (width <= 0 || string.IsNullOrEmpty(text))
+                return text;
+
+            var wrapped = new StringBuilder(text.Length + 8);
+            bool first = true;
+
+            foreach (string hardLine in text.Split('\n')) {
+                if (!first)
+                    wrapped.Append('\n');
+                first = false;
+
+                if (FontTextLayout.Measure(sheet.Metrics, hardLine).Width <= width) {
+                    wrapped.Append(hardLine);
+                    continue;
+                }
+
+                string remaining = hardLine;
+                bool firstPiece = true;
+
+                while (remaining.Length > 0) {
+                    if (!firstPiece)
+                        wrapped.Append('\n');
+                    firstPiece = false;
+
+                    int fits = LongestPrefixThatFits(sheet, remaining, width);
+                    wrapped.Append(remaining, 0, fits);
+                    remaining = remaining.Substring(fits).TrimStart(' ');
+                }
+            }
+
+            return wrapped.ToString();
+        }
+
+        /// <summary>
+        ///     How much of a line fits, cut at the last space rather than mid-word.
+        /// </summary>
+        /// <remarks>
+        ///     Measures a growing prefix rather than summing per-character advances, so kerning is
+        ///     included: the font carries a kerning matrix, and a sum of bare advances overestimates
+        ///     every line and wraps earlier than the client does.
+        /// </remarks>
+        private static int LongestPrefixThatFits(FontGlyphSheet sheet, string line, int width) {
+            int lastSpace = -1;
+
+            for (int i = 1; i <= line.Length; i++) {
+                if (FontTextLayout.Measure(sheet.Metrics, line.Substring(0, i)).Width > width)
+                    return lastSpace > 0 ? lastSpace : Math.Max(1, i - 1);
+
+                if (line[i - 1] == ' ')
+                    lastSpace = i - 1;
+            }
+
+            return line.Length;
         }
 
         /// <summary>Releases every glyph sheet loaded.</summary>

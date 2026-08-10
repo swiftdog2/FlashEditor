@@ -341,8 +341,14 @@ namespace FlashEditor.Definitions.Editing {
         ///     The renderers this project can actually supply, in the order they are asked.
         /// </summary>
         /// <remarks>
-        ///     Models and animations are absent on purpose rather than unfinished. See the type
-        ///     remarks for why neither can be drawn without the one GL context in the application.
+        ///     <b>Models are drawn on the CPU</b>, by <c>ModelPreviewRasteriser</c>, which exists
+        ///     because the only other route to model pixels is OpenGL on the one UI-thread context.
+        ///     It is not the client's renderer and any surface showing its output should say so.
+        ///     <para>
+        ///     Animations are still absent, and that is not an oversight: an animation is a sequence
+        ///     of poses applied to a skeleton and then to a model, so a still frame of one is a
+        ///     choice about which pose rather than a rendering of the record.
+        ///     </para>
         /// </remarks>
         /// <param name="cache">The open cache to read from.</param>
         /// <returns>The renderers.</returns>
@@ -351,6 +357,7 @@ namespace FlashEditor.Definitions.Editing {
 
             yield return new SpriteThumbnailRenderer(cache);
             yield return new TextureThumbnailRenderer(cache);
+            yield return new ModelThumbnailRenderer(cache);
         }
 
         private IDefinitionThumbnailRenderer? RendererFor(int indexId) {
