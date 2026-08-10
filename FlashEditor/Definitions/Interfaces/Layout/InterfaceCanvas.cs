@@ -37,11 +37,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         /// <summary>The gap between the canvas edge and the interface box, in pixels.</summary>
         private const int CanvasInset = 12;
 
-        /* The side asked of the thumbnail cache for a sprite. The canvas renderer is the
-           uncomposited one, which returns the frame at its own size whatever it is given, so the
-           value only has to be one value: the cache keys on (index, id, side), and varying it per
-           component would store the same picture once per distinct component size. */
-        private const int NaturalSize = 0;
+        /* The side asked of the thumbnail cache for a sprite. The canvas's sprite renderer is the
+           uncomposited one, which returns the frame at its own size and ignores this entirely, so
+           the value only has to be constant: the cache keys on (index, id, side), and asking at
+           each component's size would store one copy of the same picture per distinct component
+           size that happens to use it.
+           It must still be positive. DefinitionThumbnailCache.TryGet answers null for a side of
+           zero or less before it looks anything up, so a zero here is not "natural size" - it is
+           every sprite and every model on the canvas silently falling back to its placeholder. */
+        private const int SpriteNaturalSide = 1;
+
+        /* Model tiles are quantised to a multiple of this and then drawn to fit. A model is
+           rasterised on the CPU and is by far the most expensive thing the producer thread is
+           asked for, so keying one on each component's exact pixel size would rasterise the same
+           model again for every interface that shows it a few pixels larger. */
+        private const int ModelSideStep = 32;
+        private const int ModelSideMax = 256;
 
         private readonly Dictionary<int, InterfaceLayoutNode> resolved = new();
         private readonly List<int> drawOrder = new();
@@ -644,7 +655,8 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                uncomposited one, which hands back the frame at its own size and ignores the side it
                is given, so asking at the component's size would store the same picture under a key
                per component that happens to use it. */
-            Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId, NaturalSize);
+            Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId,
+                SpriteNaturalSide);
 
             if (tile != null) {
                 DrawSprite(g, tile, component, rectangle);
@@ -849,14 +861,30 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         /// </remarks>
         private void DrawModelComponent(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
-            if (component.RawModelId >= 0) {
-                Bitmap? drawn = thumbnails?.TryGet(RSConstants.MODELS_INDEX, component.RawModelId,
-                    Math.Max(8, Math.Min(rectangle.Width, rectangle.Height)));
+            if (component.RawModelId >= 0 && rectangle.Width > 0 && rectangle.Height > 0) {
+                int wanted = Math.Max(rectangle.Width, rectangle.Height);
+                int side = Math.Min(ModelSideMax,
+                    Math.Max(ModelSideStep,
+                        (wanted + ModelSideStep - 1) / ModelSideStep * ModelSideStep));
+
+                Bitmap? drawn = thumbnails?.TryGet(RSConstants.MODELS_INDEX, component.RawModelId, side);
 
                 if (drawn != null) {
+                    /* Centred and aspect-preserved rather than stretched to the component. The tile
+                       is square because the cache keys on a single side, so stretching it into a
+                       tall or wide component would squash the model - which reads as a decode
+                       defect rather than as a cache shape. */
+                    float scale = Math.Min(rectangle.Width / (float) drawn.Width,
+                        rectangle.Height / (float) drawn.Height);
+                    int width = Math.Max(1, (int) (drawn.Width * scale));
+                    int height = Math.Max(1, (int) (drawn.Height * scale));
+
                     g.InterpolationMode = InterpolationMode.NearestNeighbor;
                     g.PixelOffsetMode = PixelOffsetMode.Half;
-                    g.DrawImage(drawn, rectangle);
+                    g.DrawImage(drawn, new Rectangle(
+                        rectangle.X + (rectangle.Width - width) / 2,
+                        rectangle.Y + (rectangle.Height - height) / 2,
+                        width, height));
                     return;
                 }
             }

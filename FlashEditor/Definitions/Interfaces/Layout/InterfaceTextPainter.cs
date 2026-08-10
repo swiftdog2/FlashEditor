@@ -92,6 +92,22 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 _ => 0
             };
 
+            /* Alignment and glyph placement are stated in two different coordinate systems, and the
+               conversion between them is this one term.
+
+               The client aligns a block by its ascent and descent - Class197.method2672:170-176,
+               and RSFont.drawText:417-435 for the three alignment arms - so layout.Height above is
+               the right height to align with. But a glyph's stored offset is measured from the top
+               of its canvas, not from the baseline, and the two origins are only the same font when
+               the baseline sits exactly one ascent below the canvas top.
+
+               For most fonts it does, and this term is zero. For the large ones it is nowhere near:
+               font 4040 has ascent 14 and a 38-pixel canvas whose baseline is at 35, so 21 pixels
+               of headroom sit above every glyph. Aligning in ascent space and then drawing in
+               canvas space pushed "Undiscovered" 21 pixels down a 40-pixel box and the bottom of
+               every letter was clipped away - which is what interfaces 8, 35 and 72 all showed. */
+            int baselineShift = sheet.Metrics.Ascent - sheet.Baseline;
+
             var lineWidths = new Dictionary<int, int>();
             foreach (FontTextLayout.PlacedGlyph glyph in layout.Glyphs) {
                 int end = glyph.PenX + glyph.Advance;
@@ -119,7 +135,7 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                    the pen position, which would sit every glyph on the same top edge. */
                 graphics.DrawImageUnscaled(rendered,
                     box.X + offsetX + glyph.PenX + frame.OffsetX,
-                    box.Y + offsetY + glyph.LineTop + frame.OffsetY);
+                    box.Y + offsetY + glyph.LineTop + frame.OffsetY + baselineShift);
             }
 
             return true;

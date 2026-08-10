@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    An offscreen renderer for the interface canvas.
+
+    The only automated check the editor's surface has is Capture-EditorTab.ps1, which
+    photographs the whole window. That is the right tool for "does this tab draw at all" and the
+    wrong one for judging a canvas: the canvas pane is a few hundred pixels inside a splitter, so
+    an interface laid out on a 765x503 sheet arrives scrolled and cropped, and a rendering
+    question turns into an argument about which part of the window was visible.
+
+    This draws the same control, at the size the interface actually needs, straight to a PNG.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>RenderInterface</AssemblyName>
+    <RootNamespace>FlashEditor.Tools.RenderInterface</RootNamespace>
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\FlashEditor\FlashEditor.csproj" />
+  </ItemGroup>
+
+</Project>
