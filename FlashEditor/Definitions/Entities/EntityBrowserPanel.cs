@@ -9,6 +9,8 @@ using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
 using FlashEditor.Definitions.Models;
 using FlashEditor.Definitions.Models.Interchange;
+using FlashEditor.Rendering;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.Entities {
     /// <summary>Which definition family the entity page is showing.</summary>
@@ -65,6 +67,21 @@ namespace FlashEditor.Definitions.Entities {
     ///     </para>
     /// </remarks>
     public sealed class EntityBrowserPanel : UserControl {
+        /// <summary>Which population the animation selector is currently holding.</summary>
+        /// <remarks>
+        ///     The two are answers to different questions and the selector cannot merge them. The
+        ///     named list is what the cache states; the skeleton list is what this editor infers. A
+        ///     single list holding both would put a fact and a guess on adjacent rows with nothing
+        ///     between them saying which is which.
+        /// </remarks>
+        private enum AnimationPopulation {
+            /// <summary>The two to four animations the NPC's render animation set names.</summary>
+            Named,
+
+            /// <summary>Every index-20 sequence built for a skeleton the NPC demonstrably animates.</summary>
+            Skeleton
+        }
+
         //One descriptor instance per family, held rather than rebuilt. DefinitionListPanel treats a
         //different descriptor object as a different thing to show, so building one per switch would
         //reload the index every time the selector moved and throw away the sort with it.
@@ -110,11 +127,49 @@ namespace FlashEditor.Definitions.Entities {
         private readonly Button nextAnimation = new Button { AutoSize = true, Text = ">" };
         private readonly Label animationStatus = new Label { AutoSize = true };
 
+        //No caption of its own, unlike every other combo on the page. Its two entries are whole
+        //sentences about what the box beside it holds, so a "List" label in front of them would be
+        //a seventh control on a strip that already wraps, saying nothing the entries do not.
+        private readonly ComboBox populationSelector = new ComboBox {
+            AccessibleName = "Which animations to list",
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+
+        private readonly InfoAffordance skeletonNotice = new InfoAffordance();
+
         private RSCache? cache;
         private EntityKind kind = EntityKind.Item;
 
         /// <summary>Set while the animation list is refilled, so the refill does not play anything.</summary>
         private bool animationsPopulating;
+
+        /// <summary>The animations the selected NPC's render animation set names.</summary>
+        /// <remarks>
+        ///     Held rather than read back out of the combo box, because the box is the one thing that
+        ///     does not always hold them: switching to the skeleton population replaces its contents,
+        ///     and switching back has to restore what the cache stated without asking the form to
+        ///     resend it.
+        /// </remarks>
+        private IReadOnlyList<NpcAnimation> namedAnimations = Array.Empty<NpcAnimation>();
+
+        /// <summary>Why <see cref="namedAnimations"/> is empty, when it is.</summary>
+        private string namedEmptyReason = string.Empty;
+
+        /// <summary>
+        ///     Every index-20 sequence mapped to the skeleton it animates, or null until it is built.
+        /// </summary>
+        /// <remarks>
+        ///     One per loaded cache. Building it sweeps all 3,526 index-20 groups and resolves a frame
+        ///     out of index 0 for each sequence, so it is built on the first switch to the skeleton
+        ///     population and held until <see cref="Bind"/> replaces the cache under it.
+        /// </remarks>
+        private AnimationSkeletonIndex? skeletonIndex;
+
+        /// <summary>The sweep in flight, or null. Held so a rebind can cancel it.</summary>
+        private System.ComponentModel.BackgroundWorker? skeletonIndexer;
+
+        /// <summary>How far the sweep has got, for the status line while it runs.</summary>
+        private int skeletonIndexPercent;
 
         /// <summary>The OBJ export in flight, or null. Held so a rebind can cancel it.</summary>
         private System.ComponentModel.BackgroundWorker? objExporter;
@@ -139,6 +194,17 @@ namespace FlashEditor.Definitions.Entities {
             previousAnimation.Click += (_, _) => StepAnimation(-1);
             nextAnimation.Click += (_, _) => StepAnimation(1);
 
+            populationSelector.Items.AddRange(new object[] {
+                "Named by this NPC", "Compatible with this skeleton"
+            });
+            populationSelector.SelectedIndex = (int) AnimationPopulation.Named;
+            populationSelector.SelectedIndexChanged += PopulationSelector_SelectedIndexChanged;
+
+            skeletonNotice.Describes = populationSelector;
+            skeletonNotice.Kind = InfoKind.Limitation;
+            skeletonNotice.Caption = "What a compatible list is not";
+            skeletonNotice.Body = SkeletonFilterNote;
+
             toolStrip.Controls.Add(kindLabel);
             toolStrip.Controls.Add(kindSelector);
             toolStrip.Controls.Add(exportButton);
@@ -150,8 +216,13 @@ namespace FlashEditor.Definitions.Entities {
             /* The two cycle buttons sit between the caption and the box rather than after it. The
                strip wraps, and the widest control on it is the box - so with the box in the middle
                the first thing to be pushed onto a second row is a bare ">" with no context, which is
-               what a narrow splitter produced. Putting the box last means the box is what wraps. */
+               what a narrow splitter produced. Putting the box last means the box is what wraps.
+               The population selector and its note go in front of the buttons for the same reason
+               read the other way: they decide what the box holds, and a note that wrapped away from
+               the control it qualifies is a limitation the user never sees. */
             animationStrip.Controls.Add(animationLabel);
+            animationStrip.Controls.Add(populationSelector);
+            animationStrip.Controls.Add(skeletonNotice);
             animationStrip.Controls.Add(previousAnimation);
             animationStrip.Controls.Add(nextAnimation);
             animationStrip.Controls.Add(animationSelector);
@@ -170,21 +241,70 @@ namespace FlashEditor.Definitions.Entities {
         }
 
         /// <summary>
-        ///     Keeps the two combo boxes in proportion to the font they draw in.
+        ///     What the (i) beside the population selector says, in full.
         /// </summary>
         /// <remarks>
-        ///     A <see cref="ComboBox"/> cannot auto-size its width, so these are the only two controls
-        ///     on the page whose size is stated at all - everything beside them is <c>AutoSize</c>.
-        ///     Measured against the widest string each can hold rather than written down, because a
-        ///     literal is only correct at the DPI it was chosen at and this form scales by
-        ///     <c>AutoScaleMode.Dpi</c>. The animation box is the one that matters: its entries are a
-        ///     label and an id, so "Turn on spot - (12345)" is what it has to fit, and a default-width
-        ///     box shows about half of that.
+        ///     A constant rather than a literal in the constructor only so that the reasoning behind
+        ///     the wording sits beside it. The obligation is <c>CLAUDE.md</c>'s "say what the editor
+        ///     cannot do", and this is the sharpest case of it in the application: a filtered list is
+        ///     read as a list of correct answers, and every other view that diverges from the client
+        ///     at least looks unusual on screen. This one looks authoritative.
+        /// </remarks>
+        private const string SkeletonFilterNote =
+            "This is a guess, and the client does not make it.\n" +
+            "\n" +
+            "Every entry here is a sequence built for a skeleton this NPC demonstrably animates, " +
+            "and that is the whole of the claim. It is not a list of animations the NPC plays.\n" +
+            "\n" +
+            "The cache holds no link at all from an NPC to its attack, death or special animations. " +
+            "An NPC record names exactly one animation-valued thing - opcode 127, the render " +
+            "animation set - and that set holds only idle, walk, run and turn. Everything else is " +
+            "chosen by the server and sent over the wire, so no amount of reading the cache recovers " +
+            "it. That is why the list beside this one is so short, and it is not a defect.\n" +
+            "\n" +
+            "The filter is also weaker than it looks. Frames bind to a model by bone-label index, a " +
+            "model stores no skeleton reference at all, and the client checks nothing before applying " +
+            "one - so a mismatched skeleton produces garbage rather than an error, and a matching one " +
+            "is plausibility rather than proof. The skeleton id is shown against each entry so you " +
+            "can see why it was offered. Play it and judge the pose.\n" +
+            "\n" +
+            "The first switch to this list sweeps every index-20 group and reads one frame per " +
+            "sequence out of index 0, which is why it reports progress. The result is kept until the " +
+            "cache is reloaded.";
+
+        /// <summary>
+        ///     Keeps the three combo boxes in proportion to the font they draw in.
+        /// </summary>
+        /// <remarks>
+        ///     A <see cref="ComboBox"/> cannot auto-size its width, so these are the only three
+        ///     controls on the page whose size is stated at all - everything beside them is
+        ///     <c>AutoSize</c>. Measured against the widest string each can hold rather than written
+        ///     down, because a literal is only correct at the DPI it was chosen at and this form
+        ///     scales by <c>AutoScaleMode.Dpi</c>. The animation box is the one that matters: its
+        ///     entries are a label and an id, so "Turn on spot - (12345)" is what it has to fit, and a
+        ///     default-width box shows about half of that.
+        ///     <para>
+        ///     It now has to fit a skeleton-filtered entry as well, which is the longer of the two -
+        ///     so the width is the wider of the two shapes rather than the locomotion one, or every
+        ///     entry in the filtered list would be clipped at the skeleton id, which is precisely the
+        ///     part that says why the entry is there.
+        ///     </para>
         /// </remarks>
         private void SizeSelectors() {
             int arrow = SystemInformation.VerticalScrollBarWidth;
             kindSelector.Width = TextRenderer.MeasureText("Objects_", Font).Width + arrow;
-            animationSelector.Width = TextRenderer.MeasureText("Turn on spot - (65535)", Font).Width + arrow;
+
+            animationSelector.Width = arrow + Math.Max(
+                TextRenderer.MeasureText("Turn on spot - (65535)", Font).Width,
+                TextRenderer.MeasureText("Animation 65535 (skeleton 65535)", Font).Width);
+
+            //Measured from the items themselves rather than from a copy of their text, so a reworded
+            //entry cannot end up wider than the box that has to show it.
+            int widest = 0;
+            foreach (object entry in populationSelector.Items)
+                widest = Math.Max(widest, TextRenderer.MeasureText(entry.ToString(), Font).Width);
+
+            populationSelector.Width = widest + arrow;
         }
 
         /// <summary>Re-measures the two combo boxes when the font they inherit changes.</summary>
@@ -272,6 +392,14 @@ namespace FlashEditor.Definitions.Entities {
             //disposed.
             objExporter?.CancelAsync();
 
+            /* And the skeleton sweep, for the same reason and more urgently: it walks index 20 and
+               index 0, which is the largest index in the cache, so it is the longest-running reader
+               on the page. The index it produced belongs to the cache it was built from - a sequence
+               id means a different record in the two caches on disk - so it goes with it. */
+            skeletonIndexer?.CancelAsync();
+            skeletonIndexer = null;
+            skeletonIndex = null;
+
             cache = openCache;
             ClearAnimations();
             ShowKind();
@@ -302,17 +430,123 @@ namespace FlashEditor.Definitions.Entities {
         ///     selector moves - it says why it is empty instead. A strip that appears and disappears
         ///     reflows the grid under the cursor.
         ///     </para>
+        ///     <para>
+        ///     These are recorded rather than shown directly, because the box may be holding the
+        ///     skeleton-filtered population instead. Which of the two is on screen is the user's
+        ///     standing choice and does not reset when the selection moves; the named list is kept so
+        ///     that switching back does not need the form to resend it.
+        ///     </para>
         /// </remarks>
         /// <param name="animations">The animations the NPC names.</param>
         /// <param name="emptyReason">Why there are none, when there are none.</param>
         public void ShowAnimations(IReadOnlyList<NpcAnimation> animations, string emptyReason) {
+            namedAnimations = animations ?? Array.Empty<NpcAnimation>();
+            namedEmptyReason = emptyReason ?? string.Empty;
+
+            RefreshAnimationList();
+        }
+
+        /// <summary>Empties the animation selector and says why it is empty.</summary>
+        /// <param name="reason">What to show instead of the list.</param>
+        public void ClearAnimations(string reason = "Pick an NPC to list the animations it names.") {
+            ShowAnimations(Array.Empty<NpcAnimation>(), reason);
+        }
+
+        /// <summary>Which population the selector is set to.</summary>
+        private AnimationPopulation Population =>
+            (AnimationPopulation) Math.Max(0, populationSelector.SelectedIndex);
+
+        /// <summary>
+        ///     Refills the animation selector from whichever population is selected.
+        /// </summary>
+        /// <remarks>
+        ///     The one writer of the box's contents. Both the NPC selection moving and the population
+        ///     switching change what belongs in it, and two fill paths is how a box ends up holding
+        ///     one NPC's named list under another NPC's caption.
+        /// </remarks>
+        private void RefreshAnimationList() {
+            IReadOnlyList<NpcAnimation> entries = namedAnimations;
+            string status;
+
+            if (Population == AnimationPopulation.Named) {
+                status = namedAnimations.Count > 0
+                    ? namedAnimations.Count + " named by the render animation set"
+                    : namedEmptyReason;
+            }
+            else if (skeletonIndexer != null) {
+                /* The named list stays in the box while the sweep runs rather than being emptied to
+                   a spinner. Emptying it would take the animation the user is watching out of the
+                   viewport's selector for the length of an index-20 walk, and an empty box reads as
+                   a broken control. */
+                status = "Indexing index 20 by skeleton, " + skeletonIndexPercent + "%...";
+            }
+            else if (skeletonIndex == null) {
+                status = cache == null
+                    ? "No cache loaded."
+                    : "Not indexed - switch this list away and back to sweep index 20 again.";
+            }
+            else {
+                entries = CompatibleAnimations(out status);
+            }
+
+            FillAnimationSelector(entries, status);
+        }
+
+        /// <summary>
+        ///     Every sequence built for a skeleton the selected NPC demonstrably animates.
+        /// </summary>
+        /// <remarks>
+        ///     Derived from the whole named set rather than from its idle. A render set can name
+        ///     animations on more than one skeleton - NPC 3284 names animation 8326 on skeleton 1750
+        ///     while its idle is elsewhere - so filtering to one of them would hide animations the
+        ///     cache itself says that NPC plays, which is the one thing a filter must never do.
+        /// </remarks>
+        /// <param name="status">What to say beside the box.</param>
+        /// <returns>The entries, each carrying the skeleton that put it there.</returns>
+        private IReadOnlyList<NpcAnimation> CompatibleAnimations(out string status) {
+            AnimationSkeletonIndex built = skeletonIndex!;
+
+            var own = new List<int>(namedAnimations.Count);
+            foreach (NpcAnimation animation in namedAnimations)
+                own.Add(animation.AnimationId);
+
+            IReadOnlyCollection<int> skeletons = built.SkeletonsOf(own);
+
+            if (skeletons.Count == 0) {
+                //Two different empties, and the difference matters to whoever is looking at it: no
+                //NPC selected at all, against an NPC whose own animations resolved to no skeleton
+                //and therefore gave the filter nothing to work from.
+                status = namedAnimations.Count == 0
+                    ? namedEmptyReason
+                    : "None of the " + namedAnimations.Count + " animations this NPC names resolved to a skeleton, so there is nothing to filter by.";
+                return Array.Empty<NpcAnimation>();
+            }
+
+            IReadOnlyList<int> sequences = built.SequencesFor(skeletons);
+
+            var entries = new List<NpcAnimation>(sequences.Count);
+            foreach (int sequence in sequences)
+                entries.Add(new NpcAnimation(string.Empty, sequence, built.SkeletonOf(sequence)));
+
+            //"Plausible" rather than a bare count, because the count is the part that reads as
+            //authoritative. The (i) beside the selector carries the full reason.
+            status = entries.Count + " plausible on skeleton " + string.Join(", ", skeletons) +
+                ", out of " + built.SequenceCount + " indexed. A guess, not the NPC's own list.";
+
+            return entries;
+        }
+
+        /// <summary>Puts a population into the box and states what it is.</summary>
+        /// <param name="entries">The animations to offer.</param>
+        /// <param name="status">What to say beside the box.</param>
+        private void FillAnimationSelector(IReadOnlyList<NpcAnimation> entries, string status) {
             animationsPopulating = true;
 
             try {
                 animationSelector.BeginUpdate();
                 animationSelector.Items.Clear();
 
-                foreach (NpcAnimation animation in animations)
+                foreach (NpcAnimation animation in entries)
                     animationSelector.Items.Add(animation);
 
                 animationSelector.EndUpdate();
@@ -325,18 +559,113 @@ namespace FlashEditor.Definitions.Entities {
             animationSelector.Enabled = any;
             previousAnimation.Enabled = any;
             nextAnimation.Enabled = any;
-            animationStatus.Text = any
-                ? animationSelector.Items.Count + " named by the render animation set"
-                : emptyReason;
+            animationStatus.Text = status;
 
             if (any)
                 animationSelector.SelectedIndex = 0;
         }
 
-        /// <summary>Empties the animation selector and says why it is empty.</summary>
-        /// <param name="reason">What to show instead of the list.</param>
-        public void ClearAnimations(string reason = "Pick an NPC to list the animations it names.") {
-            ShowAnimations(Array.Empty<NpcAnimation>(), reason);
+        /// <summary>
+        ///     Switches the box between what the cache states and what the skeleton filter infers.
+        /// </summary>
+        /// <remarks>
+        ///     The sweep starts here rather than when the cache is bound. Most sessions never ask for
+        ///     the filtered list, and a walk of every index-20 group on every cache open would be
+        ///     paid by every one of them.
+        /// </remarks>
+        private void PopulationSelector_SelectedIndexChanged(object? sender, EventArgs e) {
+            if (Population == AnimationPopulation.Skeleton
+                && skeletonIndex == null && skeletonIndexer == null && cache != null) {
+                StartSkeletonIndex(cache);
+            }
+
+            RefreshAnimationList();
+        }
+
+        /// <summary>
+        ///     Builds the sequence-to-skeleton index off the UI thread.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Its own frame source, not the viewport's.</b> <see cref="CacheAnimationDataSource"/>
+        ///     memoises into a plain <see cref="Dictionary{TKey,TValue}"/> and the form's instance is
+        ///     read by the animator on the UI thread on every posed frame, so sharing it would be an
+        ///     unsynchronised write under a concurrent reader - which corrupts the map rather than
+        ///     throwing. This one is local to the sweep and is dropped when it returns, which also
+        ///     releases the index-0 groups it decoded on the way through.
+        ///     <para>
+        ///     Progress arrives on percent boundaries because <c>AnimationSkeletonIndex.Build</c>
+        ///     reports on them; <see cref="System.ComponentModel.BackgroundWorker.ReportProgress(int)"/>
+        ///     marshals to the UI thread on every call, and there are 3,526 groups to walk.
+        ///     </para>
+        /// </remarks>
+        /// <param name="open">The cache to sweep, passed rather than read from the field so a rebind
+        ///     part way through cannot make one index describe two caches.</param>
+        private void StartSkeletonIndex(RSCache open) {
+            var indexer = new System.ComponentModel.BackgroundWorker {
+                WorkerReportsProgress = true,
+                WorkerSupportsCancellation = true
+            };
+
+            skeletonIndexer = indexer;
+            skeletonIndexPercent = 0;
+
+            indexer.DoWork += (_, args) => {
+                var frames = new CacheAnimationDataSource(open);
+
+                args.Result = AnimationSkeletonIndex.Build(open, frames, percent => {
+                    /* Build has no cancellation of its own and the report callback is the only point
+                       at which it hands control back, so throwing from it is what stops a sweep whose
+                       cache is being closed underneath it. */
+                    if (indexer.CancellationPending)
+                        throw new OperationCanceledException();
+
+                    indexer.ReportProgress(percent);
+                });
+            };
+
+            indexer.ProgressChanged += (_, args) => {
+                if (!ReferenceEquals(skeletonIndexer, indexer))
+                    return;
+
+                skeletonIndexPercent = args.ProgressPercentage;
+
+                //The status line only, not a refill. The box already holds the named list and
+                //rebuilding it a hundred times would fight the user's selection all the way through.
+                if (Population == AnimationPopulation.Skeleton)
+                    animationStatus.Text = "Indexing index 20 by skeleton, " + skeletonIndexPercent + "%...";
+            };
+
+            indexer.RunWorkerCompleted += (_, args) => {
+                //A superseded sweep is discarded whole rather than allowed to install an index built
+                //from a cache that is no longer open.
+                if (!ReferenceEquals(skeletonIndexer, indexer))
+                    return;
+
+                skeletonIndexer = null;
+
+                //Cancellation is silence rather than a message. The only canceller is Bind, which
+                //drops the reference above first, so this is the case where the sweep threw out of
+                //its own progress callback and there is nothing left to say about a cache that has
+                //already been replaced.
+                if (args.Cancelled || args.Error is OperationCanceledException)
+                    return;
+
+                if (args.Error != null) {
+                    //Reported rather than thrown: an exception out of a completion handler takes the
+                    //form down, and a sweep that failed costs the filter and nothing else.
+                    Debug("Animation skeleton index failed: " + args.Error);
+                    animationStatus.Text = "Could not index index 20 by skeleton: " + args.Error.Message;
+                    return;
+                }
+
+                skeletonIndex = (AnimationSkeletonIndex) args.Result!;
+                RefreshAnimationList();
+            };
+
+            //Said before the worker starts rather than from its first progress report, so the strip
+            //never sits reading as though the switch did nothing.
+            animationStatus.Text = "Indexing index 20 by skeleton, 0%...";
+            indexer.RunWorkerAsync();
         }
 
         /// <summary>The descriptor for the family currently selected.</summary>
