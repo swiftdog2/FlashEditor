@@ -185,6 +185,18 @@ namespace FlashEditor.Definitions.Audio.Synth {
                     open.Write(buffer, FramesPerBuffer);
                 }
 
+                /* The renderer running dry is not the track finishing. Up to BufferCount buffers,
+                   about 185 ms, are still queued at that point, and the finally below disposes the
+                   device - which resets it and hands every one of them back unplayed. So every
+                   track ended a fifth of a second early and the last note was cut off.
+
+                   Exactly the defect the SFX2 tab had, which is why WaveOutDevice.Drained exists.
+                   Bounded, so a driver that never reports done cannot hold the thread. Skipped
+                   while paused, since a paused device never drains and waiting on it would hang
+                   here until the pause was lifted. */
+                for (int spin = 0; spin < 500 && !stopping && !paused && !open.Drained; spin++)
+                    Thread.Sleep(10);
+
                 if (!stopping)
                     Completed?.Invoke();
             } catch (Exception ex) {
