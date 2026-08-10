@@ -71,6 +71,16 @@ namespace FlashEditor.Definitions.Particles {
             Orientation = Orientation.Horizontal
         };
 
+        private readonly ParticlePreviewPanel preview = new ParticlePreviewPanel();
+
+        //The records and their preview, side by side. Vertical rather than horizontal so the field
+        //grid keeps its full height: an emitter carries about thirty rows and stacking the preview
+        //under it would push most of them off the page.
+        private readonly SplitContainer recordsAndPreview = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical
+        };
+
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select a record to see what it holds";
 
@@ -131,7 +141,7 @@ namespace FlashEditor.Definitions.Particles {
         ///     one more literal the form multiplies by its font ratio.
         /// </remarks>
         private void PlaceSplitter() {
-            if (splitterPlaced || listAndFields.Height < 200)
+            if (splitterPlaced || listAndFields.Height < 200 || recordsAndPreview.Width < 400)
                 return;
 
             //Set before the assignment, not after: changing a splitter distance lays the panel out
@@ -139,6 +149,10 @@ namespace FlashEditor.Definitions.Particles {
             splitterPlaced = true;
 
             try {
+                //Two thirds to the records, because the preview is one emitter's worth of quads and
+                //stays legible small while the field grid has columns to fit.
+                recordsAndPreview.SplitterDistance = Math.Max(recordsAndPreview.Panel1MinSize,
+                    recordsAndPreview.Width * 2 / 3);
                 listAndFields.SplitterDistance = Math.Max(listAndFields.Panel1MinSize, listAndFields.Height / 2);
             } catch (InvalidOperationException ex) {
                 splitterPlaced = false;
@@ -157,9 +171,12 @@ namespace FlashEditor.Definitions.Particles {
             listAndFields.Panel1.Controls.Add(records);
             listAndFields.Panel2.Controls.Add(fields);
 
+            recordsAndPreview.Panel1.Controls.Add(listAndFields);
+            recordsAndPreview.Panel2.Controls.Add(preview);
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
-            Controls.Add(listAndFields);
+            Controls.Add(recordsAndPreview);
             Controls.Add(header);
             Controls.Add(selector);
 
