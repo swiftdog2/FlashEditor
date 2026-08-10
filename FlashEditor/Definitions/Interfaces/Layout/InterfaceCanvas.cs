@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
@@ -35,6 +36,12 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
     public sealed class InterfaceCanvas : UserControl {
         /// <summary>The gap between the canvas edge and the interface box, in pixels.</summary>
         private const int CanvasInset = 12;
+
+        /* The side asked of the thumbnail cache for a sprite. The canvas renderer is the
+           uncomposited one, which returns the frame at its own size whatever it is given, so the
+           value only has to be one value: the cache keys on (index, id, side), and varying it per
+           component would store the same picture once per distinct component size. */
+        private const int NaturalSize = 0;
 
         private readonly Dictionary<int, InterfaceLayoutNode> resolved = new();
         private readonly List<int> drawOrder = new();
@@ -633,13 +640,14 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 return;
             }
 
-            Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId,
-                Math.Max(8, Math.Min(rectangle.Width, rectangle.Height)));
+            /* One cache key per sprite rather than one per size. The canvas renderer is the
+               uncomposited one, which hands back the frame at its own size and ignores the side it
+               is given, so asking at the component's size would store the same picture under a key
+               per component that happens to use it. */
+            Bitmap? tile = thumbnails?.TryGet(RSConstants.SPRITES_INDEX, component.SpriteId, NaturalSize);
 
             if (tile != null) {
-                g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                g.PixelOffsetMode = PixelOffsetMode.Half;
-                g.DrawImage(tile, rectangle);
+                DrawSprite(g, tile, component, rectangle);
                 return;
             }
 
@@ -648,6 +656,187 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             using var pen = new Pen(Color.FromArgb(120, 0x78, 0xC8, 0xFF));
             g.DrawRectangle(pen, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
             DrawTinyLabel(g, rectangle, component.SpriteId.ToString());
+        }
+
+        /// <summary>
+        ///     Puts one sprite into its component's rectangle the way the client would.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The branch structure is the client's</b>, from the type-5 arm at
+        ///     <c>Node_Sub10_Sub24.java:565-667</c>, because the choice between stretching and
+        ///     repeating changes what an interface looks like more than anything else on this canvas:
+        ///     a window frame is a handful of edge sprites the file expects to be repeated along each
+        ///     side, and stretching them instead smears one into a gradient and leaves every corner
+        ///     in the wrong place. That is the "the frame of the bank is offset" report, and the
+        ///     frame was never offset - the resolver had it right and the paint was wrong.
+        ///     <para>
+        ///     <b>Stretching is the default and repeating is the exception</b>, which is the opposite
+        ///     of the guess worth making. <c>:642-649</c> stretches to the component whenever the
+        ///     sizes differ and only blits 1:1 when they already match, so the 1:1 path is an
+        ///     optimisation rather than a fallback. Bit 0 of the flags byte
+        ///     (<see cref="InterfaceComponentDefinition.SpriteTiles"/>) is the one thing that selects
+        ///     repetition, at <c>:600</c>.
+        ///     </para>
+        ///     <para>
+        ///     The flips are applied before anything else because the client applies them when it
+        ///     resolves the sprite rather than when it draws it (<c>RSInterface.java:479</c> and
+        ///     <c>:483</c>), so they compose with rotation in that order and not the other one.
+        ///     </para>
+        ///     <para>
+        ///     <b>Not drawn:</b> the outline and shadow that <c>RSInterface.java:487-509</c> bakes
+        ///     into the resolved sprite, and the client's exact tint blend. The canvas note says the
+        ///     view diverges here; both are edits to the sprite's own pixels rather than to its
+        ///     placement, so they change how a component looks and never where it sits.
+        ///     </para>
+        /// </remarks>
+        private static void DrawSprite(Graphics g, Bitmap sprite,
+            InterfaceComponentDefinition component, Rectangle rectangle) {
+            if (rectangle.Width <= 0 || rectangle.Height <= 0)
+                return;
+
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+
+            //255 is fully transparent and 0 is opaque, so a component that stores nothing is drawn
+            //as it is. The client reads the same byte the same way at :598.
+            int alpha = 255 - (component.Transparency & 0xFF);
+            if (alpha <= 0)
+                return;
+
+            using ImageAttributes? attributes = AttributesFor(alpha, component.Colour);
+
+            using var flipped = Flipped(sprite, component);
+            Bitmap source = flipped ?? sprite;
+
+            int spriteWidth = Math.Max(1, source.Width);
+            int spriteHeight = Math.Max(1, source.Height);
+
+            if (component.SpriteTiles) {
+                /* Clipped to the component first, then repeated over it, so the last row and column
+                   are cut rather than overhanging. The client intersects its scissor rect at :601
+                   and restores it at :634; SetClip with Intersect is the same thing, and assigning
+                   g.Clip instead would discard the invalidated region and repaint the whole canvas
+                   through this one component. */
+                GraphicsState state = g.Save();
+                g.SetClip(rectangle, CombineMode.Intersect);
+
+                for (int y = rectangle.Y; y < rectangle.Bottom; y += spriteHeight)
+                    for (int x = rectangle.X; x < rectangle.Right; x += spriteWidth)
+                        DrawTile(g, source, new Rectangle(x, y, spriteWidth, spriteHeight),
+                            component.SpriteTransform, attributes);
+
+                g.Restore(state);
+                return;
+            }
+
+            DrawTile(g, source, rectangle, component.SpriteTransform, attributes);
+        }
+
+        /// <summary>
+        ///     One copy of a sprite in one rectangle, rotated if the component asks for it.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A rotated sprite is scaled by its width alone and is not made to fit.</b> The
+        ///     client's zoom is <c>componentWidth * 4096 / spriteWidth</c> (<c>:640</c>) about the
+        ///     component's centre, with the height taking no part, so a rotated sprite in a tall box
+        ///     genuinely does not fill it. Fitting it here would look tidier and would not be what
+        ///     the game draws.
+        ///     <para>
+        ///     A tiled rotation is different again: <c>:605-625</c> lays out a grid at the sprite's
+        ///     own size and rotates each cell about its own centre at 4096, so there is no scaling at
+        ///     all. Passing this the tile rectangle gets that for free, because the tile rectangle is
+        ///     the sprite's size and the ratio is 1.
+        ///     </para>
+        /// </remarks>
+        private static void DrawTile(Graphics g, Bitmap sprite, Rectangle into, int angle,
+            ImageAttributes? attributes) {
+            var destination = new Rectangle(0, 0, sprite.Width, sprite.Height);
+
+            if (angle == 0) {
+                if (attributes == null)
+                    g.DrawImage(sprite, into);
+                else
+                    g.DrawImage(sprite, into, 0, 0, sprite.Width, sprite.Height,
+                        GraphicsUnit.Pixel, attributes);
+                return;
+            }
+
+            //The client's angle is a whole turn in 65536 steps, and it turns the sprite rather than
+            //the axes, so the sign is the one that makes a positive angle read as clockwise.
+            float degrees = angle * 360f / 65536f;
+            float zoom = sprite.Width == 0 ? 1f : into.Width / (float) sprite.Width;
+
+            GraphicsState state = g.Save();
+            try {
+                g.TranslateTransform(into.X + into.Width / 2f, into.Y + into.Height / 2f);
+                g.RotateTransform(degrees);
+                g.ScaleTransform(zoom, zoom);
+                g.TranslateTransform(-sprite.Width / 2f, -sprite.Height / 2f);
+
+                if (attributes == null)
+                    g.DrawImage(sprite, destination);
+                else
+                    g.DrawImage(sprite, destination, 0, 0, sprite.Width, sprite.Height,
+                        GraphicsUnit.Pixel, attributes);
+            }
+            finally {
+                g.Restore(state);
+            }
+        }
+
+        /// <summary>
+        ///     A mirrored copy of the sprite, or null when the component asks for no mirroring.
+        /// </summary>
+        /// <remarks>
+        ///     Null rather than a copy so the common case allocates nothing: 5 of the vanilla
+        ///     capture's type-5 components set either flag. The caller disposes what it gets and
+        ///     falls back to the cached sprite, which it must not dispose - it belongs to the
+        ///     thumbnail cache.
+        /// </remarks>
+        private static Bitmap? Flipped(Bitmap sprite, InterfaceComponentDefinition component) {
+            RotateFlipType flip = (component.SpriteFlipHorizontal, component.SpriteFlipVertical) switch {
+                (true, true) => RotateFlipType.RotateNoneFlipXY,
+                (true, false) => RotateFlipType.RotateNoneFlipX,
+                (false, true) => RotateFlipType.RotateNoneFlipY,
+                _ => RotateFlipType.RotateNoneFlipNone
+            };
+
+            if (flip == RotateFlipType.RotateNoneFlipNone)
+                return null;
+
+            var copy = (Bitmap) sprite.Clone();
+            copy.RotateFlip(flip);
+            return copy;
+        }
+
+        /// <summary>
+        ///     Transparency and tint as a draw-time attribute, or null when neither applies.
+        /// </summary>
+        /// <remarks>
+        ///     The tint multiplies, which is what the client's <c>:596-598</c> composes and what
+        ///     leaves an untinted sprite untouched when the stored colour is white. A stored 0 means
+        ///     "no tint" rather than "black", so it is read as white here for the same reason the
+        ///     client substitutes <c>0xffffff</c> for it.
+        /// </remarks>
+        private static ImageAttributes? AttributesFor(int alpha, int tint) {
+            bool tinted = tint != 0 && (tint & 0xFFFFFF) != 0xFFFFFF;
+            if (alpha >= 255 && !tinted)
+                return null;
+
+            float r = tinted ? ((tint >> 16) & 0xFF) / 255f : 1f;
+            float gr = tinted ? ((tint >> 8) & 0xFF) / 255f : 1f;
+            float b = tinted ? (tint & 0xFF) / 255f : 1f;
+
+            var attributes = new ImageAttributes();
+            attributes.SetColorMatrix(new ColorMatrix(new[] {
+                new[] { r,  0f, 0f, 0f, 0f },
+                new[] { 0f, gr, 0f, 0f, 0f },
+                new[] { 0f, 0f, b,  0f, 0f },
+                new[] { 0f, 0f, 0f, alpha / 255f, 0f },
+                new[] { 0f, 0f, 0f, 0f, 1f }
+            }));
+
+            return attributes;
         }
 
         /// <summary>

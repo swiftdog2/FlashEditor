@@ -245,7 +245,20 @@ namespace FlashEditor.Definitions.Interfaces {
         /// <summary>The sprite id in index 8, or -1.</summary>
         public int SpriteId { get; set; }
 
-        /// <summary>The sprite transform parameter, used with a 4096 scale at <c>Node_Sub10_Sub24.java:603-639</c>.</summary>
+        /// <summary>
+        ///     The sprite's rotation, as a 2D angle.
+        /// </summary>
+        /// <remarks>
+        ///     The client's <c>anInt2255</c>. Non-zero sends the draw down a rotated path
+        ///     (<c>Node_Sub10_Sub24.java:605</c> when tiling, <c>:636</c> when not), where the scale
+        ///     is a 12.12 zoom with 4096 meaning 1:1.
+        ///     <para>
+        ///     <b>A rotated sprite is scaled from its width alone.</b> The zoom is
+        ///     <c>componentWidth * 4096 / spriteWidth</c> (<c>:640</c>) and the component's height
+        ///     takes no part, so a rotated sprite in a non-square box does not fill it. That is the
+        ///     client's behaviour, not an approximation of it.
+        ///     </para>
+        /// </remarks>
         public int SpriteTransform { get; set; }
 
         /// <summary>
@@ -257,11 +270,42 @@ namespace FlashEditor.Definitions.Interfaces {
         /// </remarks>
         public int SpriteFlags { get; set; }
 
-        /// <summary>Whether the transformed draw is used - bit 0 of <see cref="SpriteFlags"/>.</summary>
-        public bool SpriteTransformed => (SpriteFlags & 0x1) != 0;
+        /// <summary>
+        ///     Whether the sprite repeats to fill the component instead of stretching to it.
+        /// </summary>
+        /// <remarks>
+        ///     Bit 0, the client's <c>aBoolean2288</c>, and the single condition selecting the tiled
+        ///     draw at <c>Node_Sub10_Sub24.java:600</c>. Everything below that branch repeats the
+        ///     sprite at its own size over a clip of the component's rectangle; everything in the
+        ///     <c>else</c> stretches one copy to the component's width and height.
+        ///     <para>
+        ///     <b>These two bits were named the wrong way round here until 2026-08-10</b>, so bit 0
+        ///     read as "transformed" and bit 1 as "tiled". Only a status caption used either, but the
+        ///     canvas stretched every sprite for the same reason, which is what made a tiled window
+        ///     frame render as a smeared one.
+        ///     </para>
+        /// </remarks>
+        public bool SpriteTiles => (SpriteFlags & 0x1) != 0;
 
-        /// <summary>The client's <c>aBoolean2279</c>, CS2 1122 - bit 1 of <see cref="SpriteFlags"/>.</summary>
-        public bool SpriteTiled => (SpriteFlags & 0x2) != 0;
+        /// <summary>
+        ///     Bit 1, which this build decodes and never acts on.
+        /// </summary>
+        /// <remarks>
+        ///     The client's <c>aBoolean2279</c>. It is read (<c>RSInterface.java:1089</c>), settable
+        ///     from CS2 op 1122 (<c>Class247.java:777</c>) and folded into the sprite cache key
+        ///     (<c>RSInterface.java:458</c>) - and it is branched on nowhere in the draw path, so it
+        ///     has no visible effect in build 637. Kept because it has to re-encode, not because it
+        ///     does anything.
+        /// </remarks>
+        public bool SpriteFlagBit1 => (SpriteFlags & 0x2) != 0;
+
+        /// <summary>Whether the sprite is mirrored top to bottom (<c>RSInterface.java:479</c>).</summary>
+        /// <remarks>An <c>== 1</c> test in the client, so every other stored value reads as false.</remarks>
+        public bool SpriteFlipVertical => SpriteTransform1Byte == 1;
+
+        /// <summary>Whether the sprite is mirrored left to right (<c>RSInterface.java:483</c>).</summary>
+        /// <remarks>An <c>== 1</c> test in the client, so every other stored value reads as false.</remarks>
+        public bool SpriteFlipHorizontal => SpriteTransform2Byte == 1;
 
         /// <summary>Outline thickness, <c>class324.method3688</c> at <c>RSInterface.java:500</c>.</summary>
         public int OutlineThickness { get; set; }

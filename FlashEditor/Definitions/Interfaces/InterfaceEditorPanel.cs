@@ -204,7 +204,8 @@ namespace FlashEditor.Definitions.Interfaces {
             canvasTiles = newCache == null
                 ? null
                 : new DefinitionThumbnailCache(new IDefinitionThumbnailRenderer[] {
-                    new SpriteThumbnailRenderer(newCache, composited: false)
+                    new SpriteThumbnailRenderer(newCache, composited: false),
+                    new ModelThumbnailRenderer(newCache)
                 });
 
             textPainter?.Dispose();
@@ -903,16 +904,18 @@ namespace FlashEditor.Definitions.Interfaces {
 
                 case 5:
                     yield return new FieldListing("sprite", "Sprite", component.SpriteId.ToString());
-                    yield return new FieldListing("sprite", "Transform", component.SpriteTransform.ToString());
+                    yield return new FieldListing("sprite", "Angle", component.SpriteTransform +
+                        (component.SpriteTransform == 0 ? "" : " (rotated, scaled from width alone)"));
                     yield return new FieldListing("sprite", "Flags", Hex(component.SpriteFlags, 2) +
-                        (component.SpriteTransformed ? " transformed" : "") +
-                        (component.SpriteTiled ? " tiled" : ""));
+                        (component.SpriteTiles ? " tiled" : " stretched") +
+                        (component.SpriteFlagBit1 ? ", bit 1 (unused by the client)" : ""));
                     yield return new FieldListing("sprite", "Transparency",
                         component.Transparency + " (0 is opaque)");
                     yield return new FieldListing("sprite", "Outline",
                         component.OutlineThickness + " px, " + Hex(component.OutlineColour, 6));
-                    yield return new FieldListing("sprite", "Image transforms",
-                        component.SpriteTransform1Byte + ", " + component.SpriteTransform2Byte);
+                    yield return new FieldListing("sprite", "Flips",
+                        (component.SpriteFlipVertical ? "vertical" : "-") + ", " +
+                        (component.SpriteFlipHorizontal ? "horizontal" : "-"));
                     yield return new FieldListing("sprite", "Tint", Hex(component.Colour, 6));
                     break;
 

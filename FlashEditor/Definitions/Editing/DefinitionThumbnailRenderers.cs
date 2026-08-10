@@ -101,7 +101,7 @@ namespace FlashEditor.Definitions.Editing {
                 fileIds = cache.GetFileIds(RSConstants.SPRITES_INDEX, id);
             }
             catch (Exception) {
-                return SpritePainter.RenderTile(null, side, SpriteTileContent.Failed, marker);
+                return Failed(side, marker);
             }
 
             if (fileIds.Length == 0)
@@ -140,9 +140,7 @@ namespace FlashEditor.Definitions.Editing {
                 return SpritePainter.RenderTile(picture, side, content, marker);
             }
             catch (Exception) {
-                //A tile rather than a null, because a group that will not decode is a fact about
-                //that record and drawing nothing would present it as an id with no picture.
-                return SpritePainter.RenderTile(null, side, SpriteTileContent.Failed, marker);
+                return Failed(side, marker);
             }
             finally {
                 picture?.Dispose();
@@ -169,6 +167,23 @@ namespace FlashEditor.Definitions.Editing {
         ///     stays legible at a tile side this renderer was never tried at. Only the producer
         ///     thread reaches this, so the dictionary needs no lock.
         /// </remarks>
+        /// <summary>
+        ///     What a record that will not decode looks like, which depends on who is asking.
+        /// </summary>
+        /// <remarks>
+        ///     A grid gets a marked tile, because a group that will not decode is a fact about that
+        ///     record and drawing nothing would present it as an id with no picture. A canvas gets
+        ///     null and draws its own placeholder in the component's own rectangle - it asks with a
+        ///     side of zero, since it wants the sprite at its natural size, and a zero-sided tile is
+        ///     not a picture at all.
+        /// </remarks>
+        private Bitmap? Failed(int side, Font marker) {
+            if (!composited || side <= 0)
+                return null;
+
+            return SpritePainter.RenderTile(null, side, SpriteTileContent.Failed, marker);
+        }
+
         private Font MarkerFont(int side) {
             if (markerFonts.TryGetValue(side, out Font? font))
                 return font;
