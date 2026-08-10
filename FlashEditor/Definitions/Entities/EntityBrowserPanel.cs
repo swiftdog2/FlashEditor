@@ -54,10 +54,12 @@ namespace FlashEditor.Definitions.Entities {
     ///     a user compares could never be on screen together.
     ///     <para>
     ///     <b>The viewport is deliberately not in here.</b> Moving a <c>GLControl</c> between parents
-    ///     destroys its window handle and the GL context with it, so the one context in the
-    ///     application stays where the form built it - in the left half of the page's splitter - and
-    ///     this panel occupies the right half and swaps only its grid. That is the whole reason the
-    ///     type selector lives on the grid side rather than above both.
+    ///     destroys its window handle and the GL context with it, so this page's context stays where
+    ///     the form built it - in the left half of the page's splitter - and this panel occupies the
+    ///     right half and swaps only its grid. That is the whole reason the type selector lives on
+    ///     the grid side rather than above both. The rule is about reparenting rather than about how
+    ///     many contexts exist: <see cref="Particles.ParticlePreviewPanel"/> holds a second one, and
+    ///     it is safe for the same reason - nothing moves it either.
     ///     </para>
     ///     <para>
     ///     Each family is a <see cref="DefinitionListDescriptor{TRow}"/> rather than an arm of

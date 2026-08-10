@@ -71,6 +71,16 @@ namespace FlashEditor.Definitions.Particles {
             Orientation = Orientation.Horizontal
         };
 
+        private readonly ParticlePreviewPanel preview = new ParticlePreviewPanel();
+
+        //The records and their preview, side by side. Vertical rather than horizontal so the field
+        //grid keeps its full height: an emitter carries about thirty rows and stacking the preview
+        //under it would push most of them off the page.
+        private readonly SplitContainer recordsAndPreview = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical
+        };
+
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select a record to see what it holds";
 
@@ -107,6 +117,7 @@ namespace FlashEditor.Definitions.Particles {
 
             cache = newCache;
             fields.ClearObjects();
+            preview.Bind(newCache);
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
 
             if (newCache == null) {
@@ -131,7 +142,7 @@ namespace FlashEditor.Definitions.Particles {
         ///     one more literal the form multiplies by its font ratio.
         /// </remarks>
         private void PlaceSplitter() {
-            if (splitterPlaced || listAndFields.Height < 200)
+            if (splitterPlaced || listAndFields.Height < 200 || recordsAndPreview.Width < 400)
                 return;
 
             //Set before the assignment, not after: changing a splitter distance lays the panel out
@@ -139,6 +150,10 @@ namespace FlashEditor.Definitions.Particles {
             splitterPlaced = true;
 
             try {
+                //Two thirds to the records, because the preview is one emitter's worth of quads and
+                //stays legible small while the field grid has columns to fit.
+                recordsAndPreview.SplitterDistance = Math.Max(recordsAndPreview.Panel1MinSize,
+                    recordsAndPreview.Width * 2 / 3);
                 listAndFields.SplitterDistance = Math.Max(listAndFields.Panel1MinSize, listAndFields.Height / 2);
             } catch (InvalidOperationException ex) {
                 splitterPlaced = false;
@@ -157,9 +172,12 @@ namespace FlashEditor.Definitions.Particles {
             listAndFields.Panel1.Controls.Add(records);
             listAndFields.Panel2.Controls.Add(fields);
 
+            recordsAndPreview.Panel1.Controls.Add(listAndFields);
+            recordsAndPreview.Panel2.Controls.Add(preview);
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
-            Controls.Add(listAndFields);
+            Controls.Add(recordsAndPreview);
             Controls.Add(header);
             Controls.Add(selector);
 
@@ -177,6 +195,7 @@ namespace FlashEditor.Definitions.Particles {
         /// </remarks>
         private void ShowFamily() {
             fields.ClearObjects();
+            preview.ShowEmitter(null);
 
             if (cache == null || families.SelectedItem is not FamilyOption family) {
                 header.Text = cache == null ? NoCacheText : NoSelectionText;
@@ -192,11 +211,30 @@ namespace FlashEditor.Definitions.Particles {
                 : (IDefinitionListDescriptor) new ParticleEmitterListDescriptor());
         }
 
-        /// <summary>Fills the field grid from the selected record.</summary>
-        /// <remarks>No cache read: the row already carries the whole decoded record.</remarks>
+        /// <summary>Fills the field grid and the preview from the selected record.</summary>
+        /// <remarks>
+        ///     No cache read: the row already carries the whole decoded record, and the preview takes
+        ///     that object rather than re-reading index 27 by id.
+        /// </remarks>
         /// <param name="listing">The selected record, or null.</param>
         private void ShowRecord(IParticleListing? listing) {
             fields.ShowFields(listing);
+
+            switch (listing) {
+                case ParticleEmitterListing emitter:
+                    preview.ShowEmitter(emitter.Record);
+                    break;
+
+                //An effector has no particles of its own, and the preview says so rather than going
+                //blank beside a selected row.
+                case ParticleEffectorListing:
+                    preview.ShowEffector();
+                    break;
+
+                default:
+                    preview.ShowEmitter(null);
+                    break;
+            }
 
             if (listing != null)
                 header.Text = listing.Summary;

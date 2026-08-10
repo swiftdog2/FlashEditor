@@ -966,8 +966,9 @@ namespace FlashEditor {
             //
             // splitContainer1 moves here from the page that was called Models, whole. glControl's
             // own parent is splitContainer1.Panel1 and does not change at all: a GLControl that is
-            // reparented loses its window handle and its GL context with it, and there is exactly
-            // one context in this application.
+            // reparented loses its window handle and its GL context with it. That rule is about
+            // reparenting and not about the count - the Particles page now realises a second
+            // GLControl of its own, which is fine because it is never moved either.
             EntityEditorTab.Controls.Add(splitContainer1);
             EntityEditorTab.Location = new Point(4, 37);
             EntityEditorTab.Name = "EntityEditorTab";
@@ -1006,8 +1007,9 @@ namespace FlashEditor {
             // glControl
             // 
             // Docked rather than anchored to a literal size, so the strip below it can take the
-            // height it needs. The control is not reparented and no second GLControl is created:
-            // there is one GL context in the application and every path here shares it.
+            // height it needs. This control is never reparented, which is the part that matters;
+            // ParticlePreviewPanel holds a second, independent context and carries the evidence
+            // that a second one is now safe.
             glControl.Dock = DockStyle.Fill;
             glControl.API = OpenTK.Windowing.Common.ContextAPI.OpenGL;
             glControl.APIVersion = new Version(3, 3, 0, 0);
