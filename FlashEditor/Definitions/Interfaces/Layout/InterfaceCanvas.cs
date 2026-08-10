@@ -871,22 +871,33 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         }
 
         /// <summary>
-        ///     The component's model, or a marked box while it is being read.
+        ///     The component's model, or a mark saying which of two different things is missing.
         /// </summary>
         /// <remarks>
         ///     Models are rasterised on the CPU now rather than skipped. It is not the client's
         ///     renderer - flat shading, no textures, no lighting - and the canvas note says so, but
         ///     a recognisable model beats a box captioned with a number.
+        ///     <para>
+        ///     <b>Read <see cref="InterfaceComponentDefinition.ModelId"/> and never
+        ///     <c>RawModelId</c>.</b> The stored field is an unsigned short whose 65535 means "no
+        ///     model", which the client maps to -1 at <c>RSInterface.java:1102-1104</c> and this
+        ///     project maps in the <c>ModelId</c> property. The raw value exists so the record
+        ///     re-encodes to the bytes it was read from and is not a model id. Using it here asked
+        ///     the cache for model 65535 on every scripted component, got nothing back, and drew a
+        ///     box captioned "model 65535" - which reads as a decode defect and is the opposite: it
+        ///     is a component that deliberately stores no model. All seven boxes on interface 25,
+        ///     the Barrows puzzle, are that case.
+        ///     </para>
         /// </remarks>
         private void DrawModelComponent(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
-            if (component.RawModelId >= 0 && rectangle.Width > 0 && rectangle.Height > 0) {
+            if (component.ModelId >= 0 && rectangle.Width > 0 && rectangle.Height > 0) {
                 int wanted = Math.Max(rectangle.Width, rectangle.Height);
                 int side = Math.Min(ModelSideMax,
                     Math.Max(ModelSideStep,
                         (wanted + ModelSideStep - 1) / ModelSideStep * ModelSideStep));
 
-                Bitmap? drawn = thumbnails?.TryGet(RSConstants.MODELS_INDEX, component.RawModelId, side);
+                Bitmap? drawn = thumbnails?.TryGet(RSConstants.MODELS_INDEX, component.ModelId, side);
 
                 if (drawn != null) {
                     /* Centred and aspect-preserved rather than stretched to the component. The tile
@@ -911,20 +922,35 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             DrawModelPlaceholder(g, component, rectangle);
         }
 
-        /// <summary>A hatched box carrying the model id, for a model still being read.</summary>
+        /// <summary>
+        ///     A marked box for a model that has no id, or one whose picture is not ready.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Storing no model is a normal state, not a failure, and the two must not look
+        ///     alike</b> - the same distinction <see cref="DrawSpriteComponent"/> draws for sprites,
+        ///     and for the same reason. Interface 25's Barrows puzzle stores no model in any of its
+        ///     seven boxes because CS2 sets one per shape as the puzzle is dealt, so "model 65535"
+        ///     on all seven read as seven broken records rather than as an empty board.
+        /// </remarks>
         private static void DrawModelPlaceholder(Graphics g, InterfaceComponentDefinition component,
             Rectangle rectangle) {
+            bool scripted = component.ModelId < 0;
+
             /* Faint. A model box can be most of the interface - model 4608 in the RuneLink board
                is 299x252 of a 512x334 window - and at the first draft's opacity the hatching read
                as the interface's background rather than as one component that cannot be drawn. */
-            using (var hatch = new HatchBrush(HatchStyle.BackwardDiagonal,
-                Color.FromArgb(18, 0xFF, 0xB8, 0x26), Color.Transparent)) {
+            if (!scripted) {
+                using var hatch = new HatchBrush(HatchStyle.BackwardDiagonal,
+                    Color.FromArgb(18, 0xFF, 0xB8, 0x26), Color.Transparent);
                 g.FillRectangle(hatch, rectangle);
             }
 
-            using var pen = new Pen(Color.FromArgb(90, 0xFF, 0xB8, 0x26));
+            using var pen = new Pen(Color.FromArgb(scripted ? 70 : 90, 0xFF, 0xB8, 0x26)) {
+                DashStyle = scripted ? DashStyle.Dot : DashStyle.Solid
+            };
+
             g.DrawRectangle(pen, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
-            DrawTinyLabel(g, rectangle, "model " + component.RawModelId);
+            DrawTinyLabel(g, rectangle, scripted ? "set by script" : "model " + component.ModelId);
         }
 
         /// <summary>

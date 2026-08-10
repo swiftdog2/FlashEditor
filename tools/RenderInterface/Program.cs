@@ -3,6 +3,7 @@ using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Fonts;
 using FlashEditor.Definitions.Interfaces;
+using FlashEditor.Definitions.Models;
 using FlashEditor.Definitions.Interfaces.Layout;
 using FlashEditor.Definitions.Sprites;
 using FlashEditor.IO;
@@ -93,6 +94,10 @@ namespace FlashEditor.Tools.RenderInterface {
             if (Environment.GetEnvironmentVariable("RENDERINTERFACE_FONTS") == "1")
                 DumpFonts(cache, components);
 
+            string? probe = Environment.GetEnvironmentVariable("RENDERINTERFACE_MODEL");
+            if (!string.IsNullOrEmpty(probe))
+                ProbeModel(cache, int.Parse(probe));
+
             using var canvas = new InterfaceCanvas {
                 Size = new Size(InterfaceRect.FixedModeCanvas.Width + 40,
                     InterfaceRect.FixedModeCanvas.Height + 40),
@@ -117,10 +122,25 @@ namespace FlashEditor.Tools.RenderInterface {
             using (var priming = new Bitmap(canvas.Width, canvas.Height))
                 canvas.DrawToBitmap(priming, area);
 
-            //Then wait for the producer. Models are rasterised on the CPU one at a time, so a page
-            //of them takes noticeably longer than a page of sprites.
-            for (int settle = 0; settle < 400 && tiles.PendingCount > 0; settle++)
+            /* Then wait for the producer to go quiet, which is not the same as its queue being
+               empty. PendingCount drops the moment an item is dequeued, before the tile it
+               produces has been filed, so "pending == 0" is true for the whole time the producer
+               is actually working. On a page with many tiles the next one keeps the count up and
+               the race never shows; interface 25 has exactly one model, and the loop exited
+               instantly, the final draw took the placeholder, and the decode finished afterwards -
+               which read as a model the rasteriser could not handle.
+
+               Quiet means the queue is empty and nothing new has been filed for a while. */
+            int lastCount = -1;
+            int quiet = 0;
+
+            for (int settle = 0; settle < 800 && quiet < 12; settle++) {
                 Thread.Sleep(25);
+
+                int count = tiles.Count;
+                quiet = tiles.PendingCount == 0 && count == lastCount ? quiet + 1 : 0;
+                lastCount = count;
+            }
 
             Console.WriteLine("  interface " + groupId + ": " + components.Count + " components, " +
                 tiles.Count + " tile entries, " + tiles.PendingCount + " pending, " +
@@ -129,6 +149,39 @@ namespace FlashEditor.Tools.RenderInterface {
             using var picture = new Bitmap(canvas.Width, canvas.Height);
             canvas.DrawToBitmap(picture, area);
             picture.Save(outPath, ImageFormat.Png);
+        }
+
+        /// <summary>
+        ///     Rasterises one model directly and reports what came back, or why nothing did.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="ModelThumbnailRenderer"/> answers null for every failure, which is right
+        ///     for a producer thread and useless for finding out why a model will not draw. This
+        ///     calls the rasteriser with nothing in the way.
+        /// </remarks>
+        private static void ProbeModel(RSCache cache, int id) {
+            try {
+                int[] fileIds = cache.GetFileIds(RSConstants.MODELS_INDEX, id);
+                Console.WriteLine("    model " + id + ": files=" + string.Join(",", fileIds));
+
+                if (fileIds.Length == 0)
+                    return;
+
+                ModelDefinition model = cache.GetModelDefinition(id, fileIds[0]);
+                Console.WriteLine("    model " + id + ": vertices=" + model.VertexCount +
+                    " triangles=" + model.TriangleCount +
+                    " colour=" + (model.FaceColour == null ? "null" : model.FaceColour.Length.ToString()) +
+                    " types=" + (model.FaceRenderType == null ? "null" : model.FaceRenderType.Length.ToString()) +
+                    " x=" + (model.VertX == null ? "null" : model.VertX.Length.ToString()));
+
+                using Bitmap? drawn = ModelPreviewRasteriser.Render(model, 96, 96);
+                Console.WriteLine("    model " + id + ": rasterised=" +
+                    (drawn == null ? "null" : drawn.Width + "x" + drawn.Height));
+            }
+            catch (Exception error) {
+                Console.WriteLine("    model " + id + ": " + error.GetType().Name + ": " + error.Message);
+                Console.WriteLine(error.StackTrace);
+            }
         }
 
         /// <summary>
@@ -200,7 +253,7 @@ namespace FlashEditor.Tools.RenderInterface {
                          " h=" + c.HorizontalAlignment + " v=" + c.VerticalAlignment +
                          " lineHeight=" + c.LineHeight,
                     5 => " sprite=" + c.SpriteId + (c.SpriteTiles ? " tiled" : ""),
-                    6 => " model=" + c.RawModelId,
+                    6 => " model=" + c.ModelId,
                     _ => ""
                 };
 
