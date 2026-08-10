@@ -117,6 +117,7 @@ namespace FlashEditor.Definitions.Particles {
 
             cache = newCache;
             fields.ClearObjects();
+            preview.Bind(newCache);
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
 
             if (newCache == null) {
@@ -194,6 +195,7 @@ namespace FlashEditor.Definitions.Particles {
         /// </remarks>
         private void ShowFamily() {
             fields.ClearObjects();
+            preview.ShowEmitter(null);
 
             if (cache == null || families.SelectedItem is not FamilyOption family) {
                 header.Text = cache == null ? NoCacheText : NoSelectionText;
@@ -209,11 +211,30 @@ namespace FlashEditor.Definitions.Particles {
                 : (IDefinitionListDescriptor) new ParticleEmitterListDescriptor());
         }
 
-        /// <summary>Fills the field grid from the selected record.</summary>
-        /// <remarks>No cache read: the row already carries the whole decoded record.</remarks>
+        /// <summary>Fills the field grid and the preview from the selected record.</summary>
+        /// <remarks>
+        ///     No cache read: the row already carries the whole decoded record, and the preview takes
+        ///     that object rather than re-reading index 27 by id.
+        /// </remarks>
         /// <param name="listing">The selected record, or null.</param>
         private void ShowRecord(IParticleListing? listing) {
             fields.ShowFields(listing);
+
+            switch (listing) {
+                case ParticleEmitterListing emitter:
+                    preview.ShowEmitter(emitter.Record);
+                    break;
+
+                //An effector has no particles of its own, and the preview says so rather than going
+                //blank beside a selected row.
+                case ParticleEffectorListing:
+                    preview.ShowEffector();
+                    break;
+
+                default:
+                    preview.ShowEmitter(null);
+                    break;
+            }
 
             if (listing != null)
                 header.Text = listing.Summary;

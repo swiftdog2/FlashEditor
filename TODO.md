@@ -700,7 +700,7 @@ picture beats the numbers.
 | Index | What it should be | Note |
 |---|---|---|
 | 9 textures | A node graph canvas | The format is literally a DAG and drawing it as one is the honest representation. Nodes with live thumbnails of their own output, wires for the child edges. The most visually rewarding index in the cache and currently a two-column grid |
-| 27 particles | A live preview viewport, gradient pickers for start-to-end colour, sliders for start-to-end size | Every field is a curve or a colour and every one is an integer today |
+| 27 particles | Gradient pickers for start-to-end colour, sliders for start-to-end size | The live preview viewport is **done** - `ParticlePreviewPanel` runs the selected emitter on the tab's own GL context. The pickers are not, and every colour and size bound is still an integer. Two things the preview deliberately does not do: no material texture, because the graphs are rasterised into the Entities context and a handle does not cross contexts, and no scene, so opcodes 12, 13 and 33 destroy nothing |
 | 20 animations | A timeline strip, each frame a cell whose width is its duration, scrubbing the viewport | Priority and re-trigger behaviour want named dropdowns, not 0/1/2 |
 | 21 spot anims | A live preview of the model running its animation, recolour pairs as two swatches and an arrow | Editable already; the recolour pairs are the most editable thing in the index and they are four hex numbers |
 | 33 loading screens | A visual preview | Needs index 32 for sprites and 13 for fonts; both decode |
