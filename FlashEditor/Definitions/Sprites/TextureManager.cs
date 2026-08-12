@@ -61,6 +61,34 @@ namespace FlashEditor.Definitions.Sprites {
             TextureGraphEvaluator.ClearCaches();
         }
 
+        /// <summary>
+        ///     Loads the texture store only if it is not already loaded for this cache.
+        /// </summary>
+        /// <remarks>
+        ///     <b><see cref="Load"/> begins with <see cref="Clear"/>, which disposes every
+        ///     <c>TextureDefinition</c> in a static store that the whole application shares.</b> So a
+        ///     second component constructing its own <c>GLTextureCache</c> does not merely repeat
+        ///     the decode - it destroys the rasters the model draw path and the Textures tab are
+        ///     already holding, part way through a session, and the damage shows up somewhere else
+        ///     entirely.
+        ///     <para>
+        ///     That is not hypothetical: the particle preview needs a texture cache of its own,
+        ///     because GL handles do not cross contexts and it has its own. Only the handles need
+        ///     duplicating; the decoded definitions are context-free and shared, which is what makes
+        ///     one store correct here rather than one per consumer.
+        ///     </para>
+        /// </remarks>
+        /// <param name="forCache">The cache the store must describe.</param>
+        public static void EnsureLoaded(RSCache forCache) {
+            if (forCache == null)
+                throw new ArgumentNullException(nameof(forCache));
+
+            if (ReferenceEquals(_cacheRef, forCache) && Textures.Count > 0)
+                return;
+
+            new TextureManager(forCache).Load();
+        }
+
         public void Load() {
             Clear();
             _cacheRef = cache;

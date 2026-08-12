@@ -29,12 +29,28 @@ namespace FlashEditor.Rendering
     {
         private readonly RSCache _cache;
         private readonly Dictionary<int, int> _textures = new();
+        /// <summary>
+        ///     Creates a texture cache for one GL context.
+        /// </summary>
+        /// <remarks>
+        ///     <b>One of these per context, not one per application.</b> A GL texture handle belongs
+        ///     to the context that created it, so the particle preview cannot bind a handle the
+        ///     Entities viewport uploaded. What it can share is everything below the handle: the
+        ///     decoded index-26 metadata and index-9 graphs live in <see cref="TextureManager"/>'s
+        ///     static store, and this holds only the per-context handle map on top of them.
+        ///     <para>
+        ///     <see cref="TextureManager.EnsureLoaded"/> rather than <c>Load</c>, and the difference
+        ///     matters: <c>Load</c> opens with <c>Clear</c>, which disposes every definition in that
+        ///     shared store. Constructing a second cache used to mean tearing down the first one's
+        ///     rasters mid-session.
+        ///     </para>
+        /// </remarks>
+        /// <param name="cache">The open cache to read texture data from.</param>
         public GLTextureCache(RSCache cache)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             Debug("Initializing GLTextureCache", LOG_DETAIL.BASIC);
-            var manager = new TextureManager(cache);
-            manager.Load();
+            TextureManager.EnsureLoaded(cache);
             Debug("Textures loaded", LOG_DETAIL.BASIC);
         }
 

@@ -47,11 +47,12 @@ namespace FlashEditor.Definitions.Particles {
     ///     <item>No scene, so opcodes 12, 13 and 33 - which destroy a particle against terrain and
     ///     roof - do nothing, and an effect that relies on a floor to stop its particles overruns.
     ///     <see cref="ParticleSystem.SimulatesSceneBounds"/> is the same statement in the simulation.</item>
-    ///     <item>No material texture. A particle's material is a procedural graph in index 9 and
-    ///     rasterising one is unbounded work that belongs off the paint path; the Entities viewport
-    ///     warms them through <c>GLTextureCache</c>, whose handles belong to <i>that</i> context and
-    ///     cannot be bound here. So every quad samples flat white and shows the simulated colour and
-    ///     alpha alone.</item>
+    ///     <item>A material texture arrives a moment after the emitter does, not with it. The
+    ///     material is a procedural graph in index 9 and rasterising one is unbounded work, so it
+    ///     happens on a pool thread and the first frames sample flat white. This panel holds its
+    ///     own <c>GLTextureCache</c> because a GL handle belongs to the context that made it and
+    ///     the Entities viewport's cannot be bound here - only the handles are duplicated, since
+    ///     the decoded graphs sit in <c>TextureManager</c>'s shared store.</item>
     ///     <item>One emitter on one synthetic face, not an emitter in the place a model puts it. The
     ///     spawn area, and therefore the spread, is this panel's triangle rather than the model's.</item>
     ///     </list>
@@ -143,6 +144,22 @@ namespace FlashEditor.Definitions.Particles {
         /// </remarks>
         private ViewportOverlayRenderer? billboards;
 
+        /// <summary>
+        ///     This surface's own texture cache, or null until a cache is bound.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Its own, because a GL texture handle belongs to the context that created it.</b>
+        ///     The Entities viewport already warms particle materials, and this panel cannot bind
+        ///     what that one uploaded. Only the handles are duplicated: the decoded index-26
+        ///     metadata and index-9 graphs sit in TextureManager's shared static store, which
+        ///     GLTextureCache now reaches through EnsureLoaded rather than reloading and disposing
+        ///     out from under the other consumers.
+        /// </remarks>
+        private GLTextureCache? textures;
+
+        /// <summary>The cache this panel is bound to, for warming materials off the paint path.</summary>
+        private RSCache? bound;
+
         /// <summary>The shader program, or 0 before the context exists.</summary>
         private int program;
 
@@ -218,6 +235,10 @@ namespace FlashEditor.Definitions.Particles {
         /// <param name="cache">The open cache, or null to unbind.</param>
         public void Bind(RSCache? cache) {
             source.Effectors = cache == null ? null : new CacheParticleDataSource(cache);
+
+            bound = cache;
+            textures = cache == null ? null : new GLTextureCache(cache);
+
             Restart();
         }
 
@@ -230,9 +251,52 @@ namespace FlashEditor.Definitions.Particles {
                 : new ModelParticleEmitter[1] { new ModelParticleEmitter(emitter.Id, 0) };
 
             Restart();
+            PrewarmMaterials();
 
             if (emitter == null)
                 status.Text = NoSelectionText;
+        }
+
+        /// <summary>
+        ///     Rasterises the materials this emitter names, off the paint path.
+        /// </summary>
+        /// <remarks>
+        ///     A material is a procedural graph in index 9 and evaluating one is unbounded work, so
+        ///     doing it inside the paint would freeze the window on the frame an emitter was picked.
+        ///     The same split the Entities viewport uses: pixels on a pool thread, the GL upload as
+        ///     a lookup on the paint path.
+        ///     <para>
+        ///     Nothing waits for it. Until a material is warm its quads sample the flat white
+        ///     texture and come out as plain squares, which is precisely what this whole panel
+        ///     looked like before it had a texture cache at all.
+        ///     </para>
+        /// </remarks>
+        private void PrewarmMaterials() {
+            GLTextureCache? warm = textures;
+            IReadOnlyList<int>? materials = system?.AttachedMaterialIds();
+
+            if (warm == null || materials == null || materials.Count == 0)
+                return;
+
+            System.Threading.Tasks.Task.Run(() => {
+                foreach (int material in materials) {
+                    try {
+                        warm.PrewarmParticleMaterial(material);
+                    }
+                    catch (Exception failure) {
+                        //Swallowed on purpose: an unobserved exception on a pool thread takes the
+                        //process down, and a material that will not rasterise is a white quad.
+                        Utils.DebugUtil.Debug(
+                            "Particle material " + material + " failed to warm: " + failure.Message,
+                            Utils.DebugUtil.LOG_DETAIL.BASIC);
+                    }
+                }
+
+                //The warm lands after the frame that asked for it, so nothing would show the result
+                //until the simulation next moved the surface.
+                if (!surface.IsDisposed && surface.IsHandleCreated)
+                    surface.BeginInvoke(new Action(() => surface.Invalidate()));
+            });
         }
 
         /// <summary>Shows the empty state with the reason an effector has nothing to run.</summary>
@@ -521,6 +585,14 @@ namespace FlashEditor.Definitions.Particles {
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
             billboards ??= new ViewportOverlayRenderer { ShowWireframe = false, ShowParticles = true };
+
+            /* Without this every quad binds the renderer's flat white texture, which is what made
+               the preview a field of plain squares. The resolver is re-pointed rather than assigned
+               once, because Bind builds a new cache per cache and a stale closure would hand back
+               handles belonging to a cache that has been closed. */
+            billboards.MaterialTextureResolver = textures == null
+                ? null
+                : materialId => textures.GetParticleTexture(materialId);
 
             Vector3 eye = CameraPosition();
 
