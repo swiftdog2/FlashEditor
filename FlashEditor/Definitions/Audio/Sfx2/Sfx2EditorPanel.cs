@@ -4,6 +4,7 @@ using FlashEditor.Definitions.Audio.Sfx2.Vorbis;
 using FlashEditor.Definitions.Audio.Synth;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.IO;
+using FlashEditor.UI;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -120,9 +121,18 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select a sound effect to see its header and packets";
 
-        private readonly Button play = new Button {
-            Text = "Play", Enabled = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+        /* The same transport the Tracks tab has, for the same reason: playback is a mode rather
+           than a command that completes, so the controls are a state a user reads at a glance. An
+           EditorToolStrip because CLAUDE.md says a toolbar is one - it gets the theme's ink, its
+           hover and pressed fills, and tooltips carrying the captions the icons replace. */
+        private readonly EditorToolStrip transport = new EditorToolStrip {
+            Dock = DockStyle.None,
+            AutoSize = true
         };
+
+        private readonly EditorToolButton previousButton;
+        private readonly EditorToolButton playPauseButton;
+        private readonly EditorToolButton nextButton;
 
         private RSCache? cache;
 
@@ -140,18 +150,115 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         /// <summary>Creates the panel.</summary>
         public Sfx2EditorPanel() {
             Dock = DockStyle.Fill;
+
+            /* Built here rather than in a field initialiser because AddAction is an instance method
+               on the strip, and a field initialiser cannot reach another field. */
+            previousButton = transport.AddAction(EditorIcon.PreviousTrack, "Previous effect",
+                Keys.None, (_, _) => Step(-1));
+            playPauseButton = transport.AddAction(EditorIcon.Play, "Play the selected effect",
+                Keys.None, (_, _) => TogglePlayPause());
+            nextButton = transport.AddAction(EditorIcon.NextTrack, "Next effect",
+                Keys.None, (_, _) => Step(1));
+
             BuildLayout();
 
             records.SelectedRowChanged += (_, _) => {
                 var listing = records.SelectedRow as Sfx2Listing;
                 ShowRecord(listing);
 
-                //Only a sample can be played. Group 0 is the shared setup header and has no audio
-                //of its own, and it is a row in this list like any other.
-                play.Enabled = listing?.Sample != null;
+                UpdateTransport();
             };
+        }
 
-            play.Click += (_, _) => PlaySelected();
+        /// <summary>
+        ///     Play, hold, carry on - the one control the transport is built around.
+        /// </summary>
+        /// <remarks>
+        ///     Resuming a held effect rather than restarting it is the whole point of the icon. A
+        ///     button captioned with a pause glyph that silently replayed from the first sample
+        ///     would be describing something the player does not do.
+        /// </remarks>
+        private void TogglePlayPause() {
+            Sfx2Playback? running = playing;
+
+            if (running != null && running.IsPlaying) {
+                if (running.IsPaused)
+                    running.Resume();
+                else
+                    running.Pause();
+
+                UpdateTransport();
+                return;
+            }
+
+            PlaySelected();
+        }
+
+        /// <summary>
+        ///     Moves the selection by one row and plays what it lands on.
+        /// </summary>
+        /// <remarks>
+        ///     Wraps at both ends, matching the Tracks transport: a Next that goes dead on the last
+        ///     row reads as broken rather than as finished. Rows that carry no audio are stepped
+        ///     over rather than selected and refused - group 0 is the shared setup header and is a
+        ///     row in this list like any other, so a plain step would stall on it.
+        /// </remarks>
+        /// <param name="direction">-1 for the previous effect, 1 for the next.</param>
+        private void Step(int direction) {
+            int count = records.Rows.Count;
+            if (count == 0)
+                return;
+
+            //IReadOnlyList has no IndexOf, and the row identity is the object rather than an id.
+            int at = -1;
+            for (int i = 0; i < count; i++) {
+                if (ReferenceEquals(records.Rows[i], records.SelectedRow)) {
+                    at = i;
+                    break;
+                }
+            }
+
+            for (int step = 1; step <= count; step++) {
+                int next = ((at + direction * step) % count + count) % count;
+
+                if (records.Rows[next] is Sfx2Listing candidate && candidate.Sample != null) {
+                    records.SelectRow(candidate);
+                    PlaySelected();
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        ///     Puts the transport into the state the playback is actually in.
+        /// </summary>
+        /// <remarks>
+        ///     One method rather than the conditions rebuilt at each site that changes them. The
+        ///     Tracks panel had three copies of its play button's enabled state and they had already
+        ///     drifted, one requiring a length the others did not.
+        /// </remarks>
+        private void UpdateTransport() {
+            Sfx2Playback? running = playing;
+            bool held = running != null && running.IsPaused;
+            bool live = running != null && running.IsPlaying;
+
+            //Never disabled while there are rows: Step wraps, so there is always somewhere to go.
+            previousButton.Enabled = records.Rows.Count > 0;
+            nextButton.Enabled = previousButton.Enabled;
+
+            //Only a sample can be played. Group 0 is the shared setup header and has no audio.
+            bool startable = cache != null && records.SelectedRow is Sfx2Listing listing &&
+                             listing.Sample != null;
+
+            playPauseButton.Enabled = live || startable;
+
+            /* Pause only while it is actually sounding. A held effect shows Play, because that is
+               what the next click does - the icon states the action, not the state. */
+            bool showPause = live && !held;
+            playPauseButton.Icon = showPause ? EditorIcon.Pause : EditorIcon.Play;
+            playPauseButton.Describe(showPause
+                ? "Pause, keeping the position and the queued audio"
+                : held ? "Resume" : "Play the selected effect");
         }
 
         /// <summary>
@@ -170,6 +277,19 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         ///     Marshalled rather than called directly, and dropped outright once the handle has gone
         ///     - a device that fails while the tab is closing must not take the form down with it.
         /// </remarks>
+        /// <summary>Puts the transport back to Play when a playback ends on its own.</summary>
+        private void RefreshTransportFromPlaybackThread() {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            try {
+                BeginInvoke(new Action(UpdateTransport));
+            }
+            catch (ObjectDisposedException) {
+                //The panel went away between the check and the post.
+            }
+        }
+
         private void ReportFromPlaybackThread(string message) {
             if (IsDisposed || !IsHandleCreated)
                 return;
@@ -223,7 +343,13 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                 started.Failed += error => ReportFromPlaybackThread(
                     "Effect " + id + " could not be played: " + error.Message);
 
+                //Both ends of a playback put the transport back to Play. Marshalled, because they
+                //are raised on the playback thread and these are controls.
+                started.Failed += _ => RefreshTransportFromPlaybackThread();
+                started.Completed += RefreshTransportFromPlaybackThread;
+
                 playing = started;
+                UpdateTransport();
                 records.ReportStatus("Playing effect " + id + ", " + samples.Length +
                     " samples at " + listing.Sample.SampleRate + " Hz");
             }
@@ -274,7 +400,6 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             playing = null;
             setup = null;
             setupFailed = false;
-            play.Enabled = false;
 
             cache = newCache;
             fields.ClearObjects();
@@ -358,19 +483,19 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
             /* The transport sits above the note it qualifies, on its own strip, so the button is
                beside the sentence explaining what pressing it does and does not do. */
-            var transport = new FlowLayoutPanel {
+            var transportStrip = new FlowLayoutPanel {
                 Dock = DockStyle.Top,
                 FlowDirection = FlowDirection.LeftToRight,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 WrapContents = false
             };
-            transport.Controls.Add(play);
+            transportStrip.Controls.Add(transport);
 
             Controls.Add(listAndDetail);
             Controls.Add(header);
             Controls.Add(playback);
-            Controls.Add(transport);
+            Controls.Add(transportStrip);
 
             //Bound before any cache arrives so the list has its headings from the start.
             records.Bind(null, descriptor);

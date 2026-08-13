@@ -37,6 +37,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         private readonly Thread thread;
 
         private volatile bool stopping;
+        private volatile bool paused;
 
         /// <summary>Starts playing a decoded effect on its own thread.</summary>
         /// <param name="samples">The signed 16-bit mono samples.</param>
@@ -57,6 +58,36 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
 
         /// <summary>Raised on the playback thread when the device or the feed failed.</summary>
         public event Action<Exception>? Failed;
+
+        /// <summary>Whether the effect is still running, whether or not it is held.</summary>
+        public bool IsPlaying => thread.IsAlive && !stopping;
+
+        /// <summary>Whether a running effect is held part way through.</summary>
+        public bool IsPaused => paused && IsPlaying;
+
+        /// <summary>
+        ///     Holds the effect where it is, without rewinding it.
+        /// </summary>
+        /// <remarks>
+        ///     The position is an index into an array of samples that were decoded before playback
+        ///     began, so nothing has to be preserved for a resume to continue from the right place -
+        ///     unlike the track player, where the pause has to hold a whole synthesiser mid-voice.
+        ///     What the flag does buy is the same as there: the queued buffers stay queued rather
+        ///     than being reset away, so the join is inaudible.
+        ///     <para>
+        ///     Read by the playback thread rather than acted on here. The device belongs to that
+        ///     thread and does not exist at all between construction and the first loop pass, so a
+        ///     caller touching it from outside would be racing the field.
+        ///     </para>
+        /// </remarks>
+        public void Pause() {
+            paused = true;
+        }
+
+        /// <summary>Continues a held effect from the sample it stopped on.</summary>
+        public void Resume() {
+            paused = false;
+        }
 
         /// <summary>Stops playing and releases the device.</summary>
         /// <remarks>
@@ -80,7 +111,28 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                 device = new WaveOutDevice(sampleRate, FramesPerBuffer, BufferCount, channels: 1);
 
                 int position = 0;
+
+                /* What the device was last told, so a transition is applied once rather than on
+                   every pass. waveOutPause and waveOutRestart are both idempotent, but calling
+                   either a hundred times a second is noise in the audio stack for no reason. */
+                bool held = false;
+
                 while (!stopping && position < samples.Length) {
+                    if (paused) {
+                        if (!held) {
+                            device.Pause();
+                            held = true;
+                        }
+
+                        Thread.Sleep(10);
+                        continue;
+                    }
+
+                    if (held) {
+                        device.Resume();
+                        held = false;
+                    }
+
                     if (!device.CanWrite) {
                         //Every buffer is queued, so there is nothing to do until one drains.
                         Thread.Sleep(10);
@@ -105,7 +157,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
                    most effects are shorter than that, so without this wait the entire sound was
                    discarded and the tab was silent. Bounded, so a driver that never reports done
                    cannot hang the thread. */
-                for (int spin = 0; spin < 500 && !stopping && !device.Drained; spin++)
+                for (int spin = 0; spin < 500 && !stopping && !paused && !device.Drained; spin++)
                     Thread.Sleep(10);
 
                 if (!stopping)
