@@ -118,9 +118,14 @@ namespace FlashEditor.Definitions.SpotAnims {
         public GraphicListDescriptor() {
             columns = new[] {
                 DefinitionColumn.ReadOnly<GraphicListing>("Graphic", row => row.GraphicId, 90),
-                DefinitionColumn.Number<GraphicListing>("Model", row => row.ModelId,
-                    (row, value) => row.Record.ModelId = value, 90),
-                DefinitionColumn.Number<GraphicListing>("Animation", row => row.AnimationId,
+                /* The two measured joins a spot animation carries, and still editable - the fields
+                   were editable cells before they were links, and taking an edit away to add a jump
+                   would be a poor trade. The animation reads null when the record names none, which
+                   is what keeps an absent id from drawing a link to animation -1. */
+                DefinitionColumn.Link<GraphicListing>("Model", RSConstants.MODELS_INDEX,
+                    row => row.ModelId, (row, value) => row.Record.ModelId = value, 90),
+                DefinitionColumn.Link<GraphicListing>("Animation", RSConstants.ANIMATIONS_INDEX,
+                    row => row.Record.AnimationId < 0 ? null : row.Record.AnimationId,
                     (row, value) => row.Record.AnimationId = value, 90),
                 DefinitionColumn.Number<GraphicListing>("Scale XZ", row => row.ScaleXZ,
                     (row, value) => row.Record.ScaleXZ = value, 80),

@@ -230,18 +230,30 @@ namespace FlashEditor.Definitions.Editing {
         ///     The column says which index the number addresses and nothing else. What following it
         ///     <i>does</i> is the host's decision, taken from
         ///     <c>DefinitionListPanel.CellActivated</c>.
+        ///     <para>
+        ///     <b>A link may still be edited.</b> Several of the measured joins sit on fields that
+        ///     were already editable cells, and turning one into a read-only link to make it
+        ///     followable would take an edit away to add a jump. The panel is what keeps the two
+        ///     apart: a plain click follows a read-only link, and an editable one wants Ctrl, because
+        ///     the first click of the double click that starts an edit would otherwise navigate away
+        ///     before the second landed.
+        ///     </para>
         /// </remarks>
         /// <typeparam name="TRow">The row type this column reads.</typeparam>
         /// <param name="header">The column heading.</param>
         /// <param name="indexId">The index the id addresses.</param>
         /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="write">Writes an edited id back, or null for a read-only column.</param>
         /// <param name="width">The column width.</param>
         /// <returns>The column.</returns>
         public static DefinitionColumn Link<TRow>(string header, int indexId,
-            Func<TRow, int?> read, int width = 90) where TRow : class {
+            Func<TRow, int?> read, Action<TRow, int>? write = null, int width = 90) where TRow : class {
             return new DefinitionColumn(header, width,
                 row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
-                null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToInt(value));
+                },
                 row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
                     ? DefinitionCellVisual.Link(indexId, id)
                     : DefinitionCellVisual.None);
@@ -262,13 +274,17 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="header">The column heading.</param>
         /// <param name="configGroup">The group within index 2 the id is a file of.</param>
         /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="write">Writes an edited id back, or null for a read-only column.</param>
         /// <param name="width">The column width.</param>
         /// <returns>The column.</returns>
         public static DefinitionColumn ConfigLink<TRow>(string header, int configGroup,
-            Func<TRow, int?> read, int width = 90) where TRow : class {
+            Func<TRow, int?> read, Action<TRow, int>? write = null, int width = 90) where TRow : class {
             return new DefinitionColumn(header, width,
                 row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
-                null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToInt(value));
+                },
                 row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
                     ? DefinitionCellVisual.ConfigLink(configGroup, id)
                     : DefinitionCellVisual.None);

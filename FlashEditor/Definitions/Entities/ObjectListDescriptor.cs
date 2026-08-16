@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using FlashEditor.Cache;
+using FlashEditor.Definitions.Config;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.IO;
 
@@ -33,10 +34,25 @@ namespace FlashEditor.Definitions.Entities {
                 (row, value) => row.walkable = value, 90),
             DefinitionColumn.Flag<ObjectDefinition>("Clipped", row => row.isClipped,
                 (row, value) => row.isClipped = value, 85),
-            DefinitionColumn.Number<ObjectDefinition>("Sound", row => row.ambientSoundId,
-                (row, value) => row.ambientSoundId = value, 80),
-            DefinitionColumn.Number<ObjectDefinition>("MorphVar", row => row.morphVarbit,
-                (row, value) => row.morphVarbit = value, 95)
+            /* The four measured joins an object carries, as links rather than as bare numbers, and
+               still editable: turning an editable field into a read-only link to make it followable
+               would take an edit away to add a jump. Reading them as -1 for "names nothing" is what
+               keeps a cell that stores no reference from drawing a link to record -1. */
+            DefinitionColumn.Link<ObjectDefinition>("Sound", RSConstants.SOUND_EFFECTS,
+                row => row.ambientSoundId, (row, value) => row.ambientSoundId = value, 80),
+            DefinitionColumn.Link<ObjectDefinition>("MorphVar", RSConstants.SCRIPT_CONFIGS,
+                row => row.morphVarbit, (row, value) => row.morphVarbit = value, 95),
+            /* Opcode 102 and opcode 107. Both are index 2 file ids, so both have to name their
+               group: id 12 in group 34 is a map scene icon and id 12 in group 36 is a world map
+               element, and a link built from the id alone would resolve to whichever family the
+               Config tab was left showing.
+               Read only, because both are read-only views over private fields the codec is written
+               against - and because either opcode's presence in the stream is its own statement,
+               which a cell that only carries a number cannot make. */
+            DefinitionColumn.ConfigLink<ObjectDefinition>("Map icon", ConfigGroup.MapSceneIcon,
+                row => row.mapSceneIcon, width: 90),
+            DefinitionColumn.ConfigLink<ObjectDefinition>("Map element", ConfigGroup.MapElement,
+                row => row.mapElementId, width: 100)
         };
 
         /// <inheritdoc/>

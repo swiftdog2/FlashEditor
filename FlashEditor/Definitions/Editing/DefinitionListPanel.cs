@@ -169,6 +169,13 @@ namespace FlashEditor.Definitions.Editing {
             if (visual.Art == DefinitionCellArt.None)
                 return;
 
+            /* An editable cell wants Ctrl. Editing starts on a double click, and the first click of
+               that double click arrives here - so following on a plain click would switch the tab
+               out from under the second one, and the field would be unreachable for editing. A
+               read-only cell has no such conflict and follows on a plain click. */
+            if (e.Column.IsEditable && (Control.ModifierKeys & Keys.Control) != Keys.Control)
+                return;
+
             CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(e.Model, visual));
         }
 
@@ -208,6 +215,12 @@ namespace FlashEditor.Definitions.Editing {
                 if (sharing > 1 && descriptor != null)
                     line += Environment.NewLine + "used by " + sharing.ToString("N0") + " " +
                         descriptor.RowNoun + "s in this index";
+
+                //Stated because the two differ, and the difference is not guessable: an editable
+                //link wants Ctrl so that a double click can still start an edit.
+                line += Environment.NewLine +
+                    (column.IsEditable ? "Ctrl+click to follow, " : "Click to follow, ") +
+                    "Alt+Left to come back";
 
                 return line;
             }

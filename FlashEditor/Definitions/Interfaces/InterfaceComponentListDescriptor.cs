@@ -137,12 +137,6 @@ namespace FlashEditor.Definitions.Interfaces {
             return false;
         }
 
-        /// <summary>The media the component draws: a sprite id, a model id, or nothing.</summary>
-        public string Media => Component.ComponentType switch {
-            5 => Component.SpriteId.ToString(),
-            6 => Component.ModelId.ToString(),
-            _ => ""
-        };
     }
 
     /// <summary>
@@ -200,7 +194,20 @@ namespace FlashEditor.Definitions.Interfaces {
                 (row, value) => row.Component.BaseHeight = value, 60),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Parent", row => row.Parent, 60),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Hidden", row => row.Component.IsHidden, 60),
-            DefinitionColumn.ReadOnly<InterfaceComponentRow>("Media", row => row.Media, 70),
+            /* The three measured joins a component carries, and what the single "Media" column that
+               stood here used to fold together as text. Split because they address three different
+               indexes and a link has to say which, and because a string could not be followed.
+               Two of the three gate themselves: ModelId and FontId report -1 when the decoder never
+               read them, since only a type 6 block reads a model and only a type 4 block a font. The
+               sprite does not - SpriteId has no sentinel and defaults to 0 - so it is gated on the
+               type here, for the reason the Colour column is: a link drawn from storage the decoder
+               never wrote would present it as a reference the record has. */
+            DefinitionColumn.Link<InterfaceComponentRow>("Sprite", RSConstants.SPRITES_INDEX,
+                row => row.Component.ComponentType == SpriteComponentType ? row.Component.SpriteId : null, width: 70),
+            DefinitionColumn.Link<InterfaceComponentRow>("Model", RSConstants.MODELS_INDEX,
+                row => row.Component.ModelId < 0 ? null : row.Component.ModelId, width: 70),
+            DefinitionColumn.Link<InterfaceComponentRow>("Font", RSConstants.FONTS_INDEX,
+                row => row.Component.FontId < 0 ? null : row.Component.FontId, width: 70),
 
             /* Types 3, 4, 5 and 9 all read one colour field, and only one type block runs per
                component - so the column is meaningful exactly for those and stores nothing for a
@@ -230,6 +237,16 @@ namespace FlashEditor.Definitions.Interfaces {
         private static bool HasColour(InterfaceComponentDefinition component) {
             return component.ComponentType is 3 or 4 or 5 or 9;
         }
+
+        /// <summary>
+        ///     The component type whose block reads a sprite id.
+        /// </summary>
+        /// <remarks>
+        ///     Named because <c>SpriteId</c> carries no "names nothing" sentinel the way
+        ///     <c>ModelId</c> and <c>FontId</c> do, so the type is the only statement that the field
+        ///     was written at all.
+        /// </remarks>
+        private const int SpriteComponentType = 5;
 
         /// <inheritdoc/>
         public override int IndexId => RSConstants.INTERFACE_DEFINITIONS_INDEX;
