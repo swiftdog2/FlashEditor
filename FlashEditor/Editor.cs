@@ -243,14 +243,34 @@ namespace FlashEditor {
                 IndexId = indexId;
                 Category = category;
                 Bind = bind;
+                AlsoIndexes = alsoIndexes ?? Array.Empty<int>();
 
                 //The routing index first, then whatever else the tab happens to show. Only the
-                //first one addresses anything; the rest are here to be read.
-                IndexLabel = string.Join(", ", new[] { indexId }.Concat(alsoIndexes));
+                //first one is loaded; the rest are what a cross-navigation link falls back to.
+                IndexLabel = string.Join(", ", new[] { indexId }.Concat(AlsoIndexes));
             }
 
             /// <summary>The cache index this tab edits.</summary>
             internal int IndexId { get; }
+
+            /// <summary>
+            ///     The further indexes this tab puts on screen.
+            /// </summary>
+            /// <remarks>
+            ///     Read by cross-navigation as a <i>fallback</i> only, after every tab has been asked
+            ///     whether it is the primary editor for the index. That ordering is what keeps this
+            ///     from putting the routing decision back into a list, which is the failure the
+            ///     positional array made: index 14 appears here on the MIDI Patch tab and is index
+            ///     14's own tab's <see cref="IndexId"/>, and a link into 14 has to reach the latter.
+            /// </remarks>
+            internal int[] AlsoIndexes { get; }
+
+            /// <summary>Whether this tab puts an index on screen at all, primary or beside.</summary>
+            /// <param name="indexId">The cache index.</param>
+            /// <returns>Whether it is shown here.</returns>
+            internal bool Shows(int indexId) {
+                return IndexId == indexId || Array.IndexOf(AlsoIndexes, indexId) >= 0;
+            }
 
             /// <summary>Which navigation group the tab is filed under.</summary>
             internal EditorCategory Category { get; }
@@ -1680,12 +1700,29 @@ namespace FlashEditor {
         /// </remarks>
         /// <param name="page">The tab being populated.</param>
         private void WireNavigation(TabPage page) {
-            DefinitionListPanel? grid = GridOf(page);
-            if (grid == null)
-                return;
+            /* Every grid on the page, not the first one. The Interfaces page carries two - the
+               interfaces and the selected interface's components - and the components grid is the
+               one holding the sprite, font, model and script-hook references, so wiring only the
+               first would leave the biggest join in the list unreachable. It is also the page
+               another agent owns the canvas and field pane of, which is exactly why the wiring
+               belongs here rather than in a call site over there. */
+            foreach (DefinitionListPanel grid in GridsIn(page)) {
+                grid.CellActivated -= OnCellActivated;
+                grid.CellActivated += OnCellActivated;
+            }
+        }
 
-            grid.CellActivated -= OnCellActivated;
-            grid.CellActivated += OnCellActivated;
+        /// <summary>Every definition list on a page, however deeply the tab nests them.</summary>
+        /// <param name="root">The tab, or a container within it.</param>
+        /// <returns>The grids.</returns>
+        private static IEnumerable<DefinitionListPanel> GridsIn(Control root) {
+            foreach (Control child in root.Controls) {
+                if (child is DefinitionListPanel grid)
+                    yield return grid;
+
+                foreach (DefinitionListPanel nested in GridsIn(child))
+                    yield return nested;
+            }
         }
 
         /// <summary>
@@ -1700,7 +1737,7 @@ namespace FlashEditor {
             if (e.Visual.Art != DefinitionCellArt.Link && e.Visual.Art != DefinitionCellArt.Thumbnail)
                 return;
 
-            navigator.GoTo(new EditorLocation(e.Visual.IndexId, e.Visual.TargetId));
+            navigator.GoTo(new EditorLocation(e.Visual.IndexId, e.Visual.TargetId, e.Visual.GroupId));
         }
 
         /// <summary>
@@ -1719,15 +1756,7 @@ namespace FlashEditor {
         /// </remarks>
         /// <param name="location">The index, and the record within it.</param>
         private void ShowLocation(EditorLocation location) {
-            TabPage? destination = null;
-
-            foreach (KeyValuePair<TabPage, EditorTabBinding> entry in editorTabs) {
-                if (entry.Value.IndexId != location.IndexId)
-                    continue;
-
-                destination = entry.Key;
-                break;
-            }
+            TabPage? destination = TabFor(location.IndexId);
 
             if (destination == null) {
                 //An index with no editor is a real answer rather than a fault - RSConstants names
@@ -1740,8 +1769,46 @@ namespace FlashEditor {
 
             EditorTabControl.SelectedTab = destination;
 
+            /* Two pages hold more than one thing and cannot be driven by a record id alone, so each
+               is asked in its own terms before the generic path. The Config page needs the group,
+               because index 2 has no id arithmetic and the same file id in two groups is two
+               different records; the Entities page needs to know which of its four families the
+               index belongs to, because only one of the four routes to the page. */
+            if (destination == ConfigEditorTab && location.HasGroup) {
+                if (!ConfigPanel.Show(location.GroupId, location.RecordId))
+                    Debug("Cross-navigation: this cache declares no config group " + location.GroupId + ".");
+                return;
+            }
+
+            if (destination == EntityEditorTab && EntityPanel.Show(location.IndexId, location.RecordId))
+                return;
+
             if (location.HasRecord)
                 GridOf(destination)?.SelectRecord(location.RecordId);
+        }
+
+        /// <summary>
+        ///     The tab that shows a cache index, preferring the one it is the editor for.
+        /// </summary>
+        /// <remarks>
+        ///     Two passes rather than one, and the order is the whole of it. Six tabs list a second
+        ///     index beside their own, and one of those seconds - index 14 on the MIDI Patch tab - is
+        ///     another tab's primary. A single pass over an unordered dictionary would send a link
+        ///     into index 14 to whichever of the two it met first, which is a bug that appears and
+        ///     disappears with the hash order.
+        /// </remarks>
+        /// <param name="indexId">The cache index.</param>
+        /// <returns>The tab, or null when no editor shows that index.</returns>
+        private TabPage? TabFor(int indexId) {
+            foreach (KeyValuePair<TabPage, EditorTabBinding> entry in editorTabs)
+                if (entry.Value.IndexId == indexId)
+                    return entry.Key;
+
+            foreach (KeyValuePair<TabPage, EditorTabBinding> entry in editorTabs)
+                if (entry.Value.Shows(indexId))
+                    return entry.Key;
+
+            return null;
         }
 
         /// <summary>

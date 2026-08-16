@@ -683,6 +683,49 @@ namespace FlashEditor.Definitions.Entities {
             indexer.RunWorkerAsync();
         }
 
+        /// <summary>
+        ///     Selects one record of whichever family edits a cache index, for a link followed from
+        ///     another tab.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This page is four cache indexes, and only one of them routes to it.</b> Indexes 19,
+        ///     18, 16 and 7 share the page because seeing an item's model used to mean opening three
+        ///     tabs; the registration names 19 and the other three are listed beside it. So a link
+        ///     into index 7 or 16 reaches the right page and then has to say which family - the
+        ///     selector is what decides that, and nothing outside could reach it before.
+        ///     <para>
+        ///     The record is asked for through <c>DefinitionListPanel.SelectRecord</c>, which holds
+        ///     the request until the rows exist. Switching family starts a load, and a link followed
+        ///     from another tab routinely finds this page not loaded at all.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The cache index the record lives in.</param>
+        /// <param name="recordId">The record, or -1 to show the family alone.</param>
+        /// <returns>Whether this page holds an editor for that index.</returns>
+        public bool Show(int indexId, int recordId) {
+            EntityKind? wanted = indexId switch {
+                RSConstants.ITEM_DEFINITIONS_INDEX => EntityKind.Item,
+                RSConstants.NPC_DEFINITIONS_INDEX => EntityKind.Npc,
+                RSConstants.OBJECTS_DEFINITIONS_INDEX => EntityKind.Object,
+                RSConstants.MODELS_INDEX => EntityKind.Model,
+                _ => null
+            };
+
+            if (wanted == null)
+                return false;
+
+            //Through the selector rather than by assigning the field, so the combo agrees with the
+            //grid and the viewport is cleared of the previous family's model. Assigning it raises
+            //the handler that does both.
+            if (kindSelector.SelectedIndex != (int) wanted.Value)
+                kindSelector.SelectedIndex = (int) wanted.Value;
+
+            if (recordId >= 0)
+                list.SelectRecord(recordId);
+
+            return true;
+        }
+
         /// <summary>The descriptor for the family currently selected.</summary>
         private IDefinitionListDescriptor Descriptor => kind switch {
             EntityKind.Item => items,
