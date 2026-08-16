@@ -53,27 +53,50 @@ namespace FlashEditor.Definitions.Sprites {
             Text = NoCacheText
         };
 
-        private readonly Label notice = new Label {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            Font = GridFont,
-            Text = "Two of the nineteen columns have established meanings. field1831 is the texture's " +
-                   "representative colour in raw 16-bit RS HSL - the cell holds the stored value and the swatch " +
-                   "is what the client resolves it to - and field1824 is the pixel transposition flag the graph " +
-                   "evaluator is driven by. The other seventeen carry the client's own field names because " +
-                   "nothing settles what they mean, and a name invented here would be read as settled: " +
-                   "field1835 was once taken for a tint and multiplied into the generated pixels, which scaled " +
-                   "every texture in the editor towards black."
-        };
+        /// <summary>
+        ///     What the nineteen columns are, behind an (i) rather than docked across the page.
+        /// </summary>
+        /// <remarks>
+        ///     Static prose - it says the same thing whichever cache is open - where the census in
+        ///     <see cref="header"/> is measured from the loaded one and stays docked. That is the
+        ///     line 18.4 drew: a paragraph nothing rewrites becomes chrome, and a figure nobody sees
+        ///     is a figure nobody checks.
+        /// </remarks>
+        private const string ColumnNotice =
+            "Two of the nineteen columns have established meanings. field1831 is the texture's " +
+            "representative colour in raw 16-bit RS HSL - the cell holds the stored value and the swatch " +
+            "is what the client resolves it to - and field1824 is the pixel transposition flag the graph " +
+            "evaluator is driven by.\n\n" +
+            "The other seventeen carry the client's own field names because nothing settles what they " +
+            "mean, and a name invented here would be read as settled: field1835 was once taken for a tint " +
+            "and multiplied into the generated pixels, which scaled every texture in the editor towards " +
+            "black.";
 
-        private readonly Label cost = new Label {
+        /// <summary>What editing one cell costs, behind a (!) beside the grid it is about.</summary>
+        private const string EditCost =
+            "Editing any cell stages the whole index-26 file: the format is column-major, so one record's " +
+            "23 bytes sit in nineteen different places in it and there is no smaller unit to write.\n\n" +
+            "Columns nobody edited are replayed byte for byte, and a field put back where it started " +
+            "stages nothing at all. Nothing reaches disk until the cache is saved.";
+
+        /// <summary>How the preview differs from what the client draws.</summary>
+        /// <remarks>
+        ///     Split off the note under the preview so that the half of it which <i>is</i> rewritten
+        ///     on selection - the record's own summary, which says whether this id has a graph at
+        ///     all - keeps the docked line to itself.
+        /// </remarks>
+        private const string PreviewNotice =
+            "The preview is this editor's own evaluation of the index-9 graph, not the client's raster. " +
+            "Where there is no graph - and while one is still being evaluated - it is the flat colour " +
+            "field1831 resolves to.";
+
+        //A strip rather than the glyphs docked on their own, so the two notes share one row.
+        private readonly FlowLayoutPanel notices = new FlowLayoutPanel {
             AutoSize = true,
-            Dock = DockStyle.Bottom,
-            Font = GridFont,
-            Text = "Editing any cell stages the whole index-26 file: the format is column-major, so one record's " +
-                   "23 bytes sit in nineteen different places in it and there is no smaller unit to write. " +
-                   "Columns nobody edited are replayed byte for byte, and a field put back where it started " +
-                   "stages nothing at all. Nothing reaches disk until the cache is saved."
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
         };
 
         private readonly DefinitionListPanel materials = new DefinitionListPanel {
@@ -197,8 +220,6 @@ namespace FlashEditor.Definitions.Sprites {
         /// </remarks>
         private void WrapNotices() {
             Wrap(header, ClientSize.Width);
-            Wrap(notice, ClientSize.Width);
-            Wrap(cost, ClientSize.Width);
             Wrap(previewNote, previewAndFields.Panel1.ClientSize.Width);
         }
 
@@ -238,18 +259,41 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         private void BuildLayout() {
+            /* Summary rather than glyph alone: the one thing a user comparing this square against
+               the game has to know is that it is not the client's raster, and a claim that only
+               appears on hover is a claim most users never read. */
+            var previewGlyph = new InfoAffordance {
+                Describes = preview,
+                Dock = DockStyle.Top,
+                Kind = InfoKind.Limitation,
+                Caption = "What the preview is",
+                Summary = "Not the client's raster",
+                Body = PreviewNotice
+            };
+
             previewAndFields.Panel1.Controls.Add(preview);
             previewAndFields.Panel1.Controls.Add(previewNote);
+            previewAndFields.Panel1.Controls.Add(previewGlyph);
             previewAndFields.Panel2.Controls.Add(fields);
 
             listAndDetail.Panel1.Controls.Add(materials);
             listAndDetail.Panel2.Controls.Add(previewAndFields);
 
+            /* Behind an (i) and a (!) rather than docked as two paragraphs, which is the 18.4 rule.
+               The cost is a separate mark from the limitation because it is the only one of the two
+               about an action the user is one double click away from taking. */
+            notices.Controls.Add(InfoAffordance.For(materials, InfoKind.Limitation, ColumnNotice));
+            notices.Controls.Add(new InfoAffordance {
+                Describes = materials,
+                Kind = InfoKind.Cost,
+                Caption = "What editing a cell costs",
+                Body = EditCost
+            });
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter and in inside-out order among themselves.
             Controls.Add(listAndDetail);
-            Controls.Add(cost);
-            Controls.Add(notice);
+            Controls.Add(notices);
             Controls.Add(header);
 
             //Bound before any cache arrives so the grid has its headings from the start.
@@ -295,10 +339,9 @@ namespace FlashEditor.Definitions.Sprites {
                 return;
             }
 
-            previewNote.Text = listing.Summary + Environment.NewLine +
-                               "The preview is this editor's own evaluation of the index-9 graph, not the " +
-                               "client's raster. Where there is no graph - and while one is still being " +
-                               "evaluated - it is the flat colour field1831 resolves to.";
+            //The record's own line only. What the preview is, and is not, sits behind the (i) above
+            //it - that half never changed with the selection and was re-read on every click.
+            previewNote.Text = listing.Summary;
         }
 
         /// <summary>

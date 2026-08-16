@@ -458,6 +458,20 @@ investigation.
 - **`AnalyseCache` (`Editor.cs:2184`) is a stub.** It loads the input cache into a local, never
   reads the output path at all, and unconditionally returns 0 - so "no differences found" is what
   it always reports, whatever the two caches hold.
+- **A tab that shows nothing for a long time after launch is almost never the tab.** The cache open
+  is synchronous on the UI thread inside `Editor_Load` (`Editor.cs:820`), before any tab loads at
+  all, and it is where the wait is. Measured 2026-08-16 against the vanilla b639 capture, in one
+  process, by constructing `Editor` headlessly, invoking `Editor_Load` and then `LoadEditorTab` and
+  pumping until `DefinitionListPanel.Rows` filled: **the cache open cost more than forty times what
+  the Materials tab's own load did**, and the Materials tab was not even the slowest of the four
+  tabs measured - it published every row of index 26 in less time than Native Libraries took for its
+  36. The absolute figures belong to that machine and that cache; the ratio is what to carry.
+  `MaterialListDescriptor.Enumerate` is the shape that invites the wrong diagnosis, because it
+  reaches `TextureManager.EnsureLoaded` and so appears to decode index 26 and every index-9 graph
+  inline - but `LoadCache` has already paid for that through `GLTextureCache`, so by the time a tab
+  asks it is a dictionary lookup. **Seeding placeholder rows into one of these grids is therefore
+  work with nothing to show for it.** The load that genuinely shows nothing while it runs is the
+  cache open, and that is one change for every tab rather than a change to any of them.
 - **The three cache directories are three different things, and none of them is a compile-time
   constant inlined into its callers any more.** `CachePaths`
   (`FlashEditor/Cache/CachePaths.cs`) resolves each at runtime:

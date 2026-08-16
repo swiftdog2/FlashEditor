@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Natives {
@@ -49,19 +50,33 @@ namespace FlashEditor.Definitions.Natives {
             Text = NoCacheText
         };
 
-        private readonly Label notice = new Label {
+        /// <summary>
+        ///     What this tab will not do, behind an (i) rather than docked across the page.
+        /// </summary>
+        /// <remarks>
+        ///     Static prose: it says nothing about the loaded cache, so nothing rewrites it and it
+        ///     was pure chrome after the first read. The two statements that <i>are</i> measured -
+        ///     the index census in <see cref="header"/> and the name anomalies in
+        ///     <see cref="anomalyNotice"/> - stay docked, because a figure nobody sees is a figure
+        ///     nobody checks.
+        /// </remarks>
+        private const string TabNotice =
+            "A group here is one compiled binary and its name is the whole address - the client builds " +
+            "\"<os>/<arch>/<library><extension>\" and hashes it, and the file inside is named \"\". " +
+            "The names are not in the cache: every one was recovered by hashing a candidate and requiring " +
+            "an exact match, so a group with no name is one nothing has matched rather than one without.\n\n" +
+            "Format, architecture and word width are read from the payload's own MZ, ELF or Mach-O header, " +
+            "never from the name. The Agrees column compares the two.\n\n" +
+            "This tab does not load or verify a library. It says what shape a file is and nothing about " +
+            "whether it runs.";
+
+        //A strip rather than the glyphs docked on their own, so the two notes share one row.
+        private readonly FlowLayoutPanel notices = new FlowLayoutPanel {
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Dock = DockStyle.Top,
-            Font = GridFont,
-            Text = "A group here is one compiled binary and its name is the whole address - the client builds " +
-                   "\"<os>/<arch>/<library><extension>\" and hashes it, and the file inside is named \"\". " +
-                   "The names are not in the cache: every one was recovered by hashing a candidate and requiring " +
-                   "an exact match, so a group with no name is one nothing has matched rather than one without." +
-                   Environment.NewLine +
-                   "Format, architecture and word width are read from the payload's own MZ, ELF or Mach-O header, " +
-                   "never from the name. The Agrees column compares the two." + Environment.NewLine +
-                   "This tab does not load or verify a library. It says what shape a file is and nothing about " +
-                   "whether it runs."
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
         };
 
         private readonly Label anomalyNotice = new Label {
@@ -98,18 +113,15 @@ namespace FlashEditor.Definitions.Natives {
             BatchCaption = "Export every library..."
         };
 
-        private readonly Label cost = new Label {
-            AutoSize = true,
-            Dock = DockStyle.Bottom,
-            Font = GridFont,
-            Text = "Replace stores the file you pick byte for byte - there is no transcode, so what the client " +
-                   "extracts is your file. It rewrites the group's CRC, its whirlpool digest and the " +
-                   "reference-table entry of every archive packed beside it, and stages the change; nothing " +
-                   "reaches disk until the cache is saved." + Environment.NewLine +
-                   "A replacement whose container format differs from the one already stored is refused - a .so " +
-                   "dropped onto a windows/ group would be accepted by the cache and would fail at the client, " +
-                   "where nothing here would report it."
-        };
+        /// <summary>What replacing a library costs, behind a (!) beside the button that does it.</summary>
+        private const string ReplaceCost =
+            "Replace stores the file you pick byte for byte - there is no transcode, so what the client " +
+            "extracts is your file. It rewrites the group's CRC, its whirlpool digest and the " +
+            "reference-table entry of every archive packed beside it, and stages the change; nothing " +
+            "reaches disk until the cache is saved.\n\n" +
+            "A replacement whose container format differs from the one already stored is refused - a .so " +
+            "dropped onto a windows/ group would be accepted by the cache and would fail at the client, " +
+            "where nothing here would report it.";
 
         private RSCache? cache;
         private bool splitterPlaced;
@@ -166,9 +178,7 @@ namespace FlashEditor.Definitions.Natives {
         /// </remarks>
         private void WrapNotices() {
             Wrap(header, ClientSize.Width);
-            Wrap(notice, ClientSize.Width);
             Wrap(anomalyNotice, ClientSize.Width);
-            Wrap(cost, ClientSize.Width);
             Wrap(detailNote, listAndDetail.Panel2.ClientSize.Width);
         }
 
@@ -209,13 +219,24 @@ namespace FlashEditor.Definitions.Natives {
             listAndDetail.Panel2.Controls.Add(fields);
             listAndDetail.Panel2.Controls.Add(detailNote);
 
+            /* Behind an (i) and a (!) rather than docked as two paragraphs, which is the 18.4 rule:
+               a permanent block of prose is read once and then becomes chrome. The cost note goes on
+               the transfer strip so it sits beside the Replace button it is about, and it is a Cost
+               rather than a Limitation because it is the only one here about a pending action. */
+            notices.Controls.Add(InfoAffordance.For(libraries, InfoKind.Limitation, TabNotice));
+            transfer.AddNotice(new InfoAffordance {
+                Describes = transfer,
+                Kind = InfoKind.Cost,
+                Caption = "What replacing a library costs",
+                Body = ReplaceCost
+            });
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter and in inside-out order among themselves.
             Controls.Add(listAndDetail);
-            Controls.Add(cost);
             Controls.Add(transfer);
             Controls.Add(anomalyNotice);
-            Controls.Add(notice);
+            Controls.Add(notices);
             Controls.Add(header);
 
             //Bound before any cache arrives so the grid has headings from the start.

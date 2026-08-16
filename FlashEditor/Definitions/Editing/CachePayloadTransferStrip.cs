@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 using FlashEditor.Cache;
+using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Editing {
@@ -82,6 +83,24 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <summary>Raised after an import has staged a change, so the host can reload its rows.</summary>
         public event EventHandler? Imported;
+
+        /// <summary>
+        ///     Puts a note on the strip, between the buttons and the status line.
+        /// </summary>
+        /// <remarks>
+        ///     For the "what this edit costs" sentences that used to be a paragraph docked under the
+        ///     buttons. Inserted rather than appended, because the status line is the last item and
+        ///     rewrites itself to whatever the last transfer said - a glyph after it would move every
+        ///     time the strip reported.
+        /// </remarks>
+        /// <param name="notice">The note. The strip owns it once it is added.</param>
+        public void AddNotice(InfoAffordance notice) {
+            if (notice == null)
+                throw new ArgumentNullException(nameof(notice));
+
+            Controls.Add(notice);
+            Controls.SetChildIndex(notice, Controls.GetChildIndex(status));
+        }
 
         /// <summary>Points the strip at a cache, or clears it.</summary>
         /// <param name="openCache">The open cache, or null.</param>
