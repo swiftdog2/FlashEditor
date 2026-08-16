@@ -39,6 +39,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
     ///     and the game uses them; playing the buffer once from first sample to last is what lets a
     ///     user hear the record itself, which is what an editor is for. The note says so, because
     ///     an effect that sounds shorter than it does in game is otherwise read as a decode fault.
+    ///     It reads off the (i) on the transport rather than off a paragraph docked above the grids.
     ///     </para>
     ///     <para>
     ///     <b>Where a full transport lands when it is written.</b> A strip docks into the detail
