@@ -1184,9 +1184,13 @@ namespace FlashEditor.Definitions.Interfaces {
             ///     The component ids the group declares, as a range.
             /// </summary>
             /// <remarks>
-            ///     Worth a column because index 3's groups are sparse: the count and the highest id
-            ///     disagree, so a reader who assumed 0..count-1 would ask for components that do not
-            ///     exist.
+            ///     <b>This said index 3's groups were sparse, and they are not.</b> Every declared
+            ///     group in the cache numbers its components 0 to n-1 with no hole, measured by
+            ///     <c>RealCacheInterfaceStructureTests.EveryInterface_NumbersItsComponentsDenselyFromZero</c>
+            ///     rather than asserted here. The column stays because that is a fact worth being
+            ///     able to see rather than take on trust - a structural edit closes the numbering
+            ///     precisely so it stays true, and a range that ever stops reading <c>0..n-1</c> is
+            ///     the first visible sign that one did not.
             /// </remarks>
             internal string IdRange => fileIds.Length == 0
                 ? "none"
