@@ -166,6 +166,33 @@ namespace FlashEditor.Tests.Export
             Assert.True(payload.TryGetProperty("elided", out _));
         }
 
+        /// <summary>
+        ///     A flag array is written as its length and the positions that are set.
+        /// </summary>
+        /// <remarks>
+        ///     Lossless, and it is what keeps the 256-entry opcode hit map every definition carries
+        ///     from being two kilobytes of <c>false</c> per record. A reader has to be able to
+        ///     recover the array, so the length is written beside the positions rather than left to
+        ///     be inferred from the highest one.
+        /// </remarks>
+        [Fact]
+        public void WriteRecord_WritesAFlagArrayAsItsSetPositions()
+        {
+            var record = new FlagArrayStub { Decoded = new bool[256] };
+            record.Decoded[1] = true;
+            record.Decoded[249] = true;
+
+            using JsonDocument document = Write(record);
+            JsonElement decoded = document.RootElement.GetProperty("decoded");
+
+            Assert.Equal(256, decoded.GetProperty("length").GetInt32());
+
+            JsonElement set = decoded.GetProperty("setIndices");
+            Assert.Equal(2, set.GetArrayLength());
+            Assert.Equal(1, set[0].GetInt32());
+            Assert.Equal(249, set[1].GetInt32());
+        }
+
         /// <summary>Every join the export resolves is named in its own header.</summary>
         /// <remarks>
         ///     So a reader can see the ceiling without reading the source, and so a join added to the
@@ -239,6 +266,13 @@ namespace FlashEditor.Tests.Export
         {
             /// <summary>The blob.</summary>
             public byte[] Payload { get; set; } = Array.Empty<byte>();
+        }
+
+        /// <summary>A record carrying an opcode hit map, as the definition decoders do.</summary>
+        private sealed class FlagArrayStub
+        {
+            /// <summary>The hit map.</summary>
+            public bool[] Decoded { get; set; } = Array.Empty<bool>();
         }
     }
 }

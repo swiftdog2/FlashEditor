@@ -112,6 +112,9 @@ namespace FlashEditor.Export {
                 case byte[] bytes:
                     WriteBytes(bytes);
                     return;
+                case bool[] flags:
+                    WriteFlagArray(flags);
+                    return;
                 case OpcodeStream opcodes:
                     WriteOpcodeStream(opcodes);
                     return;
@@ -244,6 +247,30 @@ namespace FlashEditor.Export {
             writer.WriteString("head", Hex(bytes, MaxInlineBytes));
             writer.WriteString("elided", "a blob longer than " + MaxInlineBytes +
                 " bytes is summarised rather than written inline");
+            writer.WriteEndObject();
+        }
+
+        /// <summary>
+        ///     Writes a flag array as its length and the positions that are set.
+        /// </summary>
+        /// <remarks>
+        ///     Lossless, and the difference is not cosmetic. The definition decoders carry a
+        ///     256-entry opcode hit map per record; written out one element per line that is around
+        ///     two kilobytes of <c>false</c> per record, and index 16 alone holds tens of thousands
+        ///     of records. The set positions carry the same information in the space of the handful
+        ///     of opcodes a record actually used.
+        /// </remarks>
+        /// <param name="flags">The array.</param>
+        private void WriteFlagArray(bool[] flags) {
+            writer.WriteStartObject();
+            writer.WriteNumber("length", flags.Length);
+            writer.WriteStartArray("setIndices");
+
+            for (int i = 0; i < flags.Length; i++)
+                if (flags[i])
+                    writer.WriteNumberValue(i);
+
+            writer.WriteEndArray();
             writer.WriteEndObject();
         }
 
