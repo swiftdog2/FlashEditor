@@ -592,11 +592,18 @@ namespace FlashEditor.Definitions.Interfaces {
         ///     <c>FullOpen</c>, because the client's palette is not the sixteen basic colours and
         ///     the custom-colour half of the dialog is the only part of it that is any use here.
         ///     </para>
+        ///     <para>
+        ///     <b>Written through the activated column, never into a named field.</b> The grid now
+        ///     carries two swatches on one row - the shared colour and a sprite's outline - and this
+        ///     method assigned <c>Component.Colour</c> outright, so a picker opened on the outline
+        ///     would have repainted the sprite's tint and left the outline alone.
+        ///     </para>
         /// </remarks>
-        /// <param name="activated">Which row, and what the cell named.</param>
+        /// <param name="activated">Which row, which column, and what the cell named.</param>
         private void PickColour(DefinitionCellActivatedEventArgs activated) {
             if (activated.Visual.Art != DefinitionCellArt.Swatch
-                || activated.Row is not InterfaceComponentRow row) {
+                || activated.Row is not InterfaceComponentRow row
+                || activated.Column?.Write == null) {
                 return;
             }
 
@@ -610,10 +617,13 @@ namespace FlashEditor.Definitions.Interfaces {
                 return;
 
             int packed = (picker.Color.R << 16) | (picker.Color.G << 8) | picker.Color.B;
-            if (packed == row.Component.Colour)
+
+            //The swatch is the stored value of the field that was clicked, so comparing against it
+            //is what keeps a picker that came back unchanged from staging a write.
+            if (packed == activated.Visual.PackedRgb)
                 return;
 
-            row.Component.Colour = packed;
+            activated.Column.Write(row, packed);
             components.CommitRow(row);
 
             //The canvas draws this colour, so it is wrong until it redraws.
@@ -685,10 +695,76 @@ namespace FlashEditor.Definitions.Interfaces {
             AddColumn(interfaces, "Ids", 110, row => Listing(row).IdRange);
         }
 
+        /// <summary>
+        ///     The value column of the field pane, which draws a swatch for the colour fields.
+        /// </summary>
+        /// <remarks>
+        ///     Built here rather than through <see cref="DetailGrid"/> because it needs the shared
+        ///     cell renderer, and states its own null-row guard for the same reason that type exists:
+        ///     the grid evaluates aspects for rows it is recycling and while a bind tears it down.
+        ///     <para>
+        ///     <b>This is the pane where a colour can be given to a field that stores none.</b> The
+        ///     component list's Outline column draws no swatch for a stored zero, because a zero
+        ///     means "no outline" rather than "black", and a cell with no swatch has nothing to
+        ///     activate. Here the picker is opened from the row, so a zero row is still reachable.
+        ///     </para>
+        /// </remarks>
+        private static readonly DefinitionColumn FieldValueColumn =
+            DefinitionColumn.Swatched<FieldListing>("Value", row => row.Value, row => row.Swatch, 620);
+
         private void BuildFieldColumns() {
             AddColumn(fields, "Section", 110, row => Field(row).Section);
             AddColumn(fields, "Field", 190, row => Field(row).Name);
-            AddColumn(fields, "Value", 620, row => Field(row).Value);
+
+            var value = new OLVColumn(FieldValueColumn.Header, null) {
+                Width = FieldValueColumn.Width,
+                Groupable = false,
+                IsEditable = false,
+                AspectGetter = row => row == null ? null : FieldValueColumn.Read(row),
+                Renderer = new DefinitionCellRenderer(FieldValueColumn, () => null)
+            };
+
+            fields.AllColumns.Add(value);
+            fields.Columns.Add(value);
+
+            fields.ItemActivate += (_, _) => PickFieldColour(fields.SelectedObject as FieldListing);
+        }
+
+        /// <summary>
+        ///     Opens a colour picker on an activated field row and writes what comes back.
+        /// </summary>
+        /// <remarks>
+        ///     The row carries the setter rather than this method deciding which field to write.
+        ///     Five different fields reach here - a rectangle's fill, text ink, a line, a sprite tint
+        ///     and a sprite outline - and three of them are the same stored property read by
+        ///     different types, so a method that inferred the target from the row's label would be
+        ///     one rename away from writing the wrong one.
+        /// </remarks>
+        /// <param name="field">The activated row, or null.</param>
+        private void PickFieldColour(FieldListing? field) {
+            if (field?.SetColour == null || components.SelectedRow is not InterfaceComponentRow row)
+                return;
+
+            using var picker = new ColorDialog {
+                Color = Color.FromArgb(0xFF, (field.Swatch ?? 0) >> 16 & 0xFF,
+                    (field.Swatch ?? 0) >> 8 & 0xFF, (field.Swatch ?? 0) & 0xFF),
+                FullOpen = true,
+                AnyColor = true
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            int packed = (picker.Color.R << 16) | (picker.Color.G << 8) | picker.Color.B;
+            if (!field.SetColour(packed))
+                return;
+
+            components.CommitRow(row);
+
+            //Both views of the value it just changed are now stale: the canvas draws the colour and
+            //the pane shows its hex.
+            canvas.Invalidate();
+            ShowComponent(row);
         }
 
         /// <summary>One grid, laid out the same way as every other.</summary>
@@ -911,7 +987,8 @@ namespace FlashEditor.Definitions.Interfaces {
                     break;
 
                 case 3:
-                    yield return new FieldListing("rectangle", "Colour", Hex(component.Colour, 6));
+                    yield return ColourField("rectangle", "Colour", component.Colour, false,
+                        picked => component.Colour = picked);
                     yield return new FieldListing("rectangle", "Filled",
                         component.RectangleFilledByte + (component.RectangleFilled ? " filled" : " outline"));
                     yield return new FieldListing("rectangle", "Transparency",
@@ -926,7 +1003,8 @@ namespace FlashEditor.Definitions.Interfaces {
                         "h " + component.HorizontalAlignment + ", v " + component.VerticalAlignment);
                     yield return new FieldListing("text", "Shadow",
                         component.ShadowByte + (component.HasShadow ? " shadowed" : ""));
-                    yield return new FieldListing("text", "Colour", Hex(component.Colour, 6));
+                    yield return ColourField("text", "Colour", component.Colour, false,
+                        picked => component.Colour = picked);
                     yield return new FieldListing("text", "Transparency",
                         component.Transparency + " (0 is opaque)");
                     break;
@@ -940,12 +1018,23 @@ namespace FlashEditor.Definitions.Interfaces {
                         (component.SpriteFlagBit1 ? ", bit 1 (unused by the client)" : ""));
                     yield return new FieldListing("sprite", "Transparency",
                         component.Transparency + " (0 is opaque)");
-                    yield return new FieldListing("sprite", "Outline",
-                        component.OutlineThickness + " px, " + Hex(component.OutlineColour, 6));
+                    yield return new FieldListing("sprite", "Outline thickness",
+                        component.OutlineThickness + " px");
+
+                    //Two rows rather than the one this used to be. The thickness and the colour are
+                    //separate stored fields with separate meanings for zero, and a picker needs a
+                    //row of its own to open from.
+                    yield return ColourField("sprite", "Outline colour", component.OutlineColour, true,
+                        picked => component.OutlineColour = picked);
+
                     yield return new FieldListing("sprite", "Flips",
                         (component.SpriteFlipVertical ? "vertical" : "-") + ", " +
                         (component.SpriteFlipHorizontal ? "horizontal" : "-"));
-                    yield return new FieldListing("sprite", "Tint", Hex(component.Colour, 6));
+
+                    //A sprite reads the shared colour as a multiply, and the client substitutes
+                    //0xffffff for a stored zero, so zero here means "leave the sprite alone".
+                    yield return ColourField("sprite", "Tint", component.Colour, true,
+                        picked => component.Colour = picked);
                     break;
 
                 case 6:
@@ -977,7 +1066,8 @@ namespace FlashEditor.Definitions.Interfaces {
 
                 case 9:
                     yield return new FieldListing("line", "Width", component.LineWidth.ToString());
-                    yield return new FieldListing("line", "Colour", Hex(component.Colour, 6));
+                    yield return ColourField("line", "Colour", component.Colour, false,
+                        picked => component.Colour = picked);
                     yield return new FieldListing("line", "Flipped",
                         component.LineFlippedByte + (component.LineFlipped ? " flipped" : ""));
                     break;
@@ -1103,6 +1193,60 @@ namespace FlashEditor.Definitions.Interfaces {
 
             /// <summary>The field's value, rendered.</summary>
             internal string Value { get; }
+
+            /// <summary>
+            ///     The colour to draw beside the value, or null when the row is not a colour.
+            /// </summary>
+            /// <remarks>
+            ///     Null for a colour field whose stored value means "none" as well as for a field
+            ///     that is not a colour at all. A swatch drawn for a zero outline or a zero tint
+            ///     would assert a colour the record does not carry, which is the same rule
+            ///     <see cref="DefinitionColumn.Colour{TRow}"/> states for a list column.
+            /// </remarks>
+            internal int? Swatch { get; init; }
+
+            /// <summary>
+            ///     Writes a picked colour into the component, or null when the row is read only.
+            /// </summary>
+            /// <remarks>
+            ///     Returns whether anything changed, so a picker that came back with the colour that
+            ///     was already stored stages nothing - re-encoding identical bytes rewrites the
+            ///     archive CRC and drags in the reference-table entry of every archive packed beside
+            ///     it.
+            /// </remarks>
+            internal Func<int, bool>? SetColour { get; init; }
+        }
+
+        /// <summary>
+        ///     A colour field of the selected component, as a row that can be picked.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Zero is "none" on two of these fields and a real black on the other three</b>, which
+        ///     is why the caller states the sentinel rather than this deciding it. A sprite's outline
+        ///     colour and its tint both use zero to mean the client draws neither
+        ///     (<c>RSInterface.java:487-495</c>, and the tint substitution at
+        ///     <c>Node_Sub10_Sub24.java:596-598</c>), while a rectangle, a line and a text component
+        ///     all draw a genuine black for the same stored value.
+        /// </remarks>
+        /// <param name="section">Which block of the record the field came from.</param>
+        /// <param name="name">The field's name.</param>
+        /// <param name="stored">The stored colour.</param>
+        /// <param name="zeroMeansNone">Whether a stored zero means the client draws nothing.</param>
+        /// <param name="write">Stores a picked colour.</param>
+        /// <returns>The row.</returns>
+        private static FieldListing ColourField(string section, string name, int stored,
+            bool zeroMeansNone, Action<int> write) {
+            return new FieldListing(section, name,
+                Hex(stored, 6) + (zeroMeansNone && stored == 0 ? " (none)" : "")) {
+                Swatch = zeroMeansNone && stored == 0 ? null : stored,
+                SetColour = picked => {
+                    if (picked == stored)
+                        return false;
+
+                    write(picked);
+                    return true;
+                }
+            };
         }
     }
 }

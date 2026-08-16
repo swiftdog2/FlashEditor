@@ -144,7 +144,11 @@ namespace FlashEditor.Definitions.Editing {
             if (visual.Art == DefinitionCellArt.None)
                 return;
 
-            CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(e.Model, visual));
+            //The column travels with the event because a row can carry two swatches - an interface
+            //component has a shared colour and a sprite outline colour - and the visual alone says
+            //which colour was clicked without saying which field it belongs to.
+            CellActivated?.Invoke(this,
+                new DefinitionCellActivatedEventArgs(e.Model, visual, hit.DescribedColumn));
         }
 
         /// <summary>

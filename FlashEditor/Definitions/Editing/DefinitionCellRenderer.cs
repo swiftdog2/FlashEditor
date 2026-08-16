@@ -54,6 +54,16 @@ namespace FlashEditor.Definitions.Editing {
             placeholderPen = new Pen(Color.FromArgb(0x40, 0x80, 0x80, 0x80));
         }
 
+        /// <summary>
+        ///     The descriptor's column, so an activated cell can say which field it belongs to.
+        /// </summary>
+        /// <remarks>
+        ///     Not <c>Column</c>: <see cref="BaseRenderer"/> already has one, holding the
+        ///     <see cref="OLVColumn"/> this draws into, and shadowing it would leave two properties
+        ///     of the same name meaning two different things on one object.
+        /// </remarks>
+        internal DefinitionColumn DescribedColumn => column;
+
         /// <summary>The visual for a row, for a host deciding what an activated cell named.</summary>
         /// <param name="model">The row.</param>
         /// <returns>The visual.</returns>

@@ -210,6 +210,30 @@ namespace FlashEditor.Definitions.Interfaces {
                 row => HasColour(row.Component) ? row.Component.Colour : null,
                 (row, value) => row.Component.Colour = value, 110),
 
+            /* The one other colour the format carries, and it is type 5's alone. EncodedColour
+               rather than Colour because the two delegates have to disagree: a stored zero means
+               "no outline" (RSInterface.java:487-495), so the cell has to keep showing 0x000000 -
+               it is a real stored value and it is what the encoder writes back - while drawing no
+               swatch, because a black square would assert an outline the record does not have.
+               Colour's single delegate cannot say both.
+
+               A consequence worth knowing: with no swatch there is nothing to activate, so a sprite
+               with no outline cannot be given one from this cell. It can be typed as hex here, and
+               the field pane beside the canvas offers a picker on the same field for exactly that
+               case. */
+            DefinitionColumn.EncodedColour<InterfaceComponentRow>("Outline",
+                row => row.Component.ComponentType == 5 ? row.Component.OutlineColour : null,
+                row => row.Component.ComponentType == 5 && row.Component.OutlineColour != 0
+                    ? row.Component.OutlineColour
+                    : null,
+                (row, value) => {
+                    //Guarded, because every other type stores no outline at all and writing one
+                    //would be an edit the encoder silently drops - which reads as a save that
+                    //failed rather than as a field that does not exist.
+                    if (row.Component.ComponentType == 5)
+                        row.Component.OutlineColour = value;
+                }, 6, 110),
+
             DefinitionColumn.Text<InterfaceComponentRow>("Text", row => row.Text,
                 (row, value) => row.TrySetText(value), 240),
             DefinitionColumn.ReadOnly<InterfaceComponentRow>("Hooks", row => row.Component.HookArrayCount, 60),
