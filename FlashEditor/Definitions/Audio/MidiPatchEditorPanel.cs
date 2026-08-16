@@ -351,6 +351,13 @@ namespace FlashEditor.Definitions.Audio {
             }
 
             try {
+                /* A fresh TrackPlayback builds its own MidiSoundBank, so every click re-decodes the
+                   patch and the key's Vorbis sample rather than reusing a decode from the click
+                   before. That is a real cost - a sample is up to a couple of hundred kilobytes of
+                   PCM - and it is taken deliberately: a bank kept across playbacks would be read by
+                   the outgoing playback's thread while the incoming one used it, and Dispose joins
+                   with a timeout rather than a guarantee. Correctness over a warm cache until
+                   TrackPlayback can be handed a bank it does not own. */
                 byte[] midi = MidiKeyPreview.BuildSingleNote(listing.Id, key);
                 var started = new TrackPlayback(midi, cache, loop: false);
 

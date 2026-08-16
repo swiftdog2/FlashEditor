@@ -1004,11 +1004,12 @@ namespace FlashEditor {
             /* Index 15 is one file per group with the group id as the patch id, so a flat list would
                be the whole tab - except that a patch is 128 keys and every question about one is
                positional, so the panel draws the selected patch as a keyboard and plays a key
-               through the track player. It reads index 14 and index 4 to say where each key's sample
-               lives, which is why both are named beside it in the tree. */
+               through the track player. Index 14 is named beside it because a key's sample id
+               addresses that index and playing one reads it. Index 4 is deliberately not named:
+               keys pointing there are shown and labelled, but nothing here reads the index and the
+               Sound Effects tab is what owns it. */
             Register(MidiPatchEditorTab, RSConstants.MIDI_PATCH_INDEX, EditorCategory.Media,
-                openCache => MidiPatchPanel.Bind(openCache),
-                RSConstants.SFX2_INDEX, RSConstants.SOUND_EFFECTS);
+                openCache => MidiPatchPanel.Bind(openCache), RSConstants.SFX2_INDEX);
             /* Index 10 is one group holding one file, so there is nothing to list: the tab shows the
                256 records inside that file and runs text through them, which is the only place in
                the editor where a codec can be watched working rather than trusted. Filed next to
