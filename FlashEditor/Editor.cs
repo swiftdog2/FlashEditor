@@ -30,6 +30,7 @@ using static FlashEditor.Utils.DebugUtil;
 using Timer = System.Windows.Forms.Timer;
 using FlashEditor.IO;
 using FlashEditor.Definitions.Models;
+using FlashEditor.Export;
 
 
 namespace FlashEditor {
@@ -1822,6 +1823,70 @@ namespace FlashEditor {
         private void OpenDirectoryToolStripMenuItem_Click(object sender, EventArgs e) {
             if (IsCacheDirSet())
                 Process.Start(GetCacheDir());
+        }
+
+        /// <summary>
+        ///     Writes the whole cache out as structured JSON.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Off the UI thread, because it walks every index and the form would otherwise be
+        ///     unresponsive for the length of it. The destination is resolved through
+        ///     <see cref="CachePaths"/> and refuses to land inside the cache being read, which is
+        ///     read only.
+        ///     </para>
+        ///     <para>
+        ///     The dialogue says what the export is not. A user looking at a directory of JSON that
+        ///     describes their cache has no way to know it cannot be packed back in unless something
+        ///     tells them, and the export's own header is only read after the fact.
+        ///     </para>
+        /// </remarks>
+        private void ExportJsonToolStripMenuItem_Click(object sender, EventArgs e) {
+            if (cache == null) {
+                MessageBox.Show(this, "Open a cache first.", "Export to JSON",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var exporter = new CacheExporter(cache, GetCacheDir());
+
+            if (MessageBox.Show(this,
+                    "Export " + exporter.Provenance.Name + " to JSON?\r\n\r\n" +
+                    "This is READ ONLY. The export describes the cache and cannot be packed back " +
+                    "into one, because these formats are not canonical - opcode order is free, " +
+                    "opcodes repeat, values alias, and an absent field differs from one storing " +
+                    "the default.\r\n\r\nIt walks every index, so it takes a while.",
+                    "Export to JSON", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK)
+                return;
+
+            exportJsonToolStripMenuItem.Enabled = false;
+
+            var worker = new BackgroundWorker();
+            worker.DoWork += (_, args) => args.Result = exporter.Run();
+            worker.RunWorkerCompleted += (_, args) => {
+                exportJsonToolStripMenuItem.Enabled = true;
+
+                if (args.Error != null) {
+                    MessageBox.Show(this, "The export failed: " + args.Error.Message, "Export to JSON",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                //Cancelled work leaves Result null, and reading it directly would throw inside the
+                //completion handler rather than reporting anything.
+                if (args.Result is not CacheExportResult result)
+                    return;
+
+                MessageBox.Show(this,
+                    "Wrote " + result.Records + " record(s) from " + result.Provenance.Name +
+                    " to\r\n" + result.Destination +
+                    (result.Failures == 0
+                        ? string.Empty
+                        : "\r\n\r\n" + result.Failures + " record(s) would not decode and were skipped."),
+                    "Export to JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+
+            worker.RunWorkerAsync();
         }
 
         /// <summary>
