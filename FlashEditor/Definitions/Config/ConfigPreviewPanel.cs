@@ -86,8 +86,11 @@ namespace FlashEditor.Definitions.Config {
         private readonly FloorMaterialPalette floors = new FloorMaterialPalette();
         private readonly PreviewCanvas canvas;
 
-        private readonly ListBox animations = new ListBox {
-            Dock = DockStyle.Fill,
+        /* One list for both families that have records to point at, rather than two controls that
+           would each be hidden most of the time. Which way it docks is what differs: a render
+           animation IS its animation list, so there it fills the pane; a quest has an icon to draw
+           as well, so there it takes a strip under the canvas. */
+        private readonly ListBox related = new ListBox {
             Font = new Font("Consolas", 9F),
             IntegralHeight = false
         };
@@ -112,23 +115,28 @@ namespace FlashEditor.Definitions.Config {
         private ConfigListing? listing;
         private int tick;
 
+        /* The item opcode 132 join, inverted. Built the first time a quest is shown rather than on
+           bind, because it decodes the whole of index 19 and most visits to this tab never open
+           group 35. Dropped with the cache, never reused across one. */
+        private QuestItemIndex? quests;
+
         /// <summary>Creates an empty preview.</summary>
         public ConfigPreviewPanel() {
             Dock = DockStyle.Fill;
 
             canvas = new PreviewCanvas(this) { Dock = DockStyle.Fill };
             floors.Visible = false;
-            animations.Visible = false;
+            related.Visible = false;
 
             //Docking resolves from the end of the Controls collection backwards, so the filled
-            //surfaces go in before the caption that sits above them.
+            //surfaces go in before the strips that take space off them.
             Controls.Add(canvas);
             Controls.Add(floors);
-            Controls.Add(animations);
+            Controls.Add(related);
             Controls.Add(caption);
 
             floors.Picked += OnFloorPicked;
-            animations.DoubleClick += OnAnimationChosen;
+            related.DoubleClick += OnRelatedChosen;
             clock.Tick += (_, _) => {
                 tick++;
                 canvas.Invalidate();
@@ -153,6 +161,7 @@ namespace FlashEditor.Definitions.Config {
                 return;
 
             cache = newCache;
+            quests = null;
             ReleaseFrames();
 
             sprites?.Dispose();
@@ -180,9 +189,9 @@ namespace FlashEditor.Definitions.Config {
             bool isFloor = shown != null &&
                 (shown.GroupId == ConfigGroup.FloorUnderlay || shown.GroupId == ConfigGroup.FloorOverlay);
             bool isRenderAnimation = shown != null && shown.GroupId == ConfigGroup.RenderAnimation;
+            bool isQuest = shown != null && shown.GroupId == ConfigGroup.Quest;
 
             floors.Visible = isFloor;
-            animations.Visible = isRenderAnimation;
             canvas.Visible = !isFloor && !isRenderAnimation;
 
             if (isFloor)
@@ -190,8 +199,21 @@ namespace FlashEditor.Definitions.Config {
                     ? FloorKind.Underlay
                     : FloorKind.Overlay);
 
-            if (isRenderAnimation)
+            related.Items.Clear();
+
+            if (isRenderAnimation) {
+                related.Dock = DockStyle.Fill;
                 FillAnimations(record);
+            }
+            else if (isQuest) {
+                //A strip rather than the whole pane, so the quest's icon is still drawn above it.
+                //Sized from the font, never as a pixel count.
+                related.Dock = DockStyle.Bottom;
+                related.Height = related.Font.Height * 7;
+                FillItemsNamingQuest(record);
+            }
+
+            related.Visible = isRenderAnimation || (isQuest && related.Items.Count > 0);
 
             clock.Enabled = shown != null && shown.GroupId == ConfigGroup.LightIntensity &&
                 record != null;
@@ -235,7 +257,8 @@ namespace FlashEditor.Definitions.Config {
                 case ConfigGroup.MapElement:
                     return "The marker and its polygon in tile coordinates. No map is drawn under it.";
                 case ConfigGroup.Quest:
-                    return "The chat icon this quest draws beside a name.";
+                    return "The chat icon this quest draws beside a name, and the items that" +
+                           " require it. Double click an item to open it.";
                 case ConfigGroup.RenderAnimation:
                     return "Every index-20 animation this set names. Double click one to open it.";
                 case ConfigGroup.LightIntensity:
@@ -254,15 +277,43 @@ namespace FlashEditor.Definitions.Config {
             FloorPicked?.Invoke(this, pick.Id);
         }
 
-        /// <summary>Opens the chosen animation in the tab that edits index 20.</summary>
+        /// <summary>Opens whatever record the chosen line names, in the tab that edits its index.</summary>
         /// <param name="sender">The list.</param>
         /// <param name="e">The event data.</param>
-        private void OnAnimationChosen(object? sender, EventArgs e) {
-            if (animations.SelectedItem is not NpcAnimation chosen)
+        private void OnRelatedChosen(object? sender, EventArgs e) {
+            if (related.SelectedItem is not RelatedRecord chosen)
                 return;
 
             Navigate?.Invoke(this, new ConfigNavigationEventArgs(
-                RSConstants.ANIMATIONS_INDEX, chosen.AnimationId));
+                chosen.IndexId, chosen.RecordId, chosen.GroupId));
+        }
+
+        /// <summary>
+        ///     Lists the items whose opcode 132 names this quest.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The join runs one way on disk</b>, so this is the forward relation inverted -
+        ///     <see cref="QuestItemIndex"/> does that by decoding index 19, and it is built once per
+        ///     cache and only when a quest is first shown. A quest nothing names gets no list at all
+        ///     rather than an empty box, because an empty list reads as a lookup that failed.
+        /// </remarks>
+        /// <param name="record">The selected record, or null.</param>
+        private void FillItemsNamingQuest(ConfigListing? record) {
+            if (record == null || cache == null)
+                return;
+
+            try {
+                quests ??= QuestItemIndex.Build(cache);
+            }
+            catch (Exception ex) {
+                Debug("Could not invert the quest join: " + ex.Message);
+                return;
+            }
+
+            foreach (int item in quests.ItemsNaming(record.FileId))
+                related.Items.Add(new RelatedRecord(
+                    "item " + item.ToString(CultureInfo.InvariantCulture) + " requires this quest",
+                    RSConstants.ITEM_DEFINITIONS_INDEX, item));
         }
 
         /// <summary>
@@ -276,13 +327,41 @@ namespace FlashEditor.Definitions.Config {
         /// </remarks>
         /// <param name="record">The selected record, or null.</param>
         private void FillAnimations(ConfigListing? record) {
-            animations.Items.Clear();
-
             if (record?.Record.Definition is not RenderAnimationDefinition set)
                 return;
 
             foreach (NpcAnimation animation in NpcAnimationSet.For(set))
-                animations.Items.Add(animation);
+                related.Items.Add(new RelatedRecord(animation.ToString(),
+                    RSConstants.ANIMATIONS_INDEX, animation.AnimationId));
+        }
+
+        /// <summary>One record this preview points at, and where it lives.</summary>
+        /// <remarks>
+        ///     A label plus an address rather than the decoded record, because the two families that
+        ///     produce these produce different types - an <see cref="NpcAnimation"/> and an item id -
+        ///     and the list only ever has to show one and navigate to it.
+        /// </remarks>
+        private sealed class RelatedRecord {
+            internal RelatedRecord(string label, int indexId, int recordId, int groupId = -1) {
+                Label = label;
+                IndexId = indexId;
+                RecordId = recordId;
+                GroupId = groupId;
+            }
+
+            internal string Label { get; }
+
+            internal int IndexId { get; }
+
+            internal int RecordId { get; }
+
+            internal int GroupId { get; }
+
+            /// <summary>The line the list shows.</summary>
+            /// <returns>The label.</returns>
+            public override string ToString() {
+                return Label;
+            }
         }
 
         /// <summary>

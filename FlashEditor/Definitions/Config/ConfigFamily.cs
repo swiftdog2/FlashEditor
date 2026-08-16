@@ -627,6 +627,16 @@ namespace FlashEditor.Definitions.Config {
                         value => definition.LifetimeMillis = value),
                     Number("Fade start (ms)", definition.FadeStartMillis,
                         value => definition.FadeStartMillis = value),
+                    /* The same shape as group 34's "no icon": two opcodes write this field, opcode
+                       11 spelling a zero with no payload and opcode 14 storing a short, so which
+                       was stored is only recoverable from the opcode list. A record carrying opcode
+                       11 replays it whatever the field says, so an edit to that record's fade start
+                       cannot take - which is worth saying rather than leaving as a silent no-op.
+                       Opcode 11 occurs in no file of either cache; opcode 14 occurs in all 28. */
+                    new ConfigField("Fade start encoding",
+                        definition.Has(11)
+                            ? "opcode 11, a bare zero - editing this field cannot change the bytes"
+                            : definition.Has(14) ? "opcode 14, a stored short" : "absent"),
                     Number("Opcode 12 field", definition.Unknown12, value => definition.Unknown12 = value)
                 },
                 sprite: definition => LeadingDamageMarkSprite(definition))
