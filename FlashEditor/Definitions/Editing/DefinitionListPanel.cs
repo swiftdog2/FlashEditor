@@ -318,6 +318,17 @@ namespace FlashEditor.Definitions.Editing {
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public IReadOnlyList<object> Rows => rows;
 
+        /// <summary>
+        ///     Raised once a row has been through the commit, whether or not anything was staged.
+        /// </summary>
+        /// <remarks>
+        ///     For a tab whose companion surface draws something derived from the row - a preview, a
+        ///     picture, a colour. The grid refreshes its own cells, but a picture cached elsewhere by
+        ///     id keeps showing what the record used to say, and the user has no way to tell that
+        ///     from an edit that did not take.
+        /// </remarks>
+        public event EventHandler? RowCommitted;
+
         /// <summary>Raised on the UI thread once a load has published its rows.</summary>
         /// <remarks>
         ///     Not raised for a cancelled or faulted load, so a handler can take <see cref="Rows"/>
@@ -719,6 +730,9 @@ namespace FlashEditor.Definitions.Editing {
             if (row == null || cache == null || descriptor == null || !descriptor.IsEditable)
                 return;
 
+            //Raised on every path out of the try, including the one that stages nothing: a companion
+            //view has to be able to redraw after an edit that was undone just as much as after one
+            //that took.
             try {
                 DefinitionAddress address = descriptor.AddressOf(row);
                 byte[] encoded = descriptor.Encode(row).ToArray();
@@ -738,6 +752,9 @@ namespace FlashEditor.Definitions.Editing {
                 //an ObjectListView event handler takes the form down.
                 status.Text = "Edit failed: " + ex.Message;
                 Debug("DefinitionListPanel edit failed: " + ex);
+            }
+            finally {
+                RowCommitted?.Invoke(this, EventArgs.Empty);
             }
         }
     }

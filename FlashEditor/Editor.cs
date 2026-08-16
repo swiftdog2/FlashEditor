@@ -1047,6 +1047,12 @@ namespace FlashEditor {
                screens it categorises - so the tab selects the group. */
             Register(LoadingScreenEditorTab, RSConstants.GAME_TIPS, EditorCategory.Media,
                 openCache => LoadingScreenPanel.Bind(openCache));
+            /* Index 26 is one group of one file, and that file is the roster of texture slots plus
+               nineteen columns of per-slot render state. Registered against 26 and filed beside
+               Textures, which holds the graphs for the ids this table declares - and declares more of
+               them than index 9 has graphs for, which is the relationship the tab is there to show. */
+            Register(MaterialEditorTab, RSConstants.MATERIALS, EditorCategory.Media,
+                openCache => MaterialPanel.Bind(openCache), RSConstants.TEXTURES);
             /* Index 32 is one file per group, so a list would ordinarily be the whole tab - but the
                index is mixed, holding JPEG images and Jagex glyph sheets with nothing on disk to tell
                them apart, so the panel dispatches on the payload's own FF D8 magic and draws whichever

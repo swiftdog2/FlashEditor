@@ -439,6 +439,53 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         /// <summary>
+        ///     Whether one column of a record would still be written as the bytes it was decoded from.
+        /// </summary>
+        /// <remarks>
+        ///     What lets an edit be undone. <see cref="TextureDefinition"/> asks this on every
+        ///     assignment, so a field put back where it started clears its column again rather than
+        ///     leaving the table permanently dirty - "an edit that nets nothing writes nothing" is a
+        ///     claim no byte-identity sweep over an unedited cache can make.
+        ///     <para>
+        ///     The comparison is between what the field would encode to and what the <em>stored</em>
+        ///     bytes decode and re-encode to, never between the field and the stored bytes directly.
+        ///     Three columns decode many-to-one, so a stored boolean byte of 2 is false and can never
+        ///     equal the 0 its field encodes; asking whether the two agree about the decoded value is
+        ///     what keeps that byte replayed instead of normalised away.
+        ///     </para>
+        /// </remarks>
+        /// <param name="def">The record.</param>
+        /// <param name="column">The column to test.</param>
+        /// <returns>Whether the column can be replayed rather than re-encoded.</returns>
+        internal static bool ColumnMatchesStored(TextureDefinition def, MaterialColumn column) {
+            if (def == null)
+                throw new ArgumentNullException(nameof(def));
+
+            byte[]? stored = def.StoredRecord;
+            if (stored == null)
+                return false;
+
+            //Unpack assigns through the properties, which is only safe because this scratch record
+            //has no stored bytes of its own and so cannot re-enter here.
+            var decoded = new TextureDefinition();
+            Unpack(decoded, stored);
+
+            var fromStored = new byte[BytesPerRecord];
+            var fromField = new byte[BytesPerRecord];
+            Pack(decoded, column, fromStored);
+            Pack(def, column, fromField);
+
+            int at = ColumnOffsets[(int) column];
+            int width = ColumnWidths[(int) column];
+
+            for (int i = 0; i < width; i++)
+                if (fromStored[at + i] != fromField[at + i])
+                    return false;
+
+            return true;
+        }
+
+        /// <summary>
         ///     Writes one column of one record into its row.
         /// </summary>
         /// <remarks>
