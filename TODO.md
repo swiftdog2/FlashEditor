@@ -66,7 +66,7 @@ with a worked case behind them, or that bind a specific item below.
 
 ## In flight
 
-**Item 18 is done bar the label migrations. Item 26 is done bar 26h's write path. Items 19, 20 and
+**Item 18 is done. Item 26 is done bar 26h's write path. Items 19, 20 and
 27 are under way.** What landed, and what each left behind:
 
 | | State | What is left |
@@ -74,7 +74,7 @@ with a worked case behind them, or that bind a specific item below.
 | **18.1** icons and toolbar | Done. `EditorTheme`, `EditorSurface`, `EditorIcon`, `EditorIcons` (33 GDI-drawn icons), `EditorToolStrip` | Nothing. Icons are judged on a contact sheet; four shipped broken in the first pass and the sheet is the only reason they did not stay broken |
 | **18.2** column renderers | Done. `DefinitionCellVisual`, `DefinitionCellRenderer`, three factories on `DefinitionColumn`, proved on the Config tab's floor families | Adopt them on the other pages. Zero descriptors changed, so every adoption is additive |
 | **18.3** asset picker | Done. `AssetPickerDialog` over sprites, models, textures, fonts and animations, virtualised to the visible rows | **No caller yet.** 20, 21 and 26e are the consumers. Verified in isolation, not in place |
-| **18.4** info affordance | Control done (`InfoAffordance`), used by the two new interface toolbars | **The twelve label migrations.** See the corrections below - the list in item 18's prompt is wrong in three places |
+| **18.4** info affordance | Done. `InfoAffordance`, the two interface toolbars, the floor palette, and every docked paragraph migrated | Nothing but the eyeball pass, which needs a capture of the Sprites, Fonts, Tracks, SFX2, Client Scripts, Loading Sprites, World Map, Particles and Entities pages. The prompt's site list is wrong in **four** places, not three - see `reference/DOC-CONFLICTS.md`. Two wrap-on-resize helpers went with the paragraphs and the rest lost entries |
 | **26a** layout resolver | Done, with 23 unit tests and 4 cache-backed property sweeps, green on both caches | Nothing |
 | **26b** component tree | Done, tree view wired into the tab with two-way selection | Nothing |
 | **26c** canvas | Done for types 0, 3, 4, 5, 6 and 9, clipped as the client clips, text in the cache's own glyphs | Models are marked, not drawn - the only route to model pixels is OpenGL. Text breaks only on `
@@ -93,7 +93,15 @@ work, and they are logged in `reference/DOC-CONFLICTS.md`:
 - **`MapEditorPanel.cs:1613` is not a docked label and must be struck from 18.4.** It is
   `sb.AppendLine` feeding the read-only inspector `TextBox`, rewritten on every mouse move. Moving
   it behind an (i) would delete a feature. Four other real labels are missing from the list, so the
-  count survives by coincidence.
+  count survives by coincidence: `ParticlePreviewPanel.notice`, `FontEditorPanel.glyphNote` and
+  `.previewNote`, and `Editor.Designer.cs`'s `ViewerLimitsLabel`. A fifth citation is short rather
+  than absent - `ClientScriptEditorPanel` docks **two** where the list names one line.
+- **The test that separates the two families is whether anything reassigns the text.** A paragraph
+  no code path rewrites is a candidate; one rewritten on selection is a status line wearing a
+  paragraph's clothes, and moving it behind an (i) would delete a feature the same way `:1613`
+  would. Every `header`, every `status`, `ConfigEditorPanel.notes`, `FontEditorPanel.kerningNote`,
+  `EntityBrowserPanel.noticeLabel` and both `previewNote`s in the LoadingSprites and WorldMap tabs
+  fail it and stay labels.
 
 **And one about the whole application, which changes what any of this can assume:** the process is
 pinned **DPI-unaware** (`FlashEditorForm.cs:46`, an OpenTK crash fix), so `AutoScaleMode.Dpi`
