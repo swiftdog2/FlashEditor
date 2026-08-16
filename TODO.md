@@ -362,13 +362,41 @@ Verified by eye plus tools/Capture-EditorTab.ps1. Run the suite against both cac
 
 ---
 
-### 21. Make index 2 editable, and make it legible
+### 21. Make index 2 editable, and make it legible - DONE
 
-**Index 2 is entirely read-only** - every list column is `DefinitionColumn.ReadOnly`
-(`ConfigListDescriptor.cs:59-65`) and both detail grids set `IsEditable = false`
-(`ConfigEditorPanel.cs:265`). Nothing in the application writes it. This is the largest functional
-gap in the editor, because index 2 owns floors, cursors, hit splats, quests, map icons, identity
-kits and every NPC's walk cycle. All sixteen codecs already support edits through `AddedOpcodes`.
+**Built.** The write path is the descriptor's: `ConfigListDescriptor.IsEditable` follows the
+family's own `CanEncode` and `Encode` goes to the record class's `Encode`, which replays the stored
+opcode order and repetition. Editing is on `ConfigEditorPanel`'s field pane, one field per line,
+because every grid column summarises several opcodes at once. `ConfigPreviewPanel` draws the eight
+families that need a picture, reusing `FloorMaterialPalette`, `SpriteThumbnailRenderer` and
+`NpcAnimationSet` rather than drawing any of them a second time. The nineteen provider-less groups
+stay listed and stay labelled.
+
+Two things it found rather than added:
+
+- **A payload-free opcode cannot be written back by re-deriving a payload.** Thirteen boolean
+  fields across ten codecs looked editable and silently did nothing the moment the pane became
+  editable. They now suppress the opcode rather than removing it, so turning one back on puts it
+  where the file had it - the same rule `SuppressedOpcodes` states for the three codecs that
+  predate `ConfigDefinition`.
+- **Group 34's "no icon" has two live encodings** and assigning the property alone changed the
+  field and nothing else. `MapSceneIconDefinition.SetSpriteGroupId` swaps the opcode in place.
+
+What is left, as work rather than as a footnote:
+
+- **The array fields are read only.** A parameter block, a polygon, a recolour table and a quest's
+  requirement lists have no single value a text box can hold, so they are shown and not edited.
+  Group 26 is nothing but a parameter block, so that family is effectively still read only.
+- **"Make this field absent" is not expressible** for a field with a payload. An opcode the record
+  does not carry is appended only when the value differs from the record class's constructor
+  default, and on this index absent and default are frequently different bytes. The one field where
+  that bites in shipped data is a floor overlay's primary colour, which two of the 235 records do
+  not store; it is named and excluded in `RealCacheConfigFieldEditTests.IsExempt`.
+- **The light curve refuses waveform 3.** It indexes a 2,048-entry noise table the client builds at
+  startup from a seeded fractal generator (`Class358.java:17`), and one of the four records uses it.
+  Porting `Node_Sub10_Sub35` would draw it.
+
+The prompt below is kept because it is the statement of what the tab is for.
 
 ```
 Read CLAUDE.md, AGENTS.md and the UI conventions section first. Items 18 and 19 must be done.
