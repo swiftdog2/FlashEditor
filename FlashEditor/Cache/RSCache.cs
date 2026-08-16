@@ -462,7 +462,7 @@ namespace FlashEditor.Cache {
                fresh stream so this one is not disturbed. Null once the container has been
                re-encoded in this session, in which case there is no baseline and the write goes
                ahead unconditionally. */
-            JagStream storedPayload = container.PayloadIsAsStored && container.HasData
+            JagStream? storedPayload = container.PayloadIsAsStored && container.HasData
                 ? container.GetStream()
                 : null;
 
@@ -593,7 +593,7 @@ namespace FlashEditor.Cache {
                 return true;
 
             foreach (RSGroupFile file in files) {
-                RSFileEntry current = entry.GetFileEntry(file.FileId);
+                RSFileEntry? current = entry.GetFileEntry(file.FileId);
                 if (current == null || current.GetIdentifier() != file.Identifier)
                     return false;
             }
