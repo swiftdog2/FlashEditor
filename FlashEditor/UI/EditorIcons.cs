@@ -420,6 +420,122 @@ namespace FlashEditor.UI {
                     });
                     break;
 
+                /* The paint set. Three of these carry a filled region on purpose, and it is the
+                   same argument the transport four make below: at 16px an outline-only glyph for
+                   "the material goes here" is a box, and there are already three boxes in the set.
+                   What distinguishes them is which part is solid. */
+
+                case EditorIcon.SelectRectangle:
+                    //Dashed, because a marquee is the one selection that is drawn as a moving edge.
+                    MarqueeBox(g, pen, 2, 3, 12, 10);
+                    break;
+
+                case EditorIcon.SelectFreehand:
+                    /* A closed loop with a tail leaving it at the bottom right, which is what
+                       separates a lasso from an ellipse. The first draft drew the loop alone and
+                       read as Visible with the pupil missing. */
+                    Smooth(g, () => {
+                        g.DrawCurve(pen, new[] {
+                            new PointF(8f, 2.2f), new PointF(13.4f, 5.2f), new PointF(11.6f, 9.6f),
+                            new PointF(6f, 10.4f), new PointF(2.6f, 7.2f), new PointF(4.4f, 3.4f),
+                            new PointF(8f, 2.2f)
+                        }, 0.55f);
+                        g.DrawLine(pen, 11.6f, 9.6f, 13.6f, 14f);
+                    });
+                    break;
+
+                case EditorIcon.SelectSimilar:
+                    /* A wand on the diagonal with a solid tip and two sparks. The sparks are what
+                       make it a wand rather than the Link arrow, which runs the same diagonal. */
+                    Smooth(g, () => {
+                        g.FillPolygon(brush, new[] {
+                            new PointF(12.2f, 2.2f), new PointF(13.8f, 3.8f),
+                            new PointF(11.4f, 6.2f), new PointF(9.8f, 4.6f)
+                        });
+                        g.DrawLine(pen, 10.6f, 5.4f, 2.4f, 13.6f);
+                    });
+                    Line(g, pen, 2, 3, 5, 3);
+                    Line(g, pen, 3, 2, 3, 5);
+                    Dot(g, brush, 6, 9);
+                    break;
+
+                case EditorIcon.Paint:
+                    /* A brush held on the diagonal: a solid ferrule and head at the lower left, a
+                       handle running to the upper right. Solid head for the reason above - an
+                       outlined one is a thin parallelogram and reads as nothing. */
+                    Smooth(g, () => {
+                        g.DrawLine(pen, 13.6f, 2.4f, 7.6f, 8.4f);
+                        g.FillPolygon(brush, new[] {
+                            new PointF(7.2f, 7.4f), new PointF(9.2f, 9.4f),
+                            new PointF(5.4f, 13.6f), new PointF(2.6f, 13.6f)
+                        });
+                    });
+                    break;
+
+                case EditorIcon.FillArea:
+                    /* The marquee again, filled. It is deliberately the same outline as
+                       SelectRectangle: a fill acts on the selection, and drawing the two as
+                       unrelated shapes would hide that. */
+                    Bar(g, brush, 4, 5, 8, 6);
+                    MarqueeBox(g, pen, 2, 3, 12, 10);
+                    break;
+
+                case EditorIcon.Underlay:
+                    //A whole tile, which is what an underlay always covers.
+                    Bar(g, brush, 3, 4, 10, 8);
+                    break;
+
+                case EditorIcon.Overlay:
+                    /* The same tile outlined with one triangular half solid, which is literally
+                       what an overlay shape is: a partial cover over the underlay beneath it. */
+                    Box(g, pen, 3, 4, 10, 8);
+                    Smooth(g, () => {
+                        g.FillPolygon(brush, new[] {
+                            new PointF(4f, 11f), new PointF(12f, 5f), new PointF(12f, 11f)
+                        });
+                    });
+                    break;
+
+                case EditorIcon.Raise:
+                    Ground(g, pen);
+                    Line(g, pen, 8, 2, 8, 7);
+                    Smooth(g, () => Arrowhead(g, pen, 8f, 1.5f, 0f, -1f));
+                    break;
+
+                case EditorIcon.Lower:
+                    Ground(g, pen);
+                    Line(g, pen, 8, 2, 8, 6);
+                    Smooth(g, () => Arrowhead(g, pen, 8f, 7f, 0f, 1f));
+                    break;
+
+                case EditorIcon.Block:
+                    //A tile with a bar across it, which is the map's own no-entry mark.
+                    Box(g, pen, 2, 2, 12, 12);
+                    Smooth(g, () => {
+                        g.DrawLine(pen, 3.5f, 12.5f, 12.5f, 3.5f);
+                        g.DrawLine(pen, 3.5f, 3.5f, 12.5f, 12.5f);
+                    });
+                    break;
+
+                case EditorIcon.Rotate:
+                    /* Three quarters of a circle with the head at the top, pointing clockwise. The
+                       same arc Refresh draws, turned so the gap is at the top left rather than the
+                       right - the two verbs are close enough that they must not be the same
+                       picture, and the gap is where the difference is legible at 16px. */
+                    Smooth(g, () => {
+                        g.DrawArc(pen, 3f, 3f, 10f, 10f, 300f, 290f);
+                        Arrowhead(g, pen, 8f, 2.6f, 1f, -0.2f);
+                    });
+                    break;
+
+                case EditorIcon.Shape:
+                    /* Three tile outlines stepping down and to the right, which says "the next one
+                       in the run" rather than naming any single shape. */
+                    Box(g, pen, 1, 2, 7, 7);
+                    Box(g, pen, 5, 5, 7, 7);
+                    Box(g, pen, 9, 8, 6, 6);
+                    break;
+
                 /* The transport four are the only solid glyphs in the set apart from the pointer
                    and the dropper bulb, and that is deliberate rather than a lapse. Outlined at
                    16px a play triangle is a 1px wireframe arrow that reads as Forward, which is
@@ -626,6 +742,57 @@ namespace FlashEditor.UI {
 
             g.DrawLine(pen, x, y, x + leftX * Reach, y + leftY * Reach);
             g.DrawLine(pen, x, y, x + rightX * Reach, y + rightY * Reach);
+        }
+
+        /// <summary>
+        ///     A dashed rectangle, the marching-ants edge a selection is drawn with.
+        /// </summary>
+        /// <remarks>
+        ///     Drawn as four runs of explicit segments rather than with <c>DashStyle.Dash</c>. A
+        ///     dashed pen at 1px puts its pattern wherever the stroke happens to start, so the four
+        ///     sides of a rectangle come out with dashes of different lengths and the corners either
+        ///     double up or vanish. Stepping by a stated pitch puts a dash on every corner.
+        /// </remarks>
+        /// <param name="g">The surface.</param>
+        /// <param name="pen">The ink.</param>
+        /// <param name="x">Left edge on the design grid.</param>
+        /// <param name="y">Top edge on the design grid.</param>
+        /// <param name="width">Width in design pixels.</param>
+        /// <param name="height">Height in design pixels.</param>
+        private static void MarqueeBox(Graphics g, Pen pen, int x, int y, int width, int height) {
+            const int Pitch = 3;
+            const int Dash = 2;
+
+            int right = x + width - 1;
+            int bottom = y + height - 1;
+
+            for (int at = x; at <= right; at += Pitch) {
+                int end = Math.Min(at + Dash - 1, right);
+                Line(g, pen, at, y, end, y);
+                Line(g, pen, at, bottom, end, bottom);
+            }
+
+            for (int at = y; at <= bottom; at += Pitch) {
+                int end = Math.Min(at + Dash - 1, bottom);
+                Line(g, pen, x, at, x, end);
+                Line(g, pen, right, at, right, end);
+            }
+        }
+
+        /// <summary>
+        ///     A short profile of ground, shared by the raise and lower marks.
+        /// </summary>
+        /// <remarks>
+        ///     One shape for both so the pair reads as two directions of one verb, the same
+        ///     reasoning that makes Undo and Redo one mirrored shape. Drawn as a line with a rise in
+        ///     it rather than as a flat rule, because a flat rule under an arrow is the Add and
+        ///     Remove pair with an extra stroke.
+        /// </remarks>
+        private static void Ground(Graphics g, Pen pen) {
+            Smooth(g, () => g.DrawLines(pen, new[] {
+                new PointF(1.5f, 13.5f), new PointF(5.5f, 13.5f), new PointF(8f, 10f),
+                new PointF(10.5f, 13.5f), new PointF(14.5f, 13.5f)
+            }));
         }
 
         /// <summary>Runs a drawing action with anti-aliasing on, and puts the mode back.</summary>
