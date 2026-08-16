@@ -1096,14 +1096,13 @@ namespace FlashEditor.Map {
                     dragMode);
             }
 
-            if (result.WasRefused) {
+            if (result.WasRefused)
                 ShowMessage(result.Refusal!);
-                return;
-            }
 
-            //Live, because the count and the square span are the two numbers that decide whether to
-            //let go here or keep dragging, and reporting them afterwards is reporting them too late.
-            ShowMessage(SelectionClause());
+            /* Nothing else to do: the selection's own Changed event has already run UpdateStatus,
+               which carries the tile and square counts. Putting a second message here as well
+               replaced the live line - plane, zoom, sweep progress and all - with a shorter one, on
+               every mouse move of the drag. */
         }
 
         private void OnDragFinished() {
@@ -1871,7 +1870,7 @@ namespace FlashEditor.Map {
             /* THE TOOL PALETTE AND ITS OPTION BAR GO ALONG THE TOP OF THE CANVAS, NOT IN THE LEFT
                COLUMN. The palette itself is a swap for the combo that was in the Tool group and
                would have fitted; the option bar is genuinely new and would not. The column is 250
-               pixels of a window already holding four stacked groups, and the last thing put in it
+               pixels of a window already holding a stack of groups, and the last thing put in it
                either collapsed to nothing under AutoScroll or clipped the layer list. A row of
                tools and a row of labelled options both want WIDTH, which is what the canvas edge
                has and the column does not - and it is where a paint program's tools live anyway.
@@ -1897,8 +1896,8 @@ namespace FlashEditor.Map {
             right.Panel1.Controls.Add(canvasHost);
 
             /* THE PALETTE LIVES HERE, NOT IN THE LEFT COLUMN, AND THAT WAS THE SECOND ATTEMPT.
-               394 swatches need WIDTH: the left column is 250 pixels of a window already holding
-               five stacked groups, and putting the palette there either collapsed it to nothing or
+               394 swatches need WIDTH: the left column is 250 pixels of a window already holding a
+               stack of groups, and putting the palette there either collapsed it to nothing or
                clipped the layer list. Along the bottom it gets the whole window's width, which is
                where a row of swatches wants to run anyway. */
             var bottom = new SplitContainer {
@@ -1950,7 +1949,7 @@ namespace FlashEditor.Map {
         ///     One Percent row and three AutoSize rows. The Percent row is the world navigator, which
         ///     is now the primary way to move around the map and so should be the biggest thing here;
         ///     the three below it take exactly the height their contents measure, which is what stops
-        ///     the Tool group being pushed off the bottom of the window. That is the guarantee - the
+        ///     the Edits group being pushed off the bottom of the window. That is the guarantee - the
         ///     rows can no longer be wrong about how tall their contents are, because they no longer
         ///     hold an opinion about it.
         ///
@@ -2210,15 +2209,32 @@ namespace FlashEditor.Map {
         /// <param name="keyData">The key combination.</param>
         /// <returns>Whether it was consumed.</returns>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
-            Control? focused = FindForm()?.ActiveControl;
-
-            bool typing = focused is TextBoxBase or NumericUpDown or ComboBox
-                          || (focused?.Parent is NumericUpDown);
-
-            if (!typing && toolStrip.HandleShortcut(keyData))
+            if (!IsTyping() && toolStrip.HandleShortcut(keyData))
                 return true;
 
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>
+        ///     Whether the focus is somewhere a letter means a letter.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Form.ActiveControl</c> is the active control of the <em>form's</em> container, not
+        ///     the innermost focused one, so reading it alone answers "the split container" for a
+        ///     spin box six levels down and every keystroke typed into that box would arm a tool.
+        ///     The chain is walked to the bottom instead. A <see cref="NumericUpDown"/> is itself a
+        ///     <see cref="ContainerControl"/> whose active child is its own text box, so the walk
+        ///     lands on a <see cref="TextBoxBase"/> and the first test catches it.
+        /// </remarks>
+        /// <returns>Whether a shortcut should be left alone.</returns>
+        private bool IsTyping() {
+            Control? active = FindForm();
+
+            while (active is ContainerControl container && container.ActiveControl != null)
+                active = container.ActiveControl;
+
+            return active is TextBoxBase or NumericUpDown or ComboBox
+                   || active?.Parent is NumericUpDown;
         }
 
         /// <summary>
