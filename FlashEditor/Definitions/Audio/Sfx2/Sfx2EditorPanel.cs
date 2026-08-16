@@ -57,7 +57,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         ///     What this tab deliberately does not do, and why it is a choice rather than a defect.
         /// </summary>
         /// <remarks>
-        ///     Stated on screen because a user comparing a sound effect here against the one they
+        ///     Reachable on screen because a user comparing a sound effect here against the one they
         ///     hear in game has no other way to tell "not implemented" from "broken". The reason is
         ///     specific and worth carrying: group 0 is a hybrid of the two blocksize nibbles from the
         ///     Vorbis identification header and a setup header with no <c>\x01vorbis</c> magic, no
@@ -71,13 +71,6 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             "applied - an effect plays once, from the first sample to the last, so what you hear is " +
             "the record rather than the record as the game would loop it. Rate and the two loop " +
             "points are editable, the packets are not.";
-
-        private readonly Label playback = new Label {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            Font = PanelFont,
-            Text = PlaybackNote
-        };
 
         //AutoSize rather than a stated height, so the line the summary needs is the line it gets.
         private readonly Label header = new Label {
@@ -413,28 +406,7 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
         /// <param name="levent">The event data.</param>
         protected override void OnLayout(LayoutEventArgs levent) {
             base.OnLayout(levent);
-            WrapPlaybackNote();
             PlaceSplitters();
-        }
-
-        /// <summary>
-        ///     Lets the playback note wrap at the width the panel actually has.
-        /// </summary>
-        /// <remarks>
-        ///     An <c>AutoSize</c> label grows sideways rather than wrapping, so the note would run off
-        ///     the right edge on a narrow window and take its last sentence with it. Capping the width
-        ///     at the client area turns the same auto-sizing into height, which is what a docked strip
-        ///     wants. Measured from the panel rather than stated as a pixel count, because the form
-        ///     scales by DPI and a literal is only right at the one it was written on.
-        /// </remarks>
-        private void WrapPlaybackNote() {
-            int available = ClientSize.Width;
-            if (available <= 0 || playback.MaximumSize.Width == available)
-                return;
-
-            //Zero height means "no cap on the height", which is the whole point: the label grows
-            //downwards by however many lines the wrapped text needs.
-            playback.MaximumSize = new Size(available, 0);
         }
 
         /// <summary>Divides the panel proportionally, once each, when there is a size worth dividing.</summary>
@@ -479,10 +451,17 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
             listAndDetail.Panel1.Controls.Add(records);
             listAndDetail.Panel2.Controls.Add(fieldsAndPackets);
 
+            /* The note is on the transport itself rather than docked as a paragraph above it. It is
+               entirely about what pressing Play does and does not do, so the glyph that reveals it
+               belongs on the strip carrying that button - which is also the only place it can sit
+               without costing the grids four lines of height on every visit to the tab. */
+            transport.Items.Add(new ToolStripControlHost(
+                InfoAffordance.For(transport, InfoKind.Limitation, PlaybackNote)) {
+                Alignment = ToolStripItemAlignment.Right
+            });
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
-            /* The transport sits above the note it qualifies, on its own strip, so the button is
-               beside the sentence explaining what pressing it does and does not do. */
             var transportStrip = new FlowLayoutPanel {
                 Dock = DockStyle.Top,
                 FlowDirection = FlowDirection.LeftToRight,
@@ -494,7 +473,6 @@ namespace FlashEditor.Definitions.Audio.Sfx2 {
 
             Controls.Add(listAndDetail);
             Controls.Add(header);
-            Controls.Add(playback);
             Controls.Add(transportStrip);
 
             //Bound before any cache arrives so the list has its headings from the start.
