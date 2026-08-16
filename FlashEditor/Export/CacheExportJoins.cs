@@ -6,6 +6,7 @@ using FlashEditor.Definitions.Config;
 using FlashEditor.Definitions.Entities;
 using FlashEditor.Definitions.Interfaces;
 using FlashEditor.Definitions.LoadingScreens;
+using FlashEditor.Definitions.Particles;
 using FlashEditor.Definitions.SpotAnims;
 
 namespace FlashEditor.Export {
@@ -289,6 +290,14 @@ namespace FlashEditor.Export {
         }
 
         /// <summary>The three model footer joins.</summary>
+        /// <remarks>
+        ///     <b>An index 27 id is a file id within a fixed group, not a group id.</b> Emitters are
+        ///     files of group 0 and effectors files of group 1 - two formats with no opcode in
+        ///     common - and the client fetches each by file within its own group
+        ///     (<c>ParticleType.list</c> and <c>Class21.method263</c>). Resolving them through
+        ///     <c>Definition</c> treated the id as a group id, and the index declares two groups, so
+        ///     every emitter above id 1 was reported as undeclared.
+        /// </remarks>
         /// <param name="model">The model's footer references.</param>
         /// <param name="resolver">The resolver.</param>
         /// <returns>The resolutions.</returns>
@@ -297,12 +306,14 @@ namespace FlashEditor.Export {
             var references = new List<ExportedReference>();
 
             for (int i = 0; i < model.EmitterIds.Count; i++)
-                Add(references, resolver.Definition("emitters[" + i + "]",
-                    "model footer emitter -> index 27", RSConstants.CONFIG_PARTICLES, model.EmitterIds[i]));
+                Add(references, resolver.File("emitters[" + i + "]",
+                    "model footer emitter -> index 27", RSConstants.CONFIG_PARTICLES,
+                    ParticleEmitterDefinition.GroupId, model.EmitterIds[i]));
 
             for (int i = 0; i < model.EffectorIds.Count; i++)
-                Add(references, resolver.Definition("effectors[" + i + "]",
-                    "model footer effector -> index 27", RSConstants.CONFIG_PARTICLES, model.EffectorIds[i]));
+                Add(references, resolver.File("effectors[" + i + "]",
+                    "model footer effector -> index 27", RSConstants.CONFIG_PARTICLES,
+                    ParticleEffectorDefinition.GroupId, model.EffectorIds[i]));
 
             for (int i = 0; i < model.BillboardIds.Count; i++)
                 Add(references, resolver.Definition("bonds[" + i + "]",

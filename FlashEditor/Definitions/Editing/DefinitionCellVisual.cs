@@ -84,7 +84,24 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="id">The file id within that group.</param>
         /// <returns>The visual.</returns>
         public static DefinitionCellVisual ConfigLink(int configGroup, int id) {
-            return new DefinitionCellVisual(DefinitionCellArt.Link, 0, RSConstants.CONFIG, id, configGroup);
+            return GroupedLink(RSConstants.CONFIG, configGroup, id);
+        }
+
+        /// <summary>
+        ///     A reference to a file of one named group of an index.
+        /// </summary>
+        /// <remarks>
+        ///     Index 2 is the common case and <see cref="ConfigLink"/> names it. Index 27 is the
+        ///     other: emitters are files of group 0 and effectors files of group 1, so emitter 40
+        ///     and effector 40 are different records and a link that dropped the group would open
+        ///     whichever family the tab was left showing.
+        /// </remarks>
+        /// <param name="indexId">The index.</param>
+        /// <param name="groupId">The group within it.</param>
+        /// <param name="id">The file id within that group.</param>
+        /// <returns>The visual.</returns>
+        public static DefinitionCellVisual GroupedLink(int indexId, int groupId, int id) {
+            return new DefinitionCellVisual(DefinitionCellArt.Link, 0, indexId, id, groupId);
         }
 
         /// <summary>What this cell draws.</summary>

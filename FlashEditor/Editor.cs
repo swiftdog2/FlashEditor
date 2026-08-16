@@ -1804,6 +1804,15 @@ namespace FlashEditor {
                 return;
             }
 
+            /* Index 27 is the second index whose groups are unrelated families: emitters in group 0
+               and effectors in group 1, so an id alone would land on whichever the selector was
+               left on. A model's footer names both, which is where such a link comes from. */
+            if (destination == ParticleEditorTab && location.HasGroup) {
+                if (!ParticlePanel.Show(location.GroupId, location.RecordId))
+                    Debug("Cross-navigation: index 27 holds no group " + location.GroupId + ".");
+                return;
+            }
+
             if (destination == EntityEditorTab && EntityPanel.Show(location.IndexId, location.RecordId))
                 return;
 

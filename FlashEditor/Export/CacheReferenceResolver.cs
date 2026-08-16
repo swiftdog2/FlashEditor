@@ -130,15 +130,16 @@ namespace FlashEditor.Export {
         /// <param name="join">The join this comes from.</param>
         /// <param name="targetIndex">The index the id addresses.</param>
         /// <param name="id">The id as stored.</param>
-        /// <param name="configGroup">
-        ///     The index 2 group the id is a file of, or -1. Index 2 has no id arithmetic, so an id
-        ///     there is not a place until a group is named with it.
+        /// <param name="groupId">
+        ///     The group the id is a file of, or -1 to let the index's own addressing derive one.
+        ///     Indexes 2 and 27 have no id arithmetic, so an id there is not a place until a group
+        ///     is named with it.
         /// </param>
         /// <returns>The resolution, or null when the id stores "nothing" rather than an id.</returns>
         public ExportedReference? Resolve(string field, string join, int targetIndex, int id,
-            int configGroup = -1) {
-            if (configGroup >= 0)
-                return Config(field, join, configGroup, id);
+            int groupId = -1) {
+            if (groupId >= 0)
+                return File(field, join, targetIndex, groupId, id);
 
             return Definition(field, join, targetIndex, id);
         }
@@ -156,10 +157,33 @@ namespace FlashEditor.Export {
         /// <param name="id">The file id within that group.</param>
         /// <returns>The resolution, or null when the id stores "nothing" rather than an id.</returns>
         public ExportedReference? Config(string field, string join, int configGroup, int id) {
+            return File(field, join, RSConstants.CONFIG, configGroup, id);
+        }
+
+        /// <summary>
+        ///     Resolves an id that addresses a file of one named group of an index.
+        /// </summary>
+        /// <remarks>
+        ///     For an index whose groups are unrelated families rather than pages of one id space, so
+        ///     the group is the caller's to state and the id is the file within it. Index 2 is the
+        ///     obvious case and <see cref="Config"/> is its name; index 27 is the other, and it is
+        ///     the one that was getting this wrong. That index holds emitters in group 0 and
+        ///     effectors in group 1 - <c>ParticleType.list</c> and <c>Class21.method263</c> both
+        ///     fetch by file id within a fixed group - and resolving an emitter id through
+        ///     <see cref="Definition"/> treated it as a group id instead. The index declares two
+        ///     groups, so every emitter above 1 reported as undeclared.
+        /// </remarks>
+        /// <param name="field">The field on the record that holds the id.</param>
+        /// <param name="join">The join this comes from.</param>
+        /// <param name="targetIndex">The index the id addresses.</param>
+        /// <param name="groupId">The group within that index.</param>
+        /// <param name="id">The file id within that group.</param>
+        /// <returns>The resolution, or null when the id stores "nothing" rather than an id.</returns>
+        public ExportedReference? File(string field, string join, int targetIndex, int groupId, int id) {
             if (id < 0)
                 return null;
 
-            return Build(field, join, id, RSConstants.CONFIG, configGroup, id);
+            return Build(field, join, id, targetIndex, groupId, id);
         }
 
         /// <summary>Assembles one resolution, answering existence and detail from the cheap sources.</summary>

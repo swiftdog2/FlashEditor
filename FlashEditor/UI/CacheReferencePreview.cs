@@ -105,19 +105,48 @@ namespace FlashEditor.UI {
             if (reference == null)
                 throw new ArgumentNullException(nameof(reference));
 
-            string where = reference.TargetIndex == RSConstants.CONFIG
+            /* The address is spelled out to the file rather than trusted to be derivable from the
+               id. Four indexes here are groups of unrelated families rather than pages of one id
+               space, so "record 12" is not an address on any of them, and a line that printed only
+               the id would be the same claim that resolved an emitter as a group id. */
+            string what = reference.TargetIndex == RSConstants.CONFIG
                 ? ConfigFamily.For(reference.TargetGroup).RowNoun + " " +
-                  reference.Id.ToString(CultureInfo.InvariantCulture) + " in config group " +
-                  reference.TargetGroup.ToString(CultureInfo.InvariantCulture) + ", " +
+                  reference.Id.ToString(CultureInfo.InvariantCulture) + ", " +
                   ConfigFamily.For(reference.TargetGroup).Name
                 : RSConstants.GetIndexName(reference.TargetIndex) + " " +
-                  reference.Id.ToString(CultureInfo.InvariantCulture) + " (index " +
-                  reference.TargetIndex.ToString(CultureInfo.InvariantCulture) + ")";
+                  reference.Id.ToString(CultureInfo.InvariantCulture);
+
+            string where = what + " (index " +
+                reference.TargetIndex.ToString(CultureInfo.InvariantCulture) + ", group " +
+                reference.TargetGroup.ToString(CultureInfo.InvariantCulture) + ", file " +
+                reference.TargetFile.ToString(CultureInfo.InvariantCulture) + ")";
 
             if (!reference.Exists)
                 return where + " - the reference table does not declare it";
 
             return string.IsNullOrEmpty(reference.Detail) ? where : where + " - " + reference.Detail;
+        }
+
+        /// <summary>
+        ///     Whether an id on this index is only a place once a group is named with it.
+        /// </summary>
+        /// <remarks>
+        ///     Two indexes here are collections of unrelated families rather than pages of one id
+        ///     space, and neither has any id arithmetic: index 2 is thirty-five config families, and
+        ///     index 27 is emitters in group 0 and effectors in group 1. On both, the same number in
+        ///     two groups is two different records - so a link that dropped the group would land
+        ///     somewhere plausible and wrong rather than failing, which is the worst way for a
+        ///     reference to be broken.
+        ///     <para>
+        ///     Every other index folds an id back into a group through <c>CacheAddressing</c>, and
+        ///     carrying the group for those would only make two spellings of the same place, which
+        ///     the back stack would then record twice.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index.</param>
+        /// <returns>Whether the group is part of the address.</returns>
+        public static bool GroupIsPartOfTheAddress(int indexId) {
+            return indexId == RSConstants.CONFIG || indexId == RSConstants.CONFIG_PARTICLES;
         }
 
         /// <summary>

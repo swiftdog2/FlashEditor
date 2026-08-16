@@ -168,7 +168,7 @@ namespace FlashEditor.Tests.UI {
 
             string described = CacheReferencePreview.Describe(reference);
 
-            Assert.Contains("config group 35", described, StringComparison.Ordinal);
+            Assert.Contains("index 2, group 35, file 12", described, StringComparison.Ordinal);
             Assert.Contains("Cook's Assistant", described, StringComparison.Ordinal);
         }
 

@@ -186,6 +186,38 @@ namespace FlashEditor.Definitions.Particles {
         }
 
         /// <summary>
+        ///     Selects one record of one particle family, for a link followed from another tab.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The group is not derivable from the id.</b> Index 27 holds emitters in group 0 and
+        ///     effectors in group 1, two formats with no opcode in common, and an id is a file
+        ///     within one of them - so emitter 40 and effector 40 are different records and a caller
+        ///     that handed over 40 alone would land on whichever family the selector was left on.
+        ///     A model's footer names both kinds, which is exactly where that mistake arrives from.
+        /// </remarks>
+        /// <param name="groupId">The group within index 27.</param>
+        /// <param name="fileId">The record within that group, or -1 to show the family alone.</param>
+        /// <returns>Whether that group is one of the two this index holds.</returns>
+        public bool Show(int groupId, int fileId) {
+            foreach (object entry in families.Items) {
+                if (entry is not FamilyOption family || family.GroupId != groupId)
+                    continue;
+
+                //Through the selector, so the combo agrees with the grid. Assigning it raises the
+                //handler that loads the group.
+                if (!ReferenceEquals(families.SelectedItem, family))
+                    families.SelectedItem = family;
+
+                if (fileId >= 0)
+                    records.SelectRecord(fileId);
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         ///     Loads whichever group the selector names.
         /// </summary>
         /// <remarks>

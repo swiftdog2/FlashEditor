@@ -402,9 +402,13 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="row">The row the reference was read off.</param>
         /// <param name="reference">The resolved reference.</param>
         private void FollowReference(object row, ExportedReference reference) {
-            DefinitionCellVisual visual = reference.TargetIndex == RSConstants.CONFIG
-                ? DefinitionCellVisual.ConfigLink(reference.TargetGroup, reference.Id)
-                : DefinitionCellVisual.Link(reference.TargetIndex, reference.Id);
+            /* The group travels only for the indexes whose ids are not places without one. Carrying
+               it for the rest would spell the same place two ways, and the back stack would record
+               both. */
+            DefinitionCellVisual visual =
+                CacheReferencePreview.GroupIsPartOfTheAddress(reference.TargetIndex)
+                    ? DefinitionCellVisual.GroupedLink(reference.TargetIndex, reference.TargetGroup, reference.Id)
+                    : DefinitionCellVisual.Link(reference.TargetIndex, reference.Id);
 
             CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(row, visual));
         }
