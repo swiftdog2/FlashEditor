@@ -1069,6 +1069,49 @@ namespace FlashEditor.Cache {
         }
 
         /// <summary>
+        ///     An index's name lookup, at both the group and the file level.
+        /// </summary>
+        /// <remarks>
+        ///     Shared machinery rather than a per-tab helper: indexes 3, 5, 23, 30, 31, 32 and 33 all
+        ///     carry names, and index 2 carries none and says so through
+        ///     <see cref="CacheNameIndex.NameLookupRefusal"/> instead of answering -1 in silence.
+        /// </remarks>
+        /// <param name="indexId">The index to look up names in.</param>
+        /// <returns>The lookup.</returns>
+        public CacheNameIndex GetNameIndex(int indexId) {
+            lock (_containerLock)
+                return GetReferenceTable(indexId).Names;
+        }
+
+        /// <summary>
+        ///     Reads a file the way the client addresses it, by group name and file name.
+        /// </summary>
+        /// <remarks>
+        ///     <c>JS5Archive.method2739</c> lower-cases both halves, hashes each and resolves the
+        ///     group then the file - so <c>"gl"/"transparent_water"</c> is a real address and not a
+        ///     convenience. The file name is the empty string for a single-file group: every index-30
+        ///     library is stored as <c>""</c> inside a group named for its path, and
+        ///     <c>Class35.java:102</c> passes that empty string explicitly.
+        /// </remarks>
+        /// <param name="indexId">The index the group belongs to.</param>
+        /// <param name="groupName">The group name, case-insensitive.</param>
+        /// <param name="fileName">The file name within it, case-insensitive.</param>
+        /// <returns>A copy of the file payload.</returns>
+        /// <exception cref="FileNotFoundException">Either half of the name resolves to nothing.</exception>
+        public byte[] ReadFileBytes(int indexId, string groupName, string fileName) {
+            CacheNameIndex names = GetNameIndex(indexId);
+
+            if (names.TryResolve(groupName, fileName, out int groupId, out int fileId))
+                return ReadFileBytes(indexId, groupId, fileId);
+
+            //The refusal is spliced in where there is one, because "not found" and "this index has
+            //no names to search" are different answers and only the second is worth acting on.
+            throw new FileNotFoundException(
+                "\tNo file named \"" + groupName + "\"/\"" + fileName + "\" in index " + indexId + "." +
+                (names.NameLookupRefusal == null ? string.Empty : " " + names.NameLookupRefusal));
+        }
+
+        /// <summary>
         ///     Every file a group declares, decoded from one pass over that group's payload.
         /// </summary>
         /// <remarks>
