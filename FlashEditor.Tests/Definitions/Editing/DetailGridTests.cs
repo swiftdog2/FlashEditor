@@ -114,6 +114,7 @@ namespace FlashEditor.Tests.Definitions.Editing {
                 "FlashEditor.Definitions.Enums.EnumEditorPanel.AddColumn",
                 "FlashEditor.Definitions.Fonts.FontEditorPanel.AddColumn",
                 "FlashEditor.Definitions.Interfaces.InterfaceEditorPanel.AddColumn",
+                "FlashEditor.Definitions.Interfaces.InterfaceHookPanel.AddColumn",
                 "FlashEditor.Definitions.VarBits.VarBitEditorPanel.AddColumn"
             };
 

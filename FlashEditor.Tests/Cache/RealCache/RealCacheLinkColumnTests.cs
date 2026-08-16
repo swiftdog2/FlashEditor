@@ -40,8 +40,10 @@ namespace FlashEditor.Tests.Cache.RealCache {
     ///     rather than a failure.
     ///     </para>
     /// </remarks>
-    [Collection("RealCache")]
-    public sealed class RealCacheLinkColumnTests {
+    /* IClassFixture, not [Collection("RealCache")]: no CollectionDefinition declares that name, so
+       the attribute names a collection with no fixture in it and the constructor parameter goes
+       unsatisfied. Every other cache-backed class in the suite takes the fixture this way. */
+    public sealed class RealCacheLinkColumnTests : IClassFixture<RealCacheFixture> {
         private readonly RealCacheFixture cache;
         private readonly ITestOutputHelper output;
 

@@ -26,7 +26,8 @@ namespace FlashEditor.Tests.Map
         public void AFillWritesEveryCoveredTileAsOneUndoStep()
         {
             MapRegion square = Square();
-            var tiles = MapSelection.RectangleTiles(10, 10, 13, 13).ToList();
+            var tiles = MapSelection.RectangleTiles(RegionX * 64 + 10, RegionY * 64 + 10,
+                RegionX * 64 + 13, RegionY * 64 + 13).ToList();
 
             MapAreaEditResult result = Build(square, tiles, MapAreaTool.Underlay, new MapAreaOptions { Value = 40 });
 
@@ -60,7 +61,8 @@ namespace FlashEditor.Tests.Map
         public void AnUnderlayPastTheCapIsRefusedRatherThanClamped()
         {
             MapRegion square = Square();
-            var tiles = MapSelection.RectangleTiles(10, 10, 11, 11).ToList();
+            var tiles = MapSelection.RectangleTiles(RegionX * 64 + 10, RegionY * 64 + 10,
+                RegionX * 64 + 11, RegionY * 64 + 11).ToList();
 
             MapAreaEditResult result = Build(square, tiles, MapAreaTool.Underlay,
                 new MapAreaOptions { Value = MapToolLimits.MaximumUnderlayId + 1 });
@@ -194,8 +196,8 @@ namespace FlashEditor.Tests.Map
             MapRegion Resolve(int worldX, int worldY) =>
                 worldX / 64 == RegionX ? west : worldX / 64 == RegionX + 1 ? east : null;
 
-            var tiles = MapSelection.RectangleTiles((RegionX + 1) * 64 - 1, 10,
-                (RegionX + 1) * 64, 10).ToList();
+            var tiles = MapSelection.RectangleTiles((RegionX + 1) * 64 - 1, RegionY * 64 + 10,
+                (RegionX + 1) * 64, RegionY * 64 + 10).ToList();
 
             MapAreaEditResult result = MapAreaEdits.Build(tiles, 0, MapAreaTool.Underlay,
                 new MapAreaOptions { Value = 40 }, Resolve);
@@ -210,8 +212,8 @@ namespace FlashEditor.Tests.Map
         public void TilesWithNoSquareAreDroppedQuietly()
         {
             MapRegion square = Square();
-            var tiles = MapSelection.RectangleTiles((RegionX + 1) * 64 - 2, 10,
-                (RegionX + 1) * 64 + 1, 10).ToList();
+            var tiles = MapSelection.RectangleTiles((RegionX + 1) * 64 - 2, RegionY * 64 + 10,
+                (RegionX + 1) * 64 + 1, RegionY * 64 + 10).ToList();
 
             MapAreaEditResult result = Build(square, tiles, MapAreaTool.Underlay,
                 new MapAreaOptions { Value = 40 });
@@ -235,12 +237,15 @@ namespace FlashEditor.Tests.Map
             var underwater = new MapRegion(MapSquareNames.RegionId(RegionX, RegionY),
                 MapSquareLayer.Underwater);
 
-            Assert.Equal(1, underwater.PlaneCount);
-
+            /* Region.Allocate is private and the constructor always takes four planes whatever the
+               layer, so the single-plane shape the 900 shipped underwater squares actually have
+               comes from decoding one and cannot be built here. The guard does not distinguish the
+               two: a plane at or past PlaneCount is skipped rather than indexed, so asking for one
+               past the last exercises the same branch a real underwater square reaches. */
             var tiles = new[] { (RegionX * 64 + 10, RegionY * 64 + 10) };
 
-            MapAreaEditResult result = MapAreaEdits.Build(tiles, 1, MapAreaTool.Underlay,
-                new MapAreaOptions { Value = 40 }, (_, _) => underwater);
+            MapAreaEditResult result = MapAreaEdits.Build(tiles, underwater.PlaneCount,
+                MapAreaTool.Underlay, new MapAreaOptions { Value = 40 }, (_, _) => underwater);
 
             Assert.False(result.WasRefused);
             Assert.Null(result.Edit);
