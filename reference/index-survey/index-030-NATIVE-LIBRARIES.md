@@ -1,8 +1,33 @@
 # Index 30 - NATIVE_LIBRARIES
 
 **Format:** fully-understood  
-**Capability:** read-only  
+**Capability:** read-write with tests, and a tab  
 **Effort:** small
+
+> **Built 2026-08-16.** The Gaps section below is now history, and is kept because the evidence in
+> it is still the evidence. What landed: `NativeLibraryNames` commits all 36 recovered names,
+> `NativeLibraryName` splits them and `NativeBinaryShape` classifies the payload independently from
+> its own MZ / ELF / Mach-O header, `NativeLibraryCensus` derives the `windows/x64/` anomaly from
+> the name set rather than from a group id, and the Native Libraries tab lists all of it over
+> `CachePayloadTransfer`.
+>
+> **Gap 21 below overstates its case and sent this work at the wrong target first.** It says
+> `ReferenceTableCodec`'s 64-byte-per-group whirlpool write "is not proven byte-identical
+> anywhere". `RealCacheConformanceTests.ReferenceTables_ReEncodeToTheCapturedBytes` iterates every
+> table in idx255 and byte-compares each against its captured payload, and index 30 is one of them,
+> so the write has always been covered - just not by anything that names the branch. That is why
+> `RealCacheNativeLibraryTests` asserts it separately: a regression there would otherwise be one
+> failure among thirty-five with nothing saying which branch was lost.
+>
+> **Gap 22 is scoped to `Editor.cs` and reads as a statement about the editor.** Raw extract and
+> import did have to be built, but not from nothing - `LoadingSpriteEditorPanel` already had a
+> `SaveFileDialog`, an `OpenFileDialog` and both `File.WriteAllBytes` and `File.ReadAllBytes`, and
+> is the shape `CachePayloadTransferStrip` generalises.
+>
+> What was genuinely defended by nothing, and now is: the **recompute** in `RSCache.WriteFile`.
+> `RealCacheWhirlpoolWriteTests` writes a library back unchanged and requires nothing to be staged,
+> then edits one, saves, reopens the store and requires the digest to describe the container that
+> is actually there, then undoes the edit and requires the original payload back to the byte.
 
 ## What it is
 

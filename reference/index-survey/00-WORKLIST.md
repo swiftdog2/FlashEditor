@@ -73,8 +73,8 @@ Effort is the survey's own grading. "Dep" is hard unless marked soft.
 | 27 | CONFIG_PARTICLES | none | Emitter (34 opcodes) and effector (10 opcodes) codecs with opcode-order capture and the 5/31 alias recorded. Sweep all 421 files. Two-list tab. | medium | 7 if the model particle footer is wired (soft) |
 | 28 | DEFAULTS | none | Two codecs, group 1 and group 3, with opcode order load-bearing and the type-version handshake bytes round-tripped verbatim. Sweep (two groups). Small tab. | small | none |
 | 29 | CONFIG_BILLBOARD | none | `BillboardDefinition` over 7 opcodes; opcode 1 is written last in every record, so order capture is mandatory. Sweep all 182 files. Tab. | small | 26 for material preview (soft) |
-| 30 | NATIVE_LIBRARIES | read-only (generic path) | Metadata classifier (os/arch/library from the group name, format from the payload magic). Committed name table for all 36 groups. Extract/import tab. Sweep that exercises the whirlpool recompute. | small | generic blob tab (§4) |
-| 31 | GRAPHICS_SHADERS | read-write-no-tests (generic path, fully swept) | File-by-name lookup, a shader-aware type, a name-join test, a content-shape test, and a tab (text editor for `gl`, hex for `dx`). | small | per-file name index (§4) |
+| 30 | NATIVE_LIBRARIES | **done** (2026-08-16) | Nothing. Classifier, committed name table, extract/import tab and the whirlpool sweeps all landed. | small | generic blob tab (§4) |
+| 31 | GRAPHICS_SHADERS | **done** (2026-08-16) | Nothing. File-by-name lookup, shader classifier, name-join and line-ending sweeps, and the tab all landed. | small | per-file name index (§4) |
 | 32 | LOADING_SPRITES | none | Payload-shape dispatcher (21 JPEG, 5 Jagex sprite sets). A 4-component non-JFIF YCbCr JPEG reader. Reuse the sprite codec for the font groups. Sweep all 26 groups. Tab. | medium | **8** (sprite encoder, index-parameterised `GetSprite`) |
 | 33 | GAME_TIPS (loading screens) | none | Manifest codec (group 0) and screen codec (group 1) with all ten element records implemented, three of which are exercised here. Sweep all 343 files. Text/tree tab first; visual preview later. | medium | 32 and 13 for preview (soft) |
 
@@ -164,18 +164,22 @@ Five different group/file splits are in play: `>>8 / &0xFF` (16, 19, 21, 17), `>
 ### 4.6 Enumerate-without-throwing
 Both the item and object tab loaders iterate `0..255` per archive and rely on `RSCache.ReadFile` throwing `FileNotFoundException` for the holes, catching and discarding. That is thousands of exceptions per tab load and it will multiply across 25 tabs. Add `RSCache.EnumerateFiles(indexId)` yielding real (group, file) pairs from the reference table.
 
-### 4.7 Per-file name lookup
-`NameHasher.GetNameHash` and `RSReferenceTable.GetArchiveId(name)` resolve **group** names. `ReferenceTableCodec` decodes and re-encodes per-**file** identifiers, but nothing indexes them, so a file cannot be found by name. Indexes 3, 5, 23, 30, 31, 32 and 33 all need it, and two of them cannot be read correctly without it: index 23's `area` file is id 4 in 32 groups and id 0 in the other 7, and index 30's file is named the empty string while the group carries the path.
+### 4.7 Per-file name lookup - BUILT 2026-08-16
+`CacheNameIndex` (`FlashEditor/Cache/CacheNameIndex.cs`) resolves both levels off one decoded table, reached as `RSReferenceTable.Names` or `RSCache.GetNameIndex(indexId)`, with `RSCache.ReadFileBytes(indexId, groupName, fileName)` over the top for the client's own two-part address. Indexes 30 and 31 use it; **3, 5, 23, 32 and 33 have not adopted it yet** and are the remaining consumers.
 
-Build the per-group identifier index once. While there: index 23 is the cheapest available proof that the hash is over the **lowercased** name, because one group's own record spells its name with capitals and only the lowercased form hashes to the stored identifier.
+Two things it was built to get right and a later change must not lose. Index 2 carries no name hashes at all, so every lookup there answers -1 and `NameLookupRefusal` says in words that the index is addressable only by id - answering -1 in silence reads identically to a name that is merely absent. And it is keyed by a dictionary over the declared entries rather than by the client's open-addressed `RSIdentifiers`, which is indexed by array position: sizing an array to the highest file id leaves undeclared slots holding 0, and 0 is `hash("")`, the name every index-30 file actually carries.
+
+Still open from the original note: index 23 is the cheapest available proof that the hash is over the **lowercased** name, because one group's own record spells its name with capitals and only the lowercased form hashes to the stored identifier. Nothing pins that yet.
 
 ### 4.8 `JagStream` gaps
 - **No signed-smart writer.** `ReadSmart` exists (bias -64 / -0xC000) and `ReadShortSmart` aliases it; the only writer is `WriteUnsignedSmart`, which is the 0/32768-bias variant and is the wrong function. Indexes 0, 4, 7 and 15 all need the signed writer.
 - **`ReadVarInt`/`WriteVarInt`** exist and now have callers on the track path; a stale comment in the IO tests says they have none.
 - **cp1252 strings.** `ReadJagexString`/`WriteJagexString` are the correct pair and match the client's remap including the `\0 → ?` fallback; the plain `ReadString` beside them skips the remap and is wrong for indexes 17, 23, 24, 25 and 33. Register `CodePagesEncodingProvider` once at startup rather than per call site.
 
-### 4.9 A generic binary-blob extract/import tab
-Nothing in the editor writes a payload to disk or reads one back: there is no `SaveFileDialog`, `OpenFileDialog` or `File.WriteAllBytes` anywhere in `Editor.cs`. Index 30 is nothing but extract/import, index 31's `dx` half can only be replaced, and 6, 11, 14 and 32 all want export. Build it once.
+### 4.9 A generic binary-blob extract/import surface - BUILT 2026-08-16
+`CachePayloadTransfer` and `CachePayloadTransferStrip` (`FlashEditor/Definitions/Editing/`) do raw bytes in both directions for any index. Indexes 30 and 31 use them; **6, 11, 14 and 32 have not adopted them yet**.
+
+Two rules live there rather than being re-decided per tab. Transfers go through `File.WriteAllBytes` and `File.ReadAllBytes` and never the text pair, because a text round trip rewrites line endings silently and the result still compiles and still reads correctly. And an import whose bytes equal the stored bytes stages nothing and says so, because re-storing identical bytes re-encodes the container, changes the archive CRC, drags in the reference-table entry of every archive packed beside it, and on index 30 rewrites a whirlpool digest as well. `Stage` is split from `Import` so an in-tab editor takes the same check a file import does.
 
 ### 4.10 Sprite codec reuse
 `RSCache.GetSprite` hardcodes `RSConstants.SPRITES_INDEX`, and `SpriteDefinition.Encode` throws. Both block indexes 8, 13 and 32. Index-parameterise the accessor as part of the index-8 work, not afterwards.
