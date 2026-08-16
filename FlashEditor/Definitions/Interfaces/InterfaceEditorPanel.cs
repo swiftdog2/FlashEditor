@@ -321,7 +321,13 @@ namespace FlashEditor.Definitions.Interfaces {
         private void PlaceSplitters() {
             if (splittersPlaced || listAndDetail.Width < 200 || componentsAndFields.Height < 200
                 || treeAndComponents.Width < 200 || canvasAndFields.Width < 200
-                || fieldsAndHooks.Height < 200)
+                /* 120 rather than the 200 the other four use, and deliberately. This container sits
+                   inside componentsAndFields.Panel2, so its height is that container's less the
+                   splitter - and a threshold of 200 here would be STRICTER than the one two lines
+                   up. Since the guard is all-or-nothing, that would leave every splitter on this
+                   page at its 50-pixel default in any window where the outer container cleared 200
+                   and this one did not. */
+                || fieldsAndHooks.Height < 120)
                 return;
 
             //Set before the assignments, not after: changing a splitter distance lays the panel out
