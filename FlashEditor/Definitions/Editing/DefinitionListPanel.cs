@@ -281,7 +281,7 @@ namespace FlashEditor.Definitions.Editing {
                 int sharing = UsageOf(column, visual);
                 if (sharing > 1 && descriptor != null)
                     line += Environment.NewLine + "used by " + sharing.ToString("N0") + " " +
-                        descriptor.RowNoun + "s in this index";
+                        descriptor.RowPlural + " in this index";
 
                 //Stated because the two differ, and the difference is not guessable: an editable
                 //link wants Ctrl so that a double click can still start an edit.
@@ -838,7 +838,7 @@ namespace FlashEditor.Definitions.Editing {
 
                 list.SetObjects(result.Rows);
                 progress.Value = 100;
-                status.Text = result.Describe(openDescriptor.RowNoun);
+                status.Text = result.Describe(openDescriptor.RowPlural);
                 RowsLoaded?.Invoke(this, EventArgs.Empty);
 
                 //After RowsLoaded, so a companion view built from the rows is in place before the
@@ -952,7 +952,7 @@ namespace FlashEditor.Definitions.Editing {
                 return;
 
             loader.ReportProgress(done * 100 / total,
-                $"Loaded {done}/{total} {openDescriptor.RowNoun}s ({done * 100 / total}%)");
+                $"Loaded {done}/{total} {openDescriptor.RowPlural} ({done * 100 / total}%)");
         }
 
         /// <summary>What one load produced, and what it could not.</summary>
@@ -975,8 +975,8 @@ namespace FlashEditor.Definitions.Editing {
             /// <summary>Rows that threw on the way in.</summary>
             internal int Failed { get; set; }
 
-            internal string Describe(string rowNoun) {
-                string text = $"{Rows.Count:N0} {rowNoun}s";
+            internal string Describe(string rowPlural) {
+                string text = $"{Rows.Count:N0} {rowPlural}";
                 if (Missing > 0)
                     text += $", {Missing:N0} missing";
                 if (Failed > 0)

@@ -771,7 +771,7 @@ namespace FlashEditor.Definitions.Entities {
 
             list.EmptyMessage = cache == null
                 ? "No cache loaded"
-                : "No " + descriptor.RowNoun + "s in index " + descriptor.IndexId;
+                : "No " + descriptor.RowPlural + " in index " + descriptor.IndexId;
 
             list.Bind(cache, cache == null ? null : descriptor);
         }
@@ -887,7 +887,7 @@ namespace FlashEditor.Definitions.Entities {
                 return;
             }
 
-            ReportStatus("Exported " + written + " " + descriptor.RowNoun + "s to " + directory +
+            ReportStatus("Exported " + written + " " + descriptor.RowPlural + " to " + directory +
                 (failed > 0 ? ", " + failed + " failed" : string.Empty));
         }
 

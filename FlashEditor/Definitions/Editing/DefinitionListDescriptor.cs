@@ -503,8 +503,19 @@ namespace FlashEditor.Definitions.Editing {
         /// <summary>The cache index this describes.</summary>
         int IndexId { get; }
 
-        /// <summary>What one row is called, for the status line. Plural is added by the panel.</summary>
+        /// <summary>What one row is called, for the status line.</summary>
         string RowNoun { get; }
+
+        /// <summary>
+        ///     What several rows are called, for the status line.
+        /// </summary>
+        /// <remarks>
+        ///     Stated separately rather than left to the caller to append an <c>s</c>, which is what
+        ///     every status line in the panel used to do and what put <c>36 librarys</c> and
+        ///     <c>128 patchs</c> on screen. <see cref="DefinitionListDescriptor{TRow}"/> derives it,
+        ///     so a descriptor only overrides this where English will not.
+        /// </remarks>
+        string RowPlural { get; }
 
         /// <summary>The columns to show, left to right.</summary>
         IReadOnlyList<DefinitionColumn> Columns { get; }
@@ -570,7 +581,64 @@ namespace FlashEditor.Definitions.Editing {
         public abstract string RowNoun { get; }
 
         /// <inheritdoc/>
+        /// <remarks>
+        ///     Derived from <see cref="RowNoun"/> by <see cref="Pluralise"/>. Override it for a noun
+        ///     English does not inflect by suffix - the rule handles the regular endings and nothing
+        ///     more, deliberately, because a table of irregulars in a cache editor is a table nobody
+        ///     maintains.
+        /// </remarks>
+        public virtual string RowPlural => Pluralise(RowNoun);
+
+        /// <inheritdoc/>
         public abstract IReadOnlyList<DefinitionColumn> Columns { get; }
+
+        /// <summary>
+        ///     The plural of a regular English noun.
+        /// </summary>
+        /// <remarks>
+        ///     The two endings that matter here are the two that were wrong on screen: a consonant
+        ///     followed by <c>y</c> takes <c>ies</c> (<c>library</c>), and a sibilant ending takes
+        ///     <c>es</c> (<c>patch</c>). Everything else takes <c>s</c>. Several of these nouns are
+        ///     phrases - <c>spot animation</c>, <c>world map area</c> - and every one of them carries
+        ///     its head last, so suffixing the whole string is suffixing the word that inflects.
+        ///     <para>
+        ///     Case is taken from the noun's own last letter, so <c>NPC</c> does not become
+        ///     <c>NPCS</c>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="noun">The singular noun, which may be a phrase.</param>
+        /// <returns>The plural.</returns>
+        internal static string Pluralise(string noun) {
+            if (string.IsNullOrEmpty(noun))
+                return string.Empty;
+
+            char last = noun[noun.Length - 1];
+            char beforeLast = noun.Length > 1 ? noun[noun.Length - 2] : ' ';
+
+            if (char.ToLowerInvariant(last) == 'y' && !IsVowel(beforeLast))
+                return noun.Substring(0, noun.Length - 1) + (char.IsUpper(last) ? "IES" : "ies");
+
+            if (EndsWithSibilant(noun))
+                return noun + (char.IsUpper(last) ? "ES" : "es");
+
+            return noun + (char.IsUpper(last) ? "S" : "s");
+        }
+
+        private static bool IsVowel(char letter) {
+            return "aeiou".IndexOf(char.ToLowerInvariant(letter)) >= 0;
+        }
+
+        private static bool EndsWithSibilant(string noun) {
+            char last = char.ToLowerInvariant(noun[noun.Length - 1]);
+            if (last == 's' || last == 'x' || last == 'z')
+                return true;
+
+            if (noun.Length < 2)
+                return false;
+
+            string tail = noun.Substring(noun.Length - 2).ToLowerInvariant();
+            return tail == "ch" || tail == "sh";
+        }
 
         /// <inheritdoc/>
         public virtual bool IsEditable => false;
