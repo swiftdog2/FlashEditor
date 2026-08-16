@@ -1,5 +1,6 @@
 ﻿using BrightIdeasSoftware;
 using FlashEditor.Definitions.Sprites;
+using FlashEditor.UI;
 
 namespace FlashEditor {
     partial class Editor {
@@ -66,7 +67,7 @@ namespace FlashEditor {
             button5 = new Button();
             button4 = new Button();
             SpriteEditorTab = new TabPage();
-            SpriteNoticeLabel = new Label();
+            SpriteNoticeLabel = new InfoAffordance();
             SpriteSplit = new SplitContainer();
             SpriteDetailLayout = new TableLayoutPanel();
             SpriteDetailStrip = new FlowLayoutPanel();
@@ -74,7 +75,7 @@ namespace FlashEditor {
             SpriteZoom = new NumericUpDown();
             SpriteFrameOutline = new CheckBox();
             SpriteDetailLabel = new Label();
-            SpriteCostLabel = new Label();
+            SpriteCostLabel = new InfoAffordance();
             groupBox3 = new GroupBox();
             SpriteControlsLayout = new TableLayoutPanel();
             SpriteLoadingLabel = new Label();
@@ -108,7 +109,7 @@ namespace FlashEditor {
             ViewerParticleCheck = new CheckBox();
             ViewerReadoutLabel = new Label();
             ViewerStatusLabel = new Label();
-            ViewerLimitsLabel = new Label();
+            ViewerLimitsLabel = new InfoAffordance();
             TextureViewerTab = new TabPage();
             TextureStatusPanel = new Panel();
             TextureProgressBar = new ProgressBar();
@@ -614,13 +615,17 @@ namespace FlashEditor {
             // SpriteNoticeLabel
             //
             //Says what the grid is doing to the picture, because a letterboxed tile cannot say it
-            //for itself: an upscaled sprite and a shrunk one look equally like "the sprite".
-            SpriteNoticeLabel.AutoSize = true;
+            //for itself: an upscaled sprite and a shrunk one look equally like "the sprite". Behind
+            //an (i) since the tiles never stop being letterboxed, so a reader needs the sentence
+            //once and the page needs the height on every visit.
             SpriteNoticeLabel.Dock = DockStyle.Top;
             SpriteNoticeLabel.Font = new Font("Consolas", 9F);
             SpriteNoticeLabel.Name = "SpriteNoticeLabel";
             SpriteNoticeLabel.TabIndex = 13;
-            SpriteNoticeLabel.Text = "Index 8. Tiles are letterboxed over a checkerboard - never stretched - and magnified by whole numbers with nearest-neighbour sampling. A tile marked with a percentage is not full size; judge it in the pane on the right, which starts at 1:1.";
+            SpriteNoticeLabel.Kind = InfoKind.Limitation;
+            SpriteNoticeLabel.Caption = "A tile is not the sprite at full size";
+            SpriteNoticeLabel.Summary = "Index 8. A tile is not the sprite at full size";
+            SpriteNoticeLabel.Body = "Index 8. Tiles are letterboxed over a checkerboard - never stretched - and magnified by whole numbers with nearest-neighbour sampling. A tile marked with a percentage is not full size; judge it in the pane on the right, which starts at 1:1.";
             //
             // SpriteSplit
             //
@@ -785,13 +790,17 @@ namespace FlashEditor {
                the editor makes that a user cannot see in the result - a picture over 255 colours is
                approximated rather than refused, pure black is stored under the spelling the client
                promotes it to, and an alpha plane is written only when the picture needs one - and
-               "say what the editor cannot do" means saying them here rather than only in a comment. */
-            SpriteCostLabel.AutoSize = true;
-            SpriteCostLabel.Dock = DockStyle.Fill;
+               "say what the editor cannot do" means saying them here rather than only in a comment.
+               Fifteen lines of it, on a strip 340 pixels wide beside four buttons and a progress
+               bar, which is why it is behind an (i): the obligation is discharged by the note being
+               reachable at the button, not by it being on screen unread. */
             SpriteCostLabel.Font = new Font("Consolas", 9F);
             SpriteCostLabel.Name = "SpriteCostLabel";
             SpriteCostLabel.TabIndex = 11;
-            SpriteCostLabel.Text =
+            SpriteCostLabel.Kind = InfoKind.Cost;
+            SpriteCostLabel.Caption = "What importing costs";
+            SpriteCostLabel.Summary = "What importing costs";
+            SpriteCostLabel.Body =
                 "Import writes into whatever is selected. Expand a set to reach its frames.\r\n" +
                 "\r\n" +
                 "A FRAME row: one picture replaces that frame and the rest of the set is left exactly as it was.\r\n" +
@@ -1141,11 +1150,14 @@ namespace FlashEditor {
             // ViewerLimitsLabel
             //
             // Says what the viewer deliberately does not do, because a user comparing it against the
-            // game has no other way to tell a documented omission from a defect.
-            ViewerLimitsLabel.AutoSize = true;
+            // game has no other way to tell a documented omission from a defect. Behind an (i) on
+            // the same strip: the sentence is standing, and the strip already wraps at the default
+            // splitter width with the six toggles and two readouts ahead of it.
             ViewerLimitsLabel.Name = "ViewerLimitsLabel";
-            ViewerLimitsLabel.Text = "Viewer omits frame blending, scene lighting and particle scene collision.";
-            ViewerLimitsLabel.TextAlign = ContentAlignment.MiddleLeft;
+            ViewerLimitsLabel.Kind = InfoKind.Limitation;
+            ViewerLimitsLabel.Caption = "What the viewer does not draw";
+            ViewerLimitsLabel.Summary = "Viewer omissions";
+            ViewerLimitsLabel.Body = "Viewer omits frame blending, scene lighting and particle scene collision.";
             // 
             // TextureViewerTab
             //
@@ -1545,7 +1557,7 @@ namespace FlashEditor {
         private BrightIdeasSoftware.OLVColumn SpriteStoredColumn;
         private BrightIdeasSoftware.OLVColumn SpriteScaleColumn;
         private BrightIdeasSoftware.OLVColumn SpriteImageColumn;
-        private System.Windows.Forms.Label SpriteNoticeLabel;
+        private InfoAffordance SpriteNoticeLabel;
         private System.Windows.Forms.SplitContainer SpriteSplit;
         private System.Windows.Forms.TableLayoutPanel SpriteDetailLayout;
         private System.Windows.Forms.FlowLayoutPanel SpriteDetailStrip;
@@ -1553,7 +1565,7 @@ namespace FlashEditor {
         private System.Windows.Forms.NumericUpDown SpriteZoom;
         private System.Windows.Forms.CheckBox SpriteFrameOutline;
         private System.Windows.Forms.Label SpriteDetailLabel;
-        private System.Windows.Forms.Label SpriteCostLabel;
+        private InfoAffordance SpriteCostLabel;
         private System.Windows.Forms.TableLayoutPanel SpriteControlsLayout;
         private FlashEditor.Definitions.Sprites.SpriteCanvas SpritePreview = new FlashEditor.Definitions.Sprites.SpriteCanvas();
         private System.Windows.Forms.ColorDialog colorDialog1;
@@ -1718,7 +1730,7 @@ namespace FlashEditor {
         private CheckBox ViewerParticleCheck;
         private Label ViewerReadoutLabel;
         private Label ViewerStatusLabel;
-        private Label ViewerLimitsLabel;
+        private InfoAffordance ViewerLimitsLabel;
     }
 }
 
