@@ -455,50 +455,26 @@ Verified by ear against reference/track-player-listening-checklist.md and by eye
 
 ---
 
-### 24. A generic extract and import tab, and the two indexes that are nothing else
+### 24. A generic extract and import surface, and the two indexes that were nothing else - DONE
 
-**Nothing in the editor writes an arbitrary payload to disk or reads one back.** Four bespoke paths
-exist - sprites, models as OBJ, tracks as MIDI, loading sprites - and no general one. Two whole
-indexes have **no UI at all** because of it.
+Landed 2026-08-16. `CachePayloadTransfer` and `CachePayloadTransferStrip`
+(`FlashEditor/Definitions/Editing/`) do raw bytes in both directions for any index;
+`CacheNameIndex` (`FlashEditor/Cache/CacheNameIndex.cs`) resolves group **and file** names off one
+reference table; indexes 30 and 31 have tabs.
 
-```
-Read CLAUDE.md and AGENTS.md first, including the UI conventions section.
+**What it left behind, as work rather than as a changelog footnote:**
 
-Build one generic extract/import surface, then use it for the two indexes that need nothing else.
-
-INDEX 30, NATIVE LIBRARIES. 36 groups in both caches: real compiled DLLs, .so and .dylib files
-that the client extracts to disk and loads, which is what makes OpenGL mode work. Six library
-families crossed with three operating systems and their architectures. The group name is the whole
-structure - "windows/x86/jaggl.dll" - and the file inside is named the empty string. All 36 names
-were recovered by brute force and are listed in index-030-NATIVE-LIBRARIES.md:30; commit that table
-rather than re-deriving it. Classify each group by OS, architecture and library from the name, and
-by format from the payload magic (MZ, Mach-O, ELF).
-
-Two things specific to index 30:
- - It is the ONLY table in the cache that sets the whirlpool flag, so it is the sole real-world
-   exercise of that branch of ReferenceTableCodec, and that branch is currently proven by nothing.
-   A sweep here that exercises the whirlpool recompute is worth more than the tab.
- - Group 11 is named windows/x64/jagmisc.dll while every other 64-bit Windows library is under
-   windows/x86_64/, and the client only ever asks for the latter. The cache wins. Do NOT "fix" the
-   name; surface it as the anomaly it is.
-
-INDEX 31, GRAPHICS SHADERS. 2 groups, 14 files, both caches. GPU shader programs, all of them about
-water - transparent water, reflections, and the underwater view. Group "gl" is plaintext: five ARB
-assembly files and two GLSL. Group "dx" is compiled Direct3D 9 bytecode and can only be replaced.
-Give "gl" a text editor and "dx" a hex view.
-
-LINE ENDINGS ARE THE TRAP HERE. Four ARB files use bare LF and no CRLF, transparent_water uses
-CRLF, both GLSL files use CRLF, and only one file ends with a newline. Any text control or
-File.WriteAllText round trip silently rewrites the file. Prove a no-op edit writes nothing before
-you prove an edit writes something.
-
-Both indexes are name-addressed and PER-FILE NAME LOOKUP DOES NOT EXIST. ReferenceTableCodec
-decodes and re-encodes per-file identifiers but nothing indexes them, so "gl"/"transparent_water" -
-exactly how the client addresses it - cannot be resolved today. Build the per-group identifier
-index once; indexes 3, 5, 23, 30, 31, 32 and 33 all want it.
-
-Run the suite against both caches. Commit.
-```
+- **Five indexes have not adopted the name index.** 3, 5, 23, 32 and 33 all carry identifiers and
+  still address by id. Index 23 is the one that cannot be read correctly without it - its `area`
+  file is id 4 in 32 groups and id 0 in the other 7 - and it is also the cheapest available proof
+  that the hash is over the **lowercased** name, which nothing pins yet.
+- **Four indexes have not adopted the transfer surface.** 6, 11, 14 and 32 all want export, and
+  three of them already have a bespoke path that writes a *rendering* rather than the stored bytes.
+- **The two write suites each copy the whole cache.** `RealCacheWhirlpoolWriteTests` and
+  `RealCacheShaderEditTests` follow `MapSaveRoundTripTests` in copying every `main_file_cache.*`
+  to a temp directory per test, which is now four whole-cache copies in a full run. The lighter
+  pattern exists - `NpcDefinitionWritePathTests` seeds real bytes into a synthetic cache - but it
+  does not exercise the real reference table, which is the point on index 30.
 
 ---
 

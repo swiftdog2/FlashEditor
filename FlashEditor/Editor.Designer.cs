@@ -133,6 +133,8 @@ namespace FlashEditor {
             FontEditorTab = new TabPage();
             ClientScriptEditorTab = new TabPage();
             WorldMapOverviewTab = new TabPage();
+            NativeLibraryEditorTab = new TabPage();
+            ShaderEditorTab = new TabPage();
             TextureListView = new ObjectListView();
             TextureImage = new OLVColumn();
             TextureID = new OLVColumn();
@@ -315,6 +317,8 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(QuickChatEditorTab);
             EditorTabControl.Controls.Add(HuffmanEditorTab);
             EditorTabControl.Controls.Add(ClientScriptEditorTab);
+            EditorTabControl.Controls.Add(ShaderEditorTab);
+            EditorTabControl.Controls.Add(NativeLibraryEditorTab);
             EditorTabControl.Dock = DockStyle.Fill;
             EditorTabControl.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point,  0);
             EditorTabControl.Location = new Point(0, 0);
@@ -1406,6 +1410,26 @@ namespace FlashEditor {
             WorldMapOverviewTab.Text = "World Map Overview";
             WorldMapOverviewTab.UseVisualStyleBackColor = true;
             //
+            // ShaderEditorTab
+            //
+            ShaderEditorTab.Controls.Add(ShaderPanel);
+            ShaderEditorTab.Location = new Point(4, 37);
+            ShaderEditorTab.Name = "ShaderEditorTab";
+            ShaderEditorTab.Size = new Size(1113, 554);
+            ShaderEditorTab.TabIndex = 28;
+            ShaderEditorTab.Text = "Graphics Shaders";
+            ShaderEditorTab.UseVisualStyleBackColor = true;
+            //
+            // NativeLibraryEditorTab
+            //
+            NativeLibraryEditorTab.Controls.Add(NativeLibraryPanel);
+            NativeLibraryEditorTab.Location = new Point(4, 37);
+            NativeLibraryEditorTab.Name = "NativeLibraryEditorTab";
+            NativeLibraryEditorTab.Size = new Size(1113, 554);
+            NativeLibraryEditorTab.TabIndex = 29;
+            NativeLibraryEditorTab.Text = "Native Libraries";
+            NativeLibraryEditorTab.UseVisualStyleBackColor = true;
+            //
             // TextureListView
             // 
             TextureListView.Columns.AddRange(new ColumnHeader[] { TextureImage, TextureID });
@@ -1692,6 +1716,14 @@ namespace FlashEditor {
         //DefinitionListPanel for those and renders the selected area's tile raster beside it.
         private TabPage WorldMapOverviewTab;
         private FlashEditor.Definitions.WorldMap.WorldMapEditorPanel WorldMapPanel = new FlashEditor.Definitions.WorldMap.WorldMapEditorPanel();
+        //Index 31, the client's water and underwater shader programs. Two backends, seven named
+        //programs each; the panel edits the plaintext one as text and shows the compiled one as hex.
+        private TabPage ShaderEditorTab;
+        private FlashEditor.Definitions.Shaders.ShaderEditorPanel ShaderPanel = new FlashEditor.Definitions.Shaders.ShaderEditorPanel();
+        //Index 30, the client's own compiled DLLs, .so and .dylib files. A record is the binary
+        //itself, so the panel classifies and transfers bytes rather than decoding anything.
+        private TabPage NativeLibraryEditorTab;
+        private FlashEditor.Definitions.Natives.NativeLibraryEditorPanel NativeLibraryPanel = new FlashEditor.Definitions.Natives.NativeLibraryEditorPanel();
         //Index 3. A group is one interface and a file is one component, so the panel owns the
         //interface list, a DefinitionListPanel scoped to the selected interface's components, and a
         //field pane below it.

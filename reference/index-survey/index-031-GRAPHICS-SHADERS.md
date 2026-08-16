@@ -1,8 +1,28 @@
 # Index 31 - GRAPHICS_SHADERS
 
 **Format:** fully-understood  
-**Capability:** read-write-no-tests  
+**Capability:** read-write with tests, and a tab  
 **Effort:** small
+
+> **Built 2026-08-16.** The Gaps section below is now history and is kept for its evidence. What
+> landed: `ShaderNames` commits the two backend names and the seven program names, all of them
+> taken from the client rather than from a wordlist; `ShaderProgramShape` classifies a payload from
+> its own bytes; `ShaderTextDocument` is the line-ending-exact text codec; and the Graphics Shaders
+> tab edits `gl` as text and shows `dx` as hex, over `CachePayloadTransfer`.
+>
+> **Trap 1 below is the whole design and it is now enforced rather than merely warned about.**
+> `ShaderTextDocument` records the convention at decode and replays it at encode, and checks that
+> claim rather than asserting it: `RoundTripsExactly` is computed at decode by encoding the display
+> text back and comparing it to the stored bytes, and a file that fails - a binary payload, or one
+> mixing conventions - is shown but not editable. `RealCacheShaderTests` then asserts what a
+> decoder hardcoding either convention cannot satisfy: both LF and CRLF occur, both
+> trailing-newline states occur, no file mixes them, and every plaintext file re-encodes to its
+> stored bytes.
+>
+> **The per-file name lookup gap is closed generally, not here.** `CacheNameIndex` resolves both
+> levels for any table that carries identifiers, so `"gl"/"transparent_water"` now resolves through
+> `RSCache.ReadFileBytes(31, "gl", "transparent_water")` and the same machinery is waiting for
+> indexes 3, 5, 23, 32 and 33.
 
 ## What it is
 

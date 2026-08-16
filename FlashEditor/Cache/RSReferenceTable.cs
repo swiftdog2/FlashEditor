@@ -58,6 +58,30 @@ namespace FlashEditor.Cache
 
         internal RSIdentifiers identifiers;
 
+        private CacheNameIndex? nameIndex;
+        private readonly object nameIndexLock = new object();
+
+        /// <summary>
+        ///     The table's names, at both the group and the file level.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="GetArchiveId"/> only ever reached the group level, so the per-file
+        ///     identifiers this codec has always decoded were unreachable. This is the lookup the
+        ///     client actually uses - it resolves a group name and then a file name inside it - and
+        ///     it is shared machinery rather than an index-31 detail: indexes 3, 5, 23, 30, 31, 32
+        ///     and 33 all set the identifiers flag.
+        ///     <para>
+        ///     Built on first use and dropped whenever an entry is added, because a write that
+        ///     introduces a group or a file introduces a name with it.
+        ///     </para>
+        /// </remarks>
+        public CacheNameIndex Names {
+            get {
+                lock (nameIndexLock)
+                    return nameIndex ??= CacheNameIndex.Build(this);
+            }
+        }
+
         /// <summary>
         ///     Resolves a group name to its archive id through the table's identifier map.
         /// </summary>
@@ -121,6 +145,13 @@ namespace FlashEditor.Cache
                 archiveEntries[archiveId] = entry;
             else
                 archiveEntries.Add(archiveId, entry);
+
+            //A write can add a group, add a file to one, or replace an entry outright, and each of
+            //those changes what the table names. Dropped rather than patched: the rebuild costs one
+            //pass over entries that are already in memory, and a patch would have to know which of
+            //the three happened.
+            lock (nameIndexLock)
+                nameIndex = null;
         }
 
 

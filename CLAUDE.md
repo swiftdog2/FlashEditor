@@ -213,10 +213,13 @@ the nearest tab happens to do - three of the tabs still predate it.**
 - **Navigation is a category `TreeView` over a `TabControl`, not a tab strip.** The strip is gone.
   `PageDeck : TabControl` (`Editor.cs:353-371`) swallows `TCM_ADJUSTRECT` so the page gets the full
   client area and no strip is drawn, and `EditorNavTree` (`Editor.cs:1120-1176`) is what the user
-  navigates with. **The deck holds 27 `TabPage`s and the tree exposes 25** - `Reference Tables` and
-  `Containers` are in the deck and not in the tree - so a page count is two different numbers and
-  anything quoting one has to say which. Earlier versions of this section described a strip, which
-  is why prompts written from it kept describing a surface that no longer exists.
+  navigates with. **A page count is two different numbers**, because `Reference Tables` and
+  `Containers` are in the deck and not in the tree, so anything quoting one has to say which -
+  count `EditorTabControl.Controls.Add` calls in `Editor.Designer.cs` for the deck and
+  `Register` calls in `RegisterEditorTabs` for the tree rather than trusting a figure written down
+  here, which went stale the first time two tabs were added at once. Earlier versions of this
+  section described a strip, which is why prompts written from it kept describing a surface that no
+  longer exists.
 - **A tab states its own cache index; its position states nothing.** `Editor.RegisterEditorTabs`
   maps each `TabPage` to an index and, for the self-contained tabs, to the delegate that binds their
   panel. It replaced a `static int[] editorTypes` read as `editorTypes[SelectedIndex]`, where
@@ -256,6 +259,25 @@ the nearest tab happens to do - three of the tabs still predate it.**
   reading as broken - set `EmptyMessage` when you do that, or the pane claims no cache is loaded
   while the list beside it is full of rows from that cache.
 
+- **Writing a stored payload to disk, or putting one back, goes through `CachePayloadTransfer`**
+  (`FlashEditor/Definitions/Editing/`), never through a fresh `SaveFileDialog` in a panel. Two
+  rules live there because both are easy to get wrong once per tab. Transfers use
+  `File.WriteAllBytes` and `File.ReadAllBytes` and **never the text pair**: index 31's shaders mix
+  bare LF and CRLF and only one of the seven ends with a newline, so a text round trip rewrites
+  files nobody edited and the result still compiles and still reads correctly. And an import whose
+  bytes equal the stored bytes stages **nothing** and says so, because re-storing identical bytes
+  re-encodes the container, changes the archive CRC, drags in the reference-table entry of every
+  archive packed beside it, and on index 30 rewrites a whirlpool digest too. `Stage` is split from
+  `Import` so an in-tab editor takes the same check a file import does. The four bespoke export
+  paths that predate it - sprites as PNG, models as OBJ, tracks as MIDI, loading sprites as JPEG -
+  each write a *rendering* of a decoded record and are a different thing; they are not this and
+  must not be copied for an index that has no codec.
+- **A group or file name resolves through `CacheNameIndex`** (`RSReferenceTable.Names`, or
+  `RSCache.GetNameIndex`), which does both levels. `RSReferenceTable.GetArchiveId` only ever did
+  groups, so `"gl"/"transparent_water"` - exactly how `JS5Archive.method2739` addresses a shader -
+  could not be resolved at all. Index 2 carries no name hashes, and there the lookup **refuses in
+  words** through `NameLookupRefusal` rather than answering -1 in silence, because a silent -1 reads
+  identically to a name that is merely absent.
 - **Layout measures itself; it does not state pixels.** The form is `AutoScaleMode.Dpi` against
   `AutoScaleDimensions(96F, 96F)`. It was `Font` against `(9F, 20F)` - dimensions for a font the
   form had stopped using - so every literal `Width`/`Height` and every `SizeType.Absolute` row was
