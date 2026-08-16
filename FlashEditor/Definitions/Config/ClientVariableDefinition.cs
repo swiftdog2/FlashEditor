@@ -47,7 +47,20 @@ namespace FlashEditor.Definitions.Config {
         ///     permissive case is the one that costs a byte, which is why only 19 of the 1,445
         ///     records carry it.
         /// </remarks>
-        public bool ServerWritable { get; set; }
+        public bool ServerWritable {
+            get => _serverWritable;
+
+            /* The setter has to move the opcode as well as the field. Opcode 2 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _serverWritable = value;
+                SetBareOpcode(2, value);
+            }
+        }
+
+        private bool _serverWritable;
 
         /// <summary>Decodes one client variable definition.</summary>
         /// <param name="stream">The definition file.</param>

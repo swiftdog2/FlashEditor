@@ -50,7 +50,20 @@ namespace FlashEditor.Definitions.Config {
         ///     <c>aBoolean1204</c>, which defaults to true. Nothing in the 637 client reads it back,
         ///     so it is not named further here. 81 records carry it.
         /// </remarks>
-        public bool Unknown4 { get; set; } = true;
+        public bool Unknown4 {
+            get => _unknown4;
+
+            /* The setter has to move the opcode as well as the field. Opcode 4 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _unknown4 = value;
+                SetBareOpcode(4, !value);
+            }
+        }
+
+        private bool _unknown4 = true;
 
         /// <summary>Opcode 5. The default value when the type is a string.</summary>
         public string? DefaultString { get; set; }

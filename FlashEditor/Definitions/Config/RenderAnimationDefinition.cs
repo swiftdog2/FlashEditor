@@ -278,7 +278,20 @@ namespace FlashEditor.Definitions.Config {
         ///     (Particle_Sub3_Sub4_Sub2_Sub1.java:79, Player.java:576). Occurs in no file of either
         ///     cache, so what it gates is recorded and not named.
         /// </remarks>
-        public bool Unknown53 { get; set; } = true;
+        public bool Unknown53 {
+            get => _unknown53;
+
+            /* The setter has to move the opcode as well as the field. Opcode 53 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _unknown53 = value;
+                SetBareOpcode(53, !value);
+            }
+        }
+
+        private bool _unknown53 = true;
 
         /// <summary>Opcode 54, first byte, as stored.</summary>
         /// <remarks>

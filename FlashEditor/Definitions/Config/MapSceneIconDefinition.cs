@@ -40,16 +40,48 @@ namespace FlashEditor.Definitions.Config {
         ///     for the minimap's 4 pixels per tile. When true it scales to
         ///     <c>4 * footprint</c> instead (Class122.java:114-117).
         /// </remarks>
-        public bool StretchToFootprint { get; set; }
+        public bool StretchToFootprint {
+            get => _stretchToFootprint;
+
+            /* The setter has to move the opcode as well as the field. Opcode 3 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _stretchToFootprint = value;
+                SetBareOpcode(3, value);
+            }
+        }
+
+        private bool _stretchToFootprint;
 
         /// <summary>The opcodes seen at decode time, in order, so a round trip is byte-exact.</summary>
         public List<DecodedOpcode> DecodedOpcodes { get; } = new List<DecodedOpcode>();
+
+        /* Payload-free opcodes an edit has turned off. Suppressed rather than removed from the
+           stream above, so turning one back on puts it where the file had it - see
+           SuppressedOpcodes for the defect that rule exists for. */
+        private readonly SuppressedOpcodes suppressed = new SuppressedOpcodes();
+
+        /// <summary>Turns a payload-free opcode on or off, keeping the position the file stored it at.</summary>
+        /// <param name="opcode">The payload-free opcode.</param>
+        /// <param name="present">Whether the record should emit it.</param>
+        private void SetBareOpcode(int opcode, bool present) {
+            suppressed.Set(DecodedOpcodes, opcode, present);
+        }
+
+        /// <summary>Whether the record will emit an opcode: stored, and not turned off by an edit.</summary>
+        /// <param name="opcode">The opcode.</param>
+        /// <returns>Whether it is emitted.</returns>
+        private bool Emits(int opcode) => suppressed.Emits(DecodedOpcodes, opcode);
+
 
         /// <summary>Decodes one map scene icon definition.</summary>
         /// <param name="stream">The definition file.</param>
         /// <returns>This definition.</returns>
         public MapSceneIconDefinition Decode(JagStream stream) {
             DecodedOpcodes.Clear();
+            suppressed.Clear();
 
             while (true) {
                 int opcode = stream.ReadUnsignedByte();
@@ -97,6 +129,12 @@ namespace FlashEditor.Definitions.Config {
 
             for (int i = 0; i < DecodedOpcodes.Count; i++) {
                 int opcode = DecodedOpcodes[i].Opcode;
+
+                //Skipped where it stood rather than deleted from the list, so restoring it
+                //puts it back in the same place.
+                if (suppressed.Contains(opcode))
+                    continue;
+
                 int value = DecodedOpcodes.IsLastOccurrence(i) ? CurrentValue(opcode) : DecodedOpcodes[i].Value;
                 Emit(stream, opcode, value);
             }
@@ -172,9 +210,9 @@ namespace FlashEditor.Definitions.Config {
         /// </remarks>
         /// <returns>The description.</returns>
         public string DescribeAbsentIconEncoding() {
-            if (DecodedOpcodes.Has(4))
+            if (Emits(4))
                 return "no icon, stored as opcode 4";
-            if (DecodedOpcodes.Has(1))
+            if (Emits(1))
                 return "names an icon through opcode 1";
             return "no icon, stored as the opcode being absent";
         }
@@ -182,10 +220,10 @@ namespace FlashEditor.Definitions.Config {
         private IEnumerable<int> AddedOpcodes() {
             //Opcode 4 is the explicit "no sprite" form, so a -1 added by an edit uses it rather
             //than writing -1 through opcode 1's unsigned short.
-            if (!DecodedOpcodes.Has(1) && !DecodedOpcodes.Has(4) && SpriteGroupId > 0) yield return 1;
-            if (!DecodedOpcodes.Has(4) && !DecodedOpcodes.Has(1) && SpriteGroupId == -1) yield return 4;
-            if (!DecodedOpcodes.Has(2) && TintRgb != 0) yield return 2;
-            if (!DecodedOpcodes.Has(3) && StretchToFootprint) yield return 3;
+            if (!Emits(1) && !Emits(4) && SpriteGroupId > 0) yield return 1;
+            if (!Emits(4) && !Emits(1) && SpriteGroupId == -1) yield return 4;
+            if (!Emits(2) && TintRgb != 0) yield return 2;
+            if (!Emits(3) && StretchToFootprint) yield return 3;
         }
     }
 }

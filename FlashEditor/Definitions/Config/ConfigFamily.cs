@@ -610,8 +610,11 @@ namespace FlashEditor.Definitions.Config {
                     Asset("Font", definition.FontId, ConfigFieldEditor.Font,
                         value => definition.FontId = value),
                     Swatch("Text colour", definition.TextRgb, value => definition.TextRgb = value),
+                    //The one string field in the index whose record class cannot hold a null. Its
+                    //constructor default is the empty string, so an empty edit restores the default
+                    //and AddedOpcodes leaves the opcode off, which is the same outcome.
                     Words("Number template", definition.NumberTemplate,
-                        value => definition.NumberTemplate = value),
+                        value => definition.NumberTemplate = value ?? ""),
                     Asset("Sprite layer 1", definition.SpriteLayer1Id, ConfigFieldEditor.Sprite,
                         value => definition.SpriteLayer1Id = value),
                     Asset("Sprite layer 2", definition.SpriteLayer2Id, ConfigFieldEditor.Sprite,
@@ -853,20 +856,25 @@ namespace FlashEditor.Definitions.Config {
                 ConfigFieldEditor.Integer, text => set(ParseInt(text)));
         }
 
-        /// <summary>A text field the user can retype.</summary>
+        /// <summary>
+        ///     A text field the user can retype.
+        /// </summary>
         /// <remarks>
-        ///     Absent and empty are the same thing to every string field in this index - the client
-        ///     reads a null-terminated string and a zero-length one is legal - so a null renders as
-        ///     an empty cell rather than as the word "none", which would otherwise be storable as a
-        ///     literal label.
+        ///     A null renders as an empty cell rather than as the word "none", which would otherwise
+        ///     be storable as a literal label - and an empty edit writes the null back rather than a
+        ///     zero-length string. That is the difference between an edit that undoes itself and one
+        ///     that does not: a record carrying no string decodes to null, and a setter that turned
+        ///     it into <c>""</c> would leave the field differing from its constructor default, which
+        ///     is the only signal <c>AddedOpcodes</c> has - so clearing an already-empty field would
+        ///     append an opcode the file never carried.
         /// </remarks>
         /// <param name="name">The field's name.</param>
         /// <param name="value">Its current value, which may be null.</param>
         /// <param name="set">Writes an edited value onto the decoded record.</param>
         /// <returns>The field.</returns>
-        private static ConfigField Words(string name, string? value, Action<string> set) {
+        private static ConfigField Words(string name, string? value, Action<string?> set) {
             return new ConfigField(name, value ?? string.Empty, ConfigFieldEditor.Text,
-                text => set(text ?? string.Empty));
+                text => set(string.IsNullOrEmpty(text) ? null : text));
         }
 
         /// <summary>A flag field the user can retype as true or false.</summary>

@@ -146,7 +146,20 @@ namespace FlashEditor.Definitions.Config {
         ///     Class220.java:96 consumes no payload and sets no field, so presence is its whole
         ///     content. Carried by 3 records.
         /// </remarks>
-        public bool Unknown8 { get; set; }
+        public bool Unknown8 {
+            get => _unknown8;
+
+            /* The setter has to move the opcode as well as the field. Opcode 8 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _unknown8 = value;
+                SetBareOpcode(8, value);
+            }
+        }
+
+        private bool _unknown8;
 
         /// <summary>Opcode 9. A byte the client reads and discards.</summary>
         /// <remarks>Class220.java:176. Carried by 183 of the 187 records, the most common opcode after the name.</remarks>
