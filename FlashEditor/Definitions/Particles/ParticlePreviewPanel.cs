@@ -98,15 +98,19 @@ namespace FlashEditor.Definitions.Particles {
         ///     The standing statement of how this view differs from the client.
         /// </summary>
         /// <remarks>
-        ///     Permanent rather than shown on demand. A user comparing the preview against the game
-        ///     has no way to tell a documented omission from a decoder defect, and the moment to say
-        ///     so is while they are looking at it.
+        ///     Permanently on screen rather than shown on demand, and that is why the claim itself is
+        ///     the summary line rather than the popover's first sentence: a user comparing the preview
+        ///     against the game has no way to tell a documented omission from a decoder defect, and the
+        ///     moment to say so is while they are looking at it. The three omissions behind the claim
+        ///     are what moved into the (i).
         /// </remarks>
-        private readonly Label notice = new Label {
-            AutoSize = true,
+        private readonly InfoAffordance notice = new InfoAffordance {
             Dock = DockStyle.Bottom,
             Font = EditorTheme.NoticeFont,
-            Text = "Preview, not the client's renderer: no scene to destroy particles against, "
+            Kind = InfoKind.Limitation,
+            Caption = "Preview, not the client's renderer",
+            Summary = "Preview, not the client's renderer",
+            Body = "Preview, not the client's renderer: no scene to destroy particles against, "
                  + "no material texture, and one synthetic face rather than a model's."
         };
 
@@ -215,6 +219,8 @@ namespace FlashEditor.Definitions.Particles {
             Controls.Add(surface);
             Controls.Add(status);
             Controls.Add(notice);
+
+            notice.Describes = surface;
 
             surface.Load += (_, _) => PrepareContext();
             surface.Paint += (_, _) => Render();
@@ -340,7 +346,7 @@ namespace FlashEditor.Definitions.Particles {
         }
 
         /// <summary>
-        ///     Caps the two captions at the panel's width so they wrap rather than clip.
+        ///     Caps the status line at the panel's width so it wraps rather than clips.
         /// </summary>
         /// <remarks>
         ///     An <c>AutoSize</c> label does not wrap; it grows sideways and a docked one is then cut
@@ -348,6 +354,10 @@ namespace FlashEditor.Definitions.Particles {
         ///     <see cref="Control.MaximumSize"/> with a zero height caps the width alone and lets the
         ///     height follow the text - which is the same "measure, do not state pixels" rule the rest
         ///     of the form follows, applied to a caption whose length is not known here.
+        ///     <para>
+        ///     The notice beside it needs none of this: an <see cref="InfoAffordance"/> keeps one
+        ///     summary line on screen and wraps its paragraph to its own measured column.
+        ///     </para>
         /// </remarks>
         /// <param name="levent">The event data.</param>
         protected override void OnLayout(LayoutEventArgs levent) {
@@ -355,10 +365,8 @@ namespace FlashEditor.Definitions.Particles {
             //panel out again, and this runs from that layout.
             Size cap = new Size(Math.Max(1, ClientSize.Width), 0);
 
-            if (notice.MaximumSize != cap) {
-                notice.MaximumSize = cap;
+            if (status.MaximumSize != cap)
                 status.MaximumSize = cap;
-            }
 
             base.OnLayout(levent);
         }

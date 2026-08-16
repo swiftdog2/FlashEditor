@@ -11,6 +11,7 @@ using System.Drawing.Imaging;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.Fonts {
     /// <summary>
@@ -103,24 +104,48 @@ namespace FlashEditor.Definitions.Fonts {
 
         private readonly Label header = Caption(NoCacheText);
 
-        /* Every caption is a wrapping label whose height is measured against the width it ends up
-           with, and each half of that was a defect first. AutoSize does not wrap, so the longest of
-           these ran off the right edge of the pane and the clipped half read as a sentence nobody
-           had written; a Bottom-docked AutoSize label drew nothing at all, because the filled grid
-           above it claimed the page; and a height stated in whole lines still clipped, because how
-           many lines the text wraps to is a property of the pane's width rather than of the text. */
-        private readonly Label glyphNote = Caption(
-            "Advance width is editable - double click the cell. It restages the whole record. " +
-            "The glyph pixels live in index 8 and are not editable here. " +
-            "Importing a TTF or OTF is NOT AVAILABLE: it would mean rasterising into the index-8 " +
-            "sprite format as well as writing these metrics.");
+        /* The two standing notes are behind an (i), each on the pane it is about. Their content is
+           unchanged - the first still says what an advance-width edit costs and the second still
+           says how the preview diverges from the client - but a paragraph is only three tab pages'
+           worth of height when nobody has read it yet, and these two never changed. The line that
+           makes the feature discoverable stays visible as the summary.
+           The (i) also takes the wrap problem away from this panel: it measures its own column,
+           where an AutoSize label does not wrap at all and a Label sized in whole lines clips at
+           every pane width narrower than the one it was written at. */
+        private readonly InfoAffordance glyphNote = new InfoAffordance {
+            Dock = DockStyle.Top,
+            Font = GridFont,
+            Kind = InfoKind.Cost,
+            Caption = "Editing an advance width",
+            Summary = "Advance width is editable - double click the cell",
+            Body =
+                "Advance width is editable - double click the cell. It restages the whole record. " +
+                "The glyph pixels live in index 8 and are not editable here. " +
+                "Importing a TTF or OTF is NOT AVAILABLE: it would mean rasterising into the index-8 " +
+                "sprite format as well as writing these metrics."
+        };
 
-        private readonly Label previewNote = Caption(
-            "A metrics preview, not the client's text renderer. It applies advance widths and " +
-            "kerning and nothing else: no <br>, <img=n> or colour markup " +
-            "(Class197.method2675:236-268), and no mapping into the cache's own character " +
-            "encoding, so a byte above 127 is not Latin-1 here.");
+        private readonly InfoAffordance previewNote = new InfoAffordance {
+            Dock = DockStyle.Top,
+            Font = GridFont,
+            Kind = InfoKind.Limitation,
+            Caption = "A metrics preview, not the client's text renderer",
+            Summary = "A metrics preview, not the client's text renderer",
+            Body =
+                "A metrics preview, not the client's text renderer. It applies advance widths and " +
+                "kerning and nothing else: no <br>, <img=n> or colour markup " +
+                "(Class197.method2675:236-268), and no mapping into the cache's own character " +
+                "encoding, so a byte above 127 is not Latin-1 here."
+        };
 
+        /* Still a caption, because it is rewritten per font and a measured statement nobody sees is
+           a measured statement nobody checks. A wrapping label whose height is measured against the
+           width it ends up with, and each half of that was a defect first: AutoSize does not wrap,
+           so a long one ran off the right edge of the pane and the clipped half read as a sentence
+           nobody had written; a Bottom-docked AutoSize label drew nothing at all, because the
+           filled grid above it claimed the page; and a height stated in whole lines still clipped,
+           because how many lines the text wraps to is a property of the pane's width rather than of
+           the text. */
         private readonly Label kerningNote = Caption(string.Empty);
 
         private readonly TextBox previewText = new TextBox {
@@ -202,7 +227,7 @@ namespace FlashEditor.Definitions.Fonts {
         ///     </para>
         /// </remarks>
         private void FitCaptions() {
-            foreach (Label caption in new[] { header, glyphNote, previewNote, kerningNote }) {
+            foreach (Label caption in new[] { header, kerningNote }) {
                 if (caption.Width <= 0 || caption.Dock != DockStyle.Top)
                     continue;
 
@@ -333,6 +358,11 @@ namespace FlashEditor.Definitions.Fonts {
             listAndDetail.Panel2.Controls.Add(header);
 
             Controls.Add(listAndDetail);
+
+            //Named for a screen reader only. InfoAffordance does not reparent or position itself
+            //from this, so each is still docked into its own page above.
+            glyphNote.Describes = glyphs;
+            previewNote.Describes = previewImage;
         }
 
         private void BuildGlyphColumns() {
