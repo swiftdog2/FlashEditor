@@ -786,6 +786,10 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 selection.Add(fileId);
                 SetPrimary(fileId);
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
+
+                //After SetPrimary rather than relying on it: it returns early when the component
+                //was already primary, and the set still gained a member that has to be outlined.
+                Invalidate();
                 return;
             }
 
