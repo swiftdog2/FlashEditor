@@ -4,9 +4,11 @@ using FlashEditor.Definitions.Editing;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.Config {
     /// <summary>
@@ -77,6 +79,7 @@ namespace FlashEditor.Definitions.Config {
         private readonly DefinitionListPanel records = new DefinitionListPanel();
         private readonly FastObjectListView fields = Grid();
         private readonly FastObjectListView opcodes = Grid();
+        private readonly ConfigPreviewPanel preview = new ConfigPreviewPanel();
 
         /* No splitter states a minimum size. Setting one re-checks the current distance against it,
            and a container is still at its 150x100 default when a field initialiser runs, so a
@@ -91,12 +94,24 @@ namespace FlashEditor.Definitions.Config {
             Orientation = Orientation.Horizontal
         };
 
+        private readonly SplitContainer previewAndDetail = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal
+        };
+
         private const string NoCacheText = "No cache loaded";
         private const string NoSelectionText = "Select a config group to see its records";
 
         private RSCache? cache;
         private DefinitionThumbnailCache? tiles;
         private bool splittersPlaced;
+
+        /* The family and the record the field pane is currently editing. Held rather than re-read
+           off the selector, because a commit has to reach the same decoded object the field
+           writers closed over - and the selector can legitimately have moved on by the time an
+           in-place editor finishes. */
+        private ConfigFamily? editing;
+        private ConfigListing? selected;
 
         /// <summary>Creates the panel.</summary>
         public ConfigEditorPanel() {
@@ -111,7 +126,24 @@ namespace FlashEditor.Definitions.Config {
 
             groups.SelectedIndexChanged += (_, _) => ShowGroup(groups.SelectedItem as GroupOption);
             records.SelectedRowChanged += (_, _) => ShowRecord(records.SelectedRow as ConfigListing);
+
+            fields.CellEditStarting += OnFieldEditStarting;
+
+            //A picked swatch selects that floor's record here rather than loading a paint brush,
+            //which is what the same palette does on the map tab.
+            preview.FloorPicked += (_, id) => records.SelectRecord(id);
+            preview.Navigate += (_, e) => Navigate?.Invoke(this, e);
         }
+
+        /// <summary>
+        ///     Raised when the preview asks to go to a record in another index.
+        /// </summary>
+        /// <remarks>
+        ///     Forwarded rather than acted on. The record grid raises its own references through
+        ///     <c>DefinitionListPanel.CellActivated</c>, which the form already wires; this is the
+        ///     same statement from the preview, which is not a grid and so has no cell to click.
+        /// </remarks>
+        public event EventHandler<ConfigNavigationEventArgs>? Navigate;
 
         /// <summary>
         ///     Points the panel at a cache, or clears it when given none.
@@ -144,6 +176,9 @@ namespace FlashEditor.Definitions.Config {
             records.Bind(null, EmptyDescriptor());
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
             notes.Text = string.Empty;
+            selected = null;
+            editing = null;
+            preview.Bind(newCache);
 
             if (newCache == null)
                 return;
@@ -206,7 +241,7 @@ namespace FlashEditor.Definitions.Config {
         ///     </para>
         /// </remarks>
         private void PlaceSplitters() {
-            if (splittersPlaced || listAndDetail.Width < 200 || fieldsAndOpcodes.Height < 160)
+            if (splittersPlaced || listAndDetail.Width < 200 || previewAndDetail.Height < 240)
                 return;
 
             //Set before the assignments, not after: changing a splitter distance lays the panel out
@@ -215,6 +250,11 @@ namespace FlashEditor.Definitions.Config {
 
             try {
                 listAndDetail.SplitterDistance = Math.Max(listAndDetail.Panel1MinSize, listAndDetail.Width * 3 / 5);
+
+                //The preview takes a third. It is a picture rather than a list, so it wants a fixed
+                //share of the height where the two grids below it want to grow.
+                previewAndDetail.SplitterDistance =
+                    Math.Max(previewAndDetail.Panel1MinSize, previewAndDetail.Height / 3);
                 fieldsAndOpcodes.SplitterDistance =
                     Math.Max(fieldsAndOpcodes.Panel1MinSize, fieldsAndOpcodes.Height / 2);
             } catch (InvalidOperationException ex) {
@@ -232,11 +272,41 @@ namespace FlashEditor.Definitions.Config {
             selector.Controls.Add(groupLabel);
             selector.Controls.Add(groups);
 
+            /* Behind an (i) rather than docked as a paragraph, which is the 18.4 rule: a permanent
+               block of prose above a grid is read once and then becomes chrome, and this one is
+               five sentences. It is a Limitation rather than Help because every clause in it is
+               something the editor deliberately will not do. */
+            selector.Controls.Add(InfoAffordance.For(groups, InfoKind.Limitation,
+                "Editing happens in the Fields pane, not in the record grid: every column over" +
+                " there summarises several opcodes at once, so there is no single value a cell" +
+                " could write back.\n\n" +
+                "What this tab will not do:\n\n" +
+                "Array fields are read only. A parameter block, a polygon, a recolour table and a" +
+                " quest's requirement lists have no single value a text box could hold, so they" +
+                " are shown and not edited.\n\n" +
+                "A field cannot be removed, only changed. An opcode the record already carries is" +
+                " re-encoded from the live value; one it does not carry is appended only when the" +
+                " value differs from the record class's own default. So \"make this field absent\"" +
+                " is not expressible, and on this index absent and default are frequently" +
+                " different bytes.\n\n" +
+                "The nineteen groups labelled (no provider) are 5,302 files in both caches and" +
+                " every one of them is a single 0x00 terminator. No class in the 637 client opens" +
+                " them, so no opcode of theirs can be recovered from 639 data and no field in them" +
+                " can be named. Their codec refuses every opcode rather than guessing, which is" +
+                " why they are still listed: a tab that hid them would be lying about the shape of" +
+                " the index.\n\n" +
+                "An edit that nets out to the bytes already stored writes nothing and says so." +
+                " That is deliberate - re-encoding rewrites the archive CRC, which drags in the" +
+                " reference-table entry of every archive packed beside it."));
+
             fieldsAndOpcodes.Panel1.Controls.Add(fields);
             fieldsAndOpcodes.Panel2.Controls.Add(opcodes);
 
+            previewAndDetail.Panel1.Controls.Add(preview);
+            previewAndDetail.Panel2.Controls.Add(fieldsAndOpcodes);
+
             listAndDetail.Panel1.Controls.Add(records);
-            listAndDetail.Panel2.Controls.Add(fieldsAndOpcodes);
+            listAndDetail.Panel2.Controls.Add(previewAndDetail);
 
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter, and in bottom-to-top order among themselves.
@@ -249,9 +319,203 @@ namespace FlashEditor.Definitions.Config {
             records.Bind(null, EmptyDescriptor());
         }
 
+        /// <summary>
+        ///     The field pane's two columns, the second of which is where index 2 is edited.
+        /// </summary>
+        /// <remarks>
+        ///     <b>This pane rather than the record grid, and the reason is in the columns.</b> Every
+        ///     grid column over there is an address, a count, or a rendering of the whole record -
+        ///     "rgb 0x3C1E0A, texture 41, priority 8" is three opcodes on one line, and a cell editor
+        ///     over it would have to parse its own summary back apart. Here one line is one field.
+        ///     <para>
+        ///     Editable per row rather than per column: the same pane serves all thirty-five families
+        ///     and most of them carry a mixture, so a row whose field has no writer refuses the edit
+        ///     while the row above it accepts one. An array field is one of those - the parameter
+        ///     block, the polygon and the recolour tables have no single value a text box could hold.
+        ///     </para>
+        /// </remarks>
         private void BuildFieldColumns() {
-            AddColumn(fields, "Field", 200, row => Field(row).Name);
-            AddColumn(fields, "Value", 560, row => Field(row).Value);
+            AddColumn(fields, "Field", 220, row => Field(row).Name);
+
+            var value = new OLVColumn("Value", null) {
+                Width = 540,
+                Groupable = false,
+                IsEditable = true,
+                AspectGetter = row => row == null ? null : Field(row).Value
+            };
+
+            /* The putter is where the edit lands, because it is the only hook the grid gives that
+               runs with both the row and the value the editor produced. What it deliberately does
+               not do is rebuild this pane: it runs part way through ObjectListView's own edit
+               teardown, and replacing the grid's contents from inside that pulls the row out from
+               under the code about to refresh it. The rebuild is posted instead. */
+            value.AspectPutter = (row, edited) => Write(row as FieldListing, edited?.ToString());
+
+            fields.AllColumns.Add(value);
+            fields.Columns.Add(value);
+
+            //DoubleClick rather than SingleClick: a single click is how a user reads a long value by
+            //selecting the row, and turning that into an edit would put the pane into edit mode
+            //every time someone looked at it.
+            fields.CellEditActivation = ObjectListView.CellEditActivateMode.DoubleClick;
+        }
+
+        /// <summary>
+        ///     Refuses an edit the record cannot take, and offers a picker where a number will not do.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Cancelled before the dialog opens, never after.</b> An in-place editor left alive
+        ///     behind a modal sits on the cell and commits whatever text it was holding when the
+        ///     dialog closes, which would undo the pick that just happened. The same reasoning, and
+        ///     the same shape, as <c>DefinitionListPanel.OnCellEditStarting</c>.
+        /// </remarks>
+        /// <param name="sender">The grid.</param>
+        /// <param name="e">The cell being edited.</param>
+        private void OnFieldEditStarting(object? sender, CellEditEventArgs e) {
+            if (e.RowObject is not FieldListing row || !row.IsEditable || editing == null ||
+                selected == null) {
+                e.Cancel = true;
+                return;
+            }
+
+            if (row.Editor == ConfigFieldEditor.Colour) {
+                e.Cancel = true;
+                PickColour(row);
+                return;
+            }
+
+            if (!TryAssetKind(row.Editor, out AssetKind kind) || cache == null)
+                return;
+
+            e.Cancel = true;
+
+            int current = int.TryParse(row.Value, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                out int parsed) ? parsed : -1;
+
+            int? picked = AssetPickerDialog.Pick(this, cache, kind, current);
+            if (picked == null || picked == current)
+                return;
+
+            Write(row, picked.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>Which picker a field's editor kind wants, when one exists.</summary>
+        /// <remarks>
+        ///     Only the four kinds whose index the picker can draw. Every other field falls through
+        ///     to the ordinary text editor, because a picker over records with no picture would be a
+        ///     slower list box.
+        /// </remarks>
+        /// <param name="editor">The field's editor kind.</param>
+        /// <param name="kind">The picker kind, when there is one.</param>
+        /// <returns>Whether a picker applies.</returns>
+        private static bool TryAssetKind(ConfigFieldEditor editor, out AssetKind kind) {
+            switch (editor) {
+                case ConfigFieldEditor.Sprite: kind = AssetKind.Sprite; return true;
+                case ConfigFieldEditor.Texture: kind = AssetKind.Texture; return true;
+                case ConfigFieldEditor.Animation: kind = AssetKind.Animation; return true;
+                case ConfigFieldEditor.Font: kind = AssetKind.Font; return true;
+                default: kind = default; return false;
+            }
+        }
+
+        /// <summary>
+        ///     Picks a colour by looking at it rather than by typing six hex digits.
+        /// </summary>
+        /// <remarks>
+        ///     The dialog is seeded from the value the cell already shows, so cancelling it and
+        ///     re-opening it lands where it started. A field whose text is not a colour - the "none"
+        ///     an optional colour renders as - opens on black, which is the only defined starting
+        ///     point when the record stores nothing.
+        /// </remarks>
+        /// <param name="row">The field being edited.</param>
+        private void PickColour(FieldListing row) {
+            using var dialog = new ColorDialog { FullOpen = true, AnyColor = true };
+
+            if (TryReadColour(row.Value, out int current))
+                dialog.Color = Color.FromArgb(0xFF, (current >> 16) & 0xFF, (current >> 8) & 0xFF, current & 0xFF);
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            int packed = (dialog.Color.R << 16) | (dialog.Color.G << 8) | dialog.Color.B;
+            Write(row, "0x" + packed.ToString("X6", CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>The packed colour a rendered cell holds, when it holds one.</summary>
+        /// <param name="text">The cell's text.</param>
+        /// <param name="packed">The colour.</param>
+        /// <returns>Whether the text was a colour at all.</returns>
+        private static bool TryReadColour(string text, out int packed) {
+            string trimmed = (text ?? string.Empty).Trim();
+            if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                trimmed = trimmed.Substring(2);
+
+            return int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out packed);
+        }
+
+        /// <summary>
+        ///     Writes one edited field into the decoded record and stages the record.
+        /// </summary>
+        /// <remarks>
+        ///     Through <c>DefinitionListPanel.CommitRow</c>, which is the same path a cell edit on
+        ///     any other tab takes - including the comparison that writes nothing when the re-encoded
+        ///     bytes match what the cache already holds. A second write path here would be a second
+        ///     place for that rule to be forgotten.
+        ///     <para>
+        ///     The row's description is rebuilt <b>before</b> the commit, because the record grid's
+        ///     summary column reads it and would otherwise keep showing the value the field used to
+        ///     hold.
+        ///     </para>
+        ///     <para>
+        ///     A parse failure is reported on the record list's own status line rather than thrown.
+        ///     This runs from a cell editor, and an exception out of an ObjectListView event handler
+        ///     takes the form down.
+        ///     </para>
+        /// </remarks>
+        /// <param name="row">The field being written, or null for a row the grid recycled.</param>
+        /// <param name="text">What the user produced.</param>
+        private void Write(FieldListing? row, string? text) {
+            if (row == null || editing == null || selected == null || row.Write == null)
+                return;
+
+            ConfigFamily family = editing;
+            ConfigListing listing = selected;
+
+            try {
+                row.Write(text ?? string.Empty);
+            }
+            catch (Exception ex) {
+                records.ReportStatus("Cannot set " + row.Name + ": " + ex.Message);
+                Repaint(listing);
+                return;
+            }
+
+            listing.Refresh(family);
+            records.CommitRow(listing);
+            Repaint(listing);
+        }
+
+        /// <summary>
+        ///     Rebuilds the detail panes for a record, after the grid has finished with it.
+        /// </summary>
+        /// <remarks>
+        ///     Posted rather than called. This is reached from an aspect putter, which runs inside
+        ///     ObjectListView's edit teardown, and replacing the grid's contents from there removes
+        ///     the row the code below is about to refresh - so the rebuild waits for the message
+        ///     pump. It is also what puts a rejected edit's cell back to the value the record still
+        ///     holds, rather than leaving the refused text on screen as though it had been stored.
+        /// </remarks>
+        /// <param name="listing">The record to re-show.</param>
+        private void Repaint(ConfigListing listing) {
+            if (IsDisposed || !IsHandleCreated) {
+                ShowRecord(listing);
+                return;
+            }
+
+            BeginInvoke(new Action(() => {
+                if (!IsDisposed && ReferenceEquals(selected, listing))
+                    ShowRecord(listing);
+            }));
         }
 
         private void BuildOpcodeColumns() {
@@ -356,6 +620,9 @@ namespace FlashEditor.Definitions.Config {
         private void ShowGroup(GroupOption? option) {
             fields.ClearObjects();
             opcodes.ClearObjects();
+            selected = null;
+            editing = option?.Family;
+            preview.ShowRecord(editing, null);
 
             if (cache == null || option == null) {
                 header.Text = cache == null ? NoCacheText : NoSelectionText;
@@ -378,6 +645,8 @@ namespace FlashEditor.Definitions.Config {
         private void ShowRecord(ConfigListing? listing) {
             fields.ClearObjects();
             opcodes.ClearObjects();
+            selected = listing;
+            preview.ShowRecord(editing, listing);
 
             if (listing == null)
                 return;
@@ -489,6 +758,15 @@ namespace FlashEditor.Definitions.Config {
 
             /// <summary>The field's value, rendered.</summary>
             internal string Value => field.Value;
+
+            /// <summary>What kind of editor the value wants.</summary>
+            internal ConfigFieldEditor Editor => field.Editor;
+
+            /// <summary>Whether an edit to this field can be written back.</summary>
+            internal bool IsEditable => field.IsEditable;
+
+            /// <summary>Applies an edited value to the decoded record, or null when read only.</summary>
+            internal Action<string>? Write => field.Write;
         }
 
         /// <summary>One opcode occurrence of the selected record, as a grid row.</summary>

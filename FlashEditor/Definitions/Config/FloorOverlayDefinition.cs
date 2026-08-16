@@ -47,7 +47,20 @@ namespace FlashEditor.Definitions.Config {
         public bool TextureIdIsShortForm { get; set; }
 
         /// <summary>Opcode 5. Whether this overlay participates in flat-ground occluders.</summary>
-        public bool FlatGroundOccluder { get; set; } = true;
+        public bool FlatGroundOccluder {
+            get => _flatGroundOccluder;
+
+            /* The setter has to move the opcode as well as the field. Opcode 5 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _flatGroundOccluder = value;
+                SetBareOpcode(5, !value);
+            }
+        }
+
+        private bool _flatGroundOccluder = true;
 
         /// <summary>Opcode 7. Secondary colour as 24-bit RGB, or -1 when absent.</summary>
         /// <remarks>
@@ -58,13 +71,39 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Opcode 8. Marks this definition as the world map's background overlay.</summary>
         /// <remarks>Carries no payload. Exactly one definition, id 5, uses it in the shipped cache.</remarks>
-        public bool IsWorldMapBackground { get; set; }
+        public bool IsWorldMapBackground {
+            get => _isWorldMapBackground;
+
+            /* The setter has to move the opcode as well as the field. Opcode 8 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _isWorldMapBackground = value;
+                SetBareOpcode(8, value);
+            }
+        }
+
+        private bool _isWorldMapBackground;
 
         /// <summary>Opcode 9. Texture scale, read as an unsigned short shifted left 2.</summary>
         public int TextureScale { get; set; } = 512;
 
         /// <summary>Opcode 10. Whether this overlay casts a shadow.</summary>
-        public bool CastsShadow { get; set; } = true;
+        public bool CastsShadow {
+            get => _castsShadow;
+
+            /* The setter has to move the opcode as well as the field. Opcode 10 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _castsShadow = value;
+                SetBareOpcode(10, !value);
+            }
+        }
+
+        private bool _castsShadow = true;
 
         /// <summary>
         ///     Opcode 11. Blend priority. Note this is rewritten after decode.
@@ -73,7 +112,20 @@ namespace FlashEditor.Definitions.Config {
         public int Priority { get; set; } = 8;
 
         /// <summary>Opcode 12. Whether this overlay blends across tile edges with its neighbours.</summary>
-        public bool BlendWithNeighbours { get; set; }
+        public bool BlendWithNeighbours {
+            get => _blendWithNeighbours;
+
+            /* The setter has to move the opcode as well as the field. Opcode 12 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _blendWithNeighbours = value;
+                SetBareOpcode(12, value);
+            }
+        }
+
+        private bool _blendWithNeighbours;
 
         /// <summary>Opcode 13. Water submersion tint as raw 24-bit RGB, not HSL.</summary>
         public int WaterTintRgb { get; set; } = 0x122F3D;
@@ -87,11 +139,30 @@ namespace FlashEditor.Definitions.Config {
         /// <summary>The opcodes seen at decode time, in order, so a round trip is byte-exact.</summary>
         public List<DecodedOpcode> DecodedOpcodes { get; } = new List<DecodedOpcode>();
 
+        /* Payload-free opcodes an edit has turned off. Suppressed rather than removed from the
+           stream above, so turning one back on puts it where the file had it - see
+           SuppressedOpcodes for the defect that rule exists for. */
+        private readonly SuppressedOpcodes suppressed = new SuppressedOpcodes();
+
+        /// <summary>Turns a payload-free opcode on or off, keeping the position the file stored it at.</summary>
+        /// <param name="opcode">The payload-free opcode.</param>
+        /// <param name="present">Whether the record should emit it.</param>
+        private void SetBareOpcode(int opcode, bool present) {
+            suppressed.Set(DecodedOpcodes, opcode, present);
+        }
+
+        /// <summary>Whether the record will emit an opcode: stored, and not turned off by an edit.</summary>
+        /// <param name="opcode">The opcode.</param>
+        /// <returns>Whether it is emitted.</returns>
+        private bool Emits(int opcode) => suppressed.Emits(DecodedOpcodes, opcode);
+
+
         /// <summary>Decodes one overlay definition.</summary>
         /// <param name="stream">The definition file.</param>
         /// <returns>This definition.</returns>
         public FloorOverlayDefinition Decode(JagStream stream) {
             DecodedOpcodes.Clear();
+            suppressed.Clear();
 
             while (true) {
                 int opcode = stream.ReadUnsignedByte();
@@ -200,6 +271,12 @@ namespace FlashEditor.Definitions.Config {
             //sets the same opcode twice come back byte-identical.
             for (int i = 0; i < DecodedOpcodes.Count; i++) {
                 int opcode = DecodedOpcodes[i].Opcode;
+
+                //Skipped where it stood rather than deleted from the list, so restoring it
+                //puts it back in the same place.
+                if (suppressed.Contains(opcode))
+                    continue;
+
                 int value = DecodedOpcodes.IsLastOccurrence(i) ? CurrentValue(opcode) : DecodedOpcodes[i].Value;
                 Emit(stream, opcode, value);
             }
@@ -229,19 +306,19 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Opcodes an edit has made necessary that the decoded file did not carry.</summary>
         private IEnumerable<int> AddedOpcodes() {
-            if (!DecodedOpcodes.Has(1) && HasPrimaryRgb) yield return 1;
-            if (!DecodedOpcodes.Has(2) && !DecodedOpcodes.Has(3) && TextureId != -1)
+            if (!Emits(1) && HasPrimaryRgb) yield return 1;
+            if (!Emits(2) && !Emits(3) && TextureId != -1)
                 yield return TextureIdIsShortForm ? 3 : 2;
-            if (!DecodedOpcodes.Has(5) && !FlatGroundOccluder) yield return 5;
-            if (!DecodedOpcodes.Has(7) && SecondaryRgb != -1) yield return 7;
-            if (!DecodedOpcodes.Has(8) && IsWorldMapBackground) yield return 8;
-            if (!DecodedOpcodes.Has(9) && TextureScale != 512) yield return 9;
-            if (!DecodedOpcodes.Has(10) && !CastsShadow) yield return 10;
-            if (!DecodedOpcodes.Has(11) && Priority != 8) yield return 11;
-            if (!DecodedOpcodes.Has(12) && BlendWithNeighbours) yield return 12;
-            if (!DecodedOpcodes.Has(13) && WaterTintRgb != 0x122F3D) yield return 13;
-            if (!DecodedOpcodes.Has(14) && WaterDepth != 64) yield return 14;
-            if (!DecodedOpcodes.Has(16) && WaterAlpha != 127) yield return 16;
+            if (!Emits(5) && !FlatGroundOccluder) yield return 5;
+            if (!Emits(7) && SecondaryRgb != -1) yield return 7;
+            if (!Emits(8) && IsWorldMapBackground) yield return 8;
+            if (!Emits(9) && TextureScale != 512) yield return 9;
+            if (!Emits(10) && !CastsShadow) yield return 10;
+            if (!Emits(11) && Priority != 8) yield return 11;
+            if (!Emits(12) && BlendWithNeighbours) yield return 12;
+            if (!Emits(13) && WaterTintRgb != 0x122F3D) yield return 13;
+            if (!Emits(14) && WaterDepth != 64) yield return 14;
+            if (!Emits(16) && WaterAlpha != 127) yield return 16;
         }
     }
 }

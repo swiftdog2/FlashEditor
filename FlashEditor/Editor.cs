@@ -1000,6 +1000,12 @@ namespace FlashEditor {
                grid with a group selector: the group is the record type, not a page of ids. */
             Register(ConfigEditorTab, RSConstants.CONFIG, EditorCategory.ConfigAndScripts,
                 openCache => ConfigPanel.Bind(openCache));
+
+            /* The config tab's preview pane is not a definition grid, so WireNavigation cannot see
+               it - the same reason the map tab has its own call into GoToCacheRecord. Its render
+               animation list is the case that needs it: every id in a group 32 record is an index
+               20 animation and the tab that plays one is elsewhere. */
+            ConfigPanel.Navigate += (_, e) => GoToCacheRecord(e.IndexId, e.RecordId, e.GroupId);
             Register(MapEditorTab, RSConstants.MAPS_INDEX, EditorCategory.World,
                 openCache => MapEditorPanel.Bind(openCache, GetCacheDir()));
             //The tracks tab lists index 11 alongside index 6; 6 is what identifies the tab

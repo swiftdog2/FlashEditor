@@ -145,7 +145,20 @@ namespace FlashEditor.Definitions.Config {
         ///     <c>aBoolean241</c>, checked before the visibility gate on both draw paths
         ///     (Class256_Sub1.java:58, Particle_Sub3.java:20). Occurs in no file of this cache.
         /// </remarks>
-        public bool Rendered { get; set; } = true;
+        public bool Rendered {
+            get => _rendered;
+
+            /* The setter has to move the opcode as well as the field. Opcode 16 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _rendered = value;
+                SetBareOpcode(16, !value);
+            }
+        }
+
+        private bool _rendered = true;
 
         /// <summary>Opcode 17. The menu target the options act on.</summary>
         /// <remarks>Passed alongside <see cref="CategoryId"/> at Particle_Sub4.java:78.</remarks>

@@ -27,10 +27,29 @@ namespace FlashEditor.Definitions.Config {
         public int SizeBytes { get; }
 
         /// <summary>The decoded record.</summary>
-        public ConfigRecord Record { get; }
+        public ConfigRecord Record { get; private set; }
 
         /// <summary>How many opcodes the record carried, counting a repeated one each time.</summary>
         public int OpcodeCount => Record.Opcodes.Count;
+
+        /// <summary>
+        ///     Rebuilds the description after an edit has changed the decoded record in place.
+        /// </summary>
+        /// <remarks>
+        ///     The decoded record itself is not replaced - the field editors close over it, and
+        ///     swapping it would leave every open editor writing into an object nothing reads. What
+        ///     is rebuilt is the summary, the field list and the opcode list, all of which were
+        ///     rendered when the row was read and are stale the moment a field changes.
+        /// </remarks>
+        /// <param name="family">The family this row belongs to.</param>
+        public void Refresh(ConfigFamily family) {
+            if (family == null)
+                throw new ArgumentNullException(nameof(family));
+            if (Record.Definition == null || !family.CanEncode)
+                return;
+
+            Record = family.Describe(Record.Definition);
+        }
     }
 
     /// <summary>
@@ -49,10 +68,12 @@ namespace FlashEditor.Definitions.Config {
     ///     thirty-five groups, including the ones with no codec at all.
     ///     </para>
     ///     <para>
-    ///     <b>Read only.</b> Every column here is an address, a count, or a rendering of the whole
-    ///     record - not one of them is a single field an edit could be written back through. The
-    ///     codecs do re-encode byte for byte, so a per-field editor is possible; it belongs on the
-    ///     field pane rather than on a grid whose cells each summarise several opcodes.
+    ///     <b>Every column here stays read only, and the descriptor is editable anyway.</b> A column
+    ///     is an address, a count, or a rendering of the whole record - not one of them is a single
+    ///     field an edit could be written back through, and a cell editor over "rgb 0x3C1E0A, texture
+    ///     41, priority 8" would have to parse its own summary back into three opcodes.
+    ///     <see cref="IsEditable"/> is what lets the panel re-encode a row; the editing surface is
+    ///     <c>ConfigEditorPanel</c>'s field pane, which shows one field per line.
     ///     </para>
     /// </remarks>
     public sealed class ConfigListDescriptor : DefinitionListDescriptor<ConfigListing> {
@@ -169,6 +190,43 @@ namespace FlashEditor.Definitions.Config {
             if (row == null)
                 throw new ArgumentNullException(nameof(row));
             return row.Address;
+        }
+
+        /// <summary>
+        ///     Whether this family's records can be written back.
+        /// </summary>
+        /// <remarks>
+        ///     True for all thirty-five groups the reference table declares, because every one of
+        ///     them has a codec - the nineteen with no client provider take
+        ///     <see cref="EmptyConfigDefinition"/>, which refuses every opcode and therefore encodes
+        ///     back to the bare terminator it read. False only for a group this cache declares that
+        ///     the family table does not name, which falls to <see cref="ConfigFamily.Unmodelled"/>
+        ///     and has no decoded record to encode.
+        /// </remarks>
+        public override bool IsEditable => family.CanEncode;
+
+        /// <summary>
+        ///     Re-encodes one record.
+        /// </summary>
+        /// <remarks>
+        ///     Through the family, which goes straight to the record class's own <c>Encode</c>. That
+        ///     replays the opcode order and the repetition the file was read with and re-derives only
+        ///     the last occurrence of each opcode from the live fields, which is what makes an edit
+        ///     to one field leave every other byte of a non-canonical record alone.
+        /// </remarks>
+        /// <param name="row">The row.</param>
+        /// <returns>The encoded file.</returns>
+        public override JagStream Encode(ConfigListing row) {
+            if (row == null)
+                throw new ArgumentNullException(nameof(row));
+
+            object? definition = row.Record.Definition;
+            if (definition == null)
+                throw new NotSupportedException(
+                    "Config group " + family.GroupId + " decoded no record for " + row.Address +
+                    ", so there is nothing to write back.");
+
+            return family.Encode(definition);
         }
     }
 }

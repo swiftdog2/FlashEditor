@@ -82,6 +82,16 @@ namespace FlashEditor.Map {
             System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public FloorKind Showing => showing;
 
+        /// <summary>
+        ///     How much of the top the toolbar takes, which is nothing once it is hidden.
+        /// </summary>
+        /// <remarks>
+        ///     Read rather than assumed, because <see cref="ShowOnly"/> hides the strip and a docked
+        ///     control that is not visible keeps its <c>Height</c> while taking none of the layout -
+        ///     so every swatch would sit one toolbar below where the hit test looked for it.
+        /// </remarks>
+        private int ToolsHeight => tools.Visible ? tools.Height : 0;
+
         /// <summary>Reads both floor tables out of a cache, or clears the palette.</summary>
         /// <param name="cache">The open cache, or null.</param>
         public void Bind(RSCache? cache) {
@@ -129,7 +139,7 @@ namespace FlashEditor.Map {
 
                 int position = VisiblePositionOf(index);
                 int x = AutoScrollPosition.X + Gap + position % columns * cell;
-                int y = AutoScrollPosition.Y + tools.Height + Gap + position / columns * cell;
+                int y = AutoScrollPosition.Y + ToolsHeight + Gap + position / columns * cell;
 
                 var box = new Rectangle(x, y, SwatchSide, SwatchSide);
 
@@ -154,7 +164,7 @@ namespace FlashEditor.Map {
             }
 
             if (entries.Count == 0)
-                g.DrawString("No floors loaded", EditorTheme.UiFont, idBrush, 8, tools.Height + 8);
+                g.DrawString("No floors loaded", EditorTheme.UiFont, idBrush, 8, ToolsHeight + 8);
         }
 
         /// <inheritdoc/>
@@ -208,6 +218,22 @@ namespace FlashEditor.Map {
                 "Clicking a swatch loads it into the map brush.")) {
                 Alignment = ToolStripItemAlignment.Right
             });
+        }
+
+        /// <summary>
+        ///     Fixes the palette to one table and hides the switch between them.
+        /// </summary>
+        /// <remarks>
+        ///     For a host that already knows which table it is showing - the Config tab lists one
+        ///     index-2 group at a time, so a toolbar offering to flip the palette to the other family
+        ///     would put overlays beside a grid of underlays and read as the two disagreeing. The map
+        ///     tab keeps the switch, because there the palette is a brush and both tables are in
+        ///     scope at once.
+        /// </remarks>
+        /// <param name="kind">The table to show.</param>
+        public void ShowOnly(FloorKind kind) {
+            tools.Visible = false;
+            Show(kind);
         }
 
         private void Show(FloorKind kind) {
@@ -281,7 +307,7 @@ namespace FlashEditor.Map {
             int cell = SwatchSide + Gap;
 
             int column = (mouseX - AutoScrollPosition.X - Gap) / cell;
-            int row = (mouseY - AutoScrollPosition.Y - tools.Height - Gap) / cell;
+            int row = (mouseY - AutoScrollPosition.Y - ToolsHeight - Gap) / cell;
 
             if (column < 0 || column >= columns || row < 0)
                 return -1;
@@ -325,7 +351,7 @@ namespace FlashEditor.Map {
             }
 
             int rows = (shown + columns - 1) / columns;
-            AutoScrollMinSize = new Size(0, tools.Height + rows * cell + Gap + caption.Height);
+            AutoScrollMinSize = new Size(0, ToolsHeight + rows * cell + Gap + caption.Height);
         }
 
         private static Color Opaque(int packedRgb) {

@@ -57,6 +57,16 @@ namespace FlashEditor.Definitions.Config {
     public abstract class ConfigDefinition {
         private readonly List<ConfigOpcode> _opcodes = new List<ConfigOpcode>();
 
+        /* Opcodes an edit has turned off. A set rather than a removal from the list above, and the
+           difference is the whole of a defect this project has already paid for once on the object
+           and NPC codecs: removing an opcode forgets WHERE it was, so turning the flag back on
+           re-emits it at the end of the record. That is a record of the right length with a byte
+           moved, which the commit path then stages as a real change - and an archive CRC covers the
+           stored bytes, so it drags in the reference-table entry of every archive packed alongside
+           it, for an edit that netted nothing. Index 2 cannot afford that at all: not one of group
+           36's 1,051 files is in ascending opcode order, so position is the record. */
+        private readonly HashSet<int> _suppressed = new HashSet<int>();
+
         /// <summary>Definition id, which is the file id within the family's group.</summary>
         public int Id { get; set; } = -1;
 
@@ -66,23 +76,64 @@ namespace FlashEditor.Definitions.Config {
         ///     inferred by comparing a field against its default: several defaults in these record
         ///     classes are legal stored values, so "did this record carry opcode N" is not a question
         ///     the decoded value can answer.
+        ///     <para>
+        ///     Unfiltered: an opcode an edit has suppressed is still listed here, because this is
+        ///     what the <i>file</i> carried. <see cref="Has"/> is what an encoder asks.
+        ///     </para>
         /// </remarks>
         public IReadOnlyList<ConfigOpcode> DecodedOpcodes => _opcodes;
 
-        /// <summary>Whether the record carried an opcode at least once.</summary>
+        /// <summary>Whether the record will emit an opcode.</summary>
+        /// <remarks>
+        ///     False for an opcode the file carried and an edit has since turned off, which is what
+        ///     keeps <see cref="AddedOpcodes"/> from appending a copy of one that is only suppressed.
+        /// </remarks>
         /// <param name="opcode">The opcode to look for.</param>
-        /// <returns>Whether it occurs in the stored stream.</returns>
+        /// <returns>Whether it occurs in the stored stream and has not been suppressed.</returns>
         public bool Has(int opcode) {
+            return Stored(opcode) && !_suppressed.Contains(opcode);
+        }
+
+        /// <summary>Whether the stored file carried an opcode, whatever an edit has done since.</summary>
+        /// <param name="opcode">The opcode to look for.</param>
+        /// <returns>Whether it occurs in the decoded stream.</returns>
+        public bool Stored(int opcode) {
             for (int i = 0; i < _opcodes.Count; i++)
                 if (_opcodes[i].Opcode == opcode)
                     return true;
             return false;
         }
 
+        /// <summary>
+        ///     Turns a payload-free opcode on or off, keeping the position the file stored it at.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A bare opcode's whole meaning is whether it is in the stream</b>, so a property
+        ///     spelled by one cannot be written back by re-deriving a payload - there is no payload.
+        ///     Every boolean on an index 2 record class therefore has to call this from its setter as
+        ///     well as assigning the field, or turning the flag off changes the field and nothing
+        ///     else and the file re-encodes identically: an edit that vanishes with no error
+        ///     anywhere.
+        ///     <para>
+        ///     The field still has to be assigned, and to its constructor default when the opcode
+        ///     goes off. <see cref="AddedOpcodes"/> compares against that default and would otherwise
+        ///     append the opcode straight back.
+        ///     </para>
+        /// </remarks>
+        /// <param name="opcode">The payload-free opcode.</param>
+        /// <param name="present">Whether the record should emit it.</param>
+        protected void SetBareOpcode(int opcode, bool present) {
+            if (present)
+                _suppressed.Remove(opcode);
+            else if (Stored(opcode))
+                _suppressed.Add(opcode);
+        }
+
         /// <summary>Decodes one config record from its stored bytes.</summary>
         /// <param name="stream">The definition file, positioned at its first opcode.</param>
         public void Decode(JagStream stream) {
             _opcodes.Clear();
+            _suppressed.Clear();
 
             while (true) {
                 int opcode = stream.ReadUnsignedByte();
@@ -108,6 +159,12 @@ namespace FlashEditor.Definitions.Config {
 
             for (int i = 0; i < _opcodes.Count; i++) {
                 int opcode = _opcodes[i].Opcode;
+
+                //A suppressed opcode is skipped where it stood rather than deleted from the list,
+                //so restoring it puts it back in the same place.
+                if (_suppressed.Contains(opcode))
+                    continue;
+
                 stream.WriteByte(opcode);
 
                 if (IsLastOccurrence(i))

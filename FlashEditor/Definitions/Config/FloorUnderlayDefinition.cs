@@ -38,10 +38,36 @@ namespace FlashEditor.Definitions.Config {
         public int TextureScale { get; set; } = 512;
 
         /// <summary>Opcode 4. Whether this floor casts a shadow.</summary>
-        public bool CastsShadow { get; set; } = true;
+        public bool CastsShadow {
+            get => _castsShadow;
+
+            /* The setter has to move the opcode as well as the field. Opcode 4 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _castsShadow = value;
+                SetBareOpcode(4, !value);
+            }
+        }
+
+        private bool _castsShadow = true;
 
         /// <summary>Opcode 5. Whether this floor participates in occlusion.</summary>
-        public bool Occludes { get; set; } = true;
+        public bool Occludes {
+            get => _occludes;
+
+            /* The setter has to move the opcode as well as the field. Opcode 5 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _occludes = value;
+                SetBareOpcode(5, !value);
+            }
+        }
+
+        private bool _occludes = true;
 
         /// <summary>
         ///     The opcodes seen at decode time, in order.
@@ -53,11 +79,30 @@ namespace FlashEditor.Definitions.Config {
         /// </remarks>
         public List<DecodedOpcode> DecodedOpcodes { get; } = new List<DecodedOpcode>();
 
+        /* Payload-free opcodes an edit has turned off. Suppressed rather than removed from the
+           stream above, so turning one back on puts it where the file had it - see
+           SuppressedOpcodes for the defect that rule exists for. */
+        private readonly SuppressedOpcodes suppressed = new SuppressedOpcodes();
+
+        /// <summary>Turns a payload-free opcode on or off, keeping the position the file stored it at.</summary>
+        /// <param name="opcode">The payload-free opcode.</param>
+        /// <param name="present">Whether the record should emit it.</param>
+        private void SetBareOpcode(int opcode, bool present) {
+            suppressed.Set(DecodedOpcodes, opcode, present);
+        }
+
+        /// <summary>Whether the record will emit an opcode: stored, and not turned off by an edit.</summary>
+        /// <param name="opcode">The opcode.</param>
+        /// <returns>Whether it is emitted.</returns>
+        private bool Emits(int opcode) => suppressed.Emits(DecodedOpcodes, opcode);
+
+
         /// <summary>Decodes one underlay definition.</summary>
         /// <param name="stream">The definition file.</param>
         /// <returns>This definition.</returns>
         public FloorUnderlayDefinition Decode(JagStream stream) {
             DecodedOpcodes.Clear();
+            suppressed.Clear();
 
             while (true) {
                 int opcode = stream.ReadUnsignedByte();
@@ -113,6 +158,12 @@ namespace FlashEditor.Definitions.Config {
 
             for (int i = 0; i < DecodedOpcodes.Count; i++) {
                 int opcode = DecodedOpcodes[i].Opcode;
+
+                //Skipped where it stood rather than deleted from the list, so restoring it
+                //puts it back in the same place.
+                if (suppressed.Contains(opcode))
+                    continue;
+
                 int value = DecodedOpcodes.IsLastOccurrence(i) ? CurrentValue(opcode) : DecodedOpcodes[i].Value;
                 Emit(stream, opcode, value);
             }
@@ -136,11 +187,11 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>Opcodes an edit has made necessary that the decoded file did not carry.</summary>
         private IEnumerable<int> AddedOpcodes() {
-            if (!DecodedOpcodes.Has(1) && Rgb != 0) yield return 1;
-            if (!DecodedOpcodes.Has(2) && TextureId != -1) yield return 2;
-            if (!DecodedOpcodes.Has(3) && TextureScale != 512) yield return 3;
-            if (!DecodedOpcodes.Has(4) && !CastsShadow) yield return 4;
-            if (!DecodedOpcodes.Has(5) && !Occludes) yield return 5;
+            if (!Emits(1) && Rgb != 0) yield return 1;
+            if (!Emits(2) && TextureId != -1) yield return 2;
+            if (!Emits(3) && TextureScale != 512) yield return 3;
+            if (!Emits(4) && !CastsShadow) yield return 4;
+            if (!Emits(5) && !Occludes) yield return 5;
         }
     }
 }

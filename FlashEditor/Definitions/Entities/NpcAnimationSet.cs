@@ -120,6 +120,31 @@ namespace FlashEditor.Definitions.Entities {
                 return Array.Empty<NpcAnimation>();
             }
 
+            IReadOnlyList<NpcAnimation> animations = For(record);
+
+            reason = animations.Count == 0
+                ? "Render animation " + npc.renderTypeID + " names no animation at all."
+                : string.Empty;
+
+            return animations;
+        }
+
+        /// <summary>
+        ///     The animations one render animation set names, in playback-usefulness order.
+        /// </summary>
+        /// <remarks>
+        ///     Split out from the NPC overload so the Config tab can show the same list for a
+        ///     group-32 record selected directly. Both callers get the same labels, which matters
+        ///     because every one of them is settled by what the client does with the field rather
+        ///     than by its opcode number - two lists that disagreed would be two claims about the
+        ///     same record.
+        /// </remarks>
+        /// <param name="record">The decoded render animation.</param>
+        /// <returns>The animations, which may be empty.</returns>
+        public static IReadOnlyList<NpcAnimation> For(RenderAnimationDefinition record) {
+            if (record == null)
+                throw new ArgumentNullException(nameof(record));
+
             List<NpcAnimation> animations = new List<NpcAnimation>();
 
             Add(animations, "Idle", record.IdleAnimationId);
@@ -154,10 +179,6 @@ namespace FlashEditor.Definitions.Entities {
             Add(animations, "Run turn +", record.RunTurnPositiveAnimationId);
             Add(animations, "Move turn -", record.MoveTurnNegativeAnimationId);
             Add(animations, "Move turn +", record.MoveTurnPositiveAnimationId);
-
-            reason = animations.Count == 0
-                ? "Render animation " + npc.renderTypeID + " names no animation at all."
-                : string.Empty;
 
             return animations;
         }

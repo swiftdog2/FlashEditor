@@ -61,7 +61,20 @@ namespace FlashEditor.Definitions.Config {
         ///     so its presence is its whole content and only the opcode list records it. Kept as a
         ///     flag so an edit can add or drop it.
         /// </remarks>
-        public bool Unknown3 { get; set; }
+        public bool Unknown3 {
+            get => _unknown3;
+
+            /* The setter has to move the opcode as well as the field. Opcode 3 carries no
+               payload, so its whole meaning is whether it is in the stream - assigning the
+               field alone leaves the record re-encoding to the bytes it already held, which
+               is an edit that vanishes with no error anywhere. */
+            set {
+                _unknown3 = value;
+                SetBareOpcode(3, value);
+            }
+        }
+
+        private bool _unknown3;
 
         /// <summary>Opcode 40. The colour each entry of <see cref="RecolourTo"/> replaces.</summary>
         /// <remarks>
