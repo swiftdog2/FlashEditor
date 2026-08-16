@@ -5,14 +5,80 @@ using System.Linq;
 using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Config {
-    /// <summary>One decoded field of a config record, as the editor shows it.</summary>
-    public readonly struct ConfigField {
-        /// <summary>Names one field and the value it holds.</summary>
+    /// <summary>
+    ///     What kind of editor a config field wants, when it can be edited at all.
+    /// </summary>
+    /// <remarks>
+    ///     Stated by the field rather than inferred from its rendered text, because the text is
+    ///     ambiguous in both directions: a colour and a texture id are both integers, and
+    ///     <c>0x3C1E0A</c> parsed as decimal would store a different colour and report nothing. The
+    ///     four id kinds exist so the panel can offer the item-18 picker rather than a text box - the
+    ///     whole point of that dialog is that "which sprite is the crosshair" is not a question a
+    ///     number can answer.
+    /// </remarks>
+    public enum ConfigFieldEditor {
+        /// <summary>Not editable. The default, and what every field of an unmodelled family is.</summary>
+        None,
+
+        /// <summary>A signed decimal integer, typed.</summary>
+        Integer,
+
+        /// <summary>Free text.</summary>
+        Text,
+
+        /// <summary>A packed <c>0xRRGGBB</c>, picked from a colour dialog or typed as hex.</summary>
+        Colour,
+
+        /// <summary>A flag, typed as true or false.</summary>
+        Flag,
+
+        /// <summary>An index-8 sprite group id, picked by looking at sprites.</summary>
+        Sprite,
+
+        /// <summary>An index-9 texture id, picked by looking at textures.</summary>
+        Texture,
+
+        /// <summary>An index-20 animation id, picked from the animation list.</summary>
+        Animation,
+
+        /// <summary>An index-13 font id, picked from the font list.</summary>
+        Font
+    }
+
+    /// <summary>
+    ///     One decoded field of a config record, as the editor shows it, and how to write it back.
+    /// </summary>
+    /// <remarks>
+    ///     <b>A class rather than a struct, and the reason is the edit.</b> Two boxed structs with the
+    ///     same name and value compare equal, and <see cref="BrightIdeasSoftware.FastObjectListView"/>
+    ///     keys its model-to-row map on the object it is handed - so a record carrying the same
+    ///     name/value pair twice would lose a row, and an edit committed against one would be
+    ///     indistinguishable from an edit against the other.
+    ///     <para>
+    ///     <see cref="Write"/> closes over the decoded record the field was read from, so applying an
+    ///     edit needs no reflection and no second copy of the field table. It throws for input it
+    ///     cannot parse; the panel reports that on its status line rather than letting it out of a
+    ///     cell editor, where an exception takes the form down.
+    ///     </para>
+    /// </remarks>
+    public sealed class ConfigField {
+        /// <summary>Names one field and the value it holds, read only.</summary>
         /// <param name="name">The field's name.</param>
         /// <param name="value">The value, already rendered.</param>
-        public ConfigField(string name, string value) {
-            Name = name;
-            Value = value;
+        public ConfigField(string name, string value)
+            : this(name, value, ConfigFieldEditor.None, null) {
+        }
+
+        /// <summary>Names one field, the value it holds, and how an edit is written back.</summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="value">The value, already rendered.</param>
+        /// <param name="editor">What kind of editor the value wants.</param>
+        /// <param name="write">Applies an edited value to the decoded record, or null for read only.</param>
+        public ConfigField(string name, string value, ConfigFieldEditor editor, Action<string>? write) {
+            Name = name ?? string.Empty;
+            Value = value ?? string.Empty;
+            Editor = write == null ? ConfigFieldEditor.None : editor;
+            Write = write;
         }
 
         /// <summary>The field's name.</summary>
@@ -20,6 +86,15 @@ namespace FlashEditor.Definitions.Config {
 
         /// <summary>The value, rendered.</summary>
         public string Value { get; }
+
+        /// <summary>What kind of editor the value wants, or <see cref="ConfigFieldEditor.None"/>.</summary>
+        public ConfigFieldEditor Editor { get; }
+
+        /// <summary>Applies an edited value to the decoded record, or null when the field is read only.</summary>
+        public Action<string>? Write { get; }
+
+        /// <summary>Whether an edit to this field can be written back.</summary>
+        public bool IsEditable => Write != null;
     }
 
     /// <summary>
@@ -106,11 +181,15 @@ namespace FlashEditor.Definitions.Config {
     /// </remarks>
     public sealed class ConfigFamily {
         private readonly Func<int, JagStream, ConfigRecord> read;
+        private readonly Func<object, ConfigRecord>? describe;
+        private readonly Func<object, JagStream>? encode;
 
         private ConfigFamily(int groupId, string name, string rowNoun, string notes, bool modelled,
             Func<int, JagStream, ConfigRecord> read,
             Func<object, int?>? colour = null, Func<object, int?>? texture = null,
-            Func<object, int?>? sprite = null) {
+            Func<object, int?>? sprite = null,
+            Func<object, ConfigRecord>? describe = null,
+            Func<object, JagStream>? encode = null) {
             GroupId = groupId;
             Name = name;
             RowNoun = rowNoun;
@@ -120,6 +199,8 @@ namespace FlashEditor.Definitions.Config {
             Colour = colour;
             Texture = texture;
             Sprite = sprite;
+            this.describe = describe;
+            this.encode = encode;
         }
 
         /// <summary>The group within index 2 that holds the family.</summary>
@@ -193,6 +274,61 @@ namespace FlashEditor.Definitions.Config {
         }
 
         /// <summary>
+        ///     Whether a record of this family can be written back to the cache.
+        /// </summary>
+        /// <remarks>
+        ///     False for <see cref="Unmodelled"/> alone. Every family with a codec re-encodes by
+        ///     replaying the opcode stream it decoded, which is what makes an unedited record come
+        ///     back byte for byte on an index where <b>none</b> of group 36's 1,051 files is in
+        ///     ascending opcode order.
+        /// </remarks>
+        public bool CanEncode => encode != null;
+
+        /// <summary>
+        ///     Re-encodes one decoded record of this family.
+        /// </summary>
+        /// <remarks>
+        ///     Straight to the record class's own <c>Encode</c>, which replays the recorded opcode
+        ///     stream and re-derives only the last occurrence of each opcode from the live fields.
+        ///     Nothing here rebuilds a stream from the values, because that would silently normalise
+        ///     the order and the repetition this index is full of.
+        /// </remarks>
+        /// <param name="definition">The decoded record.</param>
+        /// <returns>The encoded file, positioned at 0.</returns>
+        /// <exception cref="NotSupportedException">This family has no codec.</exception>
+        public JagStream Encode(object definition) {
+            if (definition == null)
+                throw new ArgumentNullException(nameof(definition));
+            if (encode == null)
+                throw new NotSupportedException(
+                    "Config group " + GroupId + " has no codec here, so its records cannot be written back.");
+
+            return encode(definition);
+        }
+
+        /// <summary>
+        ///     Rebuilds the summary, the field list and the opcode list of a record that has been
+        ///     edited.
+        /// </summary>
+        /// <remarks>
+        ///     Needed because an edit changes the decoded record in place while the row still holds
+        ///     the description built when it was read - and a pane that went on showing the old value
+        ///     beside a grid cell showing the new one reads as an edit that half took.
+        /// </remarks>
+        /// <param name="definition">The decoded record.</param>
+        /// <returns>The rebuilt description.</returns>
+        /// <exception cref="NotSupportedException">This family has no codec.</exception>
+        public ConfigRecord Describe(object definition) {
+            if (definition == null)
+                throw new ArgumentNullException(nameof(definition));
+            if (describe == null)
+                throw new NotSupportedException(
+                    "Config group " + GroupId + " has no codec here, so its records cannot be re-described.");
+
+            return describe(definition);
+        }
+
+        /// <summary>
         ///     A family this editor has no codec for.
         /// </summary>
         /// <remarks>
@@ -237,12 +373,14 @@ namespace FlashEditor.Definitions.Config {
                 definition => "rgb " + Hex(definition.Rgb, 6) +
                               (definition.TextureId == -1 ? "" : ", texture " + definition.TextureId),
                 definition => new[] {
-                    new ConfigField("Colour", Hex(definition.Rgb, 6)),
-                    new ConfigField("Texture", definition.TextureId.ToString()),
-                    new ConfigField("Texture scale", definition.TextureScale.ToString()),
-                    new ConfigField("Casts shadow", definition.CastsShadow.ToString()),
-                    new ConfigField("Occludes", definition.Occludes.ToString())
+                    Swatch("Colour", definition.Rgb, value => definition.Rgb = value),
+                    Asset("Texture", definition.TextureId, ConfigFieldEditor.Texture,
+                        value => definition.TextureId = value),
+                    Number("Texture scale", definition.TextureScale, value => definition.TextureScale = value),
+                    Switch("Casts shadow", definition.CastsShadow, value => definition.CastsShadow = value),
+                    Switch("Occludes", definition.Occludes, value => definition.Occludes = value)
                 },
+                definition => definition.Encode(),
                 //An underlay always carries a colour: opcode 1 absent leaves Rgb at 0, and black is
                 //a real underlay colour here rather than a stand-in for "none".
                 definition => definition.Rgb,
@@ -264,22 +402,39 @@ namespace FlashEditor.Definitions.Config {
                               (definition.TextureId == -1 ? "" : ", texture " + definition.TextureId) +
                               ", priority " + definition.Priority,
                 definition => new[] {
-                    new ConfigField("Primary colour",
-                        definition.HasPrimaryRgb ? Hex(definition.PrimaryRgb, 6) : "absent"),
-                    new ConfigField("Secondary colour",
-                        definition.SecondaryRgb == -1 ? "none" : Hex(definition.SecondaryRgb, 6)),
-                    new ConfigField("Texture", definition.TextureId +
-                        (definition.TextureIdIsShortForm ? " (stored as a short)" : "")),
-                    new ConfigField("Texture scale", definition.TextureScale.ToString()),
-                    new ConfigField("Priority", definition.Priority + ", composite " +
-                        Hex(definition.ApplyPriorityComposite(), 4)),
-                    new ConfigField("Blends with neighbours", definition.BlendWithNeighbours.ToString()),
-                    new ConfigField("Flat ground occluder", definition.FlatGroundOccluder.ToString()),
-                    new ConfigField("Casts shadow", definition.CastsShadow.ToString()),
-                    new ConfigField("World map background", definition.IsWorldMapBackground.ToString()),
-                    new ConfigField("Water", "tint " + Hex(definition.WaterTintRgb, 6) + ", depth " +
-                        definition.WaterDepth + ", alpha " + definition.WaterAlpha)
+                    /* Editing the colour of an overlay that stores none also sets HasPrimaryRgb,
+                       because the codec's AddedOpcodes reads that flag to decide whether to append
+                       opcode 1. Setting the value alone would look like an edit and write nothing.
+                       Clearing it back to absent is deliberately not offered: the two states are
+                       different bytes, and a text box cannot spell "absent" apart from black. */
+                    Swatch("Primary colour", definition.PrimaryRgb,
+                        value => {
+                            definition.PrimaryRgb = value;
+                            definition.HasPrimaryRgb = true;
+                        }),
+                    new ConfigField("Primary colour stored",
+                        definition.HasPrimaryRgb ? "yes, opcode 1" : "no - opcode 1 absent"),
+                    Swatch("Secondary colour", definition.SecondaryRgb,
+                        value => definition.SecondaryRgb = value, optional: true),
+                    Asset("Texture", definition.TextureId, ConfigFieldEditor.Texture,
+                        value => definition.TextureId = value),
+                    new ConfigField("Texture width",
+                        definition.TextureIdIsShortForm ? "opcode 3, a short" : "opcode 2, a byte"),
+                    Number("Texture scale", definition.TextureScale, value => definition.TextureScale = value),
+                    Number("Priority", definition.Priority, value => definition.Priority = value),
+                    new ConfigField("Priority composite", Hex(definition.ApplyPriorityComposite(), 4)),
+                    Switch("Blends with neighbours", definition.BlendWithNeighbours,
+                        value => definition.BlendWithNeighbours = value),
+                    Switch("Flat ground occluder", definition.FlatGroundOccluder,
+                        value => definition.FlatGroundOccluder = value),
+                    Switch("Casts shadow", definition.CastsShadow, value => definition.CastsShadow = value),
+                    Switch("World map background", definition.IsWorldMapBackground,
+                        value => definition.IsWorldMapBackground = value),
+                    Swatch("Water tint", definition.WaterTintRgb, value => definition.WaterTintRgb = value),
+                    Number("Water depth", definition.WaterDepth, value => definition.WaterDepth = value),
+                    Number("Water alpha", definition.WaterAlpha, value => definition.WaterAlpha = value)
                 },
+                definition => definition.Encode(),
                 /* Null where the record stores no colour, which is NOT black. HasPrimaryRgb exists
                    because absent and 0x000000 are different bytes that re-encode differently, and
                    a swatch drawn for an absent colour would assert a value the file does not
@@ -291,7 +446,9 @@ namespace FlashEditor.Definitions.Config {
                 "How many slots one of the game's inventories, banks or shop stocks holds." +
                 " Class8.java:163 names the group.",
                 definition => definition.Capacity + " slots",
-                definition => new[] { new ConfigField("Capacity", definition.Capacity.ToString()) }),
+                definition => new[] {
+                    Number("Capacity", definition.Capacity, value => definition.Capacity = value)
+                }),
 
             Of<ParameterTypeDefinition>(ConfigGroup.ParameterType, "Parameter types", "parameter type",
                 "What an opcode 249 parameter key means and what its default is." +
@@ -301,12 +458,18 @@ namespace FlashEditor.Definitions.Config {
                                   ? ", default \"" + (definition.DefaultString ?? "") + "\""
                                   : ", default " + definition.DefaultInt),
                 definition => new[] {
+                    /* The raw byte, not the character. The client remaps 0x80-0x9F through cp1252
+                       on the way to a char, and one record in this cache stores 0x80 - so the
+                       character is a rendering of the byte and the byte is what re-encodes. */
+                    Number("Type letter byte", definition.TypeLetterByte,
+                        value => definition.TypeLetterByte = value),
                     new ConfigField("Type letter", "'" + definition.TypeLetter + "' (byte " +
                         Hex(definition.TypeLetterByte, 2) + ")"),
                     new ConfigField("Holds a string", definition.IsString.ToString()),
-                    new ConfigField("Default integer", definition.DefaultInt.ToString()),
-                    new ConfigField("Default string", definition.DefaultString ?? "none"),
-                    new ConfigField("Opcode 4 flag", definition.Unknown4.ToString())
+                    Number("Default integer", definition.DefaultInt, value => definition.DefaultInt = value),
+                    Words("Default string", definition.DefaultString,
+                        value => definition.DefaultString = value),
+                    Switch("Opcode 4 flag", definition.Unknown4, value => definition.Unknown4 = value)
                 }),
 
             Of<EmptyConfigDefinition>(ConfigGroup.ClientString, "Client strings", "client string",
@@ -323,7 +486,8 @@ namespace FlashEditor.Definitions.Config {
                     ? "persistence " + definition.PersistenceScope
                     : "empty record",
                 definition => new[] {
-                    new ConfigField("Persistence scope", definition.PersistenceScope.ToString()),
+                    Number("Persistence scope", definition.PersistenceScope,
+                        value => definition.PersistenceScope = value),
                     new ConfigField("Reset on logout", definition.ResetOnLogout.ToString())
                 }),
 
@@ -333,9 +497,12 @@ namespace FlashEditor.Definitions.Config {
                 definition => "type '" + definition.TypeLetter + "'" +
                               (definition.ServerWritable ? ", server writable" : ""),
                 definition => new[] {
+                    Number("Type letter byte", definition.TypeLetterByte,
+                        value => definition.TypeLetterByte = value),
                     new ConfigField("Type letter", "'" + definition.TypeLetter + "' (byte " +
                         Hex(definition.TypeLetterByte, 2) + ")"),
-                    new ConfigField("Server writable", definition.ServerWritable.ToString())
+                    Switch("Server writable", definition.ServerWritable,
+                        value => definition.ServerWritable = value)
                 }),
 
             Of<StructDefinition>(ConfigGroup.Struct, "Structs", "struct",
@@ -354,10 +521,10 @@ namespace FlashEditor.Definitions.Config {
                 definition => "waveform " + definition.Waveform + ", rate " + definition.Rate +
                               ", amplitude " + definition.Amplitude + ", offset " + definition.Offset,
                 definition => new[] {
-                    new ConfigField("Waveform", definition.Waveform.ToString()),
-                    new ConfigField("Rate", definition.Rate.ToString()),
-                    new ConfigField("Amplitude", definition.Amplitude.ToString()),
-                    new ConfigField("Offset", definition.Offset.ToString())
+                    Number("Waveform", definition.Waveform, value => definition.Waveform = value),
+                    Number("Rate", definition.Rate, value => definition.Rate = value),
+                    Number("Amplitude", definition.Amplitude, value => definition.Amplitude = value),
+                    Number("Offset", definition.Offset, value => definition.Offset = value)
                 }),
 
             Of<RenderAnimationDefinition>(ConfigGroup.RenderAnimation, "Render animations", "render animation",
@@ -373,10 +540,19 @@ namespace FlashEditor.Definitions.Config {
                 definition => definition.DecodedOpcodes,
                 definition => "sprite " + definition.SpriteGroupId,
                 definition => new[] {
-                    new ConfigField("Sprite group", definition.SpriteGroupId.ToString()),
-                    new ConfigField("Tint", Hex(definition.TintRgb, 6)),
-                    new ConfigField("Stretch to footprint", definition.StretchToFootprint.ToString())
+                    /* Through SetSpriteGroupId rather than the property, because "no icon" has two
+                       encodings here - the opcode absent, and opcode 4 present - and they are not
+                       interchangeable on re-encode. Assigning the property alone on a record that
+                       carries opcode 4 changes the field and nothing else, so the file comes back
+                       identical and the edit silently does nothing. */
+                    Asset("Sprite group", definition.SpriteGroupId, ConfigFieldEditor.Sprite,
+                        value => definition.SetSpriteGroupId(value)),
+                    new ConfigField("No-icon encoding", definition.DescribeAbsentIconEncoding()),
+                    Swatch("Tint", definition.TintRgb, value => definition.TintRgb = value),
+                    Switch("Stretch to footprint", definition.StretchToFootprint,
+                        value => definition.StretchToFootprint = value)
                 },
+                definition => definition.Encode(),
                 /* One sprite and no choice to make: opcode 1 is the icon and opcode 4 is the
                    explicit "none", which the client honours by drawing nothing at all
                    (Class122.java:93 gates the whole draw on anInt114 != -1). The tile is the sprite
@@ -390,8 +566,10 @@ namespace FlashEditor.Definitions.Config {
                 definition => "sprite " + definition.SpriteId + " at " + definition.HotspotX + "," +
                               definition.HotspotY,
                 definition => new[] {
-                    new ConfigField("Sprite", definition.SpriteId.ToString()),
-                    new ConfigField("Hotspot", definition.HotspotX + ", " + definition.HotspotY)
+                    Asset("Sprite", definition.SpriteId, ConfigFieldEditor.Sprite,
+                        value => definition.SpriteId = value),
+                    Number("Hotspot x", definition.HotspotX, value => definition.HotspotX = value),
+                    Number("Hotspot y", definition.HotspotY, value => definition.HotspotY = value)
                 },
                 /* The only sprite a cursor names, and the only one of these four families with no
                    "none" to represent: the field has no -1 encoding - Class231.anInt1735 starts at
@@ -429,17 +607,27 @@ namespace FlashEditor.Definitions.Config {
                 " Class121.java:102 names the group.",
                 definition => "font " + definition.FontId + ", " + definition.LifetimeMillis + " ms",
                 definition => new[] {
-                    new ConfigField("Font", definition.FontId.ToString()),
-                    new ConfigField("Text colour", Hex(definition.TextRgb, 6)),
-                    new ConfigField("Number template", definition.NumberTemplate),
-                    new ConfigField("Sprite layers", definition.SpriteLayer1Id + ", " +
-                        definition.SpriteLayer2Id + ", " + definition.SpriteLayer3Id),
-                    new ConfigField("Preloaded sprite", definition.PreloadedSpriteId.ToString()),
-                    new ConfigField("Drift", definition.DriftX + ", " + definition.DriftY),
-                    new ConfigField("Offset y", definition.OffsetY.ToString()),
-                    new ConfigField("Lifetime", definition.LifetimeMillis + " ms"),
-                    new ConfigField("Fade start", definition.FadeStartMillis + " ms"),
-                    new ConfigField("Opcode 12 field", definition.Unknown12.ToString())
+                    Asset("Font", definition.FontId, ConfigFieldEditor.Font,
+                        value => definition.FontId = value),
+                    Swatch("Text colour", definition.TextRgb, value => definition.TextRgb = value),
+                    Words("Number template", definition.NumberTemplate,
+                        value => definition.NumberTemplate = value),
+                    Asset("Sprite layer 1", definition.SpriteLayer1Id, ConfigFieldEditor.Sprite,
+                        value => definition.SpriteLayer1Id = value),
+                    Asset("Sprite layer 2", definition.SpriteLayer2Id, ConfigFieldEditor.Sprite,
+                        value => definition.SpriteLayer2Id = value),
+                    Asset("Sprite layer 3", definition.SpriteLayer3Id, ConfigFieldEditor.Sprite,
+                        value => definition.SpriteLayer3Id = value),
+                    Asset("Preloaded sprite", definition.PreloadedSpriteId, ConfigFieldEditor.Sprite,
+                        value => definition.PreloadedSpriteId = value),
+                    Number("Drift x", definition.DriftX, value => definition.DriftX = value),
+                    Number("Drift y", definition.DriftY, value => definition.DriftY = value),
+                    Number("Offset y", definition.OffsetY, value => definition.OffsetY = value),
+                    Number("Lifetime (ms)", definition.LifetimeMillis,
+                        value => definition.LifetimeMillis = value),
+                    Number("Fade start (ms)", definition.FadeStartMillis,
+                        value => definition.FadeStartMillis = value),
+                    Number("Opcode 12 field", definition.Unknown12, value => definition.Unknown12 = value)
                 },
                 sprite: definition => LeadingDamageMarkSprite(definition))
         };
@@ -514,12 +702,18 @@ namespace FlashEditor.Definitions.Config {
             Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields,
             Func<T, int?>? sprite = null)
             where T : ConfigDefinition, new() {
+            ConfigRecord Describe(T definition) {
+                return new ConfigRecord(definition, summary(definition), OpcodesOf(definition),
+                    fields(definition).ToArray());
+            }
+
             return new ConfigFamily(groupId, name, rowNoun, notes, true, (id, payload) => {
                 var definition = new T { Id = id };
                 definition.Decode(payload);
-                return new ConfigRecord(definition, summary(definition), OpcodesOf(definition),
-                    fields(definition).ToArray());
-            }, sprite: Widen(sprite));
+                return Describe(definition);
+            }, sprite: Widen(sprite),
+                describe: record => Describe((T) record),
+                encode: record => ((T) record).Encode());
         }
 
         /// <summary>
@@ -548,16 +742,22 @@ namespace FlashEditor.Definitions.Config {
         private static ConfigFamily Legacy<T>(int groupId, string name, string rowNoun, string notes,
             Func<int, JagStream, T> decode, Func<T, List<DecodedOpcode>> opcodes,
             Func<T, string> summary, Func<T, IEnumerable<ConfigField>> fields,
+            Func<T, JagStream> encode,
             Func<T, int?>? colour = null, Func<T, int?>? texture = null,
             Func<T, int?>? sprite = null) where T : class {
-            return new ConfigFamily(groupId, name, rowNoun, notes, true, (id, payload) => {
-                T definition = decode(id, payload);
+            ConfigRecord Describe(T definition) {
                 ConfigOpcodeRow[] rows = opcodes(definition)
                     .Select(entry => new ConfigOpcodeRow(entry.Opcode,
                         entry.Value.ToString(CultureInfo.InvariantCulture)))
                     .ToArray();
                 return new ConfigRecord(definition, summary(definition), rows, fields(definition).ToArray());
-            }, Widen(colour), Widen(texture), Widen(sprite));
+            }
+
+            return new ConfigFamily(groupId, name, rowNoun, notes, true,
+                (id, payload) => Describe(decode(id, payload)),
+                Widen(colour), Widen(texture), Widen(sprite),
+                record => Describe((T) record),
+                record => encode((T) record));
         }
 
         /// <summary>
@@ -633,6 +833,140 @@ namespace FlashEditor.Definitions.Config {
             return "0x" + value.ToString("X" + digits.ToString(CultureInfo.InvariantCulture));
         }
 
+        /// <summary>An integer field the user can retype.</summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="value">Its current value.</param>
+        /// <param name="set">Writes an edited value onto the decoded record.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Number(string name, int value, Action<int> set) {
+            return new ConfigField(name, value.ToString(CultureInfo.InvariantCulture),
+                ConfigFieldEditor.Integer, text => set(ParseInt(text)));
+        }
+
+        /// <summary>A text field the user can retype.</summary>
+        /// <remarks>
+        ///     Absent and empty are the same thing to every string field in this index - the client
+        ///     reads a null-terminated string and a zero-length one is legal - so a null renders as
+        ///     an empty cell rather than as the word "none", which would otherwise be storable as a
+        ///     literal label.
+        /// </remarks>
+        /// <param name="name">The field's name.</param>
+        /// <param name="value">Its current value, which may be null.</param>
+        /// <param name="set">Writes an edited value onto the decoded record.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Words(string name, string? value, Action<string> set) {
+            return new ConfigField(name, value ?? string.Empty, ConfigFieldEditor.Text,
+                text => set(text ?? string.Empty));
+        }
+
+        /// <summary>A flag field the user can retype as true or false.</summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="value">Its current value.</param>
+        /// <param name="set">Writes an edited value onto the decoded record.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Switch(string name, bool value, Action<bool> set) {
+            return new ConfigField(name, value ? "true" : "false", ConfigFieldEditor.Flag,
+                text => set(ParseBool(text)));
+        }
+
+        /// <summary>
+        ///     A packed <c>0xRRGGBB</c> the user can pick from a colour dialog.
+        /// </summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="rgb">The packed colour, or -1 on an optional field that stores none.</param>
+        /// <param name="set">Writes an edited colour onto the decoded record.</param>
+        /// <param name="optional">Whether -1 is a legal value meaning the record stores no colour.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Swatch(string name, int rgb, Action<int> set, bool optional = false) {
+            string rendered = optional && rgb == -1 ? "none" : Hex(rgb, 6);
+            return new ConfigField(name, rendered, ConfigFieldEditor.Colour,
+                text => set(ParseColour(text, optional)));
+        }
+
+        /// <summary>An id naming a picture or a record in another index, picked rather than typed.</summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="id">Its current value.</param>
+        /// <param name="editor">Which index the id addresses.</param>
+        /// <param name="set">Writes an edited id onto the decoded record.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Asset(string name, int id, ConfigFieldEditor editor, Action<int> set) {
+            return new ConfigField(name, id.ToString(CultureInfo.InvariantCulture), editor,
+                text => set(ParseInt(text)));
+        }
+
+        /// <summary>An index-20 animation id, picked rather than typed.</summary>
+        /// <param name="name">The field's name.</param>
+        /// <param name="id">Its current value.</param>
+        /// <param name="set">Writes an edited id onto the decoded record.</param>
+        /// <returns>The field.</returns>
+        private static ConfigField Animation(string name, int id, Action<int> set) {
+            return Asset(name, id, ConfigFieldEditor.Animation, set);
+        }
+
+        /// <summary>
+        ///     An edited integer, or a refusal naming what could not be read.
+        /// </summary>
+        /// <remarks>
+        ///     Thrown rather than defaulted to zero. An unparseable edit that quietly stored 0 would
+        ///     be a silent write of a legal value the user never asked for, and on this index a
+        ///     stored 0 is frequently a real setting rather than an empty one.
+        /// </remarks>
+        /// <param name="text">What the editor produced.</param>
+        /// <returns>The value.</returns>
+        private static int ParseInt(string? text) {
+            string trimmed = (text ?? string.Empty).Trim();
+
+            if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                return value;
+
+            throw new FormatException("\"" + trimmed + "\" is not a whole number.");
+        }
+
+        /// <summary>An edited flag, or a refusal naming what could not be read.</summary>
+        /// <param name="text">What the editor produced.</param>
+        /// <returns>The value.</returns>
+        private static bool ParseBool(string? text) {
+            string trimmed = (text ?? string.Empty).Trim();
+
+            if (bool.TryParse(trimmed, out bool value))
+                return value;
+            if (trimmed == "1")
+                return true;
+            if (trimmed == "0")
+                return false;
+
+            throw new FormatException("\"" + trimmed + "\" is not true or false.");
+        }
+
+        /// <summary>
+        ///     An edited colour, read as hexadecimal.
+        /// </summary>
+        /// <remarks>
+        ///     Hexadecimal always, never <c>Convert.ToInt32</c>: a bare "3C1E0A" read as decimal
+        ///     stores a different colour and reports nothing, which is worse than refusing because
+        ///     the swatch then shows a value the user did not choose.
+        /// </remarks>
+        /// <param name="text">What the editor produced.</param>
+        /// <param name="optional">Whether the word "none" is legal and means -1.</param>
+        /// <returns>The packed colour.</returns>
+        private static int ParseColour(string? text, bool optional) {
+            string trimmed = (text ?? string.Empty).Trim();
+
+            if (optional && (trimmed.Length == 0 ||
+                             string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase)))
+                return -1;
+
+            if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                trimmed = trimmed.Substring(2);
+            if (trimmed.StartsWith("#", StringComparison.Ordinal))
+                trimmed = trimmed.Substring(1);
+
+            if (int.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int value))
+                return value;
+
+            throw new FormatException("\"" + trimmed + "\" is not a hexadecimal colour.");
+        }
+
         /// <summary>Describes an identity kit in one line.</summary>
         /// <param name="definition">The decoded record.</param>
         /// <returns>The description.</returns>
@@ -657,13 +991,15 @@ namespace FlashEditor.Definitions.Config {
         /// <param name="definition">The decoded record.</param>
         /// <returns>The fields.</returns>
         private static IEnumerable<ConfigField> IdentityKitFields(IdentityKitDefinition definition) {
-            yield return new ConfigField("Opcode 1 byte",
-                definition.Has(1) ? definition.Unknown1.ToString() : "absent");
+            /* The opcode-1 byte is read and thrown away by the client (Class152.java:257) and takes
+               values 0..13 across all 652 records, so it is not constant and cannot be recomputed -
+               it is kept verbatim and is worth being able to set. */
+            yield return Number("Opcode 1 byte", definition.Unknown1, value => definition.Unknown1 = value);
             yield return new ConfigField("Body models", Join(definition.ModelIds));
             yield return new ConfigField("Head models", Join(definition.HeadModelIds));
             yield return new ConfigField("Recolours", Pairs(definition.RecolourFrom, definition.RecolourTo));
             yield return new ConfigField("Retextures", Pairs(definition.RetextureFrom, definition.RetextureTo));
-            yield return new ConfigField("Opcode 3 flag", definition.Unknown3.ToString());
+            yield return Switch("Opcode 3 flag", definition.Unknown3, value => definition.Unknown3 = value);
         }
 
         /// <summary>Describes a render animation in one line.</summary>
@@ -688,33 +1024,79 @@ namespace FlashEditor.Definitions.Config {
         /// <summary>Lists a render animation's fields.</summary>
         /// <param name="definition">The decoded record.</param>
         /// <returns>The fields.</returns>
+        /// <summary>
+        ///     Lists a render animation's fields, one animation id per row.
+        /// </summary>
+        /// <remarks>
+        ///     One row per id rather than a quadrant set on a line, because every one of these is an
+        ///     index-20 animation and the picker can only be offered to a field that holds exactly
+        ///     one. Four ids on one line reads more compactly and cannot be edited or previewed at
+        ///     all, which is the trade the whole item makes the other way.
+        /// </remarks>
+        /// <param name="definition">The decoded record.</param>
+        /// <returns>The fields.</returns>
         private static IEnumerable<ConfigField> RenderAnimationFields(RenderAnimationDefinition definition) {
-            yield return new ConfigField("Idle", definition.IdleAnimationId.ToString());
+            yield return Animation("Idle", definition.IdleAnimationId,
+                value => definition.IdleAnimationId = value);
             yield return new ConfigField("Idle pool",
                 definition.IdlePoolAnimationIds == null
                     ? "none"
                     : Join(definition.IdlePoolAnimationIds) + " weighted " +
                       Join(definition.IdlePoolWeights) + ", total " + definition.IdlePoolWeightTotal);
-            yield return new ConfigField("Move set", Quadrants(definition.MoveForwardAnimationId,
-                definition.MoveAt90AnimationId, definition.MoveAt180AnimationId,
-                definition.MoveAt270AnimationId));
-            yield return new ConfigField("Walk set", Quadrants(definition.WalkForwardAnimationId,
-                definition.WalkAt90AnimationId, definition.WalkAt180AnimationId,
-                definition.WalkAt270AnimationId));
-            yield return new ConfigField("Run set", Quadrants(definition.RunForwardAnimationId,
-                definition.RunAt90AnimationId, definition.RunAt180AnimationId,
-                definition.RunAt270AnimationId));
-            yield return new ConfigField("Turn on the spot",
-                definition.TurnOnSpotNegativeAnimationId + " / " + definition.TurnOnSpotPositiveAnimationId);
-            yield return new ConfigField("Turn while moving",
-                "move " + definition.MoveTurnNegativeAnimationId + "/" + definition.MoveTurnPositiveAnimationId +
-                ", walk " + definition.WalkTurnNegativeAnimationId + "/" + definition.WalkTurnPositiveAnimationId +
-                ", run " + definition.RunTurnNegativeAnimationId + "/" + definition.RunTurnPositiveAnimationId);
+
+            yield return Animation("Move 0 deg", definition.MoveForwardAnimationId,
+                value => definition.MoveForwardAnimationId = value);
+            yield return Animation("Move 90", definition.MoveAt90AnimationId,
+                value => definition.MoveAt90AnimationId = value);
+            yield return Animation("Move 180", definition.MoveAt180AnimationId,
+                value => definition.MoveAt180AnimationId = value);
+            yield return Animation("Move 270", definition.MoveAt270AnimationId,
+                value => definition.MoveAt270AnimationId = value);
+
+            yield return Animation("Walk 0 deg", definition.WalkForwardAnimationId,
+                value => definition.WalkForwardAnimationId = value);
+            yield return Animation("Walk 90", definition.WalkAt90AnimationId,
+                value => definition.WalkAt90AnimationId = value);
+            yield return Animation("Walk 180", definition.WalkAt180AnimationId,
+                value => definition.WalkAt180AnimationId = value);
+            yield return Animation("Walk 270", definition.WalkAt270AnimationId,
+                value => definition.WalkAt270AnimationId = value);
+
+            yield return Animation("Run 0 deg", definition.RunForwardAnimationId,
+                value => definition.RunForwardAnimationId = value);
+            yield return Animation("Run 90", definition.RunAt90AnimationId,
+                value => definition.RunAt90AnimationId = value);
+            yield return Animation("Run 180", definition.RunAt180AnimationId,
+                value => definition.RunAt180AnimationId = value);
+            yield return Animation("Run 270", definition.RunAt270AnimationId,
+                value => definition.RunAt270AnimationId = value);
+
+            yield return Animation("Turn on spot -", definition.TurnOnSpotNegativeAnimationId,
+                value => definition.TurnOnSpotNegativeAnimationId = value);
+            yield return Animation("Turn on spot +", definition.TurnOnSpotPositiveAnimationId,
+                value => definition.TurnOnSpotPositiveAnimationId = value);
+            yield return Animation("Move turn -", definition.MoveTurnNegativeAnimationId,
+                value => definition.MoveTurnNegativeAnimationId = value);
+            yield return Animation("Move turn +", definition.MoveTurnPositiveAnimationId,
+                value => definition.MoveTurnPositiveAnimationId = value);
+            yield return Animation("Walk turn -", definition.WalkTurnNegativeAnimationId,
+                value => definition.WalkTurnNegativeAnimationId = value);
+            yield return Animation("Walk turn +", definition.WalkTurnPositiveAnimationId,
+                value => definition.WalkTurnPositiveAnimationId = value);
+            yield return Animation("Run turn -", definition.RunTurnNegativeAnimationId,
+                value => definition.RunTurnNegativeAnimationId = value);
+            yield return Animation("Run turn +", definition.RunTurnPositiveAnimationId,
+                value => definition.RunTurnPositiveAnimationId = value);
+
             yield return new ConfigField("Equipment slot order", Join(definition.EquipmentSlotOrder));
-            yield return new ConfigField("Opcode 26 bytes",
-                definition.Unknown26A + ", " + definition.Unknown26B);
-            yield return new ConfigField("Opcode 54 bytes",
-                definition.Unknown54A + ", " + definition.Unknown54B);
+            yield return Number("Opcode 26 byte a", definition.Unknown26A,
+                value => definition.Unknown26A = value);
+            yield return Number("Opcode 26 byte b", definition.Unknown26B,
+                value => definition.Unknown26B = value);
+            yield return Number("Opcode 54 byte a", definition.Unknown54A,
+                value => definition.Unknown54A = value);
+            yield return Number("Opcode 54 byte b", definition.Unknown54B,
+                value => definition.Unknown54B = value);
 
             if (definition.ModelSlotTransforms.Count > 0)
                 yield return new ConfigField("Model slot transforms",
@@ -725,9 +1107,11 @@ namespace FlashEditor.Definitions.Config {
         /// <param name="definition">The decoded record.</param>
         /// <returns>The fields.</returns>
         private static IEnumerable<ConfigField> QuestFields(QuestDefinition definition) {
-            yield return new ConfigField("Name", definition.Name ?? "none");
-            yield return new ConfigField("Alternate name", definition.AlternateName ?? "none");
-            yield return new ConfigField("Chat icon sprite", definition.IconSpriteId.ToString());
+            yield return Words("Name", definition.Name, value => definition.Name = value);
+            yield return Words("Alternate name", definition.AlternateName,
+                value => definition.AlternateName = value);
+            yield return Asset("Chat icon sprite", definition.IconSpriteId, ConfigFieldEditor.Sprite,
+                value => definition.IconSpriteId = value);
             yield return new ConfigField("Opcode 3 entries", definition.Conditions3.Count.ToString());
             yield return new ConfigField("Opcode 4 entries", definition.Conditions4.Count.ToString());
             yield return new ConfigField("Discarded bytes",
@@ -761,16 +1145,6 @@ namespace FlashEditor.Definitions.Config {
         /// <returns>The value, or "absent".</returns>
         private static string Present(ConfigDefinition definition, int opcode, int value) {
             return definition.Has(opcode) ? value.ToString(CultureInfo.InvariantCulture) : "absent";
-        }
-
-        /// <summary>Renders one facing quadrant set.</summary>
-        /// <param name="forward">The animation for facing along the heading.</param>
-        /// <param name="at90">The animation 90 degrees off it.</param>
-        /// <param name="at180">The animation 180 degrees off it.</param>
-        /// <param name="at270">The animation 270 degrees off it.</param>
-        /// <returns>The four ids.</returns>
-        private static string Quadrants(int forward, int at90, int at180, int at270) {
-            return "0 deg " + forward + ", 90 " + at90 + ", 180 " + at180 + ", 270 " + at270;
         }
 
         /// <summary>Renders an integer list, or says it is absent.</summary>
@@ -847,17 +1221,20 @@ namespace FlashEditor.Definitions.Config {
         }
 
         private static IEnumerable<ConfigField> MapElementFields(MapElementDefinition definition) {
-            yield return new ConfigField("Label", definition.Label ?? "none");
-            yield return new ConfigField("Label colour", Hex(definition.LabelRgb, 6));
-            yield return new ConfigField("Font", definition.FontId.ToString());
-            yield return new ConfigField("Sprite", definition.SpriteId + ", highlighted " +
-                definition.HighlightedSpriteId);
+            yield return Words("Label", definition.Label, value => definition.Label = value);
+            yield return Swatch("Label colour", definition.LabelRgb, value => definition.LabelRgb = value);
+            yield return Asset("Font", definition.FontId, ConfigFieldEditor.Font,
+                value => definition.FontId = value);
+            yield return Asset("Sprite", definition.SpriteId, ConfigFieldEditor.Sprite,
+                value => definition.SpriteId = value);
+            yield return Asset("Highlighted sprite", definition.HighlightedSpriteId,
+                ConfigFieldEditor.Sprite, value => definition.HighlightedSpriteId = value);
             yield return new ConfigField("Flags byte", Hex(definition.Flags, 2));
             yield return new ConfigField("Drawn on minimap",
                 definition.MinimapVisibleByte + (definition.DrawnOnMinimap ? " yes" : " no"));
-            yield return new ConfigField("Rendered", definition.Rendered.ToString());
-            yield return new ConfigField("Category", definition.CategoryId.ToString());
-            yield return new ConfigField("Menu target", definition.MenuTarget ?? "none");
+            yield return Switch("Rendered", definition.Rendered, value => definition.Rendered = value);
+            yield return Number("Category", definition.CategoryId, value => definition.CategoryId = value);
+            yield return Words("Menu target", definition.MenuTarget, value => definition.MenuTarget = value);
             yield return new ConfigField("Menu options",
                 string.Join(" | ", definition.MenuActions.Select(action => action ?? "")));
             yield return new ConfigField("Visibility gate 1", "varbit " + definition.VisibleVarbitId +
@@ -866,8 +1243,12 @@ namespace FlashEditor.Definitions.Config {
             yield return new ConfigField("Visibility gate 2", "varbit " + definition.SecondVisibleVarbitId +
                 ", varp " + definition.SecondVisibleVarpId + ", " + definition.SecondVisibleMin + ".." +
                 definition.SecondVisibleMax);
-            yield return new ConfigField("Fill", Hex(definition.FillArgb, 8));
-            yield return new ConfigField("Outline", Hex(definition.OutlineArgb, 8));
+            /* Argb rather than Rgb, and signed: op 21 and op 22 are read with readInt and every
+               measured value is negative, so a colour dialog would have to throw the alpha away.
+               Editable as the integer the file stores instead. */
+            yield return Number("Fill (signed ARGB)", definition.FillArgb, value => definition.FillArgb = value);
+            yield return Number("Outline (signed ARGB)", definition.OutlineArgb,
+                value => definition.OutlineArgb = value);
 
             if (definition.PolygonVertices != null)
                 yield return new ConfigField("Polygon",

@@ -117,6 +117,68 @@ namespace FlashEditor.Definitions.Config {
             }
         }
 
+        /// <summary>
+        ///     Sets the icon sprite, keeping whichever of the two "no icon" encodings the record was
+        ///     stored in.
+        /// </summary>
+        /// <remarks>
+        ///     <b>"No icon" has two encodings and they are not interchangeable on re-encode.</b>
+        ///     Opcode 4 sets <see cref="SpriteGroupId"/> to -1 explicitly; the opcode being absent
+        ///     leaves the client's <c>anInt114</c> at the same -1 (Class9.java:247-250). Seven of the
+        ///     hundred records in both caches carry opcode 4 and 93 carry opcode 1, so both forms are
+        ///     live and re-encoding one as the other rewrites a file nobody edited.
+        ///     <para>
+        ///     Assigning <see cref="SpriteGroupId"/> alone is therefore not enough, and worse, is
+        ///     silent. A record carrying opcode 4 replays that opcode whatever the field says, so
+        ///     setting a real sprite on one produces the same bytes and the edit vanishes; and a
+        ///     record carrying opcode 1 set to -1 would write <c>0xFFFF</c> through opcode 1's
+        ///     unsigned short, which decodes back as 65535 rather than as -1.
+        ///     </para>
+        ///     <para>
+        ///     So the opcode is swapped <b>in place</b>, at the position the record already stored
+        ///     it. In place matters: not one of this group's sibling groups is in ascending opcode
+        ///     order, the encoder replays the stored sequence, and appending the replacement instead
+        ///     would reorder a file that only had one field changed. Setting a value and setting it
+        ///     back therefore lands on the bytes it started from.
+        ///     </para>
+        ///     <para>
+        ///     A record carrying <i>neither</i> opcode keeps neither: the field is set and
+        ///     <see cref="AddedOpcodes"/> chooses the form, which is the only case where this editor
+        ///     picks one.
+        ///     </para>
+        /// </remarks>
+        /// <param name="spriteGroupId">The index-8 sprite group, or -1 for no icon.</param>
+        public void SetSpriteGroupId(int spriteGroupId) {
+            SpriteGroupId = spriteGroupId;
+
+            int wanted = spriteGroupId == -1 ? 4 : 1;
+            int unwanted = spriteGroupId == -1 ? 1 : 4;
+
+            for (int i = 0; i < DecodedOpcodes.Count; i++) {
+                if (DecodedOpcodes[i].Opcode != unwanted)
+                    continue;
+
+                DecodedOpcodes[i] = new DecodedOpcode(wanted, CurrentValue(wanted));
+            }
+        }
+
+        /// <summary>
+        ///     Which of the two "no icon" encodings this record uses, or that it names an icon.
+        /// </summary>
+        /// <remarks>
+        ///     Shown beside the sprite field because the two forms are indistinguishable from the
+        ///     decoded value: both leave <see cref="SpriteGroupId"/> at -1, and only the opcode list
+        ///     says which was stored.
+        /// </remarks>
+        /// <returns>The description.</returns>
+        public string DescribeAbsentIconEncoding() {
+            if (DecodedOpcodes.Has(4))
+                return "no icon, stored as opcode 4";
+            if (DecodedOpcodes.Has(1))
+                return "names an icon through opcode 1";
+            return "no icon, stored as the opcode being absent";
+        }
+
         private IEnumerable<int> AddedOpcodes() {
             //Opcode 4 is the explicit "no sprite" form, so a -1 added by an edit uses it rather
             //than writing -1 through opcode 1's unsigned short.
