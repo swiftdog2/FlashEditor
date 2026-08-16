@@ -1001,6 +1001,15 @@ namespace FlashEditor {
                audio - which is a documented choice rather than a defect, and invisible otherwise. */
             Register(Sfx2EditorTab, RSConstants.SFX2_INDEX, EditorCategory.Media,
                 openCache => Sfx2Panel.Bind(openCache));
+            /* Index 15 is one file per group with the group id as the patch id, so a flat list would
+               be the whole tab - except that a patch is 128 keys and every question about one is
+               positional, so the panel draws the selected patch as a keyboard and plays a key
+               through the track player. Index 14 is named beside it because a key's sample id
+               addresses that index and playing one reads it. Index 4 is deliberately not named:
+               keys pointing there are shown and labelled, but nothing here reads the index and the
+               Sound Effects tab is what owns it. */
+            Register(MidiPatchEditorTab, RSConstants.MIDI_PATCH_INDEX, EditorCategory.Media,
+                openCache => MidiPatchPanel.Bind(openCache), RSConstants.SFX2_INDEX);
             /* Index 10 is one group holding one file, so there is nothing to list: the tab shows the
                256 records inside that file and runs text through them, which is the only place in
                the editor where a codec can be watched working rather than trusted. Filed next to
@@ -2931,6 +2940,11 @@ namespace FlashEditor {
             //And index 14, on the same terms again. This one walks 3,657 groups, so a reload started
             //from another tab has a real window in which its worker is still reading.
             Sfx2Panel.Bind(null);
+
+            //And index 15, which sweeps far fewer groups but is the one tab holding an open audio
+            //device: a note in flight is being rendered by a sound bank still reading patches and
+            //samples out of the file store that is about to be disposed.
+            MidiPatchPanel.Bind(null);
 
             //And index 12, which is the largest sweep of the three-grid tabs at 4,149 groups: a
             //reload started from another tab would otherwise leave it decoding scripts out of a file

@@ -416,7 +416,23 @@ Run the suite against both caches. Commit.
 
 ---
 
-### 23. The MIDI patch tab
+### 23. The MIDI patch tab - DONE, bar a listening pass
+
+**Built.** `MidiPatchEditorPanel` is registered against index 15 under Media: a
+`DefinitionListPanel` of the 176 patches over `MidiKeyboardControl`, which draws the selected patch
+as 128 keys and plays one through `TrackPlayback`. The prompt below is kept because it is the
+statement of what the tab is for.
+
+**What is not done, and what it would take.** Nobody has heard it. The audio path is asserted only
+as far as "the right patch is selected and the right sample named" - `MidiKeyPreviewTests` reads the
+patch id back off the production synthesiser, and `RealCacheMidiPatchTabTests` checks that over
+every declared patch - and no test in this suite renders a sample to a device. The remaining work is
+one pass of `reference/track-player-listening-checklist.md` against a handful of keys, by ear.
+
+**One correction to the prompt below.** It says the ten drum-kit ids sit "at their canonical
+offsets", which is nearly true and is written up in `reference/DOC-CONFLICTS.md`: GS would put a
+Jazz kit at id 160, this cache has no 160, and it does have a 178 that no published kit table names.
+`GeneralMidi` labels that one by its bank and program rather than inventing a name for it.
 
 **The largest "codec finished, no interface" gap in the cache.** Index 15 decodes, re-encodes
 byte-identically over all 176 patches in both caches, and is live in the music player through
