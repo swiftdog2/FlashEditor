@@ -1197,7 +1197,9 @@ namespace FlashEditor.Export {
                 writer.WriteEndArray();
                 writer.WriteNumber("firstGroup", firstGroupInPart);
                 writer.WriteNumber("lastGroup", lastGroupInPart);
-                writer.WriteNumber("records", recordsInPart);
+                //Not "records": that name is already the array opened above, and a duplicate key
+                //resolves to the last one written, so the array became unreachable to every reader.
+                writer.WriteNumber("recordCount", recordsInPart);
                 writer.WriteEndObject();
                 writer.Flush();
                 writer.Dispose();

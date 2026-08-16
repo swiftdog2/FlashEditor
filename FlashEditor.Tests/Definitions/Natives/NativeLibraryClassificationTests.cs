@@ -131,8 +131,10 @@ namespace FlashEditor.Tests.Definitions.Natives
             image[2] = 0xBA;
             image[3] = 0xBE;
             image[7] = 2;
+            //A fat_arch is 20 bytes and opens with a big-endian cputype, so slice 1's sits at 28..31
+            //and its low byte is 31. Writing 18 to 28 states 18 << 24 instead.
             image[11] = 7;              //slice 0, cputype 7 - x86
-            image[28] = 18;             //slice 1, cputype 18 - PowerPC
+            image[31] = 18;             //slice 1, cputype 18 - PowerPC
 
             NativeBinaryShape shape = NativeBinaryShape.Of(image);
 
