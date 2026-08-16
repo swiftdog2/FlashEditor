@@ -35,6 +35,7 @@ namespace FlashEditor {
             setDirectoryToolStripMenuItem = new ToolStripMenuItem();
             openDirectoryToolStripMenuItem = new ToolStripMenuItem();
             js5LiveReloadToolStripMenuItem = new ToolStripMenuItem();
+            exportJsonToolStripMenuItem = new ToolStripMenuItem();
             viewToolStripMenuItem = new ToolStripMenuItem();
             alternateRowsToolStripMenuItem = new ToolStripMenuItem();
             EditorNavSplit = new SplitContainer();
@@ -194,7 +195,7 @@ namespace FlashEditor {
             // 
             // openToolStripMenuItem
             // 
-            openToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveAllToolStripMenuItem, setDirectoryToolStripMenuItem, openDirectoryToolStripMenuItem, js5LiveReloadToolStripMenuItem });
+            openToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveAllToolStripMenuItem, setDirectoryToolStripMenuItem, openDirectoryToolStripMenuItem, js5LiveReloadToolStripMenuItem, exportJsonToolStripMenuItem });
             openToolStripMenuItem.Font = new Font("Consolas", 14.25F);
             openToolStripMenuItem.Name = "openToolStripMenuItem";
             openToolStripMenuItem.Size = new Size(111, 38);
@@ -228,6 +229,14 @@ namespace FlashEditor {
             js5LiveReloadToolStripMenuItem.ToolTipText = "Only for a cache a Hydra update server is serving. Every save then stops that server, waits for it to close its files, writes, and lets it reload - and fails if nothing answers.";
             js5LiveReloadToolStripMenuItem.CheckedChanged += js5LiveReloadToolStripMenuItem_CheckedChanged;
             openDirectoryToolStripMenuItem.Click += OpenDirectoryToolStripMenuItem_Click;
+            //
+            // exportJsonToolStripMenuItem
+            //
+            exportJsonToolStripMenuItem.Name = "exportJsonToolStripMenuItem";
+            exportJsonToolStripMenuItem.Size = new Size(344, 42);
+            exportJsonToolStripMenuItem.Text = "Export to JSON";
+            exportJsonToolStripMenuItem.ToolTipText = "Writes every index out as structured JSON so the cache can be queried outside the editor. Read only - the export cannot be packed back into a cache, because these formats are not canonical.";
+            exportJsonToolStripMenuItem.Click += ExportJsonToolStripMenuItem_Click;
             // 
             // viewToolStripMenuItem
             // 
@@ -1628,6 +1637,7 @@ namespace FlashEditor {
         private System.Windows.Forms.ToolStripMenuItem openDirectoryToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem saveAllToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem js5LiveReloadToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem exportJsonToolStripMenuItem;
         private BrightIdeasSoftware.TreeListView RefTableListView;
         private BrightIdeasSoftware.OLVColumn formatCol;
         private BrightIdeasSoftware.OLVColumn namedCol;
