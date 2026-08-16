@@ -502,32 +502,50 @@ Run the suite against both caches. Commit.
 
 ---
 
-### 25. A read-only structured export of the whole cache
+### 25. A read-only structured export of the whole cache - DONE
 
-**Cheap, safe, and it unblocks understanding rather than editing.** Distinct from the parked
-working-tree item in Backlog, which is an architecture change - this one writes and never reads.
+`FlashEditor/Export/`, reachable from **Cache - Export to JSON**. Still distinct from the parked
+working-tree item in Backlog: that one reads its output back, this one never does, and the
+paragraph parking it is the reason this one is read only.
 
-```
-Read CLAUDE.md and AGENTS.md first.
+**The three decisions worth knowing before changing it:**
 
-Export every index to structured JSON, one file per record or per group as suits the index, with
-every id-to-id reference RESOLVED alongside the raw id. The point is to make the cache queryable
-outside the editor: "which floor overlays are red", "which interface components run script 4271",
-"which models attach billboard 17", "which objects reference a varbit".
+- **It reuses the editor's own `IDefinitionListDescriptor`s** rather than restating each index's
+  addressing and decode. `CacheExportPlan.DescriptorsFor` is the table. An index the editor can
+  show is an index this can export, and the two cannot drift; an index gains an export by gaining
+  a descriptor. Index 7's descriptor reads no payload, so models are decoded by the exporter
+  itself and reduced to their footer references - geometry is never written.
+- **`CacheExportJoins.Resolved` is a ceiling, not a starting point.** It is item 19's measured
+  list and nothing else. `NotResolved` states, in the export's own header, which measured joins it
+  does not do and why, so an absence reads as a decision rather than an oversight.
+- **Provenance comes from `CacheProvenance`**, which fingerprints the same way `RealCacheProfile`
+  does - declared counts on indexes 3, 9 and 19, never a directory name and never a table version.
+  It is a separate type because the test profile also carries every figure the suite asserts, and
+  because the test project references the production project rather than the reverse.
 
-This is READ-ONLY and must never be presented as a round trip. The round-trippable version is a
-separate, parked, much larger item - see the Backlog entry for why. Say so in the export's own
-header so nobody mistakes it for a source of truth.
+**What is written as a manifest and not decoded**, each with its reason in the file itself:
+indexes 5, 6, 8, 10, 11, 14, 30 and 31. Every one bar 5 is an asset - audio, pixels, native code,
+compiled shaders - where JSON around the bytes answers no query. Index 5 is the one judgement
+call: the group list, its map-square names recovered by hashing the whole coordinate name space,
+and its per-group key status are written, but the 64x64 terrain tiles and the location placements
+are not, because that is millions of records serving a view the map tab already gives.
 
-What to include per record: the decoded fields, the recorded opcode order, and the resolved
-references. What to leave binary and reference by path: models, sprites, audio, JPEG payloads,
-native libraries, shader bytecode.
+**Left to do, in the order it is worth doing:**
 
-Scope the output to the loaded cache and STAMP WHICH CACHE IT WAS, because six indexes differ
-between the two and an export with no provenance is a set of numbers nobody can check.
+- **Index 5's locations.** "Which map squares place object X" is a real question and the export
+  cannot answer it. It needs `MapSquareLoader`, and it needs a decision about the terrain side,
+  which is 16,384 tiles a square. Doing terrain would also bring the one measured join the export
+  currently declines - map tile underlay and overlay into config groups 1 and 4.
+- **Index 10's Huffman table and index 8's sprite geometry** are both decoded already and are
+  cheap; they are manifests only because a code table and a pixel plane were judged not worth a
+  record each. Reconsider if either turns out to be queried.
+- **`ConfigFamily.Sprite`** is a decoded relation on both sides that item 19 does not list, so the
+  export does not resolve it. Promote it into item 19 first if it is wanted.
 
-Verified by re-reading the export and comparing a sample of records against a fresh decode. Commit.
-```
+**Verified by** `FlashEditor.Tests/Cache/RealCache/RealCacheExportTests.cs`, which re-reads the
+written JSON and compares it against a fresh decode from the cache rather than against itself -
+necessary, because the record writer is reflective and states nothing twice. Plus
+`FlashEditor.Tests/Export/CacheExportUnitTests.cs`, which needs no cache.
 
 ---
 

@@ -284,13 +284,23 @@ namespace FlashEditor.Export {
             string sectionDirectory = Path.Combine(directory, section);
 
             var byGroup = new SortedDictionary<int, List<DefinitionAddress>>();
-            foreach (DefinitionAddress address in descriptor.Enumerate(cache)) {
-                if (!byGroup.TryGetValue(address.GroupId, out List<DefinitionAddress>? addresses)) {
-                    addresses = new List<DefinitionAddress>();
-                    byGroup[address.GroupId] = addresses;
-                }
 
-                addresses.Add(address);
+            try {
+                //Enumerating is not always free of assumptions: the world map descriptor resolves
+                //its group by name and throws when the cache has no group of that name. A section
+                //that cannot enumerate costs its own records, not the export.
+                foreach (DefinitionAddress address in descriptor.Enumerate(cache)) {
+                    if (!byGroup.TryGetValue(address.GroupId, out List<DefinitionAddress>? addresses)) {
+                        addresses = new List<DefinitionAddress>();
+                        byGroup[address.GroupId] = addresses;
+                    }
+
+                    addresses.Add(address);
+                }
+            } catch (Exception ex) {
+                Debug("Export could not enumerate index " + indexId + " through " +
+                    descriptor.GetType().Name + ": " + ex.Message, LOG_DETAIL.BASIC);
+                return (0, 0);
             }
 
             if (byGroup.Count == 0)
