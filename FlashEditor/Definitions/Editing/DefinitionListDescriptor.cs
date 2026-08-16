@@ -247,6 +247,33 @@ namespace FlashEditor.Definitions.Editing {
                     : DefinitionCellVisual.None);
         }
 
+        /// <summary>
+        ///     An id naming a record in one group of index 2, shown as something the user can follow.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="Link{TRow}"/> because an index 2 id is not a place until a
+        ///     group is named with it: the index is thirty-five unrelated families sharing one index
+        ///     and has no id arithmetic, so id 12 is a quest, a map scene icon and a parameter type
+        ///     at once. Four of the measured joins land there - the two floor families, quests, map
+        ///     scene icons, map elements and parameter types - and every one of them would resolve
+        ///     to a different record if the group were dropped.
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="configGroup">The group within index 2 the id is a file of.</param>
+        /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn ConfigLink<TRow>(string header, int configGroup,
+            Func<TRow, int?> read, int width = 90) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
+                null,
+                row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
+                    ? DefinitionCellVisual.ConfigLink(configGroup, id)
+                    : DefinitionCellVisual.None);
+        }
+
         /// <summary>A packed colour as the hex the cache stores it in, or null.</summary>
         private static object? Hex(int? packed) {
             return packed.HasValue ? "0x" + packed.Value.ToString("X6", CultureInfo.InvariantCulture) : null;

@@ -88,6 +88,15 @@ namespace FlashEditor.Export {
         ///     The split comes from <see cref="CacheAddressing"/>, which throws rather than guessing
         ///     for an index whose shape is unrecorded. An unrecorded index falls back to treating the
         ///     id as a group, which is what every one-file-per-group index does anyway.
+        ///     <para>
+        ///     A <see cref="CacheIdShape.GroupPerId"/> index falls back the same way, and must:
+        ///     <c>CacheAddressing.FileOf</c> deliberately <b>throws</b> for that shape, because the
+        ///     file id is declared by the reference table rather than derived and is not always 0 -
+        ///     index 23's <c>area</c> file is id 4 in 32 groups. Only the export's own call sites
+        ///     kept this from firing, since none of the five indexes they name is group-per-id;
+        ///     <see cref="Resolve"/> dispatches by index and would reach it on the first link into
+        ///     index 7, 8, 9 or 13.
+        ///     </para>
         /// </remarks>
         /// <param name="field">The field on the record that holds the id.</param>
         /// <param name="join">The join this comes from.</param>
@@ -99,10 +108,39 @@ namespace FlashEditor.Export {
                 return null;
 
             if (!CacheAddressing.TryGetFor(targetIndex, out CacheAddressing addressing)
-                || addressing.Shape == CacheIdShape.NameHashed)
+                || addressing.Shape == CacheIdShape.NameHashed
+                || addressing.Shape == CacheIdShape.GroupPerId)
                 return Group(field, join, targetIndex, id);
 
             return Build(field, join, id, targetIndex, addressing.GroupOf(id), addressing.FileOf(id));
+        }
+
+        /// <summary>
+        ///     Resolves an id when the caller knows only which index, or which config group, it
+        ///     addresses.
+        /// </summary>
+        /// <remarks>
+        ///     For a link column and a hover preview, which carry an index and an id and nothing
+        ///     about how that index splits an id into a group and a file. The three typed methods
+        ///     above stay the export's entry points, because an export knows which relation it is
+        ///     following; this dispatches between them from the index's recorded addressing so the
+        ///     UI does not have to restate the split per column.
+        /// </remarks>
+        /// <param name="field">The field on the record that holds the id.</param>
+        /// <param name="join">The join this comes from.</param>
+        /// <param name="targetIndex">The index the id addresses.</param>
+        /// <param name="id">The id as stored.</param>
+        /// <param name="configGroup">
+        ///     The index 2 group the id is a file of, or -1. Index 2 has no id arithmetic, so an id
+        ///     there is not a place until a group is named with it.
+        /// </param>
+        /// <returns>The resolution, or null when the id stores "nothing" rather than an id.</returns>
+        public ExportedReference? Resolve(string field, string join, int targetIndex, int id,
+            int configGroup = -1) {
+            if (configGroup >= 0)
+                return Config(field, join, configGroup, id);
+
+            return Definition(field, join, targetIndex, id);
         }
 
         /// <summary>
