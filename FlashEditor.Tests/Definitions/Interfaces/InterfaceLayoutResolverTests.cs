@@ -496,6 +496,57 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
                 $"Moving right should lower a mode-2 base, but {atLeft} became {atRight}.");
         }
 
+        /// <summary>
+        ///     A nudge and the opposite nudge restore the exact base that was stored.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The set-and-unset check the Constraints section requires, for the geometry edit
+        ///     path.</b> A byte-identity sweep proves an unedited component re-encodes to what it was
+        ///     read from, which is a different claim from this one - four real defects in this
+        ///     repository have lived in that gap, every one of them an asymmetric setter.
+        ///     <para>
+        ///     Modes 0, 1 and 2 only, because they are the ones that store a pixel exactly. The three
+        ///     shift modes store a Q0.14 fraction of the parent, so a base is not recoverable from a
+        ///     pixel and a there-and-back nudge on a narrow parent legitimately lands one unit away.
+        ///     That is a property of the format rather than a defect, and asserting exactness for
+        ///     them would be asserting something untrue.
+        ///     </para>
+        /// </remarks>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(2)]
+        public void ANudgeAndItsOppositeRestoreTheStoredBase_ForTheNonShiftModes(int mode) {
+            InterfaceComponentDefinition component = Component();
+            component.XMode = (sbyte) mode;
+            component.YMode = (sbyte) mode;
+
+            foreach (int start in new[] { -40, 0, 17, 400, 700 }) {
+                component.BasePositionX = start;
+                component.BasePositionY = start;
+
+                (int x, int y) = InterfaceLayoutResolver.ResolvePosition(component, 765, 503, 65, 10);
+
+                //Out seven pixels and down three, exactly as an arrow-key nudge does it: the wanted
+                //pixel is inverted, never a delta added to the base.
+                component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(mode, x + 7, 765, 65);
+                component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(mode, y + 3, 503, 10);
+
+                Assert.NotEqual(start, component.BasePositionX);
+
+                (int movedX, int movedY) =
+                    InterfaceLayoutResolver.ResolvePosition(component, 765, 503, 65, 10);
+
+                component.BasePositionX =
+                    InterfaceLayoutResolver.BaseForPosition(mode, movedX - 7, 765, 65);
+                component.BasePositionY =
+                    InterfaceLayoutResolver.BaseForPosition(mode, movedY - 3, 503, 10);
+
+                Assert.Equal(start, component.BasePositionX);
+                Assert.Equal(start, component.BasePositionY);
+            }
+        }
+
         /// <summary>Children are walked in file-id order, because that is the client's draw order.</summary>
         /// <remarks>
         ///     Z-order is not a stored field. The client draws a parent's children in array index

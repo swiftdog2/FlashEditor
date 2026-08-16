@@ -206,6 +206,41 @@ namespace FlashEditor.Definitions.Editing {
                     : DefinitionCellVisual.None);
         }
 
+        /// <summary>
+        ///     A cell whose text is already written out, with a swatch of whatever colour it
+        ///     describes.
+        /// </summary>
+        /// <remarks>
+        ///     The third of the swatch factories, and the one for a <b>detail pane</b> rather than a
+        ///     list. <see cref="Colour{TRow}"/> and <see cref="EncodedColour{TRow}"/> both own their
+        ///     cell text, because in a list the cell is the number and editing it edits the record.
+        ///     A detail pane's value column holds one rendered sentence per field - a transparency
+        ///     with its inversion spelled out, an outline with "none" beside a zero - and it is the
+        ///     record that decided that wording, not the column.
+        ///     <para>
+        ///     <b>Read only by construction.</b> There is nothing to parse back: the text is prose,
+        ///     so a cell editor over it could only fail. A pane using this offers a picker instead,
+        ///     which is also the only way to give a colour to a field that currently stores none -
+        ///     the list columns cannot, because a stored zero that means "no outline" draws no swatch
+        ///     and so has nothing to activate.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="read">Reads the rendered text off a row.</param>
+        /// <param name="swatch">Reads the colour to draw, or null when the row describes none.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn Swatched<TRow>(string header, Func<TRow, string?> read,
+            Func<TRow, int?> swatch, int width = 160) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? read(typed) : null,
+                null,
+                row => Cast<TRow>(row) is TRow typed && swatch(typed) is int rgb
+                    ? DefinitionCellVisual.Swatch(rgb)
+                    : DefinitionCellVisual.None);
+        }
+
         /// <summary>An id naming a picture in another index, shown as a tile with the id beside it.</summary>
         /// <typeparam name="TRow">The row type this column reads.</typeparam>
         /// <param name="header">The column heading.</param>

@@ -215,9 +215,12 @@ namespace FlashEditor.Definitions.Editing {
         /// <summary>Creates the event data.</summary>
         /// <param name="row">The row whose cell was activated.</param>
         /// <param name="visual">What that cell named.</param>
-        public DefinitionCellActivatedEventArgs(object row, DefinitionCellVisual visual) {
+        /// <param name="column">The column the cell belongs to, where the host has one.</param>
+        public DefinitionCellActivatedEventArgs(object row, DefinitionCellVisual visual,
+            DefinitionColumn? column = null) {
             Row = row ?? throw new ArgumentNullException(nameof(row));
             Visual = visual;
+            Column = column;
         }
 
         /// <summary>The row whose cell was activated.</summary>
@@ -225,5 +228,17 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <summary>What the cell named: the index and the id.</summary>
         public DefinitionCellVisual Visual { get; }
+
+        /// <summary>
+        ///     The column the cell belongs to, or null when the host did not state one.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Needed as soon as a row has two swatches.</b> The visual carries a colour and not
+        ///     which field it came from, so a handler that wrote a picked colour back had to guess -
+        ///     and the interface component list has a shared colour and a sprite outline colour on
+        ///     the same row. Carrying the column means the handler writes through
+        ///     <see cref="DefinitionColumn.Write"/> and never needs to know which field it is.
+        /// </remarks>
+        public DefinitionColumn? Column { get; }
     }
 }
