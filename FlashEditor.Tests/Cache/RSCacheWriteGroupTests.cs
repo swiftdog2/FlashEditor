@@ -517,6 +517,60 @@ namespace FlashEditor.Tests.Cache {
         }
 
         /// <summary>
+        ///     Rewriting a declared group leaves an undeclared one beside it exactly where it was.
+        /// </summary>
+        /// <remarks>
+        ///     The other half of the orphan rule, and the half that was asserted only in a comment.
+        ///     Refusing to <i>adopt</i> one is easy to see; not <i>destroying</i> one rests on a
+        ///     claim about sector allocation - that it only ever appends or reuses what this
+        ///     session freed, so an orphan's chain is not reachable from a write to a different
+        ///     group. That is exactly the kind of claim that stops being true when the allocator is
+        ///     touched, and nothing else in the suite would notice.
+        ///     <para>
+        ///     Read back through a reopened store rather than through the writing cache, so the
+        ///     orphan is proved to have survived the commit as well as the write. Its bytes are
+        ///     compared, not merely its readability: a chain that was partly overwritten and still
+        ///     terminates would read back short rather than throw.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void WriteGroup_DoesNotDisturbAnUndeclaredGroupBesideIt() {
+            RSCache cache = CreateCache(0,
+                new Seed(0, new byte[] { 1, 2, 3 }),
+                new Seed(1, new byte[] { 4, 5 }));
+
+            //Written straight to the store, so no reference-table entry describes it. That is what
+            //makes it an orphan rather than content.
+            var orphanArchive = new RSArchive();
+            orphanArchive.PutFile(0, new JagStream(new byte[] { 7, 7, 7, 7, 7, 7, 7, 7 }));
+
+            JagStream orphan = new RSContainer(Index, Group + 1, RSConstants.NO_COMPRESSION,
+                new JagStream(orphanArchive.Encode().ToArray()), 1337).Encode();
+            byte[] orphanBytes = orphan.ToArray();
+
+            cache.GetStore().Write(Index, Group + 1, new JagStream(orphanBytes));
+            Assert.Equal(new[] { Group + 1 }, cache.EnumerateOrphanGroups(Index));
+
+            /* Big enough to push the rewritten group over several sectors, and that size is the
+               whole point of the case. The orphan was allocated immediately after the group, so a
+               growth of ten bytes would still fit inside the sector the group already held and
+               this test would prove nothing at all - it would pass against an allocator that
+               extends in place and eats whatever is next. */
+            var grown = new byte[4 * SectorSize];
+            Array.Fill(grown, (byte) 6);
+
+            Assert.True(cache.WriteGroup(Index, Group, Files(
+                new Seed(0, new byte[] { 1, 2, 3 }),
+                new Seed(1, new byte[] { 4, 5 }),
+                new Seed(2, grown))));
+
+            RSCache reopened = SaveAndReopen(cache);
+
+            Assert.Equal(orphanBytes, reopened.LoadContainer(Index, Group + 1).ToArray());
+            Assert.Equal(new[] { Group + 1 }, reopened.EnumerateOrphanGroups(Index));
+        }
+
+        /// <summary>
         ///     A group with no files has no payload to store and cannot be addressed by the client,
         ///     so deleting a group's last component is refused here rather than producing an archive
         ///     the file store rejects with a message naming neither the group nor the reason.
