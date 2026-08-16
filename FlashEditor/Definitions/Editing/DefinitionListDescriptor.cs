@@ -230,20 +230,63 @@ namespace FlashEditor.Definitions.Editing {
         ///     The column says which index the number addresses and nothing else. What following it
         ///     <i>does</i> is the host's decision, taken from
         ///     <c>DefinitionListPanel.CellActivated</c>.
+        ///     <para>
+        ///     <b>A link may still be edited.</b> Several of the measured joins sit on fields that
+        ///     were already editable cells, and turning one into a read-only link to make it
+        ///     followable would take an edit away to add a jump. The panel is what keeps the two
+        ///     apart: a plain click follows a read-only link, and an editable one wants Ctrl, because
+        ///     the first click of the double click that starts an edit would otherwise navigate away
+        ///     before the second landed.
+        ///     </para>
         /// </remarks>
         /// <typeparam name="TRow">The row type this column reads.</typeparam>
         /// <param name="header">The column heading.</param>
         /// <param name="indexId">The index the id addresses.</param>
         /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="write">Writes an edited id back, or null for a read-only column.</param>
         /// <param name="width">The column width.</param>
         /// <returns>The column.</returns>
         public static DefinitionColumn Link<TRow>(string header, int indexId,
-            Func<TRow, int?> read, int width = 90) where TRow : class {
+            Func<TRow, int?> read, Action<TRow, int>? write = null, int width = 90) where TRow : class {
             return new DefinitionColumn(header, width,
                 row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
-                null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToInt(value));
+                },
                 row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
                     ? DefinitionCellVisual.Link(indexId, id)
+                    : DefinitionCellVisual.None);
+        }
+
+        /// <summary>
+        ///     An id naming a record in one group of index 2, shown as something the user can follow.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="Link{TRow}"/> because an index 2 id is not a place until a
+        ///     group is named with it: the index is thirty-five unrelated families sharing one index
+        ///     and has no id arithmetic, so id 12 is a quest, a map scene icon and a parameter type
+        ///     at once. Four of the measured joins land there - the two floor families, quests, map
+        ///     scene icons, map elements and parameter types - and every one of them would resolve
+        ///     to a different record if the group were dropped.
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="configGroup">The group within index 2 the id is a file of.</param>
+        /// <param name="read">Reads the id off a row, or null when it names nothing.</param>
+        /// <param name="write">Writes an edited id back, or null for a read-only column.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn ConfigLink<TRow>(string header, int configGroup,
+            Func<TRow, int?> read, Action<TRow, int>? write = null, int width = 90) where TRow : class {
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed ? (object?) read(typed) : null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToInt(value));
+                },
+                row => Cast<TRow>(row) is TRow typed && read(typed) is int id && id >= 0
+                    ? DefinitionCellVisual.ConfigLink(configGroup, id)
                     : DefinitionCellVisual.None);
         }
 

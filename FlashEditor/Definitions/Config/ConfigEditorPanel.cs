@@ -314,6 +314,43 @@ namespace FlashEditor.Definitions.Config {
             return (OpcodeListing) row;
         }
 
+        /// <summary>
+        ///     Selects one record of one config group, for a link followed from another tab.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The group is not optional here and cannot be derived.</b> Index 2 is thirty-five
+        ///     unrelated families sharing one index with no id arithmetic at all, so a caller that
+        ///     handed over a file id alone would land on whichever family the selector happened to be
+        ///     showing - and quest 12, map scene icon 12 and parameter type 12 are three different
+        ///     records, so that lands somewhere plausible and wrong rather than failing.
+        ///     <para>
+        ///     Selecting the group starts a load, so the record is asked for through
+        ///     <c>DefinitionListPanel.SelectRecord</c>, which holds the request until the rows exist.
+        ///     A link followed from another tab almost always finds this page unloaded.
+        ///     </para>
+        /// </remarks>
+        /// <param name="groupId">The group within index 2.</param>
+        /// <param name="fileId">The record within that group, or -1 to show the group alone.</param>
+        /// <returns>Whether the group is one this cache declares.</returns>
+        public bool Show(int groupId, int fileId) {
+            foreach (object entry in groups.Items) {
+                if (entry is not GroupOption option || option.Family.GroupId != groupId)
+                    continue;
+
+                //Through the selector rather than straight to ShowGroup, so the combo agrees with
+                //what the grid is showing. Assigning it raises the handler that loads the group.
+                if (!ReferenceEquals(groups.SelectedItem, option))
+                    groups.SelectedItem = option;
+
+                if (fileId >= 0)
+                    records.SelectRecord(fileId);
+
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Loads the selected group's records and describes what the group holds.</summary>
         /// <param name="option">The selected group, or null.</param>
         private void ShowGroup(GroupOption? option) {

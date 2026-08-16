@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using FlashEditor.Cache;
 
 namespace FlashEditor.Definitions.Editing {
     /// <summary>
@@ -35,11 +36,13 @@ namespace FlashEditor.Definitions.Editing {
     ///     </para>
     /// </remarks>
     public readonly struct DefinitionCellVisual : IEquatable<DefinitionCellVisual> {
-        private DefinitionCellVisual(DefinitionCellArt art, int packedRgb, int indexId, int targetId) {
+        private DefinitionCellVisual(DefinitionCellArt art, int packedRgb, int indexId, int targetId,
+            int groupId) {
             Art = art;
             PackedRgb = packedRgb;
             IndexId = indexId;
             TargetId = targetId;
+            GroupId = groupId;
         }
 
         /// <summary>A cell that draws nothing but its text.</summary>
@@ -49,7 +52,7 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="packedRgb">The colour, packed as <c>0xRRGGBB</c>.</param>
         /// <returns>The visual.</returns>
         public static DefinitionCellVisual Swatch(int packedRgb) {
-            return new DefinitionCellVisual(DefinitionCellArt.Swatch, packedRgb, -1, -1);
+            return new DefinitionCellVisual(DefinitionCellArt.Swatch, packedRgb, -1, -1, -1);
         }
 
         /// <summary>A picture resolved from an index and an id.</summary>
@@ -57,7 +60,7 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="id">The id.</param>
         /// <returns>The visual.</returns>
         public static DefinitionCellVisual Thumbnail(int indexId, int id) {
-            return new DefinitionCellVisual(DefinitionCellArt.Thumbnail, 0, indexId, id);
+            return new DefinitionCellVisual(DefinitionCellArt.Thumbnail, 0, indexId, id, -1);
         }
 
         /// <summary>A reference to a record in another index.</summary>
@@ -65,7 +68,40 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="id">The id.</param>
         /// <returns>The visual.</returns>
         public static DefinitionCellVisual Link(int indexId, int id) {
-            return new DefinitionCellVisual(DefinitionCellArt.Link, 0, indexId, id);
+            return new DefinitionCellVisual(DefinitionCellArt.Link, 0, indexId, id, -1);
+        }
+
+        /// <summary>
+        ///     A reference to a record in one group of index 2.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="Link(int,int)"/> because an index 2 id is not a place on its
+        ///     own. That index is thirty-five unrelated families sharing one index with no id
+        ///     arithmetic at all, so id 12 is a quest, a map scene icon and a parameter type at once
+        ///     and only the group says which.
+        /// </remarks>
+        /// <param name="configGroup">The group within index 2.</param>
+        /// <param name="id">The file id within that group.</param>
+        /// <returns>The visual.</returns>
+        public static DefinitionCellVisual ConfigLink(int configGroup, int id) {
+            return GroupedLink(RSConstants.CONFIG, configGroup, id);
+        }
+
+        /// <summary>
+        ///     A reference to a file of one named group of an index.
+        /// </summary>
+        /// <remarks>
+        ///     Index 2 is the common case and <see cref="ConfigLink"/> names it. Index 27 is the
+        ///     other: emitters are files of group 0 and effectors files of group 1, so emitter 40
+        ///     and effector 40 are different records and a link that dropped the group would open
+        ///     whichever family the tab was left showing.
+        /// </remarks>
+        /// <param name="indexId">The index.</param>
+        /// <param name="groupId">The group within it.</param>
+        /// <param name="id">The file id within that group.</param>
+        /// <returns>The visual.</returns>
+        public static DefinitionCellVisual GroupedLink(int indexId, int groupId, int id) {
+            return new DefinitionCellVisual(DefinitionCellArt.Link, 0, indexId, id, groupId);
         }
 
         /// <summary>What this cell draws.</summary>
@@ -80,6 +116,16 @@ namespace FlashEditor.Definitions.Editing {
         /// <summary>The id, for a thumbnail or a link.</summary>
         public int TargetId { get; }
 
+        /// <summary>
+        ///     The group within the target index, or -1 when its own arithmetic derives one.
+        /// </summary>
+        /// <remarks>
+        ///     Set only by <see cref="ConfigLink"/>. Every other index folds an id back into a group
+        ///     through <c>CacheAddressing</c>, and restating that here would be a second place for
+        ///     the split to be written down.
+        /// </remarks>
+        public int GroupId { get; }
+
         /// <summary>The swatch colour, opaque.</summary>
         /// <remarks>
         ///     The alpha is forced rather than taken from the packed value. Every colour the cache
@@ -93,7 +139,8 @@ namespace FlashEditor.Definitions.Editing {
         /// <inheritdoc/>
         public bool Equals(DefinitionCellVisual other) {
             return Art == other.Art && PackedRgb == other.PackedRgb
-                && IndexId == other.IndexId && TargetId == other.TargetId;
+                && IndexId == other.IndexId && TargetId == other.TargetId
+                && GroupId == other.GroupId;
         }
 
         /// <inheritdoc/>
@@ -103,7 +150,7 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <inheritdoc/>
         public override int GetHashCode() {
-            return HashCode.Combine((int) Art, PackedRgb, IndexId, TargetId);
+            return HashCode.Combine((int) Art, PackedRgb, IndexId, TargetId, GroupId);
         }
     }
 

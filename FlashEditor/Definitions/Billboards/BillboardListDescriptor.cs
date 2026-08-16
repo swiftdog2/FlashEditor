@@ -110,7 +110,12 @@ namespace FlashEditor.Definitions.Billboards {
         public BillboardListDescriptor() {
             columns = new[] {
                 DefinitionColumn.ReadOnly<BillboardListing>("Billboard", row => row.BillboardId, 100),
-                DefinitionColumn.Number<BillboardListing>("Material", row => row.MaterialId,
+                /* The one measured join a billboard carries, and still editable. The read reproduces
+                   the row's own null-for-none rather than passing the stored 16-bit sentinel
+                   through, so a quad with no material draws an empty cell instead of a link to
+                   material -1. */
+                DefinitionColumn.Link<BillboardListing>("Material", RSConstants.MATERIALS,
+                    row => row.Record.MaterialId < 0 ? null : row.Record.MaterialId,
                     (row, value) => row.Record.MaterialId = value, 90),
                 DefinitionColumn.Number<BillboardListing>("Width", row => row.Width,
                     (row, value) => row.Record.Width = value, 80),

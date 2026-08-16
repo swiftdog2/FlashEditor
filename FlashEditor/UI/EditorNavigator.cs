@@ -9,9 +9,13 @@ namespace FlashEditor.UI {
         /// <summary>A place.</summary>
         /// <param name="indexId">The cache index.</param>
         /// <param name="recordId">The record, or -1 for the index itself.</param>
-        public EditorLocation(int indexId, int recordId = -1) {
+        /// <param name="groupId">
+        ///     The group the record sits in, for an index whose ids do not name one, or -1.
+        /// </param>
+        public EditorLocation(int indexId, int recordId = -1, int groupId = -1) {
             IndexId = indexId;
             RecordId = recordId;
+            GroupId = groupId;
         }
 
         /// <summary>The cache index.</summary>
@@ -20,12 +24,28 @@ namespace FlashEditor.UI {
         /// <summary>The record within it, or -1.</summary>
         public int RecordId { get; }
 
+        /// <summary>
+        ///     The group the record sits in, or -1 when the index's own arithmetic derives it.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Index 2 is why this exists.</b> It is thirty-five unrelated config families sharing
+        ///     one index and has no id arithmetic at all, so "config record 12" is not a place -
+        ///     twelve is a quest, a map scene icon and a parameter type all at once, and which one is
+        ///     decided by the group. Every other index derives its group from the record id through
+        ///     <c>CacheAddressing</c> and leaves this -1 rather than restating what the arithmetic
+        ///     already says.
+        /// </remarks>
+        public int GroupId { get; }
+
         /// <summary>Whether this names a particular record rather than a whole index.</summary>
         public bool HasRecord => RecordId >= 0;
 
+        /// <summary>Whether the place states its own group rather than deriving one.</summary>
+        public bool HasGroup => GroupId >= 0;
+
         /// <inheritdoc/>
         public bool Equals(EditorLocation other) {
-            return IndexId == other.IndexId && RecordId == other.RecordId;
+            return IndexId == other.IndexId && RecordId == other.RecordId && GroupId == other.GroupId;
         }
 
         /// <inheritdoc/>
@@ -35,13 +55,16 @@ namespace FlashEditor.UI {
 
         /// <inheritdoc/>
         public override int GetHashCode() {
-            return HashCode.Combine(IndexId, RecordId);
+            return HashCode.Combine(IndexId, RecordId, GroupId);
         }
 
         /// <summary>The place in words, for a status line and a tooltip.</summary>
         /// <returns>The description.</returns>
         public override string ToString() {
-            return HasRecord ? "index " + IndexId + ", id " + RecordId : "index " + IndexId;
+            string where = "index " + IndexId;
+            if (HasGroup)
+                where += ", group " + GroupId;
+            return HasRecord ? where + ", id " + RecordId : where;
         }
     }
 

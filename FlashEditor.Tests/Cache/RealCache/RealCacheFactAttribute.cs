@@ -21,4 +21,24 @@ namespace FlashEditor.Tests.Cache.RealCache
                 Skip = reason;
         }
     }
+
+    /// <summary>
+    ///     <see cref="RealCacheFactAttribute"/> for a test that takes cases.
+    /// </summary>
+    /// <remarks>
+    ///     Separate because <see cref="TheoryAttribute"/> does not derive from
+    ///     <see cref="FactAttribute"/> in a way that lets one attribute serve both, and a cached
+    ///     sweep written as a theory over a plain <c>[Theory]</c> would fail rather than skip on a
+    ///     machine with no cache - which is the mistake this pair exists to make impossible.
+    /// </remarks>
+    public sealed class RealCacheTheoryAttribute : TheoryAttribute
+    {
+        /// <summary>Creates the attribute, skipping when no cache can be located.</summary>
+        public RealCacheTheoryAttribute()
+        {
+            string reason = RealCacheLocator.SkipReason;
+            if (reason != null)
+                Skip = reason;
+        }
+    }
 }

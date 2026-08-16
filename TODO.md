@@ -66,8 +66,8 @@ with a worked case behind them, or that bind a specific item below.
 
 ## In flight
 
-**Item 18 is done. Item 26 is done bar 26h's write path. Items 19, 20 and
-27 are under way.** What landed, and what each left behind:
+**Item 18 is done. Item 26 is done bar 26h's write path. Item 19 is done bar two call sites
+named in its own section. Items 20 and 27 are under way.** What landed, and what each left behind:
 
 | | State | What is left |
 |---|---|---|
@@ -179,31 +179,54 @@ tools/Capture-EditorTab.ps1 on every tab you touch. Capture before and after. Co
 
 ### 19. Cross-navigation: make every id that points somewhere clickable
 
-**The back stack is built and tested** (`FlashEditor/UI/EditorNavigator.cs`), and so is the column
-that raises the click: `DefinitionColumn.Link` draws an activatable id and
-`DefinitionListPanel.CellActivated` fires with the index and the id it named. The Config tab's
-texture column already uses it. **What is left is the routing and the joins.**
+**Two of the fifteen joins are left, and both are call sites rather than machinery.** The routing,
+the preview, the counts and the picker all landed; the prompt below is kept whole because its
+join list is still the ceiling, and because the two rules under it bind anything added later.
 
-Three things the next person needs before starting:
+What is on disk now, so none of it is rebuilt:
 
-- **`EditorNavigator` deliberately knows nothing about tabs.** It records places in the cache. The
-  form turns a place into a tab and a row, using `Editor.editorTabs`, a
-  `Dictionary<TabPage, EditorTabBinding>` whose binding carries the index id. Selecting the *row*
-  is per-tab work: `DefinitionListPanel.SelectRow` exists and takes the row object, so each tab
-  needs a small "find the row for this id" of its own.
-- **Handle `Navigated` by selecting, and report the user's own selections back through
-  `RecordVisit`.** The navigator already guards the re-entrancy that creates, and there is a test
-  that fails if the guard is removed - without it Back appears to work once and then sticks.
-- **`Clear()` on every cache open**, or the history offers to return to a record id that means
-  something different in the cache now open.
+- **Resolution is the export's, not a second copy.** `CacheReferenceResolver` answers what an id
+  addresses and whether the target's reference table declares it, and `CacheExportJoins.Extract` is
+  the single statement of which relations are measured. `CacheReferencePreview` (`FlashEditor/UI/`)
+  wraps both for the UI and adapts the two row types the export builds rather than decodes - a
+  model's footer and a MIDI patch's key census.
+- **A place in the cache is an index, a record and sometimes a group.** Indexes 2 and 27 are
+  collections of unrelated families with no id arithmetic, so an id there is not a place: quest 12
+  and map scene icon 12 are different records, and so are emitter 40 and effector 40. That is why
+  `EditorLocation` and `DefinitionCellVisual` carry a group, why `DefinitionColumn.ConfigLink`
+  exists beside `Link`, and why `ConfigEditorPanel.Show` and `ParticleEditorPanel.Show` take one.
+  `CacheReferencePreview.GroupIsPartOfTheAddress` names the two indexes once.
+- **`Editor.TabFor` resolves an index to a tab in two passes**, primary registration first and the
+  indexes a tab merely lists second. Indexes 7, 16 and 18 route nowhere on their own - the Entities
+  page is registered against 19 - so `EntityBrowserPanel.Show` picks the family once the page is
+  reached.
+- **The hover preview, the one-to-many count and the reference menu are all on
+  `DefinitionListPanel`**, so every tab that uses the shared grid has them without wiring. The count
+  is measured over the loaded rows through the column's own visual delegate; nothing writes one
+  down. The menu carries the references no cell can - a quest array, a parameter dictionary, a
+  model footer, eight arrays of hook operands.
+- **`AssetPickerDialog` has its caller**: an editable link into a sprite, model, texture, font or
+  animation opens it instead of a text box. An editable link follows on Ctrl+click rather than a
+  plain one, because the first click of the double click that starts an edit would otherwise
+  navigate away before the second landed.
 
-**There is not one "go to" link anywhere in the application.** A repo-wide search for `GoTo`,
-`LinkLabel` or `Hyperlink` finds nothing outside client-script jump arithmetic. The cache is almost
-entirely made of ids pointing at other ids, and every one of them is currently a dead end.
+What is left:
 
-**One join already works** and is the model for the rest: `NpcAnimationSet.For`
-(`Definitions/Entities/NpcAnimationSet.cs:73-99`) resolves an NPC's opcode-127 render type into
-config group 32 and lists the idle, walk, run and turn animations. Copy its shape.
+- **The map tile underlay and overlay join has no call site.** `Editor.GoToCacheRecord(indexId,
+  recordId, groupId)` is the entry point for it and the Map tab is the only caller it needs, but
+  the Map tab is a bespoke control with no cell to click, so somebody has to decide where on it a
+  floor id becomes clickable. One line, once that is decided.
+- **The reverse of the billboard join - which models attach this billboard - is not wired**, and
+  should not be wired the obvious way. It needs every model footer in index 7 decoded, which is
+  exactly what `ModelListDescriptor.ReadsPayload = false` exists to avoid; the forward direction
+  (a model's row lists its bonds) is on the reference menu and costs one model decode. If the
+  reverse is wanted, it wants a built-once index with a progress report, not a hover.
+- **Nothing here has been seen on screen.** It was written alongside two other agents, so no tab
+  was captured and no cache-backed test was run. `RealCacheLinkColumnTests` is written and unrun.
+
+**One join already works** and is the model for a one-to-many join in code rather than in the UI:
+`NpcAnimationSet.For` (`Definitions/Entities/NpcAnimationSet.cs:73-99`) resolves an NPC's
+opcode-127 render type into config group 32 and lists the idle, walk, run and turn animations.
 
 ```
 Read CLAUDE.md, AGENTS.md and the UI conventions section first. Item 18 must be done.
@@ -245,6 +268,14 @@ say so.
 
 Verified by eye. Capture every tab you touch. Commit.
 ```
+
+**A link column is a second surface for a join, and that is where an unmeasured one gets in.** It
+looks like a display change and is a claim about the format. `RealCacheLinkColumnTests` is the
+check: over every declared record of indexes 16, 21 and 29 it asserts that each link a column draws
+is a triple `CacheExportJoins` already produces for the same record. Add a case to it for any index
+that grows one. It deliberately does not assert that every link resolves - some ids in this cache do
+dangle, and "resolved or dangling" is an `or` that a cache whose links had all stopped resolving
+would pass unchanged.
 
 ---
 
