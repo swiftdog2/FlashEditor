@@ -1741,6 +1741,30 @@ namespace FlashEditor {
         }
 
         /// <summary>
+        ///     Follows a reference from a surface that is not a definition grid.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The one join in the measured list that no grid can raise is the map tile's.</b> A
+        ///     terrain tile's underlay and overlay address config groups 1 and 4, and the Map tab is
+        ///     a bespoke <c>UserControl</c> with its own rasteriser rather than a
+        ///     <c>DefinitionListPanel</c> - so there is no cell to click and no
+        ///     <c>CellActivated</c> to wire. The export says the same thing from the other end: it
+        ///     lists that join as unresolved because index 5 is written as a manifest and no tile is
+        ///     exported to carry the reference.
+        ///     <para>
+        ///     This is the call site for it, and for any other bespoke surface that grows one. It
+        ///     goes through the same navigator, so the back stack covers a jump from the map exactly
+        ///     as it covers one from a grid.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index the reference addresses.</param>
+        /// <param name="recordId">The record within it, or -1 for the index alone.</param>
+        /// <param name="groupId">The group within index 2, or -1 for every other index.</param>
+        public void GoToCacheRecord(int indexId, int recordId, int groupId = -1) {
+            navigator.GoTo(new EditorLocation(indexId, recordId, groupId));
+        }
+
+        /// <summary>
         ///     Shows the tab that edits an index, and selects a record in it.
         /// </summary>
         /// <remarks>

@@ -118,6 +118,69 @@ namespace FlashEditor.Definitions.Editing {
             list.CellToolTipGetter = (column, model) => PreviewFor(column, model);
 
             list.CellRightClick += OnCellRightClick;
+            list.CellEditStarting += OnCellEditStarting;
+        }
+
+        /// <summary>
+        ///     Edits an editable link to a picture by looking at pictures, not by typing a number.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The other half of a link.</b> Following one answers "what is 4,271"; this answers
+        ///     "which one do I want", and until now the honest reply to the second was to open that
+        ///     index's tab, sort to it, look, and come back. The picker exists for exactly that and
+        ///     had no caller.
+        ///     <para>
+        ///     Only for the five kinds it can show. An editable link into a sound effect or a varbit
+        ///     falls through to the ordinary cell editor, because a picker over records with no
+        ///     picture would be a slower list box.
+        ///     </para>
+        /// </remarks>
+        private void OnCellEditStarting(object? sender, CellEditEventArgs e) {
+            if (cache == null || e.RowObject == null || e.Column?.Renderer is not DefinitionCellRenderer hit)
+                return;
+
+            DefinitionCellVisual visual = hit.VisualFor(e.RowObject);
+            if (visual.Art != DefinitionCellArt.Link || !TryAssetKind(visual.IndexId, out AssetKind kind))
+                return;
+
+            /* Cancelled before the dialog opens rather than after. An in-place editor left alive
+               behind a modal sits on the cell and commits whatever text it was holding when the
+               dialog closes, which would undo the pick that just happened. */
+            e.Cancel = true;
+
+            int? picked = AssetPickerDialog.Pick(this, cache, kind, visual.TargetId);
+            if (picked == null || picked == visual.TargetId)
+                return;
+
+            //Through the column's own putter and the panel's own commit, which is the same path a
+            //typed edit takes - including the comparison that writes nothing when the bytes are
+            //unchanged.
+            e.Column.PutValue(e.RowObject, picked.Value);
+            CommitRow(e.RowObject);
+        }
+
+        /// <summary>
+        ///     The picker's kind for a cache index, when it has one.
+        /// </summary>
+        /// <remarks>
+        ///     Inverted from <see cref="AssetPickerDialog.IndexOf"/> rather than written out a second
+        ///     time, so the pairing is stated once and a picker taught a new kind is reachable here
+        ///     without a second edit.
+        /// </remarks>
+        /// <param name="indexId">The index.</param>
+        /// <param name="kind">The kind, when there is one.</param>
+        /// <returns>Whether the picker can show that index.</returns>
+        private static bool TryAssetKind(int indexId, out AssetKind kind) {
+            foreach (AssetKind candidate in Enum.GetValues<AssetKind>()) {
+                if (AssetPickerDialog.IndexOf(candidate) != indexId)
+                    continue;
+
+                kind = candidate;
+                return true;
+            }
+
+            kind = default;
+            return false;
         }
 
         /// <summary>
