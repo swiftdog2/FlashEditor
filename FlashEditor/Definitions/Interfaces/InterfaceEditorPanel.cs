@@ -167,6 +167,11 @@ namespace FlashEditor.Definitions.Interfaces {
             structure.AfterSelect += (_, e) => SelectFromTree(e.Node);
             canvas.ComponentPicked += (_, fileId) => SelectFromCanvas(fileId);
             canvas.ComponentGeometryChanged += (_, fileId) => CommitGeometry(fileId);
+
+            //A multiple selection is invisible to the grid, the tree and the field pane, all three of
+            //which show one component - so the count is said out loud or a nudge appears to move
+            //things at random.
+            canvas.SelectionChanged += (_, _) => ReportSelection();
             components.CellActivated += (_, e) => PickColour(e);
             canvas.Refused += (_, why) => components.ReportStatus(why);
         }
@@ -352,6 +357,17 @@ namespace FlashEditor.Definitions.Interfaces {
                 Keys.None, (sender, _) => {
                     if (sender is EditorToolButton button)
                         canvas.ShowNotDrawn = button.Checked;
+                });
+
+            /* Off by default. Snapping changes where a drag lands, and an editor for a format where
+               half the positioning modes cannot represent every pixel should not silently move an
+               edit somewhere the user did not ask for until they have turned it on. */
+            canvasTools.AddToggle(EditorIcon.Grid,
+                "Snap a drag onto another component's edge or centre, or onto a four-pixel grid."
+                + " Arrow-key nudges are never snapped, so they can still reach any pixel.",
+                Keys.None, (sender, _) => {
+                    if (sender is EditorToolButton button)
+                        canvas.Snap = button.Checked ? InterfaceSnapSettings.Default : InterfaceSnapSettings.Off;
                 });
 
             canvasTools.Items.Add(new ToolStripControlHost(InfoAffordance.For(canvas,
@@ -632,6 +648,19 @@ namespace FlashEditor.Definitions.Interfaces {
 
                 return;
             }
+        }
+
+        /// <summary>
+        ///     Says how many components the canvas is holding, when it is more than one.
+        /// </summary>
+        /// <remarks>
+        ///     Nothing at all for a single selection, because the grid row, the tree node and the
+        ///     field pane already say which component that is and a line repeating it would be noise
+        ///     on every click.
+        /// </remarks>
+        private void ReportSelection() {
+            if (canvas.SelectionCount > 1)
+                components.ReportStatus(canvas.SelectionCount + " components held - a drag or a nudge moves all of them");
         }
 
         private static TreeNode? FindNode(TreeNodeCollection nodes, InterfaceComponentRow row) {

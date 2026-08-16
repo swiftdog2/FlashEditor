@@ -57,26 +57,71 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         private readonly Dictionary<int, InterfaceLayoutNode> resolved = new();
         private readonly List<int> drawOrder = new();
 
+        /* Every selected component, of which SelectedFileId is one. Two pieces of state rather than
+           one because they answer different questions: the set is what a drag writes to, and the
+           primary is what the field pane, the tree and the grid show. A multiple selection with no
+           primary would leave those three blank while the canvas was full of highlights. */
+        private readonly HashSet<int> selection = new();
+
+        //Captured when a drag starts and not recomputed while it runs. A move re-resolves the whole
+        //interface on every mouse event, so reading the current geometry each time would let a
+        //component chase its own snapped position.
+        private readonly Dictionary<int, DragAnchor> anchors = new();
+        private readonly List<InterfaceRect> snapTargets = new();
+
         private InterfaceComponentTree? tree;
         private IDefinitionThumbnailSource? thumbnails;
         private InterfaceTextPainter? textPainter;
         private int selectedFileId = -1;
         private bool showNotDrawn;
+        private InterfaceSnapSettings snap = InterfaceSnapSettings.Off;
 
         private DragKind dragging = DragKind.None;
         private Point dragFrom;
         private Point dragOrigin;
+        private Point marqueeTo;
+        private int guideX = int.MinValue;
+        private int guideY = int.MinValue;
 
         /// <summary>What a drag in progress is doing.</summary>
         private enum DragKind {
             /// <summary>Nothing is being dragged.</summary>
             None,
 
-            /// <summary>The selected component is being moved.</summary>
+            /// <summary>The selection is being moved.</summary>
             Move,
 
-            /// <summary>The selected component is being resized from its corner grip.</summary>
-            Resize
+            /// <summary>The primary component is being resized from its corner grip.</summary>
+            Resize,
+
+            /// <summary>A rubber band is being drawn over the canvas.</summary>
+            Marquee
+        }
+
+        /// <summary>
+        ///     Where one component sat when a drag started.
+        /// </summary>
+        /// <remarks>
+        ///     Both coordinate systems are kept. The offset is what turns a relative position into an
+        ///     absolute one, and it is constant for the length of a drag <i>because it is captured
+        ///     once</i> - a component whose parent is also being dragged would otherwise see its own
+        ///     origin move underneath it between two mouse events.
+        /// </remarks>
+        private readonly struct DragAnchor {
+            internal DragAnchor(InterfaceRect relative, InterfaceRect absolute) {
+                Relative = relative;
+                OffsetX = absolute.X - relative.X;
+                OffsetY = absolute.Y - relative.Y;
+            }
+
+            /// <summary>The component's rectangle relative to its parent's content origin.</summary>
+            internal InterfaceRect Relative { get; }
+
+            /// <summary>What to add to a relative X to get a canvas X.</summary>
+            internal int OffsetX { get; }
+
+            /// <summary>What to add to a relative Y to get a canvas Y.</summary>
+            internal int OffsetY { get; }
         }
 
         /// <summary>Creates an empty canvas.</summary>
@@ -106,19 +151,66 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
         /// <summary>Says what a drag or a nudge could not do, for the status line.</summary>
         public event EventHandler<string>? Refused;
 
-        /// <summary>The component the canvas is highlighting, or -1.</summary>
+        /// <summary>Raised when the set of selected components changes.</summary>
+        /// <remarks>
+        ///     Separate from <see cref="ComponentPicked"/>, which names the one component the rest of
+        ///     the tab follows. This says how many are held, which is what a status line reports and
+        ///     what tells a user why a nudge moved four things.
+        /// </remarks>
+        public event EventHandler? SelectionChanged;
+
+        /// <summary>
+        ///     The component the rest of the tab follows, or -1.
+        /// </summary>
+        /// <remarks>
+        ///     Assigning this from outside replaces the whole selection, because it is set by the
+        ///     grid and the tree and both of those are single-selection surfaces - leaving a canvas
+        ///     marquee in place while the grid showed one row would make a subsequent nudge move
+        ///     components the user could no longer see were held.
+        /// </remarks>
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(
             System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int SelectedFileId {
             get => selectedFileId;
             set {
-                if (selectedFileId == value)
+                /* Assigning the component that is ALREADY primary does nothing at all, however many
+                   others are held. It has to: the canvas answers a marquee by telling the tab which
+                   component to show, the tab answers that by selecting a grid row, and the grid
+                   answers that by assigning this - so a setter that rebuilt the selection would
+                   throw a marquee away one event after it was made. */
+                if (selectedFileId == value && (value < 0 ? selection.Count == 0 : selection.Contains(value)))
                     return;
 
                 selectedFileId = value;
+                selection.Clear();
+                if (value >= 0)
+                    selection.Add(value);
+
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
                 Invalidate();
             }
+        }
+
+        /// <summary>How many components are held, which may be more than one after a marquee.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(
+            System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public int SelectionCount => selection.Count;
+
+        /// <summary>
+        ///     What a drag is pulled onto, or <see cref="InterfaceSnapSettings.Off"/>.
+        /// </summary>
+        /// <remarks>
+        ///     Applied to the wanted pixel before the positioning mode is inverted, never to the
+        ///     stored base - see <see cref="InterfaceSnap"/> for why the other order cannot work.
+        /// </remarks>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(
+            System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public InterfaceSnapSettings Snap {
+            get => snap;
+            set => snap = value;
         }
 
         /// <summary>
@@ -195,6 +287,14 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             resolved.Clear();
             drawOrder.Clear();
 
+            //A selection is a set of file ids in the interface being replaced, so keeping it would
+            //highlight unrelated components of the next one.
+            dragging = DragKind.None;
+            anchors.Clear();
+            selection.Clear();
+            selectedFileId = -1;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+
             if (componentTree != null) {
                 foreach (KeyValuePair<int, InterfaceLayoutNode> entry in
                          InterfaceLayoutResolver.ResolveGroup(componentTree, InterfaceRect.FixedModeCanvas)) {
@@ -247,7 +347,10 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             if (showNotDrawn)
                 DrawTheOnesTheClientIgnores(g);
 
+            DrawSnapGuides(g);
+            DrawSecondarySelection(g);
             DrawSelection(g);
+            DrawMarquee(g);
         }
 
         /// <summary>
@@ -273,10 +376,26 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
 
             e.Handled = true;
 
-            if (e.Shift)
+            if (e.Shift) {
+                //Resize acts on the primary alone. Sizing several components to the same delta at
+                //once would silently change the aspect of every one of them by a different amount,
+                //and there is no grip for it, so the keyboard should not offer what the mouse cannot.
                 ApplyResize(node, node.Relative.Width + dx, node.Relative.Height + dy);
-            else
-                ApplyMove(node, node.Relative.X + dx, node.Relative.Y + dy);
+                return;
+            }
+
+            /* A nudge is a drag that starts and ends inside one key press, so it captures anchors
+               the same way and discards them afterwards. Deliberately NOT snapped: a nudge is what a
+               user reaches for when they want one exact pixel, and pulling that onto a grid would
+               leave the arrow keys unable to reach the position snapping had refused. */
+            CaptureAnchors();
+            try {
+                ApplySelectionMove(dx, dy, InterfaceSnapSettings.Off);
+            }
+            finally {
+                anchors.Clear();
+                snapTargets.Clear();
+            }
         }
 
         /// <summary>The arrow keys reach the canvas rather than moving focus off it.</summary>
@@ -287,7 +406,15 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             return code is Keys.Left or Keys.Right or Keys.Up or Keys.Down || base.IsInputKey(keyData);
         }
 
-        /// <summary>Picks the topmost component under the pointer.</summary>
+        /// <summary>
+        ///     Picks what is under the pointer, adds to the selection, or starts a rubber band.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A press on something already selected does not collapse the selection</b>, or a
+        ///     multiple selection could never be dragged: the press that started the drag would throw
+        ///     away everything but the component under the pointer. Ctrl toggles one component in or
+        ///     out, and a plain press on something not held replaces the lot.
+        /// </remarks>
         /// <param name="e">The mouse data.</param>
         protected override void OnMouseDown(MouseEventArgs e) {
             base.OnMouseDown(e);
@@ -295,45 +422,42 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
 
             int x = e.X - AutoScrollPosition.X - CanvasInset;
             int y = e.Y - AutoScrollPosition.Y - CanvasInset;
+            bool adding = (ModifierKeys & Keys.Control) != 0;
 
-            //A press inside the selected component's grip starts a resize rather than reselecting
+            //A press inside the primary component's grip starts a resize rather than reselecting
             //whatever is underneath, so the grip stays usable when it overlaps a sibling.
             if (selectedFileId >= 0 && resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? current)
                 && GripOf(current.Absolute).Contains(x, y)) {
                 dragging = DragKind.Resize;
                 dragFrom = new Point(x, y);
                 dragOrigin = new Point(current.Relative.Width, current.Relative.Height);
+                CaptureSnapTargets();
                 return;
             }
 
-            /* Backwards through paint order, because the last thing drawn is the thing on top and
-               that is what a click means. A layer is skipped unless nothing above it was hit: a
-               layer is a container, and picking one whenever the pointer is inside it would make
-               its children unselectable. */
-            int layerHit = -1;
+            int hit = InterfaceHitTest.TopmostAt(drawOrder, resolved, x, y);
 
-            for (int i = drawOrder.Count - 1; i >= 0; i--) {
-                if (!resolved.TryGetValue(drawOrder[i], out InterfaceLayoutNode? node))
-                    continue;
+            if (hit < 0) {
+                //Empty canvas: a rubber band. Ctrl keeps what is held so a marquee can extend a
+                //selection built by clicking, which is how every other editor behaves.
+                if (!adding)
+                    ClearSelection();
 
-                InterfaceRect box = node.Absolute;
-                if (x < box.X || y < box.Y || x >= box.Right || y >= box.Bottom)
-                    continue;
-
-                if (node.Component.ComponentType == 0) {
-                    if (layerHit < 0)
-                        layerHit = drawOrder[i];
-                    continue;
-                }
-
-                Select(drawOrder[i]);
-                BeginMove(x, y);
+                dragging = DragKind.Marquee;
+                dragFrom = new Point(x, y);
+                marqueeTo = dragFrom;
+                Invalidate();
                 return;
             }
 
-            Select(layerHit);
+            if (adding)
+                Toggle(hit);
+            else if (!selection.Contains(hit))
+                Select(hit);
+            else
+                SetPrimary(hit);
 
-            if (layerHit >= 0)
+            if (selection.Count > 0)
                 BeginMove(x, y);
         }
 
@@ -354,8 +478,11 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                 return;
             }
 
-            if (!resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? node))
+            if (dragging == DragKind.Marquee) {
+                marqueeTo = new Point(x, y);
+                Invalidate();
                 return;
+            }
 
             int dx = x - dragFrom.X;
             int dy = y - dragFrom.Y;
@@ -363,17 +490,59 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             //A drag is applied from where it STARTED, not accumulated frame by frame. Accumulating
             //would compound the rounding a fractional positioning mode does on every mouse move,
             //so a slow drag would land somewhere a fast one did not.
-            if (dragging == DragKind.Move)
-                ApplyMove(node, dragOrigin.X + dx, dragOrigin.Y + dy);
-            else
-                ApplyResize(node, dragOrigin.X + dx, dragOrigin.Y + dy);
+            if (dragging == DragKind.Move) {
+                ApplySelectionMove(dx, dy, snap);
+                return;
+            }
+
+            if (resolved.TryGetValue(selectedFileId, out InterfaceLayoutNode? node))
+                ApplySnappedResize(node, dragOrigin.X + dx, dragOrigin.Y + dy);
         }
 
-        /// <summary>Ends a drag.</summary>
+        /// <summary>Ends a drag, committing a rubber band to the selection.</summary>
         /// <param name="e">The mouse data.</param>
         protected override void OnMouseUp(MouseEventArgs e) {
             base.OnMouseUp(e);
+
+            if (dragging == DragKind.Marquee)
+                CommitMarquee();
+
             dragging = DragKind.None;
+            anchors.Clear();
+            snapTargets.Clear();
+            guideX = int.MinValue;
+            guideY = int.MinValue;
+            Invalidate();
+        }
+
+        /// <summary>
+        ///     Adds everything the rubber band encloses to the selection.
+        /// </summary>
+        /// <remarks>
+        ///     The primary becomes the <i>last</i> component in draw order, which is the topmost one
+        ///     caught. A marquee has no single click point, so something has to be chosen, and the
+        ///     topmost is the one the user can see.
+        /// </remarks>
+        private void CommitMarquee() {
+            IReadOnlyList<int> caught = InterfaceHitTest.Within(drawOrder, resolved, MarqueeRect());
+            if (caught.Count == 0)
+                return;
+
+            foreach (int fileId in caught)
+                selection.Add(fileId);
+
+            selectedFileId = caught[caught.Count - 1];
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            ComponentPicked?.Invoke(this, selectedFileId);
+        }
+
+        /// <summary>The rubber band as a rectangle, whichever way it was dragged.</summary>
+        private InterfaceRect MarqueeRect() {
+            int left = Math.Min(dragFrom.X, marqueeTo.X);
+            int top = Math.Min(dragFrom.Y, marqueeTo.Y);
+
+            return new InterfaceRect(left, top,
+                Math.Abs(marqueeTo.X - dragFrom.X), Math.Abs(marqueeTo.Y - dragFrom.Y));
         }
 
         private void BeginMove(int x, int y) {
@@ -383,33 +552,140 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             dragging = DragKind.Move;
             dragFrom = new Point(x, y);
             dragOrigin = new Point(node.Relative.X, node.Relative.Y);
+            CaptureAnchors();
         }
 
         /// <summary>
-        ///     Puts a component's top-left corner at a wanted position and asks for it to be saved.
+        ///     Records where every component a drag will write to sits, and what it may snap onto.
         /// </summary>
         /// <remarks>
-        ///     <b>The wanted pixel is turned into a stored base through the mode's inverse, never
-        ///     added to it.</b> Only mode 0 stores a pixel: mode 2 measures from the far edge so the
-        ///     stored number moves the other way, and the shift modes store a fraction of the parent
-        ///     where one pixel is about 21 units. Adding a delta to the base would move a mode-2
-        ///     component backwards and barely move a mode-3 one.
+        ///     <see cref="InterfaceHitTest.MovableRoots"/> drops any selected component that a
+        ///     selected ancestor already carries. Writing a base for both would move the child twice
+        ///     as far as the pointer went, and for a proportional mode somewhere unrelated.
         /// </remarks>
-        private void ApplyMove(InterfaceLayoutNode node, int wantedX, int wantedY) {
+        private void CaptureAnchors() {
+            anchors.Clear();
+
             if (tree == null)
                 return;
 
-            (int parentWidth, int parentHeight) = InterfaceLayoutResolver.ParentExtentsFor(
-                tree, resolved, node.Component.FileId, InterfaceRect.FixedModeCanvas);
-            InterfaceComponentDefinition component = node.Component;
+            foreach (int fileId in InterfaceHitTest.MovableRoots(tree, selection)) {
+                if (resolved.TryGetValue(fileId, out InterfaceLayoutNode? node))
+                    anchors[fileId] = new DragAnchor(node.Relative, node.Absolute);
+            }
 
-            component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(
-                component.XMode, wantedX, parentWidth, node.Relative.Width);
-            component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(
-                component.YMode, wantedY, parentHeight, node.Relative.Height);
+            CaptureSnapTargets();
+        }
+
+        /// <summary>
+        ///     The rectangles a drag may catch on: everything drawn that is not being dragged, plus
+        ///     the screen box itself.
+        /// </summary>
+        /// <remarks>
+        ///     Captured once per drag rather than read per mouse event, because a move re-resolves
+        ///     the whole interface and a child of something being dragged would otherwise offer a
+        ///     line that moves with the pointer - which reads as the snap fighting the user.
+        /// </remarks>
+        private void CaptureSnapTargets() {
+            snapTargets.Clear();
+            snapTargets.Add(InterfaceRect.FixedModeCanvas);
+
+            foreach (int fileId in drawOrder) {
+                if (selection.Contains(fileId) || !resolved.TryGetValue(fileId, out InterfaceLayoutNode? node))
+                    continue;
+
+                if (!node.Absolute.IsEmpty)
+                    snapTargets.Add(node.Absolute);
+            }
+        }
+
+        /// <summary>
+        ///     Moves every component the drag writes to by one delta, snapped once.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The delta is snapped once, against the primary, and then applied to all of them.</b>
+        ///     Snapping each component separately would pull them onto different lines and the
+        ///     selection would come apart as it was dragged, which is the classic way to get this
+        ///     wrong. The primary is the one under the pointer, so it is the one whose alignment the
+        ///     user is watching.
+        ///     <para>
+        ///     Snapping happens on the wanted <i>pixel</i> and the inversion happens after it, per
+        ///     component, against that component's own parent extents. Both halves matter: a
+        ///     selection can hold components with different positioning modes and different parents,
+        ///     and one shared inversion would be wrong for all but one of them.
+        ///     </para>
+        /// </remarks>
+        /// <param name="dx">How far the pointer has moved since the drag started.</param>
+        /// <param name="dy">How far the pointer has moved since the drag started.</param>
+        /// <param name="settings">What the drag may be pulled onto.</param>
+        private void ApplySelectionMove(int dx, int dy, InterfaceSnapSettings settings) {
+            if (tree == null || anchors.Count == 0)
+                return;
+
+            guideX = int.MinValue;
+            guideY = int.MinValue;
+
+            if (settings.Enabled && anchors.TryGetValue(selectedFileId, out DragAnchor primary)) {
+                var wanted = new InterfaceRect(primary.OffsetX + primary.Relative.X + dx,
+                    primary.OffsetY + primary.Relative.Y + dy,
+                    primary.Relative.Width, primary.Relative.Height);
+
+                InterfaceSnapResult snapped = InterfaceSnap.SnapMove(wanted, snapTargets, settings);
+
+                dx += snapped.X - wanted.X;
+                dy += snapped.Y - wanted.Y;
+                guideX = snapped.GuideX;
+                guideY = snapped.GuideY;
+            }
+
+            foreach (KeyValuePair<int, DragAnchor> entry in anchors) {
+                if (!tree.Components.TryGetValue(entry.Key, out InterfaceComponentDefinition? component))
+                    continue;
+
+                (int parentWidth, int parentHeight) = InterfaceLayoutResolver.ParentExtentsFor(
+                    tree, resolved, entry.Key, InterfaceRect.FixedModeCanvas);
+
+                /* The wanted pixel is turned into a stored base through the mode's inverse, never
+                   added to it. Only mode 0 stores a pixel: mode 2 measures from the far edge so the
+                   stored number moves the other way, and the shift modes store a fraction of the
+                   parent where one pixel is about 21 units. */
+                component.BasePositionX = InterfaceLayoutResolver.BaseForPosition(
+                    component.XMode, entry.Value.Relative.X + dx, parentWidth, entry.Value.Relative.Width);
+                component.BasePositionY = InterfaceLayoutResolver.BaseForPosition(
+                    component.YMode, entry.Value.Relative.Y + dy, parentHeight, entry.Value.Relative.Height);
+            }
 
             Reresolve();
-            ComponentGeometryChanged?.Invoke(this, component.FileId);
+
+            foreach (int fileId in anchors.Keys)
+                ComponentGeometryChanged?.Invoke(this, fileId);
+        }
+
+        /// <summary>
+        ///     Resizes the primary component, pulling its bottom-right corner onto what is near it.
+        /// </summary>
+        /// <remarks>
+        ///     The snap is applied to the wanted extent in canvas coordinates and the mode inversion
+        ///     happens afterwards, for the same reason a move does it that way round.
+        /// </remarks>
+        /// <param name="node">The component being resized.</param>
+        /// <param name="wantedWidth">The width the pointer asks for.</param>
+        /// <param name="wantedHeight">The height the pointer asks for.</param>
+        private void ApplySnappedResize(InterfaceLayoutNode node, int wantedWidth, int wantedHeight) {
+            guideX = int.MinValue;
+            guideY = int.MinValue;
+
+            if (snap.Enabled) {
+                InterfaceSnapResult snapped = InterfaceSnap.SnapResize(node.Absolute,
+                    new InterfaceRect(0, 0, wantedWidth, wantedHeight), snapTargets, snap);
+
+                wantedWidth = snapped.X;
+                wantedHeight = snapped.Y;
+                guideX = snapped.GuideX;
+                guideY = snapped.GuideY;
+            }
+
+            ApplyResize(node, wantedWidth, wantedHeight);
         }
 
         /// <summary>
@@ -477,10 +753,66 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
             return new Rectangle(box.Right - GripSide / 2, box.Bottom - GripSide / 2, GripSide, GripSide);
         }
 
+        /// <summary>Replaces the selection with one component and tells the tab about it.</summary>
+        /// <param name="fileId">The component, or -1 for nothing.</param>
         private void Select(int fileId) {
             SelectedFileId = fileId;
             if (fileId >= 0)
                 ComponentPicked?.Invoke(this, fileId);
+        }
+
+        /// <summary>Empties the selection without telling the tab to show anything else.</summary>
+        private void ClearSelection() {
+            if (selection.Count == 0 && selectedFileId < 0)
+                return;
+
+            selection.Clear();
+            selectedFileId = -1;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+
+        /// <summary>
+        ///     Adds a component to the selection, or takes it out again.
+        /// </summary>
+        /// <remarks>
+        ///     Removing the primary leaves the selection without one, so another is promoted -
+        ///     arbitrarily, since a set has no order, but the alternative is a highlighted selection
+        ///     with an empty field pane beside it.
+        /// </remarks>
+        /// <param name="fileId">The component.</param>
+        private void Toggle(int fileId) {
+            if (!selection.Remove(fileId)) {
+                selection.Add(fileId);
+                SetPrimary(fileId);
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            if (selectedFileId == fileId) {
+                selectedFileId = -1;
+                foreach (int other in selection) {
+                    selectedFileId = other;
+                    break;
+                }
+
+                if (selectedFileId >= 0)
+                    ComponentPicked?.Invoke(this, selectedFileId);
+            }
+
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+
+        /// <summary>Makes one already-selected component the one the rest of the tab follows.</summary>
+        /// <param name="fileId">The component.</param>
+        private void SetPrimary(int fileId) {
+            if (selectedFileId == fileId)
+                return;
+
+            selectedFileId = fileId;
+            ComponentPicked?.Invoke(this, fileId);
+            Invalidate();
         }
 
         /// <summary>
@@ -992,6 +1324,70 @@ namespace FlashEditor.Definitions.Interfaces.Layout {
                     continue;
 
                 g.DrawRectangle(pen, box.X, box.Y, box.Width - 1, box.Height - 1);
+            }
+        }
+
+        /// <summary>
+        ///     The lines a snapped drag has caught, drawn across the whole screen box.
+        /// </summary>
+        /// <remarks>
+        ///     Full length rather than only between the two components, because a component can catch
+        ///     on something a long way off - a caption lining up with a column heading four rows
+        ///     above it - and a short guide would leave the user unable to see what was caught.
+        /// </remarks>
+        private void DrawSnapGuides(Graphics g) {
+            if (dragging == DragKind.None || (guideX == int.MinValue && guideY == int.MinValue))
+                return;
+
+            InterfaceRect canvas = InterfaceRect.FixedModeCanvas;
+            using var pen = new Pen(Color.FromArgb(160, 0xFF, 0x60, 0xC0)) { DashStyle = DashStyle.Dash };
+
+            if (guideX != int.MinValue)
+                g.DrawLine(pen, guideX, 0, guideX, canvas.Height);
+
+            if (guideY != int.MinValue)
+                g.DrawLine(pen, 0, guideY, canvas.Width, guideY);
+        }
+
+        /// <summary>The rubber band, while one is being dragged.</summary>
+        private void DrawMarquee(Graphics g) {
+            if (dragging != DragKind.Marquee)
+                return;
+
+            InterfaceRect band = MarqueeRect();
+            if (band.Width <= 0 || band.Height <= 0)
+                return;
+
+            var rectangle = new Rectangle(band.X, band.Y, band.Width, band.Height);
+
+            using (var fill = new SolidBrush(Color.FromArgb(40, 0x78, 0xC8, 0xFF)))
+                g.FillRectangle(fill, rectangle);
+
+            using var edge = new Pen(Color.FromArgb(200, 0x78, 0xC8, 0xFF)) { DashStyle = DashStyle.Dot };
+            g.DrawRectangle(edge, rectangle);
+        }
+
+        /// <summary>
+        ///     Every held component that is not the primary, outlined more faintly than it is.
+        /// </summary>
+        /// <remarks>
+        ///     A second weight rather than the same one, because the primary is the component the
+        ///     field pane and the tree are showing and a selection where they all look alike leaves
+        ///     no way to tell which of six components the grid beside the canvas is describing.
+        /// </remarks>
+        private void DrawSecondarySelection(Graphics g) {
+            if (selection.Count < 2)
+                return;
+
+            using var pen = new Pen(Color.FromArgb(150, 0x78, 0xC8, 0xFF));
+
+            foreach (int fileId in selection) {
+                if (fileId == selectedFileId || !resolved.TryGetValue(fileId, out InterfaceLayoutNode? node))
+                    continue;
+
+                InterfaceRect box = node.Absolute;
+                g.DrawRectangle(pen, box.X - 1, box.Y - 1,
+                    Math.Max(1, box.Width) + 1, Math.Max(1, box.Height) + 1);
             }
         }
 
