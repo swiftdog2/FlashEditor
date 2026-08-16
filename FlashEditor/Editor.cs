@@ -1078,6 +1078,17 @@ namespace FlashEditor {
                draws the selected area's raster beside them. */
             Register(WorldMapOverviewTab, RSConstants.WORLD_MAP, EditorCategory.World,
                 openCache => WorldMapPanel.Bind(openCache));
+            /* Index 31 is two groups of seven files and a file is an opaque blob, so the tab lists
+               the programs and edits or dumps the selected one. Filed under Config and scripts
+               because a shader is something the client loads to run itself rather than content a
+               player looks at - the same footing as the codec tables already there. */
+            Register(ShaderEditorTab, RSConstants.GRAPHICS_SHADERS, EditorCategory.ConfigAndScripts,
+                openCache => ShaderPanel.Bind(openCache));
+            /* Index 30 is one compiled binary per group, addressed entirely by name, so the tab is a
+               classified list over the generic extract and import surface. Filed beside the shaders
+               for the same reason: these are the client's own runtime, not its content. */
+            Register(NativeLibraryEditorTab, RSConstants.NATIVE_LIBRARIES, EditorCategory.ConfigAndScripts,
+                openCache => NativeLibraryPanel.Bind(openCache));
 
             /* Every page in the deck has to have named its index. An unregistered page is the
                failure the positional array made silent - it used to read whatever index happened to
