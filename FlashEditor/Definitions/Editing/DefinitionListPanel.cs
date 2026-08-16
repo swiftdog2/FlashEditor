@@ -7,7 +7,9 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using static FlashEditor.Utils.DebugUtil;
+using FlashEditor.Export;
 using FlashEditor.IO;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.Editing {
     /// <summary>
@@ -79,6 +81,20 @@ namespace FlashEditor.Definitions.Editing {
            loaded rather than what is currently on screen. */
         private IReadOnlyList<object> rows = Array.Empty<object>();
 
+        /* Built from the bound cache on the first hover rather than handed in, so every tab that
+           uses this panel gets the preview without a line of wiring of its own. It is null until
+           then, and null again the moment the cache changes. */
+        private CacheReferencePreview? preview;
+
+        /* How many loaded rows name each id, per link column. Item 19 asks for the count before
+           navigating - "used by 3,267 objects" is the question the user was about to follow the
+           link to answer - and the loaded rows are where it comes from: it is measured from the
+           cache in hand rather than written down, which matters because the two caches disagree on
+           eleven indexes. Keyed by the OLVColumn, built on first use and dropped whenever the rows
+           change. */
+        private readonly Dictionary<OLVColumn, Dictionary<long, int>> usage =
+            new Dictionary<OLVColumn, Dictionary<long, int>>();
+
         /// <summary>Creates an unbound panel.</summary>
         public DefinitionListPanel() {
             Dock = DockStyle.Fill;
@@ -93,6 +109,15 @@ namespace FlashEditor.Definitions.Editing {
             list.SelectedIndexChanged += (_, _) => SelectedRowChanged?.Invoke(this, EventArgs.Empty);
             list.CellEditFinished += (_, e) => CommitEdit(e.RowObject);
             list.CellClick += OnCellClick;
+
+            /* The hover preview, and it is not a refinement of the links - it is what stops them
+               being the only way to find out what a number is. Following one costs a tab switch and
+               a load, so a user who has to do that to learn that texture 41 is the one already
+               selected has paid for a question that fits on a line. */
+            list.ShowItemToolTips = true;
+            list.CellToolTipGetter = (column, model) => PreviewFor(column, model);
+
+            list.CellRightClick += OnCellRightClick;
         }
 
         /// <summary>
@@ -145,6 +170,167 @@ namespace FlashEditor.Definitions.Editing {
                 return;
 
             CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(e.Model, visual));
+        }
+
+        /// <summary>
+        ///     What a cell's number points at, and how many rows of this index point at the same
+        ///     thing.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Answered without going anywhere.</b> Existence comes from the target index's
+        ///     reference table and the detail from the handful of small config groups
+        ///     <c>CacheReferenceResolver</c> reads, which is the only pair cheap enough to produce
+        ///     from a mouse-move handler.
+        ///     <para>
+        ///     Failures are swallowed rather than reported. This runs from ObjectListView's tooltip
+        ///     machinery, and an exception out of it takes the form down for a hover.
+        ///     </para>
+        /// </remarks>
+        /// <param name="column">The column under the cursor.</param>
+        /// <param name="model">The row under the cursor, which ObjectListView may hand over as null.</param>
+        /// <returns>The preview, or null for a cell that names nothing.</returns>
+        private string? PreviewFor(OLVColumn? column, object? model) {
+            if (column?.Renderer is not DefinitionCellRenderer hit || model == null || cache == null)
+                return null;
+
+            try {
+                DefinitionCellVisual visual = hit.VisualFor(model);
+                if (visual.Art != DefinitionCellArt.Link && visual.Art != DefinitionCellArt.Thumbnail)
+                    return null;
+
+                preview ??= new CacheReferencePreview(cache);
+
+                string? line = preview.Describe(visual);
+                if (line == null)
+                    return null;
+
+                int sharing = UsageOf(column, visual);
+                if (sharing > 1 && descriptor != null)
+                    line += Environment.NewLine + "used by " + sharing.ToString("N0") + " " +
+                        descriptor.RowNoun + "s in this index";
+
+                return line;
+            }
+            catch (Exception ex) {
+                Debug("Reference preview failed: " + ex.Message, LOG_DETAIL.ADVANCED);
+                return null;
+            }
+        }
+
+        /// <summary>
+        ///     How many loaded rows name the same target through the same column.
+        /// </summary>
+        /// <remarks>
+        ///     Built once per column and counted through the column's own visual delegate rather
+        ///     than its aspect, so it counts what the link actually addresses: two columns can read
+        ///     the same number and mean different indexes, and on index 2 the same number in
+        ///     different groups is a different record entirely.
+        /// </remarks>
+        /// <param name="column">The column.</param>
+        /// <param name="visual">What the hovered cell named.</param>
+        /// <returns>How many rows share that target, at least one.</returns>
+        private int UsageOf(OLVColumn column, DefinitionCellVisual visual) {
+            if (column.Renderer is not DefinitionCellRenderer hit)
+                return 0;
+
+            if (!usage.TryGetValue(column, out Dictionary<long, int>? counts)) {
+                counts = new Dictionary<long, int>();
+
+                foreach (object row in rows) {
+                    DefinitionCellVisual each = hit.VisualFor(row);
+                    if (each.Art != DefinitionCellArt.Link && each.Art != DefinitionCellArt.Thumbnail)
+                        continue;
+
+                    long key = TargetKey(each);
+                    counts[key] = counts.TryGetValue(key, out int seen) ? seen + 1 : 1;
+                }
+
+                usage[column] = counts;
+            }
+
+            return counts.TryGetValue(TargetKey(visual), out int total) ? total : 0;
+        }
+
+        /// <summary>
+        ///     One number identifying what a visual addresses, for counting.
+        /// </summary>
+        /// <remarks>
+        ///     The group is folded in because index 2 has no id arithmetic: quest 12 and map scene
+        ///     icon 12 are different records, and a count keyed on the id alone would add them
+        ///     together.
+        /// </remarks>
+        /// <param name="visual">The visual.</param>
+        /// <returns>The key.</returns>
+        private static long TargetKey(DefinitionCellVisual visual) {
+            return ((long) visual.IndexId << 48) ^ ((long) (visual.GroupId + 1) << 24) ^ (uint) visual.TargetId;
+        }
+
+        /// <summary>
+        ///     Offers every reference the right-clicked record names, resolved, as somewhere to go.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The columns cannot carry all of them.</b> A quest requirement is an array, a
+        ///     parameter block is a dictionary, a model's emitters and billboards live in a footer
+        ///     the grid deliberately never reads, and a component's script hooks are eight arrays of
+        ///     operands - none of which is a cell. The menu is where those become reachable, and it
+        ///     costs no layout on any of the tabs this panel is the grid for.
+        ///     <para>
+        ///     The relations come from <c>CacheExportJoins</c>, which is the project's single
+        ///     statement of which joins are measured. A join offered here and nowhere else would be
+        ///     one nothing checks.
+        ///     </para>
+        /// </remarks>
+        private void OnCellRightClick(object? sender, CellRightClickEventArgs e) {
+            if (e.Model == null || cache == null)
+                return;
+
+            try {
+                preview ??= new CacheReferencePreview(cache);
+
+                IReadOnlyList<ExportedReference> references = preview.ReferencesOf(e.Model);
+                if (references.Count == 0)
+                    return;
+
+                var menu = new ContextMenuStrip { Font = list.Font };
+                object row = e.Model;
+
+                foreach (ExportedReference reference in references) {
+                    ExportedReference target = reference;
+
+                    var item = new ToolStripMenuItem(
+                        reference.Field + "  ->  " + CacheReferencePreview.Describe(reference));
+
+                    //A dangling id is shown and refused rather than hidden. Finding one is a real
+                    //result, and an absent menu entry would read as the record not naming anything.
+                    item.Enabled = reference.Exists;
+                    item.Click += (_, _) => FollowReference(row, target);
+
+                    menu.Items.Add(item);
+                }
+
+                e.MenuStrip = menu;
+            }
+            catch (Exception ex) {
+                Debug("Could not build the reference menu: " + ex.Message, LOG_DETAIL.ADVANCED);
+            }
+        }
+
+        /// <summary>
+        ///     Raises a menu-chosen reference through the same event a clicked cell raises.
+        /// </summary>
+        /// <remarks>
+        ///     One route out of this panel rather than two. What following a reference means is the
+        ///     host's decision, and a second event for the menu would be a second place for the back
+        ///     stack to be forgotten.
+        /// </remarks>
+        /// <param name="row">The row the reference was read off.</param>
+        /// <param name="reference">The resolved reference.</param>
+        private void FollowReference(object row, ExportedReference reference) {
+            DefinitionCellVisual visual = reference.TargetIndex == RSConstants.CONFIG
+                ? DefinitionCellVisual.ConfigLink(reference.TargetGroup, reference.Id)
+                : DefinitionCellVisual.Link(reference.TargetIndex, reference.Id);
+
+            CellActivated?.Invoke(this, new DefinitionCellActivatedEventArgs(row, visual));
         }
 
         /// <summary>
@@ -216,6 +402,9 @@ namespace FlashEditor.Definitions.Editing {
         public void ReplaceRow(object oldRow, object newRow) {
             if (oldRow == null || newRow == null)
                 return;
+
+            //An import replaces a record, so what the old one named is no longer part of the count.
+            usage.Clear();
 
             list.RemoveObject(oldRow);
             list.AddObject(newRow);
@@ -374,6 +563,13 @@ namespace FlashEditor.Definitions.Editing {
             worker = null;
 
             bool columnsChanged = !ReferenceEquals(newDescriptor, descriptor);
+
+            //Dropped whenever the cache changes, never reused across one. It holds a reference table
+            //per index and a summary per record of six config groups, all of which say something
+            //different in the cache now being bound.
+            if (!ReferenceEquals(newCache, cache))
+                preview = null;
+
             cache = newCache;
             descriptor = newDescriptor;
 
@@ -381,6 +577,7 @@ namespace FlashEditor.Definitions.Editing {
             //descriptor must never be able to see a row produced by the old one.
             list.ClearObjects();
             rows = Array.Empty<object>();
+            usage.Clear();
 
             //A pending selection belongs to the load being replaced, not to the new one.
             pendingRecord = -1;
@@ -551,6 +748,10 @@ namespace FlashEditor.Definitions.Editing {
                 //DoWork assigns Result on every path that is not cancelled or faulted
                 var result = (LoadResult) e.Result!;
                 rows = result.Rows;
+
+                //The counts belong to the rows they were taken over, so they go with them.
+                usage.Clear();
+
                 list.SetObjects(result.Rows);
                 progress.Value = 100;
                 status.Text = result.Describe(openDescriptor.RowNoun);
@@ -744,6 +945,10 @@ namespace FlashEditor.Definitions.Editing {
                 }
 
                 cache.WriteFile(descriptor.IndexId, address.GroupId, address.FileId, new JagStream(encoded));
+
+                //An edit can change which id a row names, so a count taken before it is stale.
+                usage.Clear();
+
                 list.RefreshObject(row);
                 status.Text = "Staged " + descriptor.RowNoun + " at " + address;
             }
