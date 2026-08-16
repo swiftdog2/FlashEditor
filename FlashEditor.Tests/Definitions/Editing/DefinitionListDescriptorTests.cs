@@ -144,6 +144,38 @@ namespace FlashEditor.Tests.Definitions.Editing
             Assert.Throws<ArgumentException>(() => column.Read("not a row"));
         }
 
+        /// <summary>
+        ///     Every shape of row noun the descriptors actually use, pluralised.
+        /// </summary>
+        /// <remarks>
+        ///     The cases are taken from the nouns on disk rather than from English at large, because
+        ///     the rule is deliberately narrow and a table of irregulars is a table nobody maintains.
+        ///     Three of them are the ones that have been wrong on screen: <c>library</c> read as
+        ///     <c>librarys</c> and <c>patch</c> as <c>patchs</c> while the panel appended an <c>s</c>,
+        ///     and <c>NPC</c> read as <c>NPCS</c> once it stopped.
+        ///     <para>
+        ///     A phrase is pluralised on its last word because every one of these carries its head
+        ///     last, which is a property of the nouns rather than of English, so it is pinned here.
+        ///     </para>
+        /// </remarks>
+        /// <param name="singular">The noun a descriptor states.</param>
+        /// <param name="plural">What the status line has to read.</param>
+        [Theory]
+        [InlineData("material", "materials")]
+        [InlineData("library", "libraries")]
+        [InlineData("patch", "patches")]
+        [InlineData("NPC", "NPCs")]
+        [InlineData("floor overlay", "floor overlays")]
+        [InlineData("spot animation", "spot animations")]
+        [InlineData("interface component", "interface components")]
+        [InlineData("identity kit", "identity kits")]
+        [InlineData("menu", "menus")]
+        [InlineData("", "")]
+        public void RowPlural_InflectsTheNounsTheDescriptorsActuallyUse(string singular, string plural)
+        {
+            Assert.Equal(plural, DefinitionListDescriptor<ProbeRow>.Pluralise(singular));
+        }
+
         private sealed class ProbeRow
         {
             public int Value { get; set; }

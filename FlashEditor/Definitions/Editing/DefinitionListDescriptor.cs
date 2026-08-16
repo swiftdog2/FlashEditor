@@ -602,8 +602,12 @@ namespace FlashEditor.Definitions.Editing {
         ///     phrases - <c>spot animation</c>, <c>world map area</c> - and every one of them carries
         ///     its head last, so suffixing the whole string is suffixing the word that inflects.
         ///     <para>
-        ///     Case is taken from the noun's own last letter, so <c>NPC</c> does not become
-        ///     <c>NPCS</c>.
+        ///     <b>The suffix is lower case whatever the noun is</b>, which is the whole of what
+        ///     <c>NPC</c> needs: an initialism takes a lower-case <c>s</c> in English, so the plural
+        ///     is <c>NPCs</c>. Following the noun's own last letter instead reads as the obvious
+        ///     thing to do and produces <c>NPCS</c>, which is the second wrong plural this rule has
+        ///     put on screen. Every other noun the descriptors state is already lower case, so no
+        ///     case rule has anything else to decide.
         ///     </para>
         /// </remarks>
         /// <param name="noun">The singular noun, which may be a phrase.</param>
@@ -616,12 +620,12 @@ namespace FlashEditor.Definitions.Editing {
             char beforeLast = noun.Length > 1 ? noun[noun.Length - 2] : ' ';
 
             if (char.ToLowerInvariant(last) == 'y' && !IsVowel(beforeLast))
-                return noun.Substring(0, noun.Length - 1) + (char.IsUpper(last) ? "IES" : "ies");
+                return noun.Substring(0, noun.Length - 1) + "ies";
 
             if (EndsWithSibilant(noun))
-                return noun + (char.IsUpper(last) ? "ES" : "es");
+                return noun + "es";
 
-            return noun + (char.IsUpper(last) ? "S" : "s");
+            return noun + "s";
         }
 
         private static bool IsVowel(char letter) {
