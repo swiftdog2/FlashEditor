@@ -118,6 +118,7 @@ namespace FlashEditor {
             AnimationEditorTab = new TabPage();
             SoundEffectEditorTab = new TabPage();
             Sfx2EditorTab = new TabPage();
+            MidiPatchEditorTab = new TabPage();
             ConfigEditorTab = new TabPage();
             HuffmanEditorTab = new TabPage();
             EnumEditorTab = new TabPage();
@@ -304,6 +305,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(FontEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(Sfx2EditorTab);
+            EditorTabControl.Controls.Add(MidiPatchEditorTab);
             EditorTabControl.Controls.Add(TrackEditorTab);
             EditorTabControl.Controls.Add(LoadingScreenEditorTab);
             EditorTabControl.Controls.Add(LoadingSpriteEditorTab);
@@ -1380,6 +1382,16 @@ namespace FlashEditor {
             Sfx2EditorTab.Text = "SFX2 (Vorbis)";
             Sfx2EditorTab.UseVisualStyleBackColor = true;
             //
+            // MidiPatchEditorTab
+            //
+            MidiPatchEditorTab.Controls.Add(MidiPatchPanel);
+            MidiPatchEditorTab.Location = new Point(4, 37);
+            MidiPatchEditorTab.Name = "MidiPatchEditorTab";
+            MidiPatchEditorTab.Size = new Size(1113, 554);
+            MidiPatchEditorTab.TabIndex = 29;
+            MidiPatchEditorTab.Text = "MIDI Patches";
+            MidiPatchEditorTab.UseVisualStyleBackColor = true;
+            //
             // ClientScriptEditorTab
             //
             ClientScriptEditorTab.Controls.Add(ClientScriptPanel);
@@ -1682,6 +1694,11 @@ namespace FlashEditor {
         //say that nothing here plays.
         private TabPage Sfx2EditorTab;
         private FlashEditor.Definitions.Audio.Sfx2.Sfx2EditorPanel Sfx2Panel = new FlashEditor.Definitions.Audio.Sfx2.Sfx2EditorPanel();
+        //Index 15, the MIDI patch bank. One file per group and the group id is the patch id, so a
+        //list would ordinarily be the whole tab - but a patch is 128 keys and every question about
+        //one is positional, so the panel draws the selected patch as a keyboard and plays a key.
+        private TabPage MidiPatchEditorTab;
+        private FlashEditor.Definitions.Audio.MidiPatchEditorPanel MidiPatchPanel = new FlashEditor.Definitions.Audio.MidiPatchEditorPanel();
         //Index 12, one compiled CS2 script per group and one file per group. The panel owns a
         //DefinitionListPanel for the scripts and the instruction and switch grids beside it, because
         //the index holds a third of a million instructions and only the selected script's are rows.
