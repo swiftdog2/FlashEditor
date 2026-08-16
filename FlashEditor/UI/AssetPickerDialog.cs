@@ -29,7 +29,19 @@ namespace FlashEditor.UI {
         Font,
 
         /// <summary>An animation, index 20.</summary>
-        Animation
+        Animation,
+
+        /// <summary>
+        ///     An object definition, index 16, addressed by <c>group &lt;&lt; 8 | file</c>.
+        /// </summary>
+        /// <remarks>
+        ///     The one kind whose ids are not group ids. Index 16 holds its definitions as files
+        ///     inside its groups and a map location names a <em>file</em>, so this kind enumerates
+        ///     files and packs the pair exactly as <c>RSCache.GetObjectDefinition</c> unpacks it.
+        ///     Listing the group ids instead would have produced a picker whose every entry was the
+        ///     wrong number, which is worse than no picker at all.
+        /// </remarks>
+        Object
     }
 
     /// <summary>
@@ -133,6 +145,7 @@ namespace FlashEditor.UI {
                 AssetKind.Texture => RSConstants.TEXTURES,
                 AssetKind.Font => RSConstants.FONTS_INDEX,
                 AssetKind.Animation => RSConstants.ANIMATIONS_INDEX,
+                AssetKind.Object => RSConstants.OBJECTS_DEFINITIONS_INDEX,
                 _ => throw new ArgumentOutOfRangeException(nameof(assetKind), assetKind, "No index for this kind.")
             };
         }
@@ -164,12 +177,27 @@ namespace FlashEditor.UI {
             base.Dispose(disposing);
         }
 
+        /// <summary>
+        ///     Fills the id list for a kind.
+        /// </summary>
+        /// <remarks>
+        ///     Every kind bar one is addressed by group id, and the odd one out is stated here
+        ///     rather than left to the caller: an object definition is a <em>file</em> inside an
+        ///     index-16 group, and its id is <c>group &lt;&lt; 8 | file</c>, which is the packing
+        ///     <c>RSCache.GetObjectDefinition</c> and the map's location records both use.
+        /// </remarks>
         private void LoadIds(RSCache cache, AssetKind assetKind) {
             int index = IndexOf(assetKind);
 
             try {
-                foreach (int groupId in cache.EnumerateGroups(index))
-                    allIds.Add(groupId);
+                if (assetKind == AssetKind.Object) {
+                    foreach ((int group, int file) in cache.EnumerateFiles(index))
+                        allIds.Add((group << 8) | file);
+                }
+                else {
+                    foreach (int groupId in cache.EnumerateGroups(index))
+                        allIds.Add(groupId);
+                }
             }
             catch (Exception) {
                 //An index whose table will not read leaves an empty picker with an honest status
@@ -252,6 +280,14 @@ namespace FlashEditor.UI {
                     "index-8 glyph sheet by id, and rendering a sample needs both laid out " +
                     "together, which is not built yet.\n\n" +
                     "The Fonts page draws the glyph grid for a selected font."),
+
+                AssetKind.Object => Note(InfoKind.Limitation,
+                    "Objects cannot be drawn here. An object definition names models, and the only " +
+                    "route to model pixels in this editor is OpenGL on the one UI-thread context, " +
+                    "so every object shows as a placeholder carrying its id.\n\n" +
+                    "The id listed is the one a map location stores: group << 8 | file, which is " +
+                    "the same number the Entities page shows against an object.\n\n" +
+                    "The Entities page names them. Find the object there and bring the number back."),
 
                 AssetKind.Texture => Note(InfoKind.Help,
                     "A texture is a procedural graph, not a stored picture, so each tile here is " +
