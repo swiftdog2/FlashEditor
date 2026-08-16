@@ -163,10 +163,10 @@ namespace FlashEditor.Definitions.Sprites {
                 Signed("field1820", row => row.Record.field1820, (row, value) => row.Record.field1820 = value),
                 Signed("field1816", row => row.Record.field1816, (row, value) => row.Record.field1816 = value),
 
-                /* The one column whose meaning is settled well enough to draw. The cell text stays
-                   the stored 16-bit HSL, which is the number an edit has to write back; the swatch
-                   is what the client resolves it to, through the same clamp Class345.method3825
-                   applies. Converting the RGB back would not reproduce the stored value. */
+                /* One of the two settled columns, and the only one that resolves to a colour. The
+                   cell text stays the stored 16-bit HSL, which is the number an edit has to write
+                   back; the swatch is what the client resolves it to, through the clamp
+                   Class345.method3825 applies. Converting the RGB back would not reproduce it. */
                 DefinitionColumn.EncodedColour<MaterialListing>("field1831",
                     row => row.Record.field1831, row => row.RepresentativeRgb,
                     (row, value) => row.Record.field1831 = Math.Clamp(value, 0, 0xFFFF)),
