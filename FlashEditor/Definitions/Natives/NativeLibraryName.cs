@@ -170,8 +170,31 @@ namespace FlashEditor.Definitions.Natives {
                     : NativeLibraryName.None;
             }
 
-            return new NativeLibraryCensus(FindAnomalies(names),
-                names.Count(pair => pair.Value.Path.Length > 0), table.GetArchiveCount());
+            return From(names, table.GetArchiveCount());
+        }
+
+        /// <summary>
+        ///     Surveys a set of recovered names directly.
+        /// </summary>
+        /// <remarks>
+        ///     The testable core of <see cref="Build"/>. The anomaly rule is a statement about names
+        ///     and nothing else, so it is worth being able to state a name set and check what the
+        ///     rule says about it - including the cases this cache does not contain, such as two
+        ///     spellings used equally often, where the right answer is to report neither.
+        /// </remarks>
+        /// <param name="names">The recovered names by group id.</param>
+        /// <param name="declaredGroups">How many groups the table declares.</param>
+        /// <returns>The census.</returns>
+        public static NativeLibraryCensus From(IReadOnlyDictionary<int, NativeLibraryName> names, int declaredGroups) {
+            if (names == null)
+                throw new ArgumentNullException(nameof(names));
+
+            var copy = new Dictionary<int, NativeLibraryName>(names.Count);
+            foreach (KeyValuePair<int, NativeLibraryName> pair in names)
+                copy[pair.Key] = pair.Value;
+
+            return new NativeLibraryCensus(FindAnomalies(copy),
+                copy.Count(pair => pair.Value.Path.Length > 0), declaredGroups);
         }
 
         /// <summary>
