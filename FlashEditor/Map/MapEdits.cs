@@ -480,6 +480,17 @@ namespace FlashEditor.Map {
         /// <inheritdoc/>
         public MapRegion Target => edits[0].Target;
 
+        /// <summary>
+        ///     The edits in the group, in application order.
+        /// </summary>
+        /// <remarks>
+        ///     Exposed so a caller can ask what kind of change the group made. The height tools'
+        ///     "you will not see this without relief shading" warning is the case that needs it: it
+        ///     tested the edit for <see cref="SetHeightEdit"/>, which an area fill of ten thousand
+        ///     height edits is not, so the warning went silent exactly where it mattered most.
+        /// </remarks>
+        public IReadOnlyList<IMapEdit> Edits => edits;
+
         /// <summary>The squares this group touches.</summary>
         public IEnumerable<MapRegion> Targets {
             get {

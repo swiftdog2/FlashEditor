@@ -114,6 +114,47 @@ namespace FlashEditor.UI {
         /// <summary>Take a value off whatever is under the pointer.</summary>
         Eyedropper,
 
+        /* The paint set. Added for the map tab's tool palette, which is the first surface in the
+           application that is a paint program rather than a list with a detail pane. Named for the
+           verb or for what the id means, per the rule above: SelectSimilar rather than MagicWand,
+           because the wand is the picture and "everything adjacent that matches" is the meaning. */
+
+        /// <summary>Choose an area of the canvas by its two opposite corners.</summary>
+        SelectRectangle,
+
+        /// <summary>Choose an area by drawing its outline freehand.</summary>
+        SelectFreehand,
+
+        /// <summary>Choose everything adjacent to the click that matches what was clicked.</summary>
+        SelectSimilar,
+
+        /// <summary>Lay the armed material over whatever the brush covers.</summary>
+        Paint,
+
+        /// <summary>Lay the armed material over every selected tile at once.</summary>
+        FillArea,
+
+        /// <summary>A floor underlay: the base ground the terrain blend is taken from.</summary>
+        Underlay,
+
+        /// <summary>A floor overlay: the shaped surface drawn on top of an underlay.</summary>
+        Overlay,
+
+        /// <summary>Lift the terrain surface under the pointer.</summary>
+        Raise,
+
+        /// <summary>Push the terrain surface under the pointer down.</summary>
+        Lower,
+
+        /// <summary>Mark the tile as one nothing may walk through.</summary>
+        Block,
+
+        /// <summary>Turn whatever is under the pointer a quarter turn.</summary>
+        Rotate,
+
+        /// <summary>Step whatever is under the pointer on to its next shape.</summary>
+        Shape,
+
         /* The transport set. Named for what the control does rather than for the glyph, which
            matters more here than anywhere else in the set: the double triangle means "previous
            track" on one player and "rewind" on the next, and the two are different verbs. These

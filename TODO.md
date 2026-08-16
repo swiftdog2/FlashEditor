@@ -73,7 +73,7 @@ named in its own section. Items 20 and 27 are under way.** What landed, and what
 |---|---|---|
 | **18.1** icons and toolbar | Done. `EditorTheme`, `EditorSurface`, `EditorIcon`, `EditorIcons` (33 GDI-drawn icons), `EditorToolStrip` | Nothing. Icons are judged on a contact sheet; four shipped broken in the first pass and the sheet is the only reason they did not stay broken |
 | **18.2** column renderers | Done. `DefinitionCellVisual`, `DefinitionCellRenderer`, three factories on `DefinitionColumn`, proved on the Config tab's floor families | Adopt them on the other pages. Zero descriptors changed, so every adoption is additive |
-| **18.3** asset picker | Done. `AssetPickerDialog` over sprites, models, textures, fonts and animations, virtualised to the visible rows | **No caller yet.** 20, 21 and 26e are the consumers. Verified in isolation, not in place |
+| **18.3** asset picker | Done. `AssetPickerDialog` over sprites, models, textures, fonts and animations, virtualised to the visible rows | **Has its first caller**: item 20's place-location tool, which also added an `Object` kind. That kind is the one whose ids are not group ids - index 16 holds definitions as files and a location names `group << 8 \| file` - so it enumerates files. 21 and 26e are the remaining consumers |
 | **18.4** info affordance | Done. `InfoAffordance`, the two interface toolbars, the floor palette, and every docked paragraph migrated | Nothing but the eyeball pass, which needs a capture of the Sprites, Fonts, Tracks, SFX2, Client Scripts, Loading Sprites, World Map, Particles and Entities pages. The prompt's site list is wrong in **four** places, not three - see `reference/DOC-CONFLICTS.md`. Two wrap-on-resize helpers went with the paragraphs and the rest lost entries |
 | **26a** layout resolver | Done, with 23 unit tests and 4 cache-backed property sweeps, green on both caches | Nothing |
 | **26b** component tree | Done, tree view wired into the tab with two-way selection | Nothing |
@@ -281,14 +281,37 @@ would pass unchanged.
 
 ### 20. The map tab as a paint program
 
-**Two of the five sub-items are done: the materials palette (3) and the eyedropper (4).** Together
-they close the loop the item opens with - pick a floor off the palette or off the map, and paint
-with it - so "which number do I want" is no longer answered by paint, look, undo, try 48.
+**All five sub-items are built.** What is left is the eyeball pass and one merged-tree run of the
+suite against both caches - `RealCacheAreaFillEditTests` in particular has never been run, having
+been written in a worktree while other agents held the same `main_file_cache.dat2`.
 
-What is left is 1 (tool palette), 2 (context option bar) and 5 (selection and area application),
-plus the set-and-unset check the constraints section requires once an area fill exists.
+What the second half added, and where it went:
 
-Three things the finished half established that the rest should not rediscover:
+- **The tool palette is an `EditorToolStrip` along the top of the canvas, not in the left column.**
+  The palette alone would have fitted the column, being a swap for the combo; the option bar is
+  genuinely new and would not. Both want width, which the canvas edge has.
+- **`MapToolOptionsBar` gives each id its own labelled box** - "Underlay id", "Overlay id", "Object
+  id" - as separate controls rather than one relabelled one, so switching tools cannot carry an
+  overlay id into an object field. Overlay shape and rotation are brush settings now; the cycle
+  tools stay for adjusting what is already on a tile.
+- **`MapSelection`, `MapBrush`, `MapWand` and `MapAreaEdits` are free of WinForms and of the cache**,
+  because everything they decide ends up written to a map square and nothing in the suite covers a
+  window. The underlay cap is stated once in `MapToolLimits` and enforced at both the option bar and
+  the fill.
+- **Selecting is zoom-gated exactly as editing is**, and says so in the selection tools' own note
+  rather than only refusing: below 2 px/tile a tile is sub-pixel, and every square a selection
+  touches is decoded and pinned for as long as the edit is undoable.
+- **Two silent-warning defects found on the way.** `HeightVisibilityWarning` tested the edit for
+  `SetHeightEdit`, which a fill of ten thousand height edits is not; and `FlashFor` bails on
+  anything that is not an `IMapEditArea`, which a `CompositeEdit` can never be, so undoing a fill
+  would have reverted ten thousand tiles in silence. Both handle a group now.
+- **The height path is one-way and is pinned as a known defect.**
+  `Region.SetTileHeight` latches `heightExplicit` and `heightEdited` and nothing clears them, so a
+  raise-then-restore loses a tile that stored no height (one byte becomes two) and loses the alias,
+  since stored bytes 0 and 1 both decode to zero and the shipped files use both. Underlay, overlay
+  and flag fills do land on the original bytes.
+
+Three things the first half established that the rest did not have to rediscover:
 
 - **The left column cannot take another group.** The palette went there first and `AutoScroll` made
   `TableLayoutPanel` squeeze the Percent rows to nothing so it never appeared; a minimum height
@@ -359,6 +382,10 @@ what it was, and land on the original stored bytes.
 
 Verified by eye plus tools/Capture-EditorTab.ps1. Run the suite against both caches. Commit.
 ```
+
+**What the prompt above no longer covers.** Everything in it is built; the two items outstanding
+are a capture of the Map tab and one merged-tree suite run against both caches. The map suites
+sweep every square on every run, so `FLASHEDITOR_TEST_CACHE_FULL=1` buys nothing extra here.
 
 ---
 

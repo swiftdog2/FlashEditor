@@ -91,6 +91,16 @@ namespace FlashEditor.Map {
         public TileHit? Hover { get; set; }
 
         /// <summary>
+        ///     The tiles an area operation would act on, or <c>null</c> when nothing is selected.
+        /// </summary>
+        /// <remarks>
+        ///     Drawn here rather than through the tile cache for exactly the reason the hover
+        ///     highlight is: a selection changes on every mouse move of a drag, and routing it
+        ///     through the cache would re-rasterise a square per move.
+        /// </remarks>
+        public MapSelection? Selection { get; set; }
+
+        /// <summary>
         ///     Whether to show which vertex a height edit would move.
         /// </summary>
         /// <remarks>
@@ -173,6 +183,17 @@ namespace FlashEditor.Map {
                 result = Merge(result, Grow(rect, sideways, GlowMargin + LabelHeadroom));
             }
 
+            /* The selection has to be in here even though it is drawn last. Bounds is what Paint
+               tests for emptiness before it draws anything at all, so a selection left out of it
+               would never be painted on a frame with no hover and no flash - which is every frame
+               after a drag ends. */
+            Rectangle selected = Selection == null ? Rectangle.Empty : Selection.Bounds;
+            if (!selected.IsEmpty && Selection != null && Selection.Plane == plane) {
+                RectangleF box = TileRect(camera, selected.Left, selected.Top,
+                    selected.Width, selected.Height);
+                result = Merge(result, Grow(box, GlowMargin, GlowMargin));
+            }
+
             return result;
         }
 
@@ -209,6 +230,9 @@ namespace FlashEditor.Map {
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             try {
+                //Under the flashes, so a fill's own flash reads on top of the area it filled.
+                PaintSelection(g, camera, plane, tileScale);
+
                 foreach (Flash flash in flashes)
                     if (flash.Plane == plane)
                         PaintFlash(g, camera, flash, font);
@@ -291,6 +315,81 @@ namespace FlashEditor.Map {
 
             float pulse = 0.7f + 0.3f * (float) Math.Cos(t * Math.PI * 4.0);
             return Math.Clamp(level * pulse, 0f, 1f);
+        }
+
+        /// <summary>
+        ///     Draws the selection: a wash over every selected tile and a hard edge round the
+        ///     outside of the shape.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Only the boundary is stroked, not every tile.</b> A grid of ten thousand outlined
+        ///     tiles is a solid block of ink at any zoom a selection is made at, and it hides the
+        ///     terrain that is the whole reason for selecting. An edge is drawn where the neighbour
+        ///     is <em>not</em> selected, which is what makes a lasso read as one shape rather than as
+        ///     a heap of tiles.
+        ///     <para>
+        ///     <b>Two fallbacks, and both are stated on screen elsewhere.</b> Below the editing zoom
+        ///     a tile is sub-pixel and the shape is drawn as its bounding box, because outlining
+        ///     sub-pixel tiles produces a smudge in the rough vicinity of the truth - the same
+        ///     reasoning that makes the cursor highlight fall back to the map square. And past
+        ///     <see cref="MaxOutlinedTiles"/> the per-tile pass is dropped for the bounding box too:
+        ///     the cost is per tile and a paint happens on every mouse move of a drag, so a
+        ///     quarter-million-tile selection would make its own resizing unusable.
+        ///     </para>
+        /// </remarks>
+        private void PaintSelection(Graphics g, MapCamera camera, int plane, bool tileScale) {
+            MapSelection? selection = Selection;
+            if (selection == null || selection.IsEmpty || selection.Plane != plane)
+                return;
+
+            Rectangle bounds = selection.Bounds;
+
+            if (!tileScale || selection.Count > MaxOutlinedTiles) {
+                RectangleF box = TileRect(camera, bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+                using (var wash = new SolidBrush(Color.FromArgb(30, SelectionColour)))
+                    g.FillRectangle(wash, box);
+                StrokeTwoTone(g, box, SelectionColour, 220, 1.4f);
+                return;
+            }
+
+            //Culled to the viewport before anything is measured. A selection can legitimately be
+            //larger than the window, and the tiles off screen cost exactly as much to draw.
+            Rectangle regions = camera.VisibleRegionBounds();
+            int leftTile = regions.Left * MapRegion.WIDTH - 1;
+            int rightTile = regions.Right * MapRegion.WIDTH + 1;
+            int bottomTile = regions.Top * MapRegion.HEIGHT - 1;
+            int topTile = regions.Bottom * MapRegion.HEIGHT + 1;
+
+            float stroke = StrokeWidth(camera);
+
+            using var fill = new SolidBrush(Color.FromArgb(46, SelectionColour));
+            using var halo = new Pen(Color.FromArgb(170, 6, 8, 12), stroke + 1.4f);
+            using var edge = new Pen(SelectionColour, stroke);
+
+            foreach ((int worldX, int worldY) in selection.Tiles) {
+                if (worldX < leftTile || worldX > rightTile || worldY < bottomTile || worldY > topTile)
+                    continue;
+
+                RectangleF tile = TileRect(camera, worldX, worldY, 1, 1);
+                g.FillRectangle(fill, tile);
+
+                //World Y grows north and screen Y grows down, so the northern neighbour is the tile
+                //above on screen. Getting this pair the wrong way round draws a correct-looking
+                //outline one tile off, which is the hardest kind of wrong to notice.
+                if (!selection.Contains(worldX, worldY + 1))
+                    StrokeEdge(g, halo, edge, tile.Left, tile.Top, tile.Right, tile.Top);
+                if (!selection.Contains(worldX, worldY - 1))
+                    StrokeEdge(g, halo, edge, tile.Left, tile.Bottom, tile.Right, tile.Bottom);
+                if (!selection.Contains(worldX - 1, worldY))
+                    StrokeEdge(g, halo, edge, tile.Left, tile.Top, tile.Left, tile.Bottom);
+                if (!selection.Contains(worldX + 1, worldY))
+                    StrokeEdge(g, halo, edge, tile.Right, tile.Top, tile.Right, tile.Bottom);
+            }
+        }
+
+        private static void StrokeEdge(Graphics g, Pen halo, Pen edge, float x0, float y0, float x1, float y1) {
+            g.DrawLine(halo, x0, y0, x1, y1);
+            g.DrawLine(edge, x0, y0, x1, y1);
         }
 
         private static void PaintTileHighlight(Graphics g, MapCamera camera, TileHit hover) {
@@ -434,6 +533,27 @@ namespace FlashEditor.Map {
 
         /// <summary>Cyan, kept clear of the amber an edit flash uses.</summary>
         private static readonly Color VertexColour = Color.FromArgb(255, 120, 226, 255);
+
+        /// <summary>
+        ///     Violet: the one hue not already spoken for by a flash kind or the cursor.
+        /// </summary>
+        /// <remarks>
+        ///     A selection is on screen for minutes while flashes last under a second, so it must
+        ///     not be mistakable for any of them. Amber is a write, red a deletion, grey a refusal,
+        ///     green a read, cyan the height vertex and near-white the cursor.
+        /// </remarks>
+        private static readonly Color SelectionColour = Color.FromArgb(255, 196, 156, 255);
+
+        /// <summary>
+        ///     Past this many tiles the selection is drawn as its bounding box rather than tile by
+        ///     tile.
+        /// </summary>
+        /// <remarks>
+        ///     Four map squares' worth. The per-tile pass costs a fill and up to four strokes each
+        ///     and runs on every mouse move of a drag, so the ceiling is set where a drag would
+        ///     start to stutter rather than where the drawing would stop being useful.
+        /// </remarks>
+        private const int MaxOutlinedTiles = 4 * MapRegion.WIDTH * MapRegion.HEIGHT;
 
         private static Color CoreColour(MapFlashKind kind) {
             switch (kind) {

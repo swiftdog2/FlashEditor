@@ -108,6 +108,11 @@ namespace FlashEditor.Map {
 
         private bool leftDown;
         private bool dragExceeded;
+        private bool dragSelecting;
+
+        //Nullable, unlike the lastHover beside it. That one predates the project's nullable
+        //annotations and carries three warnings for it; a new field must not add a fourth.
+        private TileHit? lastDragTile;
         private Point pressScreen;
         private double pressCentreX;
         private double pressCentreY;
@@ -132,6 +137,15 @@ namespace FlashEditor.Map {
 
         /// <summary>Raised on a left click that was not a drag.</summary>
         public event EventHandler<TileHit> TileClicked;
+
+        /// <summary>Raised on the tile a left-button drag started on, while <see cref="DragSelects"/>.</summary>
+        public event EventHandler<TileHit>? DragStarted;
+
+        /// <summary>Raised on each new tile a left-button drag reaches.</summary>
+        public event EventHandler<TileHit>? DragMoved;
+
+        /// <summary>Raised when a left-button drag ends, whether or not it moved.</summary>
+        public event EventHandler? DragFinished;
 
         /// <summary>Raised when the camera moves or zooms.</summary>
         public event EventHandler ViewChanged;
@@ -260,6 +274,59 @@ namespace FlashEditor.Map {
         [Browsable(false)]
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EditingEnabled => Camera.PixelsPerTile >= MinimumEditingPixelsPerTile;
+
+        /// <summary>
+        ///     Whether a left-button drag draws a selection rather than panning the view.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Panning does not go away when this is on.</b> Middle-drag and space plus left-drag
+        ///     both still pan, and both already existed - which is the whole reason a selection tool
+        ///     can take the plain left drag at all. Taking it without leaving a way to pan would
+        ///     make the rectangle and freehand tools unusable, since a selection larger than the
+        ///     viewport needs the viewport moved.
+        ///     <para>
+        ///     Set by the panel while a selection tool is armed. Off, the control behaves exactly as
+        ///     it did: a left drag pans and a left click without movement raises
+        ///     <see cref="TileClicked"/>.
+        ///     </para>
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool DragSelects { get; set; }
+
+        /// <summary>
+        ///     Tiles the selection currently holds, for the overlay to outline.
+        /// </summary>
+        /// <remarks>
+        ///     Held as the live object rather than a copy, so a selection that grows during a drag
+        ///     shows without the panel pushing it back in on every mouse move.
+        /// </remarks>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public MapSelection? Selection {
+            get => overlay.Selection;
+            set {
+                if (ReferenceEquals(value, overlay.Selection))
+                    return;
+
+                overlay.Selection = value;
+                RefreshOverlay();
+            }
+        }
+
+        /// <summary>
+        ///     Repaints where the selection is drawn, for a caller that has just changed it.
+        /// </summary>
+        /// <remarks>
+        ///     The view cannot see a mutation of the object it was handed, and subscribing to the
+        ///     selection's own event would tie the control's lifetime to it. One call from the place
+        ///     that changed it is honest about who knows.
+        /// </remarks>
+        public void RefreshSelection() {
+            //Whole-control rather than the overlay's usual union: a selection that shrinks leaves
+            //its old outline behind, and its bounds before the change are no longer available here.
+            Invalidate();
+        }
 
         /// <summary>Colour of a square that exists but has not been rendered yet.</summary>
         [Browsable(false)]
@@ -555,6 +622,24 @@ namespace FlashEditor.Map {
             pressScreen = e.Location;
             pressCentreX = Camera.CentreWorldX;
             pressCentreY = Camera.CentreWorldY;
+
+            /* A selection drag is the one gesture that DOES start on mouse-down, because a
+               rectangle needs its anchor corner and a lasso needs its first point. It is safe here
+               and not for the tools because it writes nothing: a drag abandoned before the button
+               comes up leaves the selection exactly as it was. */
+            dragSelecting = false;
+            lastDragTile = null;
+
+            if (!DragSelects)
+                return;
+
+            TileHit start = HitTest(e.Location);
+            if (start == null)
+                return;
+
+            dragSelecting = true;
+            lastDragTile = start;
+            DragStarted?.Invoke(this, start);
         }
 
         /// <inheritdoc/>
@@ -563,6 +648,23 @@ namespace FlashEditor.Map {
 
             if (middleDragging) {
                 PanFromPress(e.Location);
+                return;
+            }
+
+            if (dragSelecting) {
+                TileHit dragged = HitTest(e.Location);
+                if (dragged == null)
+                    return;
+
+                //Only when the tile changed. A freehand drag adds one tile per notification, and a
+                //mouse reports dozens of moves inside one tile at an editing zoom.
+                if (lastDragTile != null && lastDragTile.WorldX == dragged.WorldX
+                    && lastDragTile.WorldY == dragged.WorldY)
+                    return;
+
+                lastDragTile = dragged;
+                overlay.Hover = dragged;
+                DragMoved?.Invoke(this, dragged);
                 return;
             }
 
@@ -650,9 +752,21 @@ namespace FlashEditor.Map {
                 return;
 
             bool wasDrag = dragExceeded;
+            bool wasSelecting = dragSelecting;
+
             leftDown = false;
             dragExceeded = false;
+            dragSelecting = false;
+            lastDragTile = null;
             Cursor = Cursors.Default;
+
+            if (wasSelecting) {
+                //Raised even for a press and release on one tile, which is a one-tile rectangle and
+                //a legitimate thing to draw. TileClicked is deliberately not also raised: the tool
+                //that took the drag is the one that owns the gesture.
+                DragFinished?.Invoke(this, EventArgs.Empty);
+                return;
+            }
 
             if (wasDrag)
                 return;
