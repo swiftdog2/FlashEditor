@@ -176,11 +176,8 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
 
             int parent = tree.Roots[0];
             InterfaceStructureEdit create = InterfaceComponentEdits.PlanInsert(tree, parent, -1);
-            var created = new InterfaceComponentDefinition(scratch.GroupId, create.Inserted) {
-                RawParentId = parent,
-                BaseWidth = 40,
-                BaseHeight = 20
-            };
+            InterfaceComponentDefinition created =
+                InterfaceComponentEdits.NewComponent(scratch.GroupId, create.Inserted, parent);
 
             Assert.True(InterfaceStructureWriter.Apply(scratch.Cache, scratch.GroupId, create, created));
             Assert.NotEqual(storedBefore, scratch.Cache.LoadContainer(Index, scratch.GroupId).ToArray());
@@ -447,11 +444,8 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.Empty(plan.Warnings);
             Assert.Equal(tree.Components.Count, plan.Inserted);
 
-            var created = new InterfaceComponentDefinition(scratch.GroupId, plan.Inserted) {
-                RawParentId = parent,
-                BaseWidth = 40,
-                BaseHeight = 20
-            };
+            InterfaceComponentDefinition created =
+                InterfaceComponentEdits.NewComponent(scratch.GroupId, plan.Inserted, parent);
 
             Assert.True(InterfaceStructureWriter.Apply(scratch.Cache, scratch.GroupId, plan, created));
 
@@ -461,6 +455,22 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.Equal(before.Count + 1, after.Count);
             foreach (KeyValuePair<int, byte[]> original in before)
                 Assert.Equal(original.Value, after[original.Key].ToArray());
+
+            /* The created component reads back as what the editor made it, which is a claim about
+               the codec on a record no cache has ever contained. Every byte-identity sweep in this
+               suite compares a decode against bytes the original encoder wrote, so none of them
+               says anything about a record this project composed from nothing - and the one field
+               that would fail silently is the type, because the type byte chooses which block is
+               written and which is read. */
+            var read = new InterfaceComponentDefinition(scratch.GroupId, plan.Inserted)
+                .Decode(after[plan.Inserted]);
+
+            Assert.Equal(created.ComponentType, read.ComponentType);
+            Assert.Equal(parent, read.RawParentId);
+            Assert.Equal(created.BaseWidth, read.BaseWidth);
+            Assert.Equal(created.BaseHeight, read.BaseHeight);
+            Assert.Equal(created.Colour, read.Colour);
+            Assert.True(read.RectangleFilled);
 
             //The created component is unnamed, because a hash the editor invented would match no
             //name forever and index 3's names are recovered by re-hashing candidates.
