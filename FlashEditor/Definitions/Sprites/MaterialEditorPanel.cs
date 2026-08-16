@@ -4,6 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Sprites {
@@ -361,9 +362,11 @@ namespace FlashEditor.Definitions.Sprites {
                 Dock = DockStyle.Fill;
                 DoubleBuffered = true;
 
-                //A neutral dark grey. The subject here is a colour, and a background that is itself a
-                //colour biases the eye judging it.
-                BackColor = Color.FromArgb(0xFF, 0x28, 0x28, 0x28);
+                /* The dark canvas background rather than a literal of this control's own. The subject
+                   here is a colour, so what surrounds it has to be neutral and has to be the same
+                   neutral every other canvas in the application uses - EditorTheme is where that is
+                   stated, and a control stating its own would drift from it silently. */
+                BackColor = EditorTheme.Background(EditorSurface.Canvas);
             }
 
             /// <summary>Points the preview at a record, or clears it.</summary>

@@ -345,6 +345,13 @@ namespace FlashEditor.Definitions.Sprites {
         ///     cache holds now rather than against this table's own idea of dirtiness - an edit that
         ///     was undone before saving must not rewrite the archive. The stored bytes are adopted
         ///     either way, so a second save after a successful one writes nothing.
+        ///     <para>
+        ///     <b>The Materials tab does not call this</b>, and the two are not two write paths. A
+        ///     grid edit runs <c>DefinitionListPanel.CommitEdit</c>, which asks
+        ///     <see cref="MaterialListDescriptor"/> for the same bytes <see cref="Encode"/> produces
+        ///     and applies the same comparison, because that is the one commit every index editor
+        ///     shares. This is the route for a caller that has a table and no grid.
+        ///     </para>
         /// </remarks>
         /// <param name="cache">The open cache.</param>
         /// <returns>Whether anything was staged.</returns>
