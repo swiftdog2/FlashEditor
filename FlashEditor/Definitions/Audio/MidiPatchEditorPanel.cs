@@ -24,8 +24,10 @@ namespace FlashEditor.Definitions.Audio {
     ///     sample reference is three fields packed into one integer, and one of them chooses between
     ///     two entirely different sample formats in two different indexes. And one of those indexes
     ///     has no renderer in this project at all, so some keys are silent here by omission rather
-    ///     than by fault. Both are stated in the notes docked above the list and again on the
-    ///     selected key's detail pane.
+    ///     than by fault. Both are stated behind the (i) marks on the transport strip and again on
+    ///     the selected key's detail pane, and the second of them keeps its headline on screen as
+    ///     the affordance's summary because a user who cannot hear a key has to be told why without
+    ///     hovering over anything.
     ///     </para>
     ///     <para>
     ///     <b>Playback goes through the track player rather than a third transport.</b> Auditioning a
@@ -89,12 +91,16 @@ namespace FlashEditor.Definitions.Audio {
             Text = NoCacheText
         };
 
-        private readonly Label notes = new Label {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            Font = EditorTheme.NoticeFont,
-            Text = ReferenceNote + "\r\n" + RendererNote + "\r\n" + PlaybackNote
-        };
+        /// <summary>
+        ///     What the caps in <see cref="RendererNote"/> are shouting, kept on screen.
+        /// </summary>
+        /// <remarks>
+        ///     The one clause of the three notes that is actionable: a user who plays an index-4 key
+        ///     hears nothing, and a glyph they never hover over would leave that reading as a broken
+        ///     player. It is the affordance's summary rather than a fourth docked label, which is
+        ///     what 18.4 did with the notes it moved.
+        /// </remarks>
+        private const string RendererSummary = "No index-4 renderer";
 
         private readonly Label keyHeader = new Label {
             AutoSize = true,
@@ -530,10 +536,37 @@ namespace FlashEditor.Definitions.Audio {
             };
             transportStrip.Controls.Add(transport);
 
+            /* The three notes go behind glyphs rather than into a six-line paragraph docked over the
+               page, which is the 18.4 rule. They are static prose - none of them changes with the
+               cache or the selection - where the census below them is measured and stays docked.
+               The kinds differ because the claims do: how a reference is packed is orientation, what
+               this editor cannot render is a limitation, and what Play does is a limitation about
+               the button it sits beside. */
+            transportStrip.Controls.Add(new InfoAffordance {
+                Describes = patches,
+                Kind = InfoKind.Help,
+                Caption = "How a key names a sample",
+                Body = ReferenceNote
+            });
+
+            transportStrip.Controls.Add(new InfoAffordance {
+                Describes = keyboard,
+                Kind = InfoKind.Limitation,
+                Caption = "What this editor cannot play",
+                Summary = RendererSummary,
+                Body = RendererNote
+            });
+
+            transportStrip.Controls.Add(new InfoAffordance {
+                Describes = transport,
+                Kind = InfoKind.Limitation,
+                Caption = "What Play does, and how it differs from the game",
+                Body = PlaybackNote
+            });
+
             //Docking resolves from the end of the Controls collection backwards, so the strips have to
             //be added after the filled splitter, and in bottom-to-top order among themselves.
             Controls.Add(listAndPatch);
-            Controls.Add(notes);
             Controls.Add(census);
             Controls.Add(transportStrip);
 
@@ -542,12 +575,12 @@ namespace FlashEditor.Definitions.Audio {
         }
 
         /// <summary>
-        ///     Lets the docked notes wrap at the width the panel actually has.
+        ///     Lets the docked census wrap at the width the panel actually has.
         /// </summary>
         /// <remarks>
-        ///     An <c>AutoSize</c> label grows sideways rather than wrapping, so the notes would run
-        ///     off the right edge on a narrow window and take their last sentence with them. Capping
-        ///     the width at the client area turns the same auto-sizing into height. Measured from the
+        ///     An <c>AutoSize</c> label grows sideways rather than wrapping, so the census would run
+        ///     off the right edge on a narrow window and take its last figure with it. Capping the
+        ///     width at the client area turns the same auto-sizing into height. Measured from the
         ///     panel rather than stated as a pixel count.
         /// </remarks>
         private void WrapNotes() {
@@ -557,8 +590,6 @@ namespace FlashEditor.Definitions.Audio {
 
             //Zero height means "no cap on the height", which is the point: the label grows downwards
             //by however many lines the wrapped text needs.
-            if (notes.MaximumSize.Width != available)
-                notes.MaximumSize = new Size(available, 0);
             if (census.MaximumSize.Width != available)
                 census.MaximumSize = new Size(available, 0);
         }

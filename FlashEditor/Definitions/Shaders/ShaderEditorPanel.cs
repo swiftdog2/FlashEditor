@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.Shaders {
@@ -53,19 +54,31 @@ namespace FlashEditor.Definitions.Shaders {
             Text = NoCacheText
         };
 
-        private readonly Label notice = new Label {
+        /// <summary>
+        ///     What this tab will not do, behind an (i) rather than docked across the page.
+        /// </summary>
+        /// <remarks>
+        ///     Three static paragraphs that never change with the cache or the selection, which is
+        ///     what makes them a candidate: a permanent block of prose above a grid is read once and
+        ///     then becomes chrome. The measured line-ending census stays docked in
+        ///     <see cref="header"/>, because a figure nobody sees is a figure nobody checks.
+        /// </remarks>
+        private const string TabNotice =
+            "A group is a rendering backend and a file is one named shader program. The names are not in " +
+            "the cache - each is recovered by hashing the name the client asks for and requiring an exact " +
+            "match - and \"gl\"/\"transparent_water\" is literally the address the client uses.\n\n" +
+            "Line endings here are not uniform: some files use bare LF, some use CRLF, and only one ends " +
+            "with a newline. What was read is what is written back, and a file that cannot be reproduced " +
+            "byte for byte is shown but not editable. Saving without changing anything stages nothing.\n\n" +
+            "Nothing here compiles or runs a shader. The editor checks bytes, not validity.";
+
+        //A strip rather than the glyph docked on its own, so a second note has somewhere to go.
+        private readonly FlowLayoutPanel notices = new FlowLayoutPanel {
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Dock = DockStyle.Top,
-            Font = GridFont,
-            Text = "A group is a rendering backend and a file is one named shader program. The names are not in " +
-                   "the cache - each is recovered by hashing the name the client asks for and requiring an exact " +
-                   "match - and \"gl\"/\"transparent_water\" is literally the address the client uses." +
-                   Environment.NewLine +
-                   "Line endings here are not uniform: some files use bare LF, some use CRLF, and only one ends " +
-                   "with a newline. What was read is what is written back, and a file that cannot be reproduced " +
-                   "byte for byte is shown but not editable. Saving without changing anything stages nothing." +
-                   Environment.NewLine +
-                   "Nothing here compiles or runs a shader. The editor checks bytes, not validity."
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
         };
 
         private readonly DefinitionListPanel shaders = new DefinitionListPanel {
@@ -191,7 +204,6 @@ namespace FlashEditor.Definitions.Shaders {
         /// </remarks>
         private void WrapNotices() {
             Wrap(header, ClientSize.Width);
-            Wrap(notice, ClientSize.Width);
             Wrap(editorNote, editorAndFields.Panel1.ClientSize.Width);
         }
 
@@ -234,6 +246,11 @@ namespace FlashEditor.Definitions.Shaders {
             actions.Controls.Add(save);
             actions.Controls.Add(revert);
 
+            /* Behind an (i) rather than docked as a paragraph, which is the 18.4 rule. Limitation
+               rather than Help because every clause is something the tab deliberately will not do:
+               it will not invent a name, will not normalise a line ending, and will not compile. */
+            notices.Controls.Add(InfoAffordance.For(shaders, InfoKind.Limitation, TabNotice));
+
             editorAndFields.Panel1.Controls.Add(editor);
             editorAndFields.Panel1.Controls.Add(actions);
             editorAndFields.Panel1.Controls.Add(editorNote);
@@ -246,7 +263,7 @@ namespace FlashEditor.Definitions.Shaders {
             //to be added after the filled splitter and in inside-out order among themselves.
             Controls.Add(listAndEditor);
             Controls.Add(transfer);
-            Controls.Add(notice);
+            Controls.Add(notices);
             Controls.Add(header);
 
             //Bound before any cache arrives so the grid has headings from the start.
