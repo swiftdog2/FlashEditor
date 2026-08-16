@@ -167,6 +167,45 @@ namespace FlashEditor.Definitions.Editing {
                     : DefinitionCellVisual.None);
         }
 
+        /// <summary>
+        ///     A colour the cache stores in its own encoding, shown as that encoding with a swatch of
+        ///     the colour it resolves to.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="Colour{TRow}"/> because the two read different numbers.
+        ///     <c>Colour</c>'s cell text <em>is</em> the packed <c>0xRRGGBB</c>, so editing it writes
+        ///     the same number back. Several indexes instead store 16-bit RS HSL, whose RGB is derived
+        ///     through a palette lookup that is not invertible - so the editable number has to stay
+        ///     the stored one and the swatch has to be told the resolved colour separately. Showing
+        ///     RGB in the cell and parsing it back would store a different colour than the one on
+        ///     screen and report nothing.
+        /// </remarks>
+        /// <typeparam name="TRow">The row type this column reads.</typeparam>
+        /// <param name="header">The column heading.</param>
+        /// <param name="stored">Reads the stored value off a row, or null when it stores none.</param>
+        /// <param name="resolved">Reads the <c>0xRRGGBB</c> the stored value resolves to.</param>
+        /// <param name="write">Writes an edited stored value back, or null for a read-only column.</param>
+        /// <param name="digits">Hexadecimal digits the stored encoding occupies.</param>
+        /// <param name="width">The column width.</param>
+        /// <returns>The column.</returns>
+        public static DefinitionColumn EncodedColour<TRow>(string header, Func<TRow, int?> stored,
+            Func<TRow, int?> resolved, Action<TRow, int>? write = null, int digits = 4, int width = 110)
+            where TRow : class {
+            string format = "X" + digits.ToString(CultureInfo.InvariantCulture);
+
+            return new DefinitionColumn(header, width,
+                row => Cast<TRow>(row) is TRow typed && stored(typed) is int value
+                    ? "0x" + value.ToString(format, CultureInfo.InvariantCulture)
+                    : null,
+                write == null ? null : (row, value) => {
+                    if (Cast<TRow>(row) is TRow typed)
+                        write(typed, ToColourInt(value));
+                },
+                row => Cast<TRow>(row) is TRow typed && resolved(typed) is int rgb
+                    ? DefinitionCellVisual.Swatch(rgb)
+                    : DefinitionCellVisual.None);
+        }
+
         /// <summary>An id naming a picture in another index, shown as a tile with the id beside it.</summary>
         /// <typeparam name="TRow">The row type this column reads.</typeparam>
         /// <param name="header">The column heading.</param>

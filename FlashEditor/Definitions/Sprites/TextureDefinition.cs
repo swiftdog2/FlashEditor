@@ -18,9 +18,10 @@ namespace FlashEditor.Definitions.Sprites {
     ///     everything from fields and rewrite bytes nobody touched.
     ///     </para>
     ///     <para>
-    ///     Assigning the value a field already holds is not an edit. That matters more here than it
-    ///     looks: a property grid writes every cell back on commit, and treating those as edits would
-    ///     rewrite the whole table - and its archive CRC - for a dialog somebody only opened.
+    ///     Assigning the value a field already holds is not an edit, and neither is an edit that puts
+    ///     a field back where it started. That matters more here than it looks: a property grid writes
+    ///     every cell back on commit, and treating those as edits would rewrite the whole table - and
+    ///     its archive CRC - for a dialog somebody only opened.
     ///     </para>
     ///     <para>
     ///     <see cref="spriteFileIds"/>, <see cref="graph"/> and <see cref="thumb"/> are deliberately
@@ -240,7 +241,7 @@ namespace FlashEditor.Definitions.Sprites {
         /// <summary>Whether any material column now differs from the bytes it was decoded from.</summary>
         public bool IsDirty => _dirtyColumns != 0;
 
-        /// <summary>Whether one material column has been edited.</summary>
+        /// <summary>Whether one material column now says something its stored bytes do not.</summary>
         /// <param name="column">The column to test.</param>
         /// <returns>Whether that column must be re-encoded from its field.</returns>
         internal bool IsColumnDirty(MaterialColumn column) => (_dirtyColumns & (1 << (int) column)) != 0;
@@ -256,8 +257,23 @@ namespace FlashEditor.Definitions.Sprites {
         internal void MarkClean() => _dirtyColumns = 0;
 
         /// <summary>
-        ///     Assigns a field and records its column as edited, unless the value is unchanged.
+        ///     Assigns a field, and records its column as edited only while the field and the stored
+        ///     bytes disagree.
         /// </summary>
+        /// <remarks>
+        ///     <b>The bit is cleared again when a field is put back, which is a separate claim from
+        ///     "an untouched record re-encodes to what it was read from".</b> A byte-identity sweep
+        ///     only ever proves the second one, and an edit that nets nothing still has to write
+        ///     nothing - the re-encode rewrites the archive CRC and drags in the reference-table entry
+        ///     of everything packed beside it.
+        ///     <para>
+        ///     Latching the bit on the first assignment would be wrong for exactly the columns this
+        ///     codec is careful about: a boolean column decodes many-to-one, so a stored byte of 2
+        ///     reads as false, and a record edited to true and back to false would then re-encode that
+        ///     column from its field and store a 0. The test is therefore against the stored bytes
+        ///     rather than against the value the field held a moment ago.
+        ///     </para>
+        /// </remarks>
         /// <typeparam name="T">The field's type.</typeparam>
         /// <param name="slot">The backing field.</param>
         /// <param name="value">The new value.</param>
@@ -267,7 +283,13 @@ namespace FlashEditor.Definitions.Sprites {
                 return;
 
             slot = value;
-            _dirtyColumns |= 1 << (int) column;
+
+            //A record with no stored bytes was built rather than decoded, so there is nothing to
+            //agree with and every column of it is written from its field.
+            if (StoredRecord != null && MaterialTable.ColumnMatchesStored(this, column))
+                _dirtyColumns &= ~(1 << (int) column);
+            else
+                _dirtyColumns |= 1 << (int) column;
         }
 
         /// <summary>Releases the thumbnail and drops the parsed graph.</summary>

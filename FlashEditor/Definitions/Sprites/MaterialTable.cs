@@ -345,6 +345,13 @@ namespace FlashEditor.Definitions.Sprites {
         ///     cache holds now rather than against this table's own idea of dirtiness - an edit that
         ///     was undone before saving must not rewrite the archive. The stored bytes are adopted
         ///     either way, so a second save after a successful one writes nothing.
+        ///     <para>
+        ///     <b>The Materials tab does not call this</b>, and the two are not two write paths. A
+        ///     grid edit runs <c>DefinitionListPanel.CommitEdit</c>, which asks
+        ///     <see cref="MaterialListDescriptor"/> for the same bytes <see cref="Encode"/> produces
+        ///     and applies the same comparison, because that is the one commit every index editor
+        ///     shares. This is the route for a caller that has a table and no grid.
+        ///     </para>
         /// </remarks>
         /// <param name="cache">The open cache.</param>
         /// <returns>Whether anything was staged.</returns>
@@ -436,6 +443,53 @@ namespace FlashEditor.Definitions.Sprites {
             }
 
             return stream.Flip();
+        }
+
+        /// <summary>
+        ///     Whether one column of a record would still be written as the bytes it was decoded from.
+        /// </summary>
+        /// <remarks>
+        ///     What lets an edit be undone. <see cref="TextureDefinition"/> asks this on every
+        ///     assignment, so a field put back where it started clears its column again rather than
+        ///     leaving the table permanently dirty - "an edit that nets nothing writes nothing" is a
+        ///     claim no byte-identity sweep over an unedited cache can make.
+        ///     <para>
+        ///     The comparison is between what the field would encode to and what the <em>stored</em>
+        ///     bytes decode and re-encode to, never between the field and the stored bytes directly.
+        ///     Three columns decode many-to-one, so a stored boolean byte of 2 is false and can never
+        ///     equal the 0 its field encodes; asking whether the two agree about the decoded value is
+        ///     what keeps that byte replayed instead of normalised away.
+        ///     </para>
+        /// </remarks>
+        /// <param name="def">The record.</param>
+        /// <param name="column">The column to test.</param>
+        /// <returns>Whether the column can be replayed rather than re-encoded.</returns>
+        internal static bool ColumnMatchesStored(TextureDefinition def, MaterialColumn column) {
+            if (def == null)
+                throw new ArgumentNullException(nameof(def));
+
+            byte[]? stored = def.StoredRecord;
+            if (stored == null)
+                return false;
+
+            //Unpack assigns through the properties, which is only safe because this scratch record
+            //has no stored bytes of its own and so cannot re-enter here.
+            var decoded = new TextureDefinition();
+            Unpack(decoded, stored);
+
+            var fromStored = new byte[BytesPerRecord];
+            var fromField = new byte[BytesPerRecord];
+            Pack(decoded, column, fromStored);
+            Pack(def, column, fromField);
+
+            int at = ColumnOffsets[(int) column];
+            int width = ColumnWidths[(int) column];
+
+            for (int i = 0; i < width; i++)
+                if (fromStored[at + i] != fromField[at + i])
+                    return false;
+
+            return true;
         }
 
         /// <summary>

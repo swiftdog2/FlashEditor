@@ -130,6 +130,7 @@ namespace FlashEditor {
             ParticleEditorTab = new TabPage();
             LoadingScreenEditorTab = new TabPage();
             LoadingSpriteEditorTab = new TabPage();
+            MaterialEditorTab = new TabPage();
             FontEditorTab = new TabPage();
             ClientScriptEditorTab = new TabPage();
             WorldMapOverviewTab = new TabPage();
@@ -303,6 +304,7 @@ namespace FlashEditor {
             EditorTabControl.Controls.Add(SpotAnimEditorTab);
             EditorTabControl.Controls.Add(SpriteEditorTab);
             EditorTabControl.Controls.Add(TextureViewerTab);
+            EditorTabControl.Controls.Add(MaterialEditorTab);
             EditorTabControl.Controls.Add(FontEditorTab);
             EditorTabControl.Controls.Add(SoundEffectEditorTab);
             EditorTabControl.Controls.Add(Sfx2EditorTab);
@@ -1364,6 +1366,16 @@ namespace FlashEditor {
             FontEditorTab.Text = "Fonts";
             FontEditorTab.UseVisualStyleBackColor = true;
             //
+            // MaterialEditorTab
+            //
+            MaterialEditorTab.Controls.Add(MaterialPanel);
+            MaterialEditorTab.Location = new Point(4, 37);
+            MaterialEditorTab.Name = "MaterialEditorTab";
+            MaterialEditorTab.Size = new Size(1113, 554);
+            MaterialEditorTab.TabIndex = 29;
+            MaterialEditorTab.Text = "Materials";
+            MaterialEditorTab.UseVisualStyleBackColor = true;
+            //
             // LoadingSpriteEditorTab
             //
             LoadingSpriteEditorTab.Controls.Add(LoadingSpritePanel);
@@ -1694,6 +1706,11 @@ namespace FlashEditor {
         //matrix. The 256 advance widths are per-character and belong in that grid, not in columns.
         private TabPage FontEditorTab;
         private FlashEditor.Definitions.Fonts.FontEditorPanel FontPanel = new FlashEditor.Definitions.Fonts.FontEditorPanel();
+        //Index 26, the roster of texture slots and the nineteen columns of render state attached to
+        //each. One group holding one file, so a slot is a position inside that file and every edit
+        //rewrites the whole of it; the panel owns the preview and the notices that say so.
+        private TabPage MaterialEditorTab;
+        private FlashEditor.Definitions.Sprites.MaterialEditorPanel MaterialPanel = new FlashEditor.Definitions.Sprites.MaterialEditorPanel();
         //Index 32, the pre-login art store, and the only index holding two unrelated payload formats
         //with no flag to tell them apart: 21 JPEG images and 5 Jagex glyph sheets in the vanilla b639
         //capture. The panel owns the shape dispatch, the preview and the replace path because the two

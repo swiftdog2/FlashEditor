@@ -22,6 +22,9 @@ namespace FlashEditor.Definitions.Sprites {
         private static readonly Bitmap _fallbackThumb = new Bitmap(100, 100);
         private static RSCache _cacheRef;
 
+        /// <summary>Held across the check and the load in <see cref="EnsureLoaded"/>.</summary>
+        private static readonly object LoadGate = new object();
+
         /// <summary>
         /// Raw bytes of the entire columnar file for lossless round-trip.
         /// </summary>
@@ -83,10 +86,18 @@ namespace FlashEditor.Definitions.Sprites {
             if (forCache == null)
                 throw new ArgumentNullException(nameof(forCache));
 
-            if (ReferenceEquals(_cacheRef, forCache) && Textures.Count > 0)
-                return;
+            /* Serialised, because the callers are no longer all on one thread: the Materials tab
+               reaches this from the list panel's background worker, which is the right thread for a
+               whole-index decode, while GL initialisation reaches it from the UI thread. Two loads
+               running at once would each begin by disposing what the other was filling in. The
+               fast path is inside the lock as well - a check outside it would let a second caller
+               through while the first was still clearing. */
+            lock (LoadGate) {
+                if (ReferenceEquals(_cacheRef, forCache) && Textures.Count > 0)
+                    return;
 
-            new TextureManager(forCache).Load();
+                new TextureManager(forCache).Load();
+            }
         }
 
         public void Load() {
