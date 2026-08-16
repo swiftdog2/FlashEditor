@@ -30,65 +30,27 @@ namespace FlashEditor.Tests.Definitions.Sprites
     public class MaterialTableCodecTests
     {
         /// <summary>A boolean byte no cache holds, which decodes to false and cannot be rebuilt.</summary>
-        private const byte AliasedBooleanByte = 2;
+        private const byte AliasedBooleanByte = MaterialFileBuilder.AliasedBooleanByte;
 
         /// <summary>An existence byte the client reads as an empty slot, being anything but 1.</summary>
-        private const byte AliasedAbsentByte = 2;
-
-        /// <summary>
-        ///     Interleaves whole records into the column-major file the client reads.
-        /// </summary>
-        /// <remarks>
-        ///     Takes each record as its 23 stored bytes, so the only thing it borrows from the codec
-        ///     is where one column sits inside a record. What is being asserted below is which of
-        ///     those bytes survive an edit, and that is independent of where they sit.
-        /// </remarks>
-        /// <param name="existence">One existence byte per slot.</param>
-        /// <param name="rows">One 23-byte record per slot, ignored where the slot is absent.</param>
-        /// <returns>The encoded file.</returns>
-        private static byte[] BuildFile(byte[] existence, byte[][] rows)
-        {
-            var stream = new JagStream();
-            stream.WriteShort(existence.Length);
-
-            foreach (byte flag in existence)
-                stream.WriteByte(flag);
-
-            for (int column = 0; column < MaterialTable.ColumnCount; column++)
-            {
-                int offset = MaterialTable.OffsetOf((MaterialColumn) column);
-                int width = MaterialTable.WidthOf((MaterialColumn) column);
-
-                for (int slot = 0; slot < existence.Length; slot++)
-                    if (existence[slot] == 1)
-                        stream.Write(rows[slot], offset, width);
-            }
-
-            stream.Flip();
-            return stream.ToArray();
-        }
+        private const byte AliasedAbsentByte = MaterialFileBuilder.AliasedAbsentByte;
 
         /// <summary>A record whose every byte is distinct, so a misplaced column is visible.</summary>
         /// <param name="seed">Value of the record's first byte.</param>
         /// <returns>The 23 stored bytes.</returns>
-        private static byte[] Row(int seed)
-        {
-            var row = new byte[MaterialTable.BytesPerRecord];
-            for (int i = 0; i < row.Length; i++)
-                row[i] = (byte) (seed + i);
-            return row;
-        }
+        private static byte[] Row(int seed) => MaterialFileBuilder.Row(seed);
+
+        /// <summary>Interleaves whole records into the column-major file the client reads.</summary>
+        /// <param name="existence">One existence byte per slot.</param>
+        /// <param name="rows">One 23-byte record per slot, ignored where the slot is absent.</param>
+        /// <returns>The encoded file.</returns>
+        private static byte[] BuildFile(byte[] existence, byte[][] rows) =>
+            MaterialFileBuilder.BuildFile(existence, rows);
 
         /// <summary>A two-slot file whose first record carries a boolean byte no cache holds.</summary>
         /// <returns>The existence column, the rows and the encoded file.</returns>
-        private static (byte[] Existence, byte[][] Rows, byte[] File) FileWithAnAliasedBoolean()
-        {
-            byte[][] rows = { Row(0x10), Row(0x40) };
-            rows[0][MaterialTable.OffsetOf(MaterialColumn.Field1822)] = AliasedBooleanByte;
-
-            var existence = new byte[] { 1, 1 };
-            return (existence, rows, BuildFile(existence, rows));
-        }
+        private static (byte[] Existence, byte[][] Rows, byte[] File) FileWithAnAliasedBoolean() =>
+            MaterialFileBuilder.FileWithAnAliasedBoolean();
 
         /// <summary>A table nobody has touched re-encodes to the file it was read from.</summary>
         [Fact]
@@ -216,6 +178,93 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             Assert.False(table.IsDirty);
             Assert.Equal(file, table.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     A field set and then set back re-encodes to the bytes it was read from.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A different claim from the byte-identity sweep, and one that sweep cannot make.</b>
+        ///     It proves an <i>unedited</i> record comes back as it was; this is about an edit that
+        ///     nets nothing, which has to write nothing - a re-encode rewrites the archive CRC and
+        ///     drags in the reference-table entry of everything packed beside it. Four defects in
+        ///     this repository have lived in exactly that gap.
+        /// </remarks>
+        [Fact]
+        public void AFieldSetAndSetBack_ReEncodesToTheStoredBytes()
+        {
+            (_, _, byte[] file) = FileWithAnAliasedBoolean();
+            MaterialTable table = MaterialTable.Decode(new JagStream(file));
+
+            TextureDefinition edited = table.Slots[1];
+            int hsl = edited.field1831;
+            sbyte signed = edited.field1829;
+            int state = edited.field1835;
+
+            edited.field1831 = hsl ^ 0x0FF0;
+            edited.field1829 = (sbyte) ~signed;
+            edited.field1835 = unchecked((int) 0xDEADBEEF);
+            Assert.True(table.IsDirty, "the table has to notice an edit before it can notice it being undone");
+
+            edited.field1831 = hsl;
+            edited.field1829 = signed;
+            edited.field1835 = state;
+
+            Assert.False(table.IsDirty);
+            Assert.Equal(file, table.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     Unsetting a flag whose stored byte is not 0 or 1 puts that byte back, not a 0.
+        /// </summary>
+        /// <remarks>
+        ///     The case that makes the set-and-unset check worth writing rather than assuming. A
+        ///     boolean column decodes many-to-one, so a stored 2 is false and the bool cannot
+        ///     reproduce it; a dirty flag that latched on the first assignment would re-encode this
+        ///     column from its field and quietly normalise the byte away. Neither supported cache
+        ///     carries one, so no sweep over either would ever say so.
+        /// </remarks>
+        [Fact]
+        public void AFlagSetAndUnset_RestoresAnAliasedStoredByte()
+        {
+            (_, _, byte[] file) = FileWithAnAliasedBoolean();
+            MaterialTable table = MaterialTable.Decode(new JagStream(file));
+
+            TextureDefinition aliased = table.Slots[0];
+            Assert.False(aliased.field1822, "a boolean byte of 2 is false to the client");
+
+            aliased.field1822 = true;
+            Assert.True(table.IsDirty);
+
+            aliased.field1822 = false;
+
+            Assert.False(table.IsDirty);
+            Assert.Equal(file, table.Encode().ToArray());
+            Assert.Equal(AliasedBooleanByte,
+                table.Encode().ToArray()[FileOffsetOf(MaterialColumn.Field1822, slot: 0, slots: 2)]);
+        }
+
+        /// <summary>
+        ///     Where one slot's column sits in the encoded file.
+        /// </summary>
+        /// <remarks>
+        ///     Derived from the layout the codec states rather than counted by hand, so this stays
+        ///     right if a column's width ever turns out to be something else - the widths are pinned
+        ///     against the shipped file by <c>RealCacheMaterialTests</c>, not here.
+        /// </remarks>
+        /// <param name="column">The column.</param>
+        /// <param name="slot">The slot within it.</param>
+        /// <param name="slots">How many slots the file declares, all of them present.</param>
+        /// <returns>The byte offset.</returns>
+        private static int FileOffsetOf(MaterialColumn column, int slot, int slots)
+        {
+            //The count, then the existence column, then every column before this one in full.
+            int at = 2 + slots;
+
+            for (int earlier = 0; earlier < (int) column; earlier++)
+                at += MaterialTable.WidthOf((MaterialColumn) earlier) * slots;
+
+            return at + MaterialTable.WidthOf(column) * slot;
         }
 
         /// <summary>The decoder stops on the last column rather than on the end of the buffer.</summary>
