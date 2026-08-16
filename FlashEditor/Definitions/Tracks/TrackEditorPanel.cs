@@ -118,21 +118,23 @@ namespace FlashEditor.Definitions.Tracks {
             Font = EditorTheme.UiFont
         };
 
-        /* States what the player does not reproduce, in the view, because a user comparing it
-           against the game has no other way to tell a documented choice from a defect. The same
-           rule the 3D viewer follows. */
-        private readonly Label playerNote = new Label {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            Font = new Font("Consolas", 8F),
-            Text =
-                "Playback uses the cache's own patch bank (index 15) and Vorbis samples (index 14),\r\n" +
-                "not a General MIDI synth. It is not the client, and diverges on purpose:\r\n" +
-                "  - index-4 procedural samples are silent (14 of the bank's 21,491 keys)\r\n" +
-                "  - no voice stealing, so dense passages keep notes the client would drop\r\n" +
-                "  - no portamento, no CC81 re-trigger, no aftertouch (the client discards that too)\r\n" +
-                "Exported MIDI plays on General MIDI instead, so it will not sound like this."
-        };
+        /// <summary>
+        ///     What the player does not reproduce, and why each omission is a choice.
+        /// </summary>
+        /// <remarks>
+        ///     Reachable in the view, because a user comparing it against the game has no other way
+        ///     to tell a documented choice from a defect. The same rule the 3D viewer follows. It
+        ///     hangs off the transport rather than being docked above the Track box: the whole
+        ///     paragraph is about what pressing Play produces, and the side panel is 340 pixels
+        ///     wide, so six wrapped lines of it were the tallest thing on the strip.
+        /// </remarks>
+        private const string PlayerNote =
+            "Playback uses the cache's own patch bank (index 15) and Vorbis samples (index 14),\r\n" +
+            "not a General MIDI synth. It is not the client, and diverges on purpose:\r\n" +
+            "  - index-4 procedural samples are silent (14 of the bank's 21,491 keys)\r\n" +
+            "  - no voice stealing, so dense passages keep notes the client would drop\r\n" +
+            "  - no portamento, no CC81 re-trigger, no aftertouch (the client discards that too)\r\n" +
+            "Exported MIDI plays on General MIDI instead, so it will not sound like this.";
 
         private readonly ProgressBar progress = new ProgressBar { Dock = DockStyle.Bottom, Height = 20 };
 
@@ -435,10 +437,9 @@ namespace FlashEditor.Definitions.Tracks {
             var detailGroup = new GroupBox { Text = "Track", Dock = DockStyle.Fill };
             detailGroup.Controls.Add(details);
             /* Docked controls are laid out from the last added to the first, so this list reads
-               bottom to top: the note sits directly above the Track box and the transport ends up
-               at the top of the strip. */
+               bottom to top: the Track box fills what is left and the transport ends up at the top
+               of the strip. */
             side.Controls.Add(detailGroup);
-            side.Controls.Add(playerNote);
             side.Controls.Add(exportButton);
             side.Controls.Add(replaceButton);
             side.Controls.Add(BuildTransportRow());
@@ -487,6 +488,13 @@ namespace FlashEditor.Definitions.Tracks {
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
             row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            /* The (i) goes on the transport, beside the button its paragraph is about, rather than
+               being docked under it as six wrapped lines of standing text. */
+            transport.Items.Add(new ToolStripControlHost(
+                InfoAffordance.For(transport, InfoKind.Limitation, PlayerNote)) {
+                Alignment = ToolStripItemAlignment.Right
+            });
 
             row.Controls.Add(transport, 1, 0);
 

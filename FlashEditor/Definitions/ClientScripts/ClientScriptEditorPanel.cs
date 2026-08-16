@@ -1,6 +1,7 @@
 using BrightIdeasSoftware;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.UI;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -73,18 +74,24 @@ namespace FlashEditor.Definitions.ClientScripts {
         private readonly FastObjectListView instructions = Grid();
         private readonly FastObjectListView switchCases = Grid();
 
-        /* AutoSize rather than a stated height on every label here, so the lines the text needs are
-           the lines it gets whatever font the form ends up scaling to. Height only - the width comes
-           from the dock, and wrapping within it is what ConstrainLabels arranges. */
-        private readonly Label notice = new Label {
-            AutoSize = true,
+        /* Behind an (i) rather than docked as a paragraph. The content is unchanged and still
+           discharges the "say what the editor cannot do" rule - what changed is that four lines of
+           standing policy no longer take four lines of the grid's height on every visit. */
+        private readonly InfoAffordance notice = new InfoAffordance {
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = NoticeText
+            Kind = InfoKind.Limitation,
+            Caption = "How to read this listing",
+            Summary = "How to read this listing",
+            Body = NoticeText
         };
 
         /* Separate from the notice because it is measured rather than written: the notice states
-           the policy and this states what that policy currently buys, from the rows in hand. */
+           the policy and this states what that policy currently buys, from the rows in hand. It
+           stays a label for that reason - a number nobody sees is a number nobody checks.
+           AutoSize rather than a stated height, so the lines the text needs are the lines it gets
+           whatever font the form ends up scaling to. Height only - the width comes from the dock,
+           and wrapping within it is what ConstrainLabels arranges. */
         private readonly Label coverage = new Label {
             AutoSize = true,
             Dock = DockStyle.Top,
@@ -99,11 +106,13 @@ namespace FlashEditor.Definitions.ClientScripts {
             Text = NoCacheText
         };
 
-        private readonly Label switchNote = new Label {
-            AutoSize = true,
+        private readonly InfoAffordance switchNote = new InfoAffordance {
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = SwitchNoteText
+            Kind = InfoKind.Help,
+            Caption = "Switch tables",
+            Summary = "Switch tables",
+            Body = SwitchNoteText
         };
 
         /* No splitter states a minimum size. Setting one re-checks the current distance against it,
@@ -250,8 +259,10 @@ namespace FlashEditor.Definitions.ClientScripts {
         ///     An <c>AutoSize</c> label docked to the top is handed the container's width and then
         ///     measures its text on one line, so a sentence longer than the pane is a sentence with
         ///     its tail cut off. The switch note lost its client citation exactly that way in the
-        ///     narrower right-hand pane, and the summary line - which names a script, its size, its
-        ///     frame, its parameters and its identifier - is longer still.
+        ///     narrower right-hand pane - it is an <see cref="InfoAffordance"/> now and wraps to its
+        ///     own measured column, which is the point of the control, but the summary line beside
+        ///     it, which names a script, its size, its frame, its parameters and its identifier, is
+        ///     longer still and is still a label.
         ///     <para>
         ///     A <c>MaximumSize</c> width is what turns the measurement into a wrapping one. It is
         ///     the one pixel count in this panel, and it is taken from the measured pane on every
@@ -261,10 +272,8 @@ namespace FlashEditor.Definitions.ClientScripts {
         ///     </para>
         /// </remarks>
         private void ConstrainLabels() {
-            Constrain(notice, ClientSize.Width);
             Constrain(coverage, ClientSize.Width);
             Constrain(header, listAndDetail.Panel2.ClientSize.Width);
-            Constrain(switchNote, streamAndSwitches.Panel2.ClientSize.Width);
         }
 
         /// <summary>Caps one label's width so its text wraps at the pane edge.</summary>
@@ -330,6 +339,11 @@ namespace FlashEditor.Definitions.ClientScripts {
             //to be added after the filled control beside it or that control claims the whole pane.
             streamAndSwitches.Panel2.Controls.Add(switchCases);
             streamAndSwitches.Panel2.Controls.Add(switchNote);
+
+            //Named for a screen reader only. InfoAffordance deliberately does not reparent or
+            //position anything from this, so it has to be set as well as docked, not instead.
+            switchNote.Describes = switchCases;
+            notice.Describes = scripts;
 
             listAndDetail.Panel1.Controls.Add(scripts);
             listAndDetail.Panel2.Controls.Add(streamAndSwitches);

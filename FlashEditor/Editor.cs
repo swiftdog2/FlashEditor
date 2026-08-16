@@ -3543,28 +3543,15 @@ namespace FlashEditor {
             SpritePreview.Zoom = (int) SpriteZoom.Value;
             SpritePreview.OutlineFrame = SpriteFrameOutline.Checked;
 
-            //An AutoSize label docked to an edge grows sideways and is clipped by its container: it
-            //wraps only once its MaximumSize states a width. Re-measured on resize, because that
-            //width is the page's and the page follows the form.
-            SpriteEditorTab.SizeChanged += (_, _) => {
-                WrapSpriteNotice();
-                PlaceSpriteSplitter();
-            };
-            WrapSpriteNotice();
+            /* The notice used to need a width to wrap against on every resize, because an AutoSize
+               label docked to an edge grows sideways and is clipped by its container. It is an
+               InfoAffordance now and measures its own column, so only the splitter is re-placed. */
+            SpriteEditorTab.SizeChanged += (_, _) => PlaceSpriteSplitter();
 
             /* Re-placed on every resize rather than once. SplitterMoving is raised only for a drag,
                so the moment the user states a preference the measurement stops overriding it. */
             SpriteSplit.SizeChanged += (_, _) => PlaceSpriteSplitter();
             SpriteSplit.SplitterMoving += (_, _) => _spriteSplitMovedByHand = true;
-        }
-
-        /// <summary>Gives the sprite notice a width to wrap against.</summary>
-        private void WrapSpriteNotice() {
-            int width = SpriteEditorTab.ClientSize.Width;
-            //Written only when it changes: assigning a maximum size lays the page out again, and a
-            //layout is what raises the event this is called from.
-            if (width > 0 && SpriteNoticeLabel.MaximumSize.Width != width)
-                SpriteNoticeLabel.MaximumSize = new Size(width, 0);
         }
 
         /// <summary>

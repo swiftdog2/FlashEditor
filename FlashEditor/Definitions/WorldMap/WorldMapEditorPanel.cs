@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
+using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
 namespace FlashEditor.Definitions.WorldMap {
@@ -67,11 +68,16 @@ namespace FlashEditor.Definitions.WorldMap {
             Text = NoCacheText
         };
 
-        private readonly Label notice = new Label {
-            AutoSize = true,
+        /* Behind an (i), with the clause that stops someone editing the wrong tab kept on screen as
+           the summary. The rest is the reasoning, which is worth reading once and not on every
+           visit. */
+        private readonly InfoAffordance notice = new InfoAffordance {
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = "NOT the Map tab. That one edits index 5, the terrain the game world is built from. " +
+            Kind = InfoKind.Limitation,
+            Caption = "Read only, and NOT the Map tab",
+            Summary = "Read only, and NOT the Map tab",
+            Body = "NOT the Map tab. That one edits index 5, the terrain the game world is built from. " +
                    "This is the pre-rendered overview a player opens, which the client draws without " +
                    "reading index 5 at all - so the two can disagree, and editing terrain leaves this " +
                    "picture stale. Read only for that reason: a change made here would move nothing in " +
@@ -241,7 +247,6 @@ namespace FlashEditor.Definitions.WorldMap {
         /// </remarks>
         private void WrapNotices() {
             Wrap(header, ClientSize.Width);
-            Wrap(notice, ClientSize.Width);
             Wrap(previewNote, previewAndDetail.Panel1.ClientSize.Width);
         }
 
@@ -341,6 +346,10 @@ namespace FlashEditor.Definitions.WorldMap {
             Controls.Add(actions);
             Controls.Add(notice);
             Controls.Add(header);
+
+            //Named for a screen reader only. InfoAffordance does not reparent or position itself
+            //from this, so it has to be docked as well, not instead.
+            notice.Describes = areas;
 
             //Bound before any cache arrives so the grid has headings from the start.
             areas.Bind(null, Descriptor);
