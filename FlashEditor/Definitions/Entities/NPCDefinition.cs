@@ -327,6 +327,20 @@ namespace FlashEditor.Definitions.Entities {
         ///     list is what makes those seventeen re-encode to their stored bytes.
         /// </remarks>
         private List<KeyValuePair<int, object>> config;
+
+        /// <summary>
+        ///     The opcode-249 parameters, in stored order, for a reader that only wants to look.
+        /// </summary>
+        /// <remarks>
+        ///     Read only, so the ordering and repetition the encoder depends on cannot be disturbed
+        ///     from outside. It exists because the parameter keys are one of the joins the structured
+        ///     export resolves - a key addresses a record of index 2 group 11 - and the alternative
+        ///     was for the exporter to re-parse the opcode 249 payload itself, which would be a
+        ///     second decoder for the same bytes.
+        /// </remarks>
+        public IReadOnlyList<KeyValuePair<int, object>> Parameters =>
+            config ?? (IReadOnlyList<KeyValuePair<int, object>>) Array.Empty<KeyValuePair<int, object>>();
+
         private sbyte someField112;
         private int someField1101;
         private int someField1090;
