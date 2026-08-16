@@ -10,6 +10,7 @@ using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using static FlashEditor.Utils.DebugUtil;
 using FlashEditor.IO;
+using FlashEditor.UI;
 
 namespace FlashEditor.Definitions.LoadingSprites {
     /// <summary>
@@ -78,11 +79,16 @@ namespace FlashEditor.Definitions.LoadingSprites {
             Text = NoCacheText
         };
 
-        private readonly Label notice = new Label {
-            AutoSize = true,
+        /* Behind an (i). The clause that stops a wrong inference - that this tab cannot tell you
+           which picture is the loading screen - stays on screen as the summary, because it is the
+           question a user arrives with. */
+        private readonly InfoAffordance notice = new InfoAffordance {
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = "Shape is decided by the payload's own FF D8 magic, not by the index: RSConstants calls " +
+            Kind = InfoKind.Limitation,
+            Caption = "Which picture is the backdrop cannot be answered here",
+            Summary = "Which picture is the backdrop cannot be answered here",
+            Body = "Shape is decided by the payload's own FF D8 magic, not by the index: RSConstants calls " +
                    "index 32 \"loading sprites in jpg format\" and five of its groups are Jagex glyph sheets." +
                    Environment.NewLine +
                    "This tab cannot tell you which image is the loading-screen background. The client names no " +
@@ -156,13 +162,16 @@ namespace FlashEditor.Definitions.LoadingSprites {
         };
 
         /* The accepted shape is spliced in from the policy rather than retyped, so the limit this
-           label states and the limit ReplaceStored enforces cannot drift apart. A refusal the user
-           was never warned about reads as the tab being broken. */
-        private readonly Label cost = new Label {
-            AutoSize = true,
-            Dock = DockStyle.Bottom,
+           note states and the limit ReplaceStored enforces cannot drift apart. A refusal the user
+           was never warned about reads as the tab being broken.
+           It sits on the actions strip beside the button it is about rather than docked under it:
+           the whole paragraph is about what pressing Replace does. */
+        private readonly InfoAffordance cost = new InfoAffordance {
             Font = GridFont,
-            Text = "Replace stores the file you pick byte for byte - there is no transcode, so what the client " +
+            Kind = InfoKind.Cost,
+            Caption = "What replacing costs",
+            Summary = "What replacing costs",
+            Body = "Replace stores the file you pick byte for byte - there is no transcode, so what the client " +
                    "sees is your file and not a re-encoding of it. It rewrites the group's CRC and the " +
                    "reference-table entry of every archive packed beside it, and stages the change; nothing " +
                    "reaches disk until the cache is saved." + Environment.NewLine +
@@ -251,8 +260,6 @@ namespace FlashEditor.Definitions.LoadingSprites {
         /// </remarks>
         private void WrapNotices() {
             Wrap(header, ClientSize.Width);
-            Wrap(notice, ClientSize.Width);
-            Wrap(cost, ClientSize.Width);
             Wrap(previewNote, previewAndFields.Panel1.ClientSize.Width);
         }
 
@@ -295,6 +302,7 @@ namespace FlashEditor.Definitions.LoadingSprites {
             actions.Controls.Add(exportImage);
             actions.Controls.Add(exportStored);
             actions.Controls.Add(replaceStored);
+            actions.Controls.Add(cost);
             actions.Controls.Add(status);
 
             previewAndFields.Panel1.Controls.Add(preview);
@@ -307,10 +315,14 @@ namespace FlashEditor.Definitions.LoadingSprites {
             //Docking resolves from the end of the Controls collection backwards, so the strips have
             //to be added after the filled splitter and in inside-out order among themselves.
             Controls.Add(listAndPreview);
-            Controls.Add(cost);
             Controls.Add(actions);
             Controls.Add(notice);
             Controls.Add(header);
+
+            //Named for a screen reader only. InfoAffordance does not reparent or position itself
+            //from this, so each still has to be placed.
+            notice.Describes = groups;
+            cost.Describes = replaceStored;
 
             //Bound before any cache arrives so the grid has headings from the start.
             groups.Bind(null, new LoadingSpriteListDescriptor());
