@@ -1662,6 +1662,14 @@ namespace FlashEditor {
             go.DropDownItems.Add(forward);
             menuStrip1.Items.Add(go);
 
+            /* The one surface that names a record elsewhere without being a definition list: the
+               Interfaces page's behaviour panel, whose Script column points into index 12. Wired
+               once here rather than per tab load, because unlike the definition lists this panel is
+               built with the form and never replaced. It raises the same event type a list does, so
+               it takes the same handler and there is exactly one place deciding what following a
+               reference means. */
+            InterfacePanel.ReferenceActivated += OnCellActivated;
+
             navigator.Navigated += (_, location) => ShowLocation(location);
             navigator.HistoryChanged += (_, _) => {
                 back.Enabled = navigator.CanGoBack;

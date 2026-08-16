@@ -95,6 +95,39 @@ namespace FlashEditor.Definitions.Interfaces {
         /// </remarks>
         public const string StringSentinel = "event_opbase";
 
+        /// <summary>
+        ///     What slot 0's setter cell says.
+        /// </summary>
+        /// <remarks>
+        ///     Stated once and in words rather than left blank. An empty cell in a column headed
+        ///     "set by" reads as a gap in this table; slot 0 having no setter is a finding, and the
+        ///     only opcode in the 1400 block that touches it is 1499, which clears everything.
+        /// </remarks>
+        public const string ClientFiresIt =
+            "none: no setter at all, the client fires it as the interface opens";
+
+        /// <summary>
+        ///     What a slot with no trigger array says.
+        /// </summary>
+        /// <remarks>
+        ///     Fifteen of the twenty pair with nothing, so this is the common case rather than a
+        ///     missing value - the five that do pair are set together with their triggers in one CS2
+        ///     statement, and showing a hook without its triggers would show half the record.
+        /// </remarks>
+        public const string NoTriggerArray = "no trigger array";
+
+        /// <summary>
+        ///     The CS2 opcodes that set hook arrays the wire format does not carry.
+        /// </summary>
+        /// <remarks>
+        ///     1418 to 1427, setting <c>anObjectArray2239</c>, <c>2274</c>, <c>2215</c>, <c>2292</c>,
+        ///     <c>2340</c>, <c>2330</c>, <c>2319</c>, <c>2294</c>, <c>2220</c> and <c>2266</c>. None
+        ///     of them is read by <c>unpackConfig</c>, so no component file can hold one and nothing
+        ///     may give them a row - a reader who saw twenty rows here and thirty setters in the
+        ///     disassembler would go looking in the bytes for ten arrays that are not there.
+        /// </remarks>
+        public const string RuntimeOnlySetters = "1418 to 1427";
+
         /// <summary>How many slots the wire format stores.</summary>
         public static int Count => Table.Length;
 
@@ -115,7 +148,7 @@ namespace FlashEditor.Definitions.Interfaces {
             Slot entry = At(slot);
 
             string setter = entry.SetterOpcode < 0
-                ? "no setter, the client fires it as the interface opens"
+                ? ClientFiresIt
                 : "set by CS2 " + entry.SetterOpcode;
 
             string triggers = entry.TriggerArray < 0

@@ -128,6 +128,17 @@ namespace FlashEditor.Definitions.Interfaces {
             Orientation = Orientation.Vertical
         };
 
+        /* The field pane and the behaviour panel share the right-hand column. They are two halves of
+           one question - what does this component store, and what does it do - and the behaviour
+           half was rows 61 to 100 of the field grid until it got a surface of its own, which put the
+           only part of the record that is a program in the same list as its line height. */
+        private readonly SplitContainer fieldsAndHooks = new SplitContainer {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal
+        };
+
+        private readonly InterfaceHookPanel hooks = new InterfaceHookPanel();
+
         private readonly InterfaceCanvas canvas = new InterfaceCanvas();
 
         private readonly EditorToolStrip canvasTools = new EditorToolStrip {
@@ -174,7 +185,24 @@ namespace FlashEditor.Definitions.Interfaces {
             canvas.SelectionChanged += (_, _) => ReportSelection();
             components.CellActivated += (_, e) => PickColour(e);
             canvas.Refused += (_, why) => components.ReportStatus(why);
+
+            //Forwarded, not handled. What following a hook's script means is the form's decision and
+            //it already has one - this panel would otherwise be a second navigation mechanism with
+            //its own history.
+            hooks.ReferenceActivated += (_, e) => ReferenceActivated?.Invoke(this, e);
         }
+
+        /// <summary>
+        ///     Raised when the user activates something on this page that names a record in another
+        ///     index.
+        /// </summary>
+        /// <remarks>
+        ///     Today that is one thing: the script a hook calls, in the behaviour panel, which lives
+        ///     in index 12. It carries the same event type a <c>DefinitionListPanel</c> raises so the
+        ///     form's existing handler takes it unchanged - the whole point is that there is one
+        ///     place deciding what following a reference does, and one back stack behind it.
+        /// </remarks>
+        public event EventHandler<DefinitionCellActivatedEventArgs>? ReferenceActivated;
 
         /// <summary>
         ///     Points the panel at a cache, or clears it when given none.
@@ -222,6 +250,7 @@ namespace FlashEditor.Definitions.Interfaces {
 
             interfaces.ClearObjects();
             fields.ClearObjects();
+            hooks.ShowHooks(null);
 
             //Cleared here as well as on a load, because binding a null cache does not publish rows
             //and so never raises RowsLoaded - the tree would otherwise keep the previous cache's
@@ -291,7 +320,8 @@ namespace FlashEditor.Definitions.Interfaces {
         /// </remarks>
         private void PlaceSplitters() {
             if (splittersPlaced || listAndDetail.Width < 200 || componentsAndFields.Height < 200
-                || treeAndComponents.Width < 200 || canvasAndFields.Width < 200)
+                || treeAndComponents.Width < 200 || canvasAndFields.Width < 200
+                || fieldsAndHooks.Height < 200)
                 return;
 
             //Set before the assignments, not after: changing a splitter distance lays the panel out
@@ -313,6 +343,12 @@ namespace FlashEditor.Definitions.Interfaces {
                    would put a scrollbar on the canvas while leaving the grid half empty. */
                 canvasAndFields.SplitterDistance =
                     Math.Max(canvasAndFields.Panel1MinSize, canvasAndFields.Width * 3 / 5);
+
+                /* Evenly. The field pane is sixty-odd rows and the hook panel is twenty-one, but the
+                   hook panel's rows are wide - a call with its arguments spelled out - so the space
+                   it wants is horizontal and giving it fewer rows would not help. */
+                fieldsAndHooks.SplitterDistance =
+                    Math.Max(fieldsAndHooks.Panel1MinSize, fieldsAndHooks.Height / 2);
             } catch (InvalidOperationException ex) {
                 //Left for the next layout rather than clamped. A clamped distance sticks, and the
                 //user would see a collapsed pane on a window that later has room for all three.
@@ -335,7 +371,10 @@ namespace FlashEditor.Definitions.Interfaces {
 
             canvasAndFields.Panel1.Controls.Add(canvas);
             canvasAndFields.Panel1.Controls.Add(canvasTools);
-            canvasAndFields.Panel2.Controls.Add(fields);
+
+            fieldsAndHooks.Panel1.Controls.Add(fields);
+            fieldsAndHooks.Panel2.Controls.Add(hooks);
+            canvasAndFields.Panel2.Controls.Add(fieldsAndHooks);
 
             componentsAndFields.Panel1.Controls.Add(treeAndComponents);
             componentsAndFields.Panel2.Controls.Add(canvasAndFields);
@@ -874,6 +913,7 @@ namespace FlashEditor.Definitions.Interfaces {
         /// <param name="row">The selected component, or null.</param>
         private void ShowComponent(InterfaceComponentRow? row) {
             fields.ClearObjects();
+            hooks.ShowHooks(row?.Component);
 
             if (row == null)
                 return;
@@ -949,30 +989,18 @@ namespace FlashEditor.Definitions.Interfaces {
                     component.RawTargetVerb + ", " + component.RawTargetCursor + ", " +
                     component.RawTargetOperand);
 
-            /* A hook is the only behaviour the file carries, so it gets two rows rather than one:
-               what it calls, in the form the client actually invokes it, and the raw operands the
-               bytes hold. The first is what a reader wants; the second is what an editor has to be
-               able to show, because the readable form drops the type bytes. */
-            for (int hook = 0; hook < InterfaceComponentDefinition.HookCount; hook++) {
-                if (component.Hooks[hook].Length == 0)
-                    continue;
+            /* The twenty hook arrays, the version-gated twenty-first and the five trigger arrays are
+               NOT listed here. They are the behaviour panel's, which shows all twenty slots against
+               the client field each lands in and the CS2 opcode that writes it, pairs the five
+               trigger arrays with the hooks they are set alongside, and makes each script id
+               followable. As rows in this grid they were the tail of a sixty-row list of scalars,
+               with a hook that stores nothing indistinguishable from a slot that cannot hold one.
 
-                yield return new FieldListing("hooks", InterfaceHookSlots.Describe(hook),
-                    InterfaceHookSlots.DescribeCall(component.Hooks[hook]));
-                yield return new FieldListing("hooks", "   stored operands",
-                    DescribeHook(component.Hooks[hook]));
-            }
-
-            if (component.VersionedHook.Length > 0) {
-                yield return new FieldListing("hooks",
-                    "the version-gated twenty-first array, which no file in either supported cache stores",
-                    InterfaceHookSlots.DescribeCall(component.VersionedHook));
-            }
-
-            for (int trigger = 0; trigger < InterfaceComponentDefinition.TriggerCount; trigger++)
-                if (component.Triggers[trigger].Length > 0)
-                    yield return new FieldListing("triggers", "Trigger " + trigger,
-                        string.Join(", ", component.Triggers[trigger]));
+               A count stays, because it is the one thing about behaviour that belongs beside the
+               scalars: it says at a glance whether this component does anything at all. */
+            yield return new FieldListing("behaviour", "Hook arrays stored",
+                component.HookArrayCount + " of " + InterfaceHookSlots.Count +
+                " - see the behaviour panel below");
         }
 
         /// <summary>The one type block this component's type reads.</summary>
@@ -1095,24 +1123,6 @@ namespace FlashEditor.Definitions.Interfaces {
             for (int option = 0; option < component.ContextOptions.Count; option++)
                 parts.Add((option + 1) + ". " + component.ContextOptions[option].Text);
             return string.Join("  ", parts);
-        }
-
-        /// <summary>
-        ///     One CS2 hook array as operands.
-        /// </summary>
-        /// <remarks>
-        ///     Strings are quoted and integers are not, because the type byte is the only thing that
-        ///     tells them apart on the wire and a hook that reads "1" is ambiguous without it.
-        /// </remarks>
-        /// <param name="operands">The hook's operands.</param>
-        /// <returns>The operands in stream order.</returns>
-        private static string DescribeHook(InterfaceScriptOperand[] operands) {
-            var parts = new List<string>(operands.Length);
-            foreach (InterfaceScriptOperand operand in operands)
-                parts.Add(operand.TypeByte == InterfaceScriptOperand.StringType
-                    ? "\"" + (operand.Text?.Text ?? "") + "\""
-                    : operand.Integer.ToString());
-            return string.Join(", ", parts);
         }
 
         /// <summary>A value in hex, zero padded to the width the format gives it.</summary>
