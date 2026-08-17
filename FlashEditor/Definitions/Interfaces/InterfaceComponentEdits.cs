@@ -217,6 +217,42 @@ namespace FlashEditor.Definitions.Interfaces {
         }
 
         /// <summary>
+        ///     A newly created component, in the shape the editor gives one.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A filled rectangle rather than a layer</b>, which is what a default-constructed
+        ///     component is. A layer draws nothing at all, so a created one would appear in the tree
+        ///     and nowhere on the canvas - an edit the user cannot tell from one that failed.
+        ///     <para>
+        ///     A mid grey rather than black, for the same reason: zero is a real stored colour on a
+        ///     rectangle, so a new component drawing in the colour an unset field would produce is
+        ///     one nobody can distinguish from a decode fault.
+        ///     </para>
+        ///     <para>
+        ///     Here rather than in the panel so that what the editor writes into a cache can be
+        ///     asserted without a window. It is a starting point and not a template: every field it
+        ///     sets is editable afterwards through the grid, the canvas or the field pane.
+        ///     </para>
+        /// </remarks>
+        /// <param name="groupId">The interface it belongs to.</param>
+        /// <param name="fileId">The file id it will take.</param>
+        /// <param name="parentId">
+        ///     Its parent's file id, or <see cref="InterfaceComponentDefinition.NoParent"/> for a
+        ///     root.
+        /// </param>
+        /// <returns>The component.</returns>
+        public static InterfaceComponentDefinition NewComponent(int groupId, int fileId, int parentId) {
+            return new InterfaceComponentDefinition(groupId, fileId) {
+                RawParentId = parentId,
+                ComponentType = 3,
+                BaseWidth = 64,
+                BaseHeight = 32,
+                Colour = 0x808080,
+                RectangleFilledByte = 1
+            };
+        }
+
+        /// <summary>
         ///     Repoints every stored parent reference through a renumbering.
         /// </summary>
         /// <remarks>

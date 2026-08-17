@@ -199,12 +199,37 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   `RealCacheReferenceTableShapeTests.ReferenceTableTrailingBytes_AreAbsentOrFourZeroBytesPerFile`,
   which requires three figures to agree on the offset: a field-by-field length from the format,
   where `Decode` leaves the stream, and what `Encode` writes.
-- **Saving stages; it does not touch the disk.** `RSCache.WriteFile` and everything above it write
+- **Saving stages; it does not touch the disk.** `RSCache.WriteFile`, `RSCache.WriteGroup` and
+  everything above them write
   into an in-memory overlay. Nothing reaches the filesystem until `RSCache.WriteCache`, which
   promotes the dat2 and every index file together so a cache is never half-updated. Both it and
   `RSFileStore.SaveTo` are `internal`. A read through the same `RSCache` after a write returns the
   new bytes whether or not it was committed, so **verify persistence by reopening the store**, not
   by reading back through the cache that wrote it.
+- **`WriteFile` changes what a group holds; `WriteGroup` changes which files it holds at all.**
+  That difference is the reference table, not the payload: the file count and the delta-encoded
+  per-file id list move with a rewrite, and there is no route to removing a file through
+  `WriteFile` at any price. Three rules `WriteGroup` carries that are each silently wrong when got
+  wrong. **The unchanged test is the ordered id list, the per-file identifiers and the payload
+  bytes, and the id list is checked separately from the payload** - file ids appear nowhere in a
+  group payload, so renumbering `{0,1,3}` to `{0,1,2}` leaves the bytes identical while changing
+  what the table declares, and a payload-only comparison discards that edit as a no-op. **A removal
+  drops the retained chunk split**, because the size table is `chunks x fileCount` and its file
+  dimension is positional. **An undeclared group is refused rather than adopted** - writing one
+  would promote repack residue into the table as though the editor had made it. Density is *not*
+  imposed here: sparse groups are legal and normal on other indexes, so the caller that knows
+  asserts it, which for index 3 is `InterfaceStructureWriter`.
+- **Index 3's groups are dense, 0 to n-1, and the client depends on it.** Measured in both caches
+  by `RealCacheInterfaceStructureTests.EveryInterface_NumbersItsComponentsDenselyFromZero`. The
+  client reads a group's file count as `maxFileId + 1` and throws the explicit id list away
+  whenever the two agree (`VersionTable.java:183,185`), so a hole left in an interface is read
+  with a file count that does not match its contents and every component past the hole is
+  addressed as a different one. That is what forces a structural edit to renumber rather than
+  leave a gap, and why a renumber re-points every `(interface << 16) | component` reference held
+  outside the group - by CS2 scripts in index 12 and by hook arguments in other interfaces. **The
+  editor reports the references it can see and says out loud that the rest exist.** Finding the
+  CS2 ones means scanning every compiled script for a constant and is not built, so no surface may
+  present a renumber as safe.
 ## UI conventions
 
 **This is the reference for anything with a user interface. Follow it rather than copying whatever

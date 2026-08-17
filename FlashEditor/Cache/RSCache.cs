@@ -251,6 +251,31 @@ namespace FlashEditor.Cache {
             //file entries. Left stale, a reloaded container decodes with the wrong ids.
             archiveEntry.SetValidFileIds(archiveEntry.GetFileEntries().Keys.ToArray());
 
+            StageArchive(indexId, archiveId, table, archiveEntry, container, payload);
+        }
+
+        /// <summary>
+        ///     Stages an encoded group payload and the reference-table entry that describes it.
+        /// </summary>
+        /// <remarks>
+        ///     The tail every write shares, whether it replaced one file or the whole file set.
+        ///     Shared rather than copied because every rule in it is one that is silently wrong
+        ///     when it is got wrong: the CRC covers the stored bytes and therefore the ciphertext,
+        ///     the version is a counter the JS5 protocol compares rather than a stamp, and the
+        ///     archive goes back under the key it was read under or not at all.
+        ///     <para>
+        ///     Called only once the caller has established that something actually changed. It
+        ///     writes unconditionally.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index the group belongs to.</param>
+        /// <param name="archiveId">The group id.</param>
+        /// <param name="table">The index's reference table.</param>
+        /// <param name="archiveEntry">The entry describing the group, already reconciled.</param>
+        /// <param name="container">The container the payload is stored in.</param>
+        /// <param name="payload">The encoded group payload.</param>
+        private void StageArchive(int indexId, int archiveId, RSReferenceTable table,
+            RSArchiveEntry archiveEntry, RSContainer container, JagStream payload) {
             container.Dirty = true;
 
             //Wrap the archive back into a container
@@ -334,6 +359,279 @@ namespace FlashEditor.Cache {
                write that threw part way leaves the store describing something else, and claiming
                otherwise would let the following save skip a change that was never stored. */
             container.PayloadIsAsStored = true;
+        }
+
+        /// <summary>
+        ///     Replaces a group's whole file set, which <see cref="WriteFile"/> cannot do.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The difference from <see cref="WriteFile"/> is the reference table, not the
+        ///     payload.</b> Writing a file changes what a group holds; writing a group changes
+        ///     which files it holds at all, and the file count and the delta-encoded id list in the
+        ///     table have to move with it. There is no way to remove a file through
+        ///     <see cref="WriteFile"/> at all, which is why a renumbering could be planned
+        ///     correctly and never applied.
+        ///     <para>
+        ///     <b>A rewrite that changes nothing writes nothing</b>, and that is decided before the
+        ///     group is touched. Three things have to match for a rewrite to be dropped: the
+        ///     ordered file id list, the per-file identifiers where the table carries any, and the
+        ///     encoded payload compared as bytes. The id list is checked separately from the
+        ///     payload because it is genuinely possible to change one without the other - file ids
+        ///     appear nowhere in a group payload, so renumbering <c>{0,1,3}</c> to <c>{0,1,2}</c>
+        ///     leaves the bytes identical while changing what the table declares. Comparing the
+        ///     payload alone would report that edit as a no-op and quietly discard it.
+        ///     </para>
+        ///     <para>
+        ///     <b>Numbering.</b> The ids must be ascending, unique and inside the unsigned short
+        ///     the table stores them in. Density is not required here, because sparse groups are
+        ///     legal and common - index 16 has 63 groups with holes in the middle of their range -
+        ///     and the client copes: it derives a file count of <c>maxFileId + 1</c> and keeps the
+        ///     explicit id list whenever that disagrees with the declared count
+        ///     (<c>VersionTable.java:183,185</c>). Where density <i>is</i> required it is a
+        ///     property of the content rather than of the format - a component is addressed by its
+        ///     position within its interface - so it is asserted by the caller that knows, not
+        ///     imposed on every index from here.
+        ///     </para>
+        ///     <para>
+        ///     <b>An undeclared group is never adopted.</b> A group that has bytes in the idx file
+        ///     and no entry in the reference table is repack residue the client can never load, and
+        ///     writing one would silently promote it into the table as though it were content the
+        ///     editor had created. This refuses instead. Nothing here can destroy one either:
+        ///     sector allocation only ever appends or reuses what this session freed, so an
+        ///     orphan's chain is not reachable from a write to a different group.
+        ///     </para>
+        ///     <para>
+        ///     Staged, like every other write. Nothing reaches the filesystem until
+        ///     <see cref="WriteCache"/>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index the group belongs to.</param>
+        /// <param name="groupId">The group to rewrite.</param>
+        /// <param name="files">
+        ///     The group's whole contents afterwards, ascending by file id. Anything the group
+        ///     currently holds and this does not name is removed.
+        /// </param>
+        /// <returns>Whether anything was staged.</returns>
+        /// <exception cref="IOException">The index is the meta index.</exception>
+        /// <exception cref="ArgumentException">The file set is empty, out of order, or out of range.</exception>
+        /// <exception cref="InvalidOperationException">The group is in the idx file but not in the table.</exception>
+        public bool WriteGroup(int indexId, int groupId, IReadOnlyList<RSGroupFile> files) {
+            if (files == null)
+                throw new ArgumentNullException(nameof(files));
+
+            //Same critical section as every other read and write: this mutates the container, its
+            //archive and the table entry in place.
+            lock (_containerLock)
+                return WriteGroupLocked(indexId, groupId, files);
+        }
+
+        private bool WriteGroupLocked(int indexId, int groupId, IReadOnlyList<RSGroupFile> files) {
+            if (indexId == RSConstants.META_INDEX)
+                throw new IOException("Reference tables can only be modified with the low level FileStore API!");
+
+            int[] newFileIds = ValidateGroupFiles(indexId, groupId, files);
+
+            Debug("Rewriting group " + indexId + "," + groupId + " with " + files.Count + " files");
+
+            RSReferenceTable table = GetReferenceTable(indexId);
+            bool entryExisted = table.archiveEntries.ContainsKey(groupId);
+
+            /* Repack residue, not content. The client resolves every group through the table, so a
+               group the table omits is unreachable in game whatever its bytes say - and turning it
+               into a declared group is a decision nobody asked for. EnumerateOrphanGroups exists to
+               report these; this refuses to be the thing that quietly absorbs one. */
+            if (!entryExisted && HasLiveIndexRecord(indexId, groupId))
+                throw new InvalidOperationException(
+                    "Index " + indexId + " group " + groupId + " holds bytes in the idx file that its" +
+                    " reference table does not declare. Writing it would adopt an undeclared group" +
+                    " into the table, which is a different change from the one asked for.");
+
+            RSArchiveEntry archiveEntry = entryExisted
+                ? table.GetArchiveEntry(groupId)
+                : new RSArchiveEntry(groupId);
+
+            //What the stored payload was encoded against. RSArchive.Decode is driven by this, so it
+            //has to describe the bytes on disk rather than the file set about to replace them.
+            int[] storedFileIds = entryExisted
+                ? archiveEntry.GetFileEntries().Keys.ToArray()
+                : Array.Empty<int>();
+
+            RSContainer container = GetContainer(indexId, groupId);
+
+            /* Borrowed rather than copied, exactly as WriteFile does: the archive encodes into a
+               fresh stream so this one is not disturbed. Null once the container has been
+               re-encoded in this session, in which case there is no baseline and the write goes
+               ahead unconditionally. */
+            JagStream? storedPayload = container.PayloadIsAsStored && container.HasData
+                ? container.GetStream()
+                : null;
+
+            RSArchive archive = container.GetArchive();
+            if (archive == null) {
+                //Rehydrated rather than started blank. ReadFile releases the decoded archive as
+                //soon as it has handed over one file, so by edit time this is routinely null, and
+                //editing from an empty archive would silently drop every file not being written.
+                archive = container.HasData && storedFileIds.Length > 0
+                    ? RSArchive.Decode(container.GetStream(), storedFileIds)
+                    : new RSArchive();
+                container.SetArchive(archive);
+            }
+
+            //Removals first, so a file that is leaving cannot be re-sliced on the way out.
+            foreach (int id in archive.GetFileIds())
+                if (Array.BinarySearch(newFileIds, id) < 0)
+                    archive.RemoveFile(id);
+
+            foreach (RSGroupFile file in files)
+                archive.PutFile(file.FileId, file.Data);
+
+            JagStream payload = archive.Encode();
+
+            /* --- the unchanged path ---
+               Checked here, before the container is re-encoded and before the entry is touched.
+               Re-encoding rewrites the stored bytes and therefore the archive CRC, which drags in
+               the reference-table entry of every group packed alongside this one, so "detect it
+               afterwards and roll back" is not available: by then the table has already moved. */
+            if (entryExisted
+                && storedFileIds.AsSpan().SequenceEqual(newFileIds)
+                && IdentifiersUnchanged(table, archiveEntry, files)
+                && storedPayload != null
+                && SameBytes(payload, storedPayload)) {
+                Debug("Unchanged group " + indexId + "," + groupId + " - leaving the stored bytes alone");
+                return false;
+            }
+
+            /* The entry's file list is rebuilt rather than patched. The table encoder writes the
+               file count and the delta-encoded ids from the file entries and the per-file name
+               hashes alongside them, so a stale entry left behind by a removal would keep
+               declaring a file the payload no longer holds - and the next decode would read the
+               size table against the wrong file count. */
+            var fileEntries = new SortedDictionary<int, RSFileEntry>();
+            foreach (RSGroupFile file in files) {
+                var entry = new RSFileEntry(file.FileId);
+                entry.SetIdentifier(file.Identifier);
+                fileEntries[file.FileId] = entry;
+            }
+
+            archiveEntry.SetFileEntries(fileEntries);
+            archiveEntry.SetValidFileIds(newFileIds);
+
+            StageArchive(indexId, groupId, table, archiveEntry, container, payload);
+            return true;
+        }
+
+        /// <summary>
+        ///     Checks a group rewrite's file set and returns its ids.
+        /// </summary>
+        /// <remarks>
+        ///     Every rule here is one the reference table's own encoding imposes. The count and
+        ///     each delta go out as unsigned shorts, and the deltas are only decodable if the ids
+        ///     ascend - a repeated or descending id encodes as a delta of zero or a wrapped
+        ///     negative and reads back as a different group entirely. An empty group has no payload
+        ///     to store at all, which <c>RSFileStore.Write</c> rejects further down with a message
+        ///     naming neither the group nor the reason.
+        /// </remarks>
+        /// <param name="indexId">The index, for the message.</param>
+        /// <param name="groupId">The group, for the message.</param>
+        /// <param name="files">The proposed contents.</param>
+        /// <returns>The file ids, ascending.</returns>
+        private static int[] ValidateGroupFiles(int indexId, int groupId, IReadOnlyList<RSGroupFile> files) {
+            string where = "index " + indexId + " group " + groupId;
+
+            if (files.Count == 0)
+                throw new ArgumentException(
+                    "Refusing to write " + where + " with no files: a group with no payload cannot be" +
+                    " stored, and the client cannot address one.", nameof(files));
+
+            if (files.Count > 0xFFFF)
+                throw new ArgumentException(
+                    "Refusing to write " + where + " with " + files.Count + " files: the reference" +
+                    " table stores a group's file count as an unsigned short.", nameof(files));
+
+            var ids = new int[files.Count];
+            int previous = -1;
+
+            for (int i = 0; i < files.Count; i++) {
+                RSGroupFile file = files[i];
+                if (file == null)
+                    throw new ArgumentException("Null file at position " + i + " of " + where + ".", nameof(files));
+
+                if (file.FileId <= previous)
+                    throw new ArgumentException(
+                        "Refusing to write " + where + ": file ids must ascend and be unique, and " +
+                        file.FileId + " follows " + previous + ". The table delta-encodes them.",
+                        nameof(files));
+
+                if (file.FileId > 0xFFFF)
+                    throw new ArgumentException(
+                        "Refusing to write " + where + ": file id " + file.FileId +
+                        " does not fit the unsigned short the table stores it in.", nameof(files));
+
+                ids[i] = file.FileId;
+                previous = file.FileId;
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        ///     Whether a rewrite leaves every file's name hash as the table already records it.
+        /// </summary>
+        /// <remarks>
+        ///     Part of the no-op test, and not a formality: index 3 names both levels, so moving a
+        ///     component without moving its identifier renames it, and re-stating the identifiers a
+        ///     group already carries has to stay free. Skipped outright on a table with the
+        ///     identifiers flag clear, where nothing is written and nothing can differ.
+        /// </remarks>
+        /// <param name="table">The index's reference table.</param>
+        /// <param name="entry">The group's current entry.</param>
+        /// <param name="files">The proposed contents.</param>
+        /// <returns>Whether the identifiers are unchanged.</returns>
+        private static bool IdentifiersUnchanged(RSReferenceTable table, RSArchiveEntry entry,
+            IReadOnlyList<RSGroupFile> files) {
+            if (!table.hasIdentifiers)
+                return true;
+
+            foreach (RSGroupFile file in files) {
+                RSFileEntry? current = entry.GetFileEntry(file.FileId);
+                if (current == null || current.GetIdentifier() != file.Identifier)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        ///     Whether an index's idx file holds a readable container for a group.
+        /// </summary>
+        /// <remarks>
+        ///     The same test <see cref="LoadContainer"/> applies, which is what makes a group's
+        ///     presence here mean "its bytes can actually be read" rather than "a six byte record
+        ///     exists". It excludes the not-present marker - a length of <c>0xFF0000</c> pointing at
+        ///     sector 0 - that index 10, 13 and 31 all carry in slot 0.
+        /// </remarks>
+        /// <param name="indexId">The index to look in.</param>
+        /// <param name="groupId">The group id.</param>
+        /// <returns>Whether the idx names a live container for it.</returns>
+        private bool HasLiveIndexRecord(int indexId, int groupId) {
+            int slots;
+            try {
+                slots = store.GetFileCount(indexId);
+            }
+            catch (FileNotFoundException) {
+                //No idx file for this index, so nothing can be recorded in it.
+                return false;
+            }
+
+            if (groupId < 0 || groupId >= slots)
+                return false;
+
+            RSIndex index = store.GetIndexEntry(indexId);
+            index.ReadContainerHeader(groupId);
+
+            return index.GetSize() > 0
+                && index.GetSectorID() > 0
+                && index.GetSectorID() < store.dataChannel.Length / RSSector.SIZE;
         }
 
         /// <summary>
@@ -785,21 +1083,15 @@ namespace FlashEditor.Cache {
                 }
 
                 RSReferenceTable? table = TryGetReferenceTable(indexId);
-                RSIndex index = store.GetIndexEntry(indexId);
-                long sectorLimit = store.dataChannel.Length / RSSector.SIZE;
 
                 for (int groupId = 0 ; groupId < slots ; groupId++) {
                     if (table != null && table.GetArchiveEntries().ContainsKey(groupId))
                         continue;
 
-                    index.ReadContainerHeader(groupId);
-
-                    if (index.GetSize() <= 0)
-                        continue;
-                    if (index.GetSectorID() <= 0 || index.GetSectorID() >= sectorLimit)
-                        continue;
-
-                    orphans.Add(groupId);
+                    //Through the same test the write path uses to refuse to adopt one, so the two
+                    //cannot come to disagree about what counts as a live record.
+                    if (HasLiveIndexRecord(indexId, groupId))
+                        orphans.Add(groupId);
                 }
 
                 return orphans;

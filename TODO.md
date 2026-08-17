@@ -66,7 +66,7 @@ with a worked case behind them, or that bind a specific item below.
 
 ## In flight
 
-**Item 18 is done. Item 26 is done bar 26h's write path. Item 19 is done bar two call sites
+**Item 18 is done. Item 26 is done. Item 19 is done bar two call sites
 named in its own section. Items 20 and 27 are under way.** What landed, and what each left behind:
 
 | | State | What is left |
@@ -80,6 +80,7 @@ named in its own section. Items 20 and 27 are under way.** What landed, and what
 | **26c** canvas | Done for types 0, 3, 4, 5, 6 and 9, clipped as the client clips, text in the cache's own glyphs | Models are marked, not drawn - the only route to model pixels is OpenGL. Text breaks only on `
 `; the client's wrap rule is unsettled |
 | **26f** opcode naming | Done. 126 newly named, 71 -> 197 | ~70 deliberately left numbered because the dispatcher does not settle them |
+| **26h** structural edits | Done. `RSCache.WriteGroup` in the archive layer, `InterfaceStructureWriter` above it, four toolbar actions above that | **A renumber is still an informed risk, not a safe operation**, and stays one until the CS2 reference scan in item 19's territory exists. The editor finds only the references inside the interface being edited and says so |
 
 **Corrections to this file's own item 18, found by doing it.** All three would have mis-scoped the
 work, and they are logged in `reference/DOC-CONFLICTS.md`:
@@ -635,17 +636,17 @@ necessary, because the record writer is reflective and states nothing twice. Plu
 
 ---
 
-### 26. A real interface editor
+### 26. A real interface editor - DONE
 
-**The largest single item in this file**, and now the one with the clearest plan. The prerequisites
-are paid: all 42,256 components across 1,078 interfaces re-encode byte-identically, six
-non-canonical cases are captured, and most rows carry a name verified by re-hashing it against the
-loaded cache rather than a bare hash.
+**The largest single item in this file.** All eight sub-items are done. The prerequisites were
+paid before any of them started: every component the reference table declares re-encodes
+byte-identically in both caches, six non-canonical cases are captured, and most rows carry a name
+verified by re-hashing it against the loaded cache rather than a bare hash.
 
-**What the tab is today**: an interface list, a component grid, and a read-only field pane. Four
-cells edit - X, Y, Width, Height (`InterfaceComponentListDescriptor.cs:157-164`). There is no
-canvas, no rendering of any kind, no tree, no colour picker, no creation or deletion, and no route
-from a hook to the script it names.
+**What the tab was when this item opened**, kept because every sub-item below is scoped against
+it: an interface list, a component grid, and a read-only field pane. Four cells edited - X, Y,
+Width, Height. There was no canvas, no rendering of any kind, no tree, no colour picker, no
+creation or deletion, and no route from a hook to the script it names.
 
 **Three findings that decide the design**, each worth reading before starting:
 
@@ -670,7 +671,7 @@ behaviour work; 26h is the only one that touches the archive layer.
 | **26e** | In-place text editing and colour pickers on every colour field | 26c, item 18 | **done.** Every colour the format carries is swatched: the shared one on types 3, 4, 5 and 9, and the type-5 outline. Adding the second one forced `DefinitionCellActivatedEventArgs` to carry its column - with two swatches on a row the old handler wrote the wrong field |
 | **26f** | Naming the `if_set*` / `cc_set*` opcode family in the disassembler | nothing | **done** |
 | **26g** | The behaviour panel: twenty named hook slots, each resolving to its script, with the call-time sentinels decoded | 26f, item 19 | **done.** `InterfaceHookPanel` over `InterfaceHookRow`, sharing the bottom-right pane with the field grid, which no longer lists hooks at all. Its Script column is a `Link` and it raises the same `DefinitionCellActivatedEventArgs` a definition list raises, so the form's existing `OnCellActivated` takes it and there is one call site - `Editor.cs`, beside the Go menu. What that link *does* is still item 19's |
-| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | **model done, not wired.** `InterfaceComponentEdits` plans the renumbering and the parent fix-up, tested on the invariant. **Applying one needs a group-level write the cache does not have** - see below |
+| **26h** | Component creation, deletion and reordering, with reference fix-up | 26b, 26d | **done.** `RSCache.WriteGroup` gave the archive layer the group-level write it never had, `InterfaceStructureWriter` turns a plan into a file set, and four toolbar actions drive it. A renumbering asks first and lists the planner's warnings verbatim - see below for what is still not safe about one |
 
 **Three findings from 26a that bind everything after it.** Each was caught by review before any
 code was written, and each would otherwise have become a test asserting a defect:
@@ -712,26 +713,42 @@ the storage and the setter, which are both checkable.
 `InterfaceLayoutResolver.ParentExtentsFor` to get the extents to invert against. Both are already
 built and both have a test that fails loudly if they are bypassed.
 
-**26h needs one thing this project does not have: a way to change which files a group contains.**
-`RSCache` exposes `WriteFile` and nothing else - no delete, no group rewrite - so a renumbering
-cannot be committed however correct the plan is. That is the whole remaining cost of 26h and it is
-archive-layer work, not interface work:
+**26h needed one thing this project did not have: a way to change which files a group contains.**
+`RSCache` exposed `WriteFile` and nothing else - no delete, no group rewrite - so a renumbering
+could be planned correctly and had nowhere to go. That was archive-layer work rather than
+interface work, and it is `RSCache.WriteGroup` now. What it had to get right, each of which fails
+silently otherwise:
 
 - Writing a group whose **file set** differs from the stored one, which changes the reference
   table's per-file id list and file count, not just a payload.
 - The client reads a group's file count as `maxFileId + 1` and throws the explicit id list away
   when the two agree (`VersionTable.java:183,185`), so the numbering must stay dense - which is
-  what forces the renumbering in the first place.
+  what forces the renumbering in the first place. **Density is asserted by
+  `InterfaceStructureWriter` and deliberately not by `WriteGroup`**, because sparse groups are
+  legal and normal on other indexes; index 3's are measured dense in both caches.
 - **The invariant that a save changing nothing writes nothing has to survive it.** Re-encoding
   rewrites the archive CRC and drags in the reference-table entry of every archive packed
-  alongside, so a no-op structural edit must be detected before the group is rewritten, not after.
+  alongside, so a no-op structural edit is detected before the group is rewritten. Twice: the
+  planner's empty plan is refused before the group is read at all, and `WriteGroup` compares the
+  ordered id list, the per-file identifiers and the payload bytes before it re-encodes anything.
+  **The id list is compared separately from the payload** - renumbering `{0,1,3}` to `{0,1,2}`
+  leaves the bytes identical while changing what the table declares.
 
 **And one thing no amount of care inside this project can fix:** a component is addressed from
 outside its interface as `(interface << 16) | file`, by CS2 scripts in index 12 and by hook
 arguments in other interfaces. Renumbering repoints all of those at a different component. The
-planner reports the references it can see and says plainly that the rest exist; finding the CS2
-ones means scanning 4,149 compiled scripts for a constant, which is its own item and would make
-26h materially safer.
+planner reports the references it can see and says plainly that the rest exist, the confirmation
+dialog prints those warnings verbatim, and the tree's limitation note says the list shown is a
+floor rather than a total. Finding the CS2 ones means scanning 4,149 compiled scripts for a
+constant, which is **its own item and is the thing that would make 26h materially safer**. Until
+it exists, every renumber in this editor is an informed risk rather than a safe operation, and the
+surface is written to keep it reading that way.
+
+**One property of the planner that an undo stack will meet.** `PlanInsert` is stated in *sibling
+positions* and yields whatever file id the sibling standing at that position currently holds, so
+it is the inverse of `PlanDelete` only when it lands on the id that was vacated. A parent left
+with no children appends to the end instead. Recorded in `reference/DOC-CONFLICTS.md`; the first
+draft of the round-trip test asserted an inverse that does not exist in general.
 
 ```
 Read CLAUDE.md, AGENTS.md, the UI conventions section, and reference/index-architect-03.md first.

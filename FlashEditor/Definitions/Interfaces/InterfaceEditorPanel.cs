@@ -152,6 +152,12 @@ namespace FlashEditor.Definitions.Interfaces {
         private RSCache? cache;
         private bool splittersPlaced;
 
+        /* The structure the tree and the canvas are both showing, kept so that a structural edit
+           plans against the same arrangement the user is looking at rather than building a second
+           tree that could disagree with it about what is a child of what. Null while nothing is
+           selected, which is what the edit buttons test before they do anything. */
+        private InterfaceComponentTree? structureTree;
+
         /* Owned by the tab and rebuilt per cache, because the tiles it holds are decoded from one
            particular cache and a reopen must not serve them from the previous one. */
         private DefinitionThumbnailCache? tiles;
@@ -254,8 +260,9 @@ namespace FlashEditor.Definitions.Interfaces {
 
             //Cleared here as well as on a load, because binding a null cache does not publish rows
             //and so never raises RowsLoaded - the tree would otherwise keep the previous cache's
-            //structure beside an empty grid.
+            //structure beside an empty grid, and a structural edit would plan against it.
             structure.Nodes.Clear();
+            structureTree = null;
             canvas.Show(null);
             components.Bind(null, NoInterface);
             header.Text = newCache == null ? NoCacheText : NoSelectionText;
@@ -441,18 +448,295 @@ namespace FlashEditor.Definitions.Interfaces {
             structureTools.AddAction(EditorIcon.Collapse, "Collapse to the roots", Keys.None,
                 (_, _) => structure.CollapseAll());
 
+            structureTools.AddSeparator();
+
+            /* The four structural edits. Every one of them states its cost in its own tooltip,
+               because the cost is invisible on screen: three of the four renumber components the
+               user did not touch, and a renumber re-points references this editor cannot see. */
+            structureTools.AddAction(EditorIcon.Add,
+                "Add a rectangle as the last child of the selected component."
+                + " Appending is the one insertion that renumbers nothing, which is why it is what"
+                + " this does - a component dropped in the middle would push every later id up.",
+                Keys.None, (_, _) => CreateComponent());
+
+            structureTools.AddAction(EditorIcon.Remove,
+                "Delete the selected component and every component beneath it."
+                + " The subtree goes too: a child stores its parent's file id, so leaving them"
+                + " behind would hand them to whichever component inherits that id."
+                + " Closes the numbering afterwards, which moves every later component.",
+                Keys.None, (_, _) => DeleteComponent());
+
+            structureTools.AddAction(EditorIcon.MoveUp,
+                "Draw the selected component one place earlier among its siblings."
+                + " Draw order is file-id order and is not a stored field, so this is a renumber"
+                + " rather than a property change.",
+                Keys.None, (_, _) => Reorder(-1));
+
+            structureTools.AddAction(EditorIcon.MoveDown,
+                "Draw the selected component one place later among its siblings."
+                + " Draw order is file-id order and is not a stored field, so this is a renumber"
+                + " rather than a property change.",
+                Keys.None, (_, _) => Reorder(1));
+
             structureTools.Items.Add(new ToolStripControlHost(InfoAffordance.For(structure,
                 InfoKind.Limitation,
                 "This tree is what the interface FILE says. It is not what a running client shows.\n\n" +
                 "Draw order is file-id order within a parent and is not a stored field, so the order " +
-                "here is the order the client would draw in - but 'send to back' would be a renumber, " +
-                "not a property change.\n\n" +
+                "here is the order the client would draw in - and 'send to back' is therefore a " +
+                "renumber rather than a property change. The move buttons do exactly that.\n\n" +
+                "A RENUMBER CANNOT BE MADE SAFE FROM HERE. A component is addressed from outside its " +
+                "interface as (interface << 16) | component, by CS2 scripts in index 12 and by hook " +
+                "arguments in other interfaces, and moving a component silently re-points every one " +
+                "of those at whatever now holds its old id. The confirmation lists the references " +
+                "that can be found, which is only ever the ones inside this interface - finding the " +
+                "CS2 ones means scanning every compiled script for a constant, and that is not built. " +
+                "So the list shown is a floor, never a total.\n\n" +
                 "Two things exist only at runtime and cannot appear here. CS2 scripts create dynamic " +
                 "children into a separate array the file knows nothing about, and interfaces are " +
                 "mounted into other interfaces by the server. A component with no children here may " +
                 "be full of them in game.")) {
                 Alignment = ToolStripItemAlignment.Right
             });
+        }
+
+        // ===================================================================
+        //  Creation, deletion and reordering
+        // ===================================================================
+
+        /// <summary>
+        ///     Adds a component as the last child of the selected one.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Appended rather than inserted, and that is a decision about cost.</b> Appending
+        ///     takes the group's next free file id and moves nothing; an insertion anywhere else
+        ///     pushes every later id up, which re-points every reference to any of them. A user who
+        ///     wants it somewhere else can move it there afterwards and will be told what that
+        ///     costs at the point they ask for it.
+        ///     <para>
+        ///     A rectangle rather than a layer, which is what a default-constructed component would
+        ///     be. A layer draws nothing at all, so a created one would appear in the tree and
+        ///     nowhere on the canvas, which reads as an edit that failed.
+        ///     </para>
+        /// </remarks>
+        private void CreateComponent() {
+            if (!TryBeginStructuralEdit(out RSCache open, out InterfaceComponentTree tree, out int groupId))
+                return;
+
+            //A root when nothing is selected, so an empty selection creates rather than refusing.
+            int parent = components.SelectedRow is InterfaceComponentRow row
+                ? row.FileId
+                : InterfaceComponentDefinition.NoParent;
+
+            InterfaceStructureEdit plan = InterfaceComponentEdits.PlanInsert(tree, parent, -1);
+            InterfaceComponentDefinition created =
+                InterfaceComponentEdits.NewComponent(groupId, plan.Inserted, parent);
+
+            Apply(open, groupId, plan, created,
+                "Add a rectangle as component " + plan.Inserted +
+                (parent == InterfaceComponentDefinition.NoParent
+                    ? ", with no parent."
+                    : ", the last child of component " + parent + "."));
+        }
+
+        /// <summary>Deletes the selected component and everything beneath it.</summary>
+        private void DeleteComponent() {
+            if (!TryBeginStructuralEdit(out RSCache open, out InterfaceComponentTree tree, out int groupId))
+                return;
+
+            if (components.SelectedRow is not InterfaceComponentRow row) {
+                components.ReportStatus("Select the component to delete first.");
+                return;
+            }
+
+            InterfaceStructureEdit plan = InterfaceComponentEdits.PlanDelete(tree, row.FileId);
+
+            Apply(open, groupId, plan, null,
+                plan.Removed.Count == 1
+                    ? "Delete component " + row.FileId + "."
+                    : "Delete component " + row.FileId + " and the " + (plan.Removed.Count - 1) +
+                      " components beneath it.");
+        }
+
+        /// <summary>
+        ///     Moves the selected component earlier or later among its siblings.
+        /// </summary>
+        /// <remarks>
+        ///     Stated as a step among siblings rather than as a target file id, because a sibling
+        ///     list is what draw order means and a file id is an implementation of it. A component
+        ///     already at the end its step would take it past simply reports that rather than
+        ///     staging an edit that clamps to where it already is.
+        /// </remarks>
+        /// <param name="step">-1 to draw earlier, 1 to draw later.</param>
+        private void Reorder(int step) {
+            if (!TryBeginStructuralEdit(out RSCache open, out InterfaceComponentTree tree, out int groupId))
+                return;
+
+            if (components.SelectedRow is not InterfaceComponentRow row) {
+                components.ReportStatus("Select the component to move first.");
+                return;
+            }
+
+            int parent = row.Component.RawParentId;
+            IReadOnlyList<int> siblings = parent == InterfaceComponentDefinition.NoParent
+                ? tree.Roots
+                : tree.ChildrenOf(parent);
+
+            int at = -1;
+            for (int i = 0; i < siblings.Count; i++)
+                if (siblings[i] == row.FileId)
+                    at = i;
+
+            if (at < 0) {
+                //Reachable: a component whose parent field names a file the group does not hold is
+                //in nobody's child list, so it has no siblings to be reordered among.
+                components.ReportStatus("Component " + row.FileId + " has no siblings to move among - " +
+                    "its parent, " + parent + ", is not a component of this interface.");
+                return;
+            }
+
+            if (at + step < 0 || at + step >= siblings.Count) {
+                components.ReportStatus("Component " + row.FileId + " is already drawn " +
+                    (step < 0 ? "first" : "last") + " among its siblings.");
+                return;
+            }
+
+            InterfaceStructureEdit plan = InterfaceComponentEdits.PlanReorder(tree, row.FileId, at + step);
+
+            Apply(open, groupId, plan, null,
+                "Draw component " + row.FileId + " " + (step < 0 ? "earlier" : "later") +
+                ", at position " + (at + step) + " of " + siblings.Count + " among its siblings.");
+        }
+
+        /// <summary>
+        ///     The state every structural edit needs, or a reason it cannot run.
+        /// </summary>
+        /// <remarks>
+        ///     The tree is the one the tab already built from the rows the grid decoded, rather
+        ///     than a second one built here - two trees could disagree about what is a child of
+        ///     what, and the user would be shown a plan derived from a structure other than the one
+        ///     on screen.
+        /// </remarks>
+        /// <param name="open">The open cache.</param>
+        /// <param name="tree">The selected interface's structure.</param>
+        /// <param name="groupId">The selected interface.</param>
+        /// <returns>Whether an edit can proceed.</returns>
+        private bool TryBeginStructuralEdit(out RSCache open, out InterfaceComponentTree tree, out int groupId) {
+            open = null!;
+            tree = null!;
+            groupId = -1;
+
+            if (cache == null) {
+                components.ReportStatus("No cache is loaded.");
+                return false;
+            }
+
+            if (structureTree == null) {
+                components.ReportStatus("Select an interface first.");
+                return false;
+            }
+
+            open = cache;
+            tree = structureTree;
+            groupId = structureTree.GroupId;
+            return true;
+        }
+
+        /// <summary>
+        ///     Shows what an edit would do, and carries it out if the user says so.
+        /// </summary>
+        /// <remarks>
+        ///     <b>The warnings are shown verbatim and are never summarised away.</b> Every one of
+        ///     them names a reference this edit breaks and cannot repair, and the last of them says
+        ///     plainly that the list is a floor rather than a total - a component is addressed from
+        ///     outside its interface as <c>(interface &lt;&lt; 16) | component</c>, and finding the
+        ///     CS2 scripts that do so means scanning every compiled script in index 12 for a
+        ///     constant, which is separate work. Presenting a renumber as safe is the one thing
+        ///     this surface must not do.
+        ///     <para>
+        ///     The confirmation is skipped only where the plan moves nothing, which is the append
+        ///     case. Asking for a yes to an operation with no consequences trains the yes.
+        ///     </para>
+        /// </remarks>
+        /// <param name="open">The open cache.</param>
+        /// <param name="groupId">The interface being edited.</param>
+        /// <param name="plan">What the edit would do.</param>
+        /// <param name="created">The component to create, or null.</param>
+        /// <param name="what">One line describing the edit, in the user's terms.</param>
+        private void Apply(RSCache open, int groupId, InterfaceStructureEdit plan,
+            InterfaceComponentDefinition? created, string what) {
+            if (plan.IsEmpty) {
+                components.ReportStatus("That changes nothing, so nothing was written.");
+                return;
+            }
+
+            if (plan.Renumbering.Count > 0 && !Confirm(what, plan))
+                return;
+
+            try {
+                if (!InterfaceStructureWriter.Apply(open, groupId, plan, created)) {
+                    //Reachable even past IsEmpty: a plan can be non-empty and still land on the
+                    //bytes that were already stored, which the archive layer detects and declines.
+                    components.ReportStatus("That left the interface exactly as it was, so nothing was written.");
+                    return;
+                }
+            } catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) {
+                //Reported rather than thrown. Every refusal below this point is a statement about
+                //what the format allows, and a stack trace out of a toolbar button says none of it.
+                components.ReportStatus(ex.Message);
+                Debug("Interface structural edit refused: " + ex);
+                return;
+            }
+
+            ReloadInterface(open, groupId);
+            components.ReportStatus(what + " Saved to the open cache; use File > Save to write it out.");
+        }
+
+        /// <summary>Asks the user to accept a renumbering, having listed what it breaks.</summary>
+        /// <param name="what">One line describing the edit.</param>
+        /// <param name="plan">What the edit would do.</param>
+        /// <returns>Whether to go ahead.</returns>
+        private bool Confirm(string what, InterfaceStructureEdit plan) {
+            var message = new System.Text.StringBuilder();
+            message.AppendLine(what);
+            message.AppendLine();
+            message.AppendLine("This renumbers " + plan.Renumbering.Count +
+                " component(s) so the interface stays numbered 0 to n-1, which the client requires.");
+
+            foreach (string warning in plan.Warnings) {
+                message.AppendLine();
+                message.AppendLine(warning);
+            }
+
+            return MessageBox.Show(this, message.ToString(), "Renumbering an interface",
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+                == DialogResult.OK;
+        }
+
+        /// <summary>
+        ///     Re-reads the edited interface, and the master list row that describes it.
+        /// </summary>
+        /// <remarks>
+        ///     A fresh descriptor instance, because <c>DefinitionListPanel.Bind</c> treats the same
+        ///     instance as the same thing to show and would keep the pre-edit rows on screen. The
+        ///     master list is rebuilt too: its component count and id range both moved, and it is
+        ///     read from the reference table alone so a rebuild costs no decode.
+        /// </remarks>
+        /// <param name="open">The open cache.</param>
+        /// <param name="groupId">The interface that changed.</param>
+        private void ReloadInterface(RSCache open, int groupId) {
+            components.Bind(open, new InterfaceComponentListDescriptor(groupId));
+
+            List<InterfaceListing> rows = ListInterfaces(open);
+            interfaces.SetObjects(rows);
+
+            foreach (InterfaceListing listing in rows) {
+                if (listing.GroupId != groupId)
+                    continue;
+
+                interfaces.SelectedObject = listing;
+                header.Text = Describe(listing);
+                return;
+            }
         }
 
         /// <summary>
@@ -480,6 +764,7 @@ namespace FlashEditor.Definitions.Interfaces {
                 }
 
                 if (rows.Count == 0) {
+                    structureTree = null;
                     canvas.Show(null);
                     return;
                 }
@@ -493,9 +778,11 @@ namespace FlashEditor.Definitions.Interfaces {
 
                 InterfaceComponentTree tree = InterfaceComponentTree.Build(groupId, definitions);
 
-                //One tree, two consumers. Building a second for the canvas would let the two
+                //One tree, three consumers now. Building a second for the canvas would let the two
                 //disagree about what is a child of what, which is the only thing either of them
-                //shows.
+                //shows - and a third built inside a structural edit would plan a renumbering
+                //against an arrangement the user was never shown.
+                structureTree = tree;
                 canvas.Show(tree);
 
                 foreach (int rootId in tree.Roots)
@@ -903,6 +1190,11 @@ namespace FlashEditor.Definitions.Interfaces {
 
             if (cache == null || listing == null) {
                 header.Text = cache == null ? NoCacheText : NoSelectionText;
+
+                //Cleared for the same reason Bind clears it: an unbind publishes no rows, so
+                //RowsLoaded never fires and the edit buttons would still be holding the previous
+                //interface's structure.
+                structureTree = null;
                 components.Bind(null, NoInterface);
                 return;
             }
@@ -1184,9 +1476,13 @@ namespace FlashEditor.Definitions.Interfaces {
             ///     The component ids the group declares, as a range.
             /// </summary>
             /// <remarks>
-            ///     Worth a column because index 3's groups are sparse: the count and the highest id
-            ///     disagree, so a reader who assumed 0..count-1 would ask for components that do not
-            ///     exist.
+            ///     <b>This said index 3's groups were sparse, and they are not.</b> Every declared
+            ///     group in the cache numbers its components 0 to n-1 with no hole, measured by
+            ///     <c>RealCacheInterfaceStructureTests.EveryInterface_NumbersItsComponentsDenselyFromZero</c>
+            ///     rather than asserted here. The column stays because that is a fact worth being
+            ///     able to see rather than take on trust - a structural edit closes the numbering
+            ///     precisely so it stays true, and a range that ever stops reading <c>0..n-1</c> is
+            ///     the first visible sign that one did not.
             /// </remarks>
             internal string IdRange => fileIds.Length == 0
                 ? "none"

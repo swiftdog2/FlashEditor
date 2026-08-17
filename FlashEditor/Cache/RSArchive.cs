@@ -420,6 +420,35 @@ namespace FlashEditor.Cache
         }
 
         /// <summary>
+        ///     Takes a file out of the archive.
+        /// </summary>
+        /// <remarks>
+        ///     The retained split always goes with it. The size table is <c>chunks x fileCount</c>
+        ///     and its file dimension is positional, so removing a file shifts every column after
+        ///     it - a split kept across a removal describes the wrong files and
+        ///     <see cref="Encode"/> would slice the payload by it. Dropping it puts the group back
+        ///     to a single chunk, which is exactly what <see cref="PutFile"/> does when the file
+        ///     set changes and what the client reads for any archive whose trailer says one chunk.
+        ///     <para>
+        ///     There is no route from here to a group with no files at all: an empty group has no
+        ///     payload to store, and <c>RSFileStore.Write</c> refuses an empty archive. Callers
+        ///     that remove the last file have to refuse before they get here, which
+        ///     <see cref="RSCache.WriteGroup"/> does.
+        ///     </para>
+        /// </remarks>
+        /// <param name="fileId">The file to remove.</param>
+        /// <returns><c>true</c> when the archive held it.</returns>
+        public bool RemoveFile(int fileId)
+        {
+            if (!files.Remove(fileId))
+                return false;
+
+            chunkSizes = null;
+            chunks = 1;
+            return true;
+        }
+
+        /// <summary>
         ///     Adds or replaces a file, abandoning any retained multi-chunk split that the new
         ///     contents no longer fit.
         /// </summary>
