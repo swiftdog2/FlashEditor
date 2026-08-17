@@ -40,9 +40,13 @@ namespace FlashEditor.Tests.Cache.RealCache {
     ///     rather than a failure.
     ///     </para>
     /// </remarks>
-    /* IClassFixture, not [Collection("RealCache")]: no CollectionDefinition declares that name, so
-       the attribute names a collection with no fixture in it and the constructor parameter goes
-       unsatisfied. Every other cache-backed class in the suite takes the fixture this way. */
+    /* BOTH, and each does a different job. IClassFixture supplies the opened cache, which
+       [Collection] cannot: no CollectionDefinition declares "RealCache", so the attribute names a
+       collection with no fixture in it. [Collection] is what stops this class running in parallel
+       with the sprite suites - the billboard join it walks resolves into index 26 and so reaches
+       TextureManager's process-wide store, which another collection may be clearing at the time.
+       Dropping the attribute for the fixture made the sprite tests flake. */
+    [Collection("RealCache")]
     public sealed class RealCacheLinkColumnTests : IClassFixture<RealCacheFixture> {
         private readonly RealCacheFixture cache;
         private readonly ITestOutputHelper output;

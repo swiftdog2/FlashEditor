@@ -135,10 +135,12 @@ namespace FlashEditor.Definitions.Sprites {
     ///     the panel's commit rewrote everything.
     ///     </para>
     ///     <para>
-    ///     <b>Eighteen of the nineteen columns are named for what the client does with them, and
-    ///     every heading carries the client field beside the name.</b> The name is the claim and the
-    ///     bracketed <c>aByte1829</c> is what makes it checkable without leaving the grid; the
-    ///     evidence, cited line by line, is <c>reference/hydra-637-definitions/material-columns.md</c>.
+    ///     <b>Eighteen of the nineteen columns are named for what the client does with them, and the
+    ///     detail pane carries the client field beside every name.</b> The name is the claim and the
+    ///     bracketed <c>aByte1829</c> is what makes it checkable; it sits in the detail pane rather
+    ///     than the heading because a heading wide enough to hold it makes the grid scroll sideways
+    ///     and a heading too narrow clips it, which reads as checkable and is not. The evidence,
+    ///     cited line by line, is <c>reference/hydra-637-definitions/material-columns.md</c>.
     ///     <c>field1827</c> keeps its obfuscated name because no Java code in the 637 tree reads it,
     ///     and a plausible name here would be read as settled. One already was: <c>waterParams</c>
     ///     was taken for a tint and multiplied into the generated pixels, which scaled every texture
@@ -157,12 +159,14 @@ namespace FlashEditor.Definitions.Sprites {
         ///     Width shared by the nineteen material columns.
         /// </summary>
         /// <remarks>
-        ///     Wider than the grid default because every heading carries its client field in
-        ///     brackets, and a heading clipped to <c>greyBlendWeigh...</c> costs the reader the
-        ///     citation that makes the name checkable. A list view column's width does not scale
-        ///     with the list around it, so this is stated once rather than per column.
+        ///     The client field stays out of the heading and lives in the detail pane, which spells
+        ///     all nineteen in full. Measured on a capture: the heading carrying it needed about 240
+        ///     pixels, nineteen of those turn the grid into a horizontal ribbon, and at anything
+        ///     narrower it clipped to <c>effectParams (aByte...</c> - a citation truncated mid-name
+        ///     is worse than none, because it looks checkable and is not. A list view column's width
+        ///     does not scale with the list around it, so this is stated once rather than per column.
         /// </remarks>
-        private const int NamedWidth = 170;
+        private const int NamedWidth = 160;
 
         private readonly IReadOnlyList<DefinitionColumn> columns;
 
@@ -179,39 +183,39 @@ namespace FlashEditor.Definitions.Sprites {
                 //texture range, so a column's position is where its bytes are. Each heading keeps
                 //the client field in brackets so the name above it can be checked against
                 //HydraScape/client/src without leaving the grid.
-                Flag("suppressTexture (aBoolean1825)", row => row.Record.suppressTexture,
+                Flag("suppressTexture", row => row.Record.suppressTexture,
                     (row, value) => row.Record.suppressTexture = value),
-                Flag("force64x64 (aBoolean1822)", row => row.Record.force64x64,
+                Flag("force64x64", row => row.Record.force64x64,
                     (row, value) => row.Record.force64x64 = value),
-                Flag("excludeFromDrawList (aBoolean1833)", row => row.Record.excludeFromDrawList,
+                Flag("excludeFromDrawList", row => row.Record.excludeFromDrawList,
                     (row, value) => row.Record.excludeFromDrawList = value),
 
                 /* Unsigned rather than signed, and the correction that matters most on this tab:
                    every client read of these two masks & 0xff, so 255 is a near-total grey blend
                    and roughly a doubling of brightness. An sbyte surface showed both as -1, and
                    255 is the commonest non-zero value in the grey blend column of both caches. */
-                Unsigned("colourGain (aByte1829)", row => row.Record.colourGain,
+                Unsigned("colourGain", row => row.Record.colourGain,
                     (row, value) => row.Record.colourGain = value),
-                Unsigned("greyBlendWeight (aByte1830)", row => row.Record.greyBlendWeight,
+                Unsigned("greyBlendWeight", row => row.Record.greyBlendWeight,
                     (row, value) => row.Record.greyBlendWeight = value),
 
-                Signed("effectProgram (aByte1820)", row => row.Record.effectProgram,
+                Signed("effectProgram", row => row.Record.effectProgram,
                     (row, value) => row.Record.effectProgram = value),
-                Signed("effectParams (aByte1816)", row => row.Record.effectParams,
+                Signed("effectParams", row => row.Record.effectParams,
                     (row, value) => row.Record.effectParams = value),
 
                 /* The only column that resolves to a colour. The cell text stays the stored 16-bit
                    HSL, which is the number an edit has to write back; the swatch is what the client
                    resolves it to, through the clamp Class345.method3825 applies. Converting the RGB
                    back would not reproduce it. */
-                DefinitionColumn.EncodedColour<MaterialListing>("representativeHsl (aShort1831)",
+                DefinitionColumn.EncodedColour<MaterialListing>("representativeHsl",
                     row => row.Record.representativeHsl, row => row.RepresentativeRgb,
                     (row, value) => row.Record.representativeHsl = Math.Clamp(value, 0, 0xFFFF),
                     width: NamedWidth),
 
-                Signed("scrollU (aByte1823)", row => row.Record.scrollU,
+                Signed("scrollU", row => row.Record.scrollU,
                     (row, value) => row.Record.scrollU = value),
-                Signed("scrollV (aByte1837)", row => row.Record.scrollV,
+                Signed("scrollV", row => row.Record.scrollV,
                     (row, value) => row.Record.scrollV = value),
 
                 //The one column with no name. Class260.java:166 assigns it and only oa.java:160 and
@@ -220,27 +224,27 @@ namespace FlashEditor.Definitions.Sprites {
                 Flag("field1827 (unread)", row => row.Record.field1827,
                     (row, value) => row.Record.field1827 = value),
 
-                Flag("transposePixels (aBoolean1824)", row => row.Record.transposePixels,
+                Flag("transposePixels", row => row.Record.transposePixels,
                     (row, value) => row.Record.transposePixels = value),
-                Signed("mipmap (aByte1832)", row => row.Record.mipmap,
+                Signed("mipmap", row => row.Record.mipmap,
                     (row, value) => row.Record.mipmap = value),
-                Flag("repeatU (aBoolean1826)", row => row.Record.repeatU,
+                Flag("repeatU", row => row.Record.repeatU,
                     (row, value) => row.Record.repeatU = value),
-                Flag("repeatV (aBoolean1819)", row => row.Record.repeatV,
+                Flag("repeatV", row => row.Record.repeatV,
                     (row, value) => row.Record.repeatV = value),
-                Flag("halfFloatUpload (aBoolean1817)", row => row.Record.halfFloatUpload,
+                Flag("halfFloatUpload", row => row.Record.halfFloatUpload,
                     (row, value) => row.Record.halfFloatUpload = value),
-                Unsigned("combineMode (anInt1821)", row => row.Record.combineMode,
+                Unsigned("combineMode", row => row.Record.combineMode,
                     (row, value) => row.Record.combineMode = value),
 
                 //Four bytes rather than one, so it is not clamped to a byte the way its neighbours
                 //are. Packed water-shader parameters, not a tint - see
                 //TextureDefinition.waterParams.
-                DefinitionColumn.Number<MaterialListing>("waterParams (anInt1835)",
+                DefinitionColumn.Number<MaterialListing>("waterParams",
                     row => row.Record.waterParams, (row, value) => row.Record.waterParams = value,
                     NamedWidth),
 
-                Unsigned("alphaMode (anInt1818)", row => row.Record.alphaMode,
+                Unsigned("alphaMode", row => row.Record.alphaMode,
                     (row, value) => row.Record.alphaMode = value)
             };
         }

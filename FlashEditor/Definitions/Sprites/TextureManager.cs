@@ -56,12 +56,20 @@ namespace FlashEditor.Definitions.Sprites {
         /// <see cref="Load"/> runs this before it reads anything.
         /// </remarks>
         public static void Clear() {
-            foreach (var def in Textures.Values)
-                def?.Dispose();
-            Textures.Clear();
-            RawIndexData = null;
-            Materials = null;
-            TextureGraphEvaluator.ClearCaches();
+            /* Under the same gate as the load, and reentrant so Load can still call it from inside
+               its own lock. Without it, disposing while another thread enumerates throws
+               "Collection was modified after the enumerator was instantiated" out of SortedSet's
+               enumerator - observed when two test collections drove this concurrently, and reachable
+               in the application the moment a cache is reopened while a list panel's worker is still
+               walking the store. */
+            lock (LoadGate) {
+                foreach (var def in Textures.Values)
+                    def?.Dispose();
+                Textures.Clear();
+                RawIndexData = null;
+                Materials = null;
+                TextureGraphEvaluator.ClearCaches();
+            }
         }
 
         /// <summary>
@@ -260,7 +268,15 @@ namespace FlashEditor.Definitions.Sprites {
         ///     texture the editor is holding rather than only the ones index 26 declared.
         /// </remarks>
         public static JagStream EncodeFromFields() {
-            return MaterialTable.FromDefinitions(Textures).EncodeFromFields();
+            /* Snapshotted under the gate rather than handed the live store: FromDefinitions
+               enumerates what it is given, and a concurrent Clear or Load part way through throws
+               out of the enumerator instead of encoding. The copy is the id and the reference only,
+               so the definitions themselves are still the ones the renderer holds. */
+            KeyValuePair<int, TextureDefinition>[] snapshot;
+            lock (LoadGate)
+                snapshot = Textures.ToArray();
+
+            return MaterialTable.FromDefinitions(snapshot).EncodeFromFields();
         }
 
         /// <summary>
