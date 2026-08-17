@@ -4,6 +4,13 @@
 **Capability:** read-only  
 **Effort:** small
 
+> **This survey predates the tab and the column naming, and its "no GUI, encode is dead" claims are
+> stale.** For what each of the nineteen columns *means*, read
+> `reference/hydra-637-definitions/material-columns.md`, which cites the client per field; for what
+> they *hold*, read `index-026-MATERIALS-column-census.md` beside this file, which measures both
+> caches. Every figure below is from the repack alone and is not labelled as such - the vanilla
+> capture declares 915 slots, not 1408.
+
 ## What it is
 
 One group (0), one file (0), one 33,794-byte blob - the whole index. It is the per-texture material/render-state table the client wraps in Class260. Client authority: `InterfaceSettings.java:182` opens index 26 as `Class64_Sub20.aJS5Archive_3695`; `InterfaceSettings.java:244` feeds it to `new Class260(idx26, idx9, idx8)`; `Class260.java:106` reads `getChildFromFolder(0, 0)` (group 0, file 0 - signature at `reference/hydra-model-decoding/JS5Archive.java:203`) and `:107-208` parses it. The payload is COLUMN-major, not record-major: a u16 count, then a 1408-byte existence column, then 19 fixed-width columns in a fixed order (`Class260.java:114-208`), one entry per present texture. A "record" is one texture id's material state - 23 bytes, scattered across those 19 columns, materialised as one `Class238` (`Class238.java:101-123`). It is genuinely material state, not a name: the renderers consume the fields directly (`RenderType_Sub1.java:4427-4441`, `Class319.java:95-111`, `Class364.java:96-112`, `Renderable_Sub1.java:170-194`, `Node_Sub16.java:78-79`). MEASURED FROM THIS CACHE (I decoded it read-only): idx26 is 6 bytes = 1 group; group 0 stored length 33,801 at sector 3106; container compression byte 0 (UNCOMPRESSED), compressedSize 33,794, 2-byte version trailer; payload count = 1408; all 1408 existence bytes are 1 (dense, no null slots); 2 + 1408 + 1408*23 = 33,794 = payload length exactly, so the field widths are proven by exact consumption.

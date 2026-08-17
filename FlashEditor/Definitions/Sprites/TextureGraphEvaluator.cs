@@ -360,7 +360,7 @@ namespace FlashEditor.Definitions.Sprites {
         /// whole texture, sprite loads and all, and the graphs in this cache are built out of one
         /// another, so a commonly composed base texture was re-rendered once per referencing
         /// texture and once per referencing path up to six levels deep. The size is part of the
-        /// key even though it is derived from the composed texture's own <c>field1822</c>: keying
+        /// key even though it is derived from the composed texture's own <c>force64x64</c>: keying
         /// on the id alone would hand back the wrong pixel count the day a caller renders at
         /// another size, and that is a corruption rather than a miss.
         ///
@@ -657,7 +657,7 @@ namespace FlashEditor.Definitions.Sprites {
                     return;
                 }
 
-                int size = nested.field1822 ? 64 : 128;
+                int size = nested.force64x64 ? 64 : 128;
                 long key = ((long)nestedId << 32) | (uint)size;
 
                 //Consulted before the recursion guard. A hit does not recurse at all, so there is
@@ -679,7 +679,7 @@ namespace FlashEditor.Definitions.Sprites {
                 pushed = true;
 
                 int refusalsBefore = _compositionRefusals;
-                int[] argb = RenderArgb(nested.graph, size, size, cache, nested.field1824, nestedId);
+                int[] argb = RenderArgb(nested.graph, size, size, cache, nested.transposePixels, nestedId);
                 if (argb == null)
                     return;
 

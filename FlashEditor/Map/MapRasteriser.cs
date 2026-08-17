@@ -791,7 +791,7 @@ namespace FlashEditor.Map {
         ///     A texture's declared colour, as packed map HSL.
         /// </summary>
         /// <remarks>
-        ///     <c>field1831</c> is already a packed HSL in the same space as an overlay's primary
+        ///     <c>representativeHsl</c> is already a packed HSL in the same space as an overlay's primary
         ///     and secondary colours, and the client returns it verbatim
         ///     (Node_Sub16.java:75-80, <c>return class238.aShort1831</c>). It must not be routed
         ///     through <c>TextureManager.RepresentativeRgb</c>, which converts it to RGB through the
@@ -799,7 +799,7 @@ namespace FlashEditor.Map {
         ///     back through the map palette turns the whole world flat green and drains the colour
         ///     out of water.
         ///
-        ///     <c>field1825</c> is the client's <c>aBoolean1825</c> gate: when set, the texture
+        ///     <c>suppressTexture</c> is the client's <c>aBoolean1825</c> gate: when set, the texture
         ///     declines to stand in for a colour and the tile falls through to its primary.
         ///
         ///     Texture metadata is loaded by <c>GLTextureCache</c> at cache-open. A renderer used
@@ -817,11 +817,11 @@ namespace FlashEditor.Map {
 
             int colour = MapPalette.NoColour;
             if (TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def)
-                && def != null && !def.field1825) {
+                && def != null && !def.suppressTexture) {
                 //Both consumers clamp the lightness before the palette lookup (Class345.method3825,
                 //reached from Class278.java:731 and from the scene path). A texture whose declared
                 //lightness sits at either extreme would otherwise come out pure black or white.
-                int hsl = def.field1831 & 0xFFFF;
+                int hsl = def.representativeHsl & 0xFFFF;
                 int lightness = Math.Clamp(hsl & 0x7F, 2, 126);
                 colour = (hsl & 0xFF80) | lightness;
             }

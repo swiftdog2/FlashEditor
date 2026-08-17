@@ -79,9 +79,9 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable table = MaterialTable.Decode(new JagStream(file));
 
             TextureDefinition edited = table.Slots[0];
-            Assert.False(edited.field1822, "a boolean byte of 2 is false to the client");
+            Assert.False(edited.force64x64, "a boolean byte of 2 is false to the client");
 
-            edited.field1835 = unchecked((int) 0xCAFEBABE);
+            edited.waterParams = unchecked((int) 0xCAFEBABE);
             Assert.True(edited.IsDirty);
             Assert.True(table.IsDirty);
 
@@ -89,12 +89,12 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable readBack = MaterialTable.Decode(new JagStream(reencoded));
 
             Assert.Equal(file.Length, reencoded.Length);
-            Assert.Equal(unchecked((int) 0xCAFEBABE), readBack.Slots[0].field1835);
+            Assert.Equal(unchecked((int) 0xCAFEBABE), readBack.Slots[0].waterParams);
 
             //The aliased byte survived, which is the whole point: it is not recoverable from the
             //bool the client decodes it into.
             Assert.Equal(AliasedBooleanByte,
-                readBack.Slots[0].StoredRecord[MaterialTable.OffsetOf(MaterialColumn.Field1822)]);
+                readBack.Slots[0].StoredRecord[MaterialTable.OffsetOf(MaterialColumn.Force64x64)]);
 
             //And the untouched record moved not at all.
             Assert.Equal(table.Slots[1].StoredRecord, readBack.Slots[1].StoredRecord);
@@ -117,7 +117,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             byte[] fromFields = table.EncodeFromFields().ToArray();
             MaterialTable rebuilt = MaterialTable.Decode(new JagStream(fromFields));
 
-            int at = MaterialTable.OffsetOf(MaterialColumn.Field1822);
+            int at = MaterialTable.OffsetOf(MaterialColumn.Force64x64);
             Assert.Equal(file.Length, fromFields.Length);
             Assert.Equal(AliasedBooleanByte, table.Slots[0].StoredRecord[at]);
             Assert.Equal((byte) 0, rebuilt.Slots[0].StoredRecord[at]);
@@ -165,15 +165,15 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             foreach (TextureDefinition def in table.Slots)
             {
-                int hsl = def.field1831;
-                bool flag = def.field1822;
-                int state = def.field1835;
-                sbyte signed = def.field1829;
+                int hsl = def.representativeHsl;
+                bool flag = def.force64x64;
+                int state = def.waterParams;
+                int gain = def.colourGain;
 
-                def.field1831 = hsl;
-                def.field1822 = flag;
-                def.field1835 = state;
-                def.field1829 = signed;
+                def.representativeHsl = hsl;
+                def.force64x64 = flag;
+                def.waterParams = state;
+                def.colourGain = gain;
             }
 
             Assert.False(table.IsDirty);
@@ -197,18 +197,18 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable table = MaterialTable.Decode(new JagStream(file));
 
             TextureDefinition edited = table.Slots[1];
-            int hsl = edited.field1831;
-            sbyte signed = edited.field1829;
-            int state = edited.field1835;
+            int hsl = edited.representativeHsl;
+            int gain = edited.colourGain;
+            int state = edited.waterParams;
 
-            edited.field1831 = hsl ^ 0x0FF0;
-            edited.field1829 = (sbyte) ~signed;
-            edited.field1835 = unchecked((int) 0xDEADBEEF);
+            edited.representativeHsl = hsl ^ 0x0FF0;
+            edited.colourGain = ~gain & 0xFF;
+            edited.waterParams = unchecked((int) 0xDEADBEEF);
             Assert.True(table.IsDirty, "the table has to notice an edit before it can notice it being undone");
 
-            edited.field1831 = hsl;
-            edited.field1829 = signed;
-            edited.field1835 = state;
+            edited.representativeHsl = hsl;
+            edited.colourGain = gain;
+            edited.waterParams = state;
 
             Assert.False(table.IsDirty);
             Assert.Equal(file, table.Encode().ToArray());
@@ -231,17 +231,17 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable table = MaterialTable.Decode(new JagStream(file));
 
             TextureDefinition aliased = table.Slots[0];
-            Assert.False(aliased.field1822, "a boolean byte of 2 is false to the client");
+            Assert.False(aliased.force64x64, "a boolean byte of 2 is false to the client");
 
-            aliased.field1822 = true;
+            aliased.force64x64 = true;
             Assert.True(table.IsDirty);
 
-            aliased.field1822 = false;
+            aliased.force64x64 = false;
 
             Assert.False(table.IsDirty);
             Assert.Equal(file, table.Encode().ToArray());
             Assert.Equal(AliasedBooleanByte,
-                table.Encode().ToArray()[FileOffsetOf(MaterialColumn.Field1822, slot: 0, slots: 2)]);
+                table.Encode().ToArray()[FileOffsetOf(MaterialColumn.Force64x64, slot: 0, slots: 2)]);
         }
 
         /// <summary>
@@ -313,7 +313,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             //same objects. If they ever stop being, an edit reaches one and the save reads the other.
             Assert.Same(TextureManager.Materials.Slots[1], TextureManager.Textures[1]);
 
-            TextureManager.Textures[1].field1831 = 0x1234;
+            TextureManager.Textures[1].representativeHsl = 0x1234;
 
             byte[] reencoded = TextureManager.EncodeColumnar().ToArray();
             Assert.NotEqual(file, reencoded);
@@ -321,7 +321,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable stored = MaterialTable.Decode(new JagStream(file));
             MaterialTable readBack = MaterialTable.Decode(new JagStream(reencoded));
 
-            Assert.Equal(0x1234, readBack.Slots[1].field1831);
+            Assert.Equal(0x1234, readBack.Slots[1].representativeHsl);
             Assert.Equal(stored.Slots[0].StoredRecord, readBack.Slots[0].StoredRecord);
 
             TextureManager.Clear();

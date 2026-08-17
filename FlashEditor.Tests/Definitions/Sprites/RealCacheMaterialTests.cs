@@ -176,8 +176,8 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             //Kept inside sixteen bits: the column is two bytes and an editor that offered more
             //would be offering something the format cannot store.
-            int replacement = (edited.field1831 ^ 0x1234) & 0xFFFF;
-            edited.field1831 = replacement;
+            int replacement = (edited.representativeHsl ^ 0x1234) & 0xFFFF;
+            edited.representativeHsl = replacement;
 
             Assert.True(edited.IsDirty);
             Assert.True(table.IsDirty);
@@ -190,14 +190,14 @@ namespace FlashEditor.Tests.Definitions.Sprites
                 if (stored[i] != reencoded[i])
                     moved++;
 
-            _output.WriteLine($"editing texture {edited.id}'s field1831 moved {moved} of " +
+            _output.WriteLine($"editing texture {edited.id}'s representativeHsl moved {moved} of " +
                               $"{stored.Length} bytes");
 
-            Assert.Equal(MaterialTable.WidthOf(MaterialColumn.Field1831), moved);
+            Assert.Equal(MaterialTable.WidthOf(MaterialColumn.RepresentativeHsl), moved);
 
             //And the edit survives a decode, which is what the client would do with it.
             MaterialTable readBack = MaterialTable.Decode(new JagStream(reencoded));
-            Assert.Equal(replacement, readBack.Slots[edited.id].field1831);
+            Assert.Equal(replacement, readBack.Slots[edited.id].representativeHsl);
 
             //Every other record came back byte for byte.
             var differing = new List<int>();

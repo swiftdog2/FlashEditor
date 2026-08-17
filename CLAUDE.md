@@ -407,6 +407,24 @@ the nearest tab happens to do - three of the tabs still predate it.**
   five. What settles an obfuscated array's meaning is what the client *does* with it
   (`aByteArray1414` gates the draw list on `!= 2`, so it is the render type), never its position
   and never the name someone attached to it. Corrected 2026-08-02; the rows now cite that usage.
+- **Index 26's columns are named, and one of them deliberately is not.** Eighteen of the nineteen
+  carry names read off what the 637 client does with them, and **every one cites the `file:line`
+  that settles it, in its own doc comment and in its grid heading** - the name is the claim and the
+  citation is what makes the claim checkable. The evidence is
+  `reference/hydra-637-definitions/material-columns.md`, with the measured companion
+  `reference/index-survey/index-026-MATERIALS-column-census.md`; the two were produced blind to each
+  other. **`field1827` keeps its obfuscated name and must keep it**: `Class260.java:166` assigns it
+  and only `oa.java:160` and `:880` read it, both native argument lists, so any name for it would be
+  invented - which is the model-dump defect above, repeated. The reason that rule existed for all
+  nineteen is `waterParams` (`anInt1835`): it was taken for a tint and multiplied into the generated
+  pixels, scaling every texture in the editor towards black. It is packed water-shader parameters
+  (`Class151_Sub2.java:152-166`), read by effect programs 2, 8 and 9, and **zero in every record of
+  both caches for reasons nobody knows** - "the water effects are unused" is refuted, because the
+  one slot in either cache on program 8 stores zero as well. Two further readings were corrected in
+  the same pass and are worth not re-deriving: `colourGain` and `greyBlendWeight` are 0..255 rather
+  than `sbyte`, because every client consumption masks `& 0xff` and 255 is the top of both ranges,
+  not a -1; and `effectParams` is a bit field whose layout belongs to whichever effect program is
+  selected, so it is named for what it is rather than for the water shaders' reading of it.
 - **Nothing in the suite covers the renderer or WinForms.** `ModelRenderer` and the shaders are
   OpenGL, so a render-path defect passes every test in the suite. Faces the client refuses to draw
   were being drawn for as long as the viewer has existed and the sweeps never saw it. Check render

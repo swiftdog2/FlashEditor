@@ -18,64 +18,130 @@ namespace FlashEditor.Definitions.Sprites {
     ///     column an edit touched, and a column that had to be named by an integer literal at each
     ///     of nineteen setters would drift from the layout the moment either changed.
     ///     </para>
+    ///     <para>
+    ///     Each member names what the client does with the column, and each cites the line that
+    ///     settles it. The full evidence, with a confidence per column, is
+    ///     <c>reference/hydra-637-definitions/material-columns.md</c>;
+    ///     <c>reference/index-survey/index-026-MATERIALS-column-census.md</c> is what the two caches
+    ///     on disk actually hold in each. <see cref="Field1827"/> alone keeps its obfuscated name,
+    ///     because no Java code in the 637 tree reads it.
+    ///     </para>
     /// </remarks>
     public enum MaterialColumn {
-        /// <summary>Pass 1, one byte, stored inverted (<c>Class260.java:116</c>).</summary>
-        Field1825 = 0,
+        /// <summary>
+        ///     Pass 1, one byte, stored inverted (<c>Class260.java:116</c>). Draw the representative
+        ///     colour instead of this texture - <c>aBoolean1825</c>, <c>Node_Sub16.java:78-80</c>.
+        /// </summary>
+        SuppressTexture = 0,
 
-        /// <summary>Pass 2, one byte (<c>Class260.java:121</c>).</summary>
-        Field1822,
+        /// <summary>
+        ///     Pass 2, one byte (<c>Class260.java:121</c>). Rasterise at 64x64 rather than the
+        ///     configured detail size - <c>aBoolean1822</c>, <c>Class364.java:96</c>.
+        /// </summary>
+        Force64x64,
 
-        /// <summary>Pass 3, one byte (<c>Class260.java:126</c>).</summary>
-        Field1833,
+        /// <summary>
+        ///     Pass 3, one byte (<c>Class260.java:126</c>). Drop the face from the hardware draw
+        ///     list - <c>aBoolean1833</c>, <c>Renderable_Sub2.java:401-403</c>.
+        /// </summary>
+        ExcludeFromDrawList,
 
-        /// <summary>Pass 4, one signed byte (<c>Class260.java:131</c>).</summary>
-        Field1829,
+        /// <summary>
+        ///     Pass 4, one byte read 0..255 (<c>Class260.java:131</c>). Saturating gain on the lit
+        ///     vertex colour - <c>aByte1829</c>, <c>Renderable_Sub1.java:2440-2445</c>.
+        /// </summary>
+        ColourGain,
 
-        /// <summary>Pass 5, one signed byte (<c>Class260.java:136</c>).</summary>
-        Field1830,
+        /// <summary>
+        ///     Pass 5, one byte read 0..255 (<c>Class260.java:136</c>). Blend weight toward a
+        ///     neutral grey - <c>aByte1830</c>, <c>Renderable_Sub1.java:2428-2438</c>.
+        /// </summary>
+        GreyBlendWeight,
 
-        /// <summary>Pass 6, one signed byte (<c>Class260.java:141</c>).</summary>
-        Field1820,
+        /// <summary>
+        ///     Pass 6, one signed byte (<c>Class260.java:141</c>). Index into the renderer's ten
+        ///     effect programs - <c>aByte1820</c>, <c>Class55.java:119-121</c>.
+        /// </summary>
+        EffectProgram,
 
-        /// <summary>Pass 7, one signed byte (<c>Class260.java:146</c>).</summary>
-        Field1816,
+        /// <summary>
+        ///     Pass 7, one signed byte (<c>Class260.java:146</c>). Packed parameters for whichever
+        ///     effect program is selected - <c>aByte1816</c>, <c>Class151_Sub2.java:150-165</c>.
+        /// </summary>
+        EffectParams,
 
-        /// <summary>Pass 8, two bytes (<c>Class260.java:151</c>).</summary>
-        Field1831,
+        /// <summary>
+        ///     Pass 8, two bytes (<c>Class260.java:151</c>). The representative colour as raw 16-bit
+        ///     RS HSL - <c>aShort1831</c>, <c>Class278.java:730-732</c>.
+        /// </summary>
+        RepresentativeHsl,
 
-        /// <summary>Pass 9, one signed byte (<c>Class260.java:156</c>).</summary>
-        Field1823,
+        /// <summary>
+        ///     Pass 9, one signed byte (<c>Class260.java:156</c>). Horizontal scroll speed -
+        ///     <c>aByte1823</c>, <c>Node_Sub2.java:116-137</c>.
+        /// </summary>
+        ScrollU,
 
-        /// <summary>Pass 10, one signed byte (<c>Class260.java:161</c>).</summary>
-        Field1837,
+        /// <summary>
+        ///     Pass 10, one signed byte (<c>Class260.java:161</c>). Vertical scroll speed -
+        ///     <c>aByte1837</c>, <c>Node_Sub2.java:121-130</c>.
+        /// </summary>
+        ScrollV,
 
-        /// <summary>Pass 11, one byte (<c>Class260.java:166</c>).</summary>
+        /// <summary>
+        ///     Pass 11, one byte (<c>Class260.java:166</c>). <b>Unnamed on purpose:</b>
+        ///     <c>aBoolean1827</c> reaches only two native methods (<c>oa.java:160</c>,
+        ///     <c>oa.java:880</c>) and no Java code branches on it.
+        /// </summary>
         Field1827,
 
-        /// <summary>Pass 12, one byte (<c>Class260.java:171</c>).</summary>
-        Field1824,
+        /// <summary>
+        ///     Pass 12, one byte (<c>Class260.java:171</c>). Transpose the generated image -
+        ///     <c>aBoolean1824</c>, <c>Node_Sub46_Sub19.java:243-244</c>.
+        /// </summary>
+        TransposePixels,
 
-        /// <summary>Pass 13, one signed byte (<c>Class260.java:176</c>).</summary>
-        Field1832,
+        /// <summary>
+        ///     Pass 13, one signed byte (<c>Class260.java:176</c>). Build and use a mipmap chain -
+        ///     <c>aByte1832</c>, <c>Class42_Sub1.java:151-181</c>.
+        /// </summary>
+        Mipmap,
 
-        /// <summary>Pass 14, one byte (<c>Class260.java:181</c>).</summary>
-        Field1826,
+        /// <summary>
+        ///     Pass 14, one byte (<c>Class260.java:181</c>). <c>GL_TEXTURE_WRAP_S</c> -
+        ///     <c>aBoolean1826</c>, <c>Class42_Sub1.java:350-367</c>.
+        /// </summary>
+        RepeatU,
 
-        /// <summary>Pass 15, one byte (<c>Class260.java:186</c>).</summary>
-        Field1819,
+        /// <summary>
+        ///     Pass 15, one byte (<c>Class260.java:186</c>). <c>GL_TEXTURE_WRAP_T</c> -
+        ///     <c>aBoolean1819</c>, <c>Class42_Sub1.java:362</c>.
+        /// </summary>
+        RepeatV,
 
-        /// <summary>Pass 16, one byte (<c>Class260.java:191</c>).</summary>
-        Field1817,
+        /// <summary>
+        ///     Pass 16, one byte (<c>Class260.java:191</c>). Upload as <c>GL_RGBA16F_ARB</c> -
+        ///     <c>aBoolean1817</c>, <c>Class364.java:98-102</c>.
+        /// </summary>
+        HalfFloatUpload,
 
-        /// <summary>Pass 17, one unsigned byte (<c>Class260.java:196</c>).</summary>
-        Field1821,
+        /// <summary>
+        ///     Pass 17, one unsigned byte (<c>Class260.java:196</c>). One of five texture combine
+        ///     modes - <c>anInt1821</c>, <c>RenderType_Sub1.java:4379-4408</c>.
+        /// </summary>
+        CombineMode,
 
-        /// <summary>Pass 18, four bytes (<c>Class260.java:201</c>).</summary>
-        Field1835,
+        /// <summary>
+        ///     Pass 18, four bytes (<c>Class260.java:201</c>). Packed water-shader parameters -
+        ///     <c>anInt1835</c>, <c>Class151_Sub2.java:152-166</c>.
+        /// </summary>
+        WaterParams,
 
-        /// <summary>Pass 19, one unsigned byte (<c>Class260.java:206</c>).</summary>
-        Field1818
+        /// <summary>
+        ///     Pass 19, one unsigned byte (<c>Class260.java:206</c>). Where a textured span takes
+        ///     its alpha from - <c>anInt1818</c>, <c>SoftwareRasterizer.java:583-588</c>.
+        /// </summary>
+        AlphaMode
     }
 
     /// <summary>
@@ -507,37 +573,41 @@ namespace FlashEditor.Definitions.Sprites {
 
             switch (column) {
                 //Inverted: the client's test is byte == 0 (Class260.java:116).
-                case MaterialColumn.Field1825: row[at] = (byte) (def.field1825 ? 0 : 1); break;
-                case MaterialColumn.Field1822: row[at] = (byte) (def.field1822 ? 1 : 0); break;
-                case MaterialColumn.Field1833: row[at] = (byte) (def.field1833 ? 1 : 0); break;
-                case MaterialColumn.Field1829: row[at] = unchecked((byte) def.field1829); break;
-                case MaterialColumn.Field1830: row[at] = unchecked((byte) def.field1830); break;
-                case MaterialColumn.Field1820: row[at] = unchecked((byte) def.field1820); break;
-                case MaterialColumn.Field1816: row[at] = unchecked((byte) def.field1816); break;
+                case MaterialColumn.SuppressTexture: row[at] = (byte) (def.suppressTexture ? 0 : 1); break;
+                case MaterialColumn.Force64x64: row[at] = (byte) (def.force64x64 ? 1 : 0); break;
+                case MaterialColumn.ExcludeFromDrawList: row[at] = (byte) (def.excludeFromDrawList ? 1 : 0); break;
 
-                case MaterialColumn.Field1831:
-                    row[at] = (byte) (def.field1831 >> 8);
-                    row[at + 1] = (byte) def.field1831;
+                //Surfaced 0..255 rather than signed, because every client read masks & 0xff. One
+                //byte is stored either way, so the cast is the same one an sbyte took.
+                case MaterialColumn.ColourGain: row[at] = (byte) def.colourGain; break;
+                case MaterialColumn.GreyBlendWeight: row[at] = (byte) def.greyBlendWeight; break;
+
+                case MaterialColumn.EffectProgram: row[at] = unchecked((byte) def.effectProgram); break;
+                case MaterialColumn.EffectParams: row[at] = unchecked((byte) def.effectParams); break;
+
+                case MaterialColumn.RepresentativeHsl:
+                    row[at] = (byte) (def.representativeHsl >> 8);
+                    row[at + 1] = (byte) def.representativeHsl;
                     break;
 
-                case MaterialColumn.Field1823: row[at] = unchecked((byte) def.field1823); break;
-                case MaterialColumn.Field1837: row[at] = unchecked((byte) def.field1837); break;
+                case MaterialColumn.ScrollU: row[at] = unchecked((byte) def.scrollU); break;
+                case MaterialColumn.ScrollV: row[at] = unchecked((byte) def.scrollV); break;
                 case MaterialColumn.Field1827: row[at] = (byte) (def.field1827 ? 1 : 0); break;
-                case MaterialColumn.Field1824: row[at] = (byte) (def.field1824 ? 1 : 0); break;
-                case MaterialColumn.Field1832: row[at] = unchecked((byte) def.field1832); break;
-                case MaterialColumn.Field1826: row[at] = (byte) (def.field1826 ? 1 : 0); break;
-                case MaterialColumn.Field1819: row[at] = (byte) (def.field1819 ? 1 : 0); break;
-                case MaterialColumn.Field1817: row[at] = (byte) (def.field1817 ? 1 : 0); break;
-                case MaterialColumn.Field1821: row[at] = (byte) def.field1821; break;
+                case MaterialColumn.TransposePixels: row[at] = (byte) (def.transposePixels ? 1 : 0); break;
+                case MaterialColumn.Mipmap: row[at] = unchecked((byte) def.mipmap); break;
+                case MaterialColumn.RepeatU: row[at] = (byte) (def.repeatU ? 1 : 0); break;
+                case MaterialColumn.RepeatV: row[at] = (byte) (def.repeatV ? 1 : 0); break;
+                case MaterialColumn.HalfFloatUpload: row[at] = (byte) (def.halfFloatUpload ? 1 : 0); break;
+                case MaterialColumn.CombineMode: row[at] = (byte) def.combineMode; break;
 
-                case MaterialColumn.Field1835:
-                    row[at] = (byte) (def.field1835 >> 24);
-                    row[at + 1] = (byte) (def.field1835 >> 16);
-                    row[at + 2] = (byte) (def.field1835 >> 8);
-                    row[at + 3] = (byte) def.field1835;
+                case MaterialColumn.WaterParams:
+                    row[at] = (byte) (def.waterParams >> 24);
+                    row[at + 1] = (byte) (def.waterParams >> 16);
+                    row[at + 2] = (byte) (def.waterParams >> 8);
+                    row[at + 3] = (byte) def.waterParams;
                     break;
 
-                case MaterialColumn.Field1818: row[at] = (byte) def.field1818; break;
+                case MaterialColumn.AlphaMode: row[at] = (byte) def.alphaMode; break;
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(column), column,
@@ -556,31 +626,35 @@ namespace FlashEditor.Definitions.Sprites {
         /// <param name="def">The record to fill.</param>
         /// <param name="row">The record's 23 bytes.</param>
         private static void Unpack(TextureDefinition def, byte[] row) {
-            def.field1825 = row[ColumnOffsets[(int) MaterialColumn.Field1825]] == 0;
-            def.field1822 = row[ColumnOffsets[(int) MaterialColumn.Field1822]] == 1;
-            def.field1833 = row[ColumnOffsets[(int) MaterialColumn.Field1833]] == 1;
-            def.field1829 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1829]]);
-            def.field1830 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1830]]);
-            def.field1820 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1820]]);
-            def.field1816 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1816]]);
+            def.suppressTexture = row[ColumnOffsets[(int) MaterialColumn.SuppressTexture]] == 0;
+            def.force64x64 = row[ColumnOffsets[(int) MaterialColumn.Force64x64]] == 1;
+            def.excludeFromDrawList = row[ColumnOffsets[(int) MaterialColumn.ExcludeFromDrawList]] == 1;
 
-            int hsl = ColumnOffsets[(int) MaterialColumn.Field1831];
-            def.field1831 = (row[hsl] << 8) | row[hsl + 1];
+            //Read 0..255 rather than signed: the client stores a Java byte and masks & 0xff at
+            //every consumption, so 255 is a near-total blend and not a -1.
+            def.colourGain = row[ColumnOffsets[(int) MaterialColumn.ColourGain]];
+            def.greyBlendWeight = row[ColumnOffsets[(int) MaterialColumn.GreyBlendWeight]];
 
-            def.field1823 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1823]]);
-            def.field1837 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1837]]);
+            def.effectProgram = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.EffectProgram]]);
+            def.effectParams = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.EffectParams]]);
+
+            int hsl = ColumnOffsets[(int) MaterialColumn.RepresentativeHsl];
+            def.representativeHsl = (row[hsl] << 8) | row[hsl + 1];
+
+            def.scrollU = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.ScrollU]]);
+            def.scrollV = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.ScrollV]]);
             def.field1827 = row[ColumnOffsets[(int) MaterialColumn.Field1827]] == 1;
-            def.field1824 = row[ColumnOffsets[(int) MaterialColumn.Field1824]] == 1;
-            def.field1832 = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Field1832]]);
-            def.field1826 = row[ColumnOffsets[(int) MaterialColumn.Field1826]] == 1;
-            def.field1819 = row[ColumnOffsets[(int) MaterialColumn.Field1819]] == 1;
-            def.field1817 = row[ColumnOffsets[(int) MaterialColumn.Field1817]] == 1;
-            def.field1821 = row[ColumnOffsets[(int) MaterialColumn.Field1821]];
+            def.transposePixels = row[ColumnOffsets[(int) MaterialColumn.TransposePixels]] == 1;
+            def.mipmap = unchecked((sbyte) row[ColumnOffsets[(int) MaterialColumn.Mipmap]]);
+            def.repeatU = row[ColumnOffsets[(int) MaterialColumn.RepeatU]] == 1;
+            def.repeatV = row[ColumnOffsets[(int) MaterialColumn.RepeatV]] == 1;
+            def.halfFloatUpload = row[ColumnOffsets[(int) MaterialColumn.HalfFloatUpload]] == 1;
+            def.combineMode = row[ColumnOffsets[(int) MaterialColumn.CombineMode]];
 
-            int tint = ColumnOffsets[(int) MaterialColumn.Field1835];
-            def.field1835 = (row[tint] << 24) | (row[tint + 1] << 16) | (row[tint + 2] << 8) | row[tint + 3];
+            int water = ColumnOffsets[(int) MaterialColumn.WaterParams];
+            def.waterParams = (row[water] << 24) | (row[water + 1] << 16) | (row[water + 2] << 8) | row[water + 3];
 
-            def.field1818 = row[ColumnOffsets[(int) MaterialColumn.Field1818]];
+            def.alphaMode = row[ColumnOffsets[(int) MaterialColumn.AlphaMode]];
         }
 
         /// <summary>Runs the column widths into a start offset per column.</summary>

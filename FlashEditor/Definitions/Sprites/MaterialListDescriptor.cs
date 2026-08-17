@@ -72,9 +72,10 @@ namespace FlashEditor.Definitions.Sprites {
         /// <inheritdoc/>
         /// <remarks>
         ///     Nineteen rows in the order the file stores its columns, plus what the id resolves to
-        ///     elsewhere. Seventeen of the nineteen are named after the client's own obfuscated
-        ///     fields, because nothing settles what they mean and a guessed name in a detail pane
-        ///     reads as an established one.
+        ///     elsewhere. Each row names the column and, in brackets, the client field it was read
+        ///     off, so a reader who doubts a name has the string to search
+        ///     <c>HydraScape/client/src</c> for without leaving the pane. <c>field1827</c> is
+        ///     unnamed because no Java code in that tree reads it.
         /// </remarks>
         public IReadOnlyList<DetailField> Fields {
             get {
@@ -82,28 +83,37 @@ namespace FlashEditor.Definitions.Sprites {
                     new DetailField("texture id", TextureId.ToString(CultureInfo.InvariantCulture)),
                     new DetailField("index 9 graph", GraphState),
                     new DetailField("index 8 sprites", SpriteState),
-                    new DetailField("field1825", Record.field1825.ToString()),
-                    new DetailField("field1822", Record.field1822.ToString()),
-                    new DetailField("field1833", Record.field1833.ToString()),
-                    new DetailField("field1829", Record.field1829.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1830", Record.field1830.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1820", Record.field1820.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1816", Record.field1816.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1831 (16-bit RS HSL)",
-                        "0x" + Record.field1831.ToString("X4", CultureInfo.InvariantCulture) + " -> 0x" +
+                    new DetailField("suppress texture (aBoolean1825)", Record.suppressTexture.ToString()),
+                    new DetailField("force 64x64 (aBoolean1822)", Record.force64x64.ToString()),
+                    new DetailField("exclude from draw list (aBoolean1833)",
+                        Record.excludeFromDrawList.ToString()),
+                    new DetailField("colour gain (aByte1829)",
+                        Record.colourGain.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("grey blend weight (aByte1830)",
+                        Record.greyBlendWeight.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("effect program (aByte1820)",
+                        Record.effectProgram.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("effect params (aByte1816)",
+                        Record.effectParams.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("representative colour, 16-bit RS HSL (aShort1831)",
+                        "0x" + Record.representativeHsl.ToString("X4", CultureInfo.InvariantCulture) + " -> 0x" +
                         RepresentativeRgb.ToString("X6", CultureInfo.InvariantCulture)),
-                    new DetailField("field1823", Record.field1823.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1837", Record.field1837.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1827", Record.field1827.ToString()),
-                    new DetailField("field1824 (pixel transposition)", Record.field1824.ToString()),
-                    new DetailField("field1832", Record.field1832.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1826", Record.field1826.ToString()),
-                    new DetailField("field1819", Record.field1819.ToString()),
-                    new DetailField("field1817", Record.field1817.ToString()),
-                    new DetailField("field1821", Record.field1821.ToString(CultureInfo.InvariantCulture)),
-                    new DetailField("field1835",
-                        "0x" + Record.field1835.ToString("X8", CultureInfo.InvariantCulture)),
-                    new DetailField("field1818", Record.field1818.ToString(CultureInfo.InvariantCulture))
+                    new DetailField("scroll U (aByte1823)",
+                        Record.scrollU.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("scroll V (aByte1837)",
+                        Record.scrollV.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("field1827 (unread by the 637 client)", Record.field1827.ToString()),
+                    new DetailField("transpose pixels (aBoolean1824)", Record.transposePixels.ToString()),
+                    new DetailField("mipmap (aByte1832)", Record.mipmap.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("repeat U (aBoolean1826)", Record.repeatU.ToString()),
+                    new DetailField("repeat V (aBoolean1819)", Record.repeatV.ToString()),
+                    new DetailField("half-float upload (aBoolean1817)", Record.halfFloatUpload.ToString()),
+                    new DetailField("combine mode (anInt1821)",
+                        Record.combineMode.ToString(CultureInfo.InvariantCulture)),
+                    new DetailField("water params (anInt1835)",
+                        "0x" + Record.waterParams.ToString("X8", CultureInfo.InvariantCulture)),
+                    new DetailField("alpha mode (anInt1818)",
+                        Record.alphaMode.ToString(CultureInfo.InvariantCulture))
                 };
 
                 return fields;
@@ -125,13 +135,14 @@ namespace FlashEditor.Definitions.Sprites {
     ///     the panel's commit rewrote everything.
     ///     </para>
     ///     <para>
-    ///     <b>Two of the nineteen columns have established meanings and the other seventeen do
-    ///     not.</b> <c>field1831</c> is the representative colour in raw 16-bit RS HSL and gets a
-    ///     swatch; <c>field1824</c> is the pixel transposition flag the graph evaluator is driven by
-    ///     and gets a flag cell. The rest carry the client's own obfuscated field names on purpose - a
-    ///     plausible name here would be read as settled, and one already was: <c>field1835</c> was
-    ///     taken for a tint and multiplied into the generated pixels, which scaled every texture in
-    ///     the editor towards black.
+    ///     <b>Eighteen of the nineteen columns are named for what the client does with them, and
+    ///     every heading carries the client field beside the name.</b> The name is the claim and the
+    ///     bracketed <c>aByte1829</c> is what makes it checkable without leaving the grid; the
+    ///     evidence, cited line by line, is <c>reference/hydra-637-definitions/material-columns.md</c>.
+    ///     <c>field1827</c> keeps its obfuscated name because no Java code in the 637 tree reads it,
+    ///     and a plausible name here would be read as settled. One already was: <c>waterParams</c>
+    ///     was taken for a tint and multiplied into the generated pixels, which scaled every texture
+    ///     in the editor towards black.
     ///     </para>
     ///     <para>
     ///     <b>The table is read through <see cref="TextureManager"/> rather than decoded again.</b>
@@ -142,6 +153,17 @@ namespace FlashEditor.Definitions.Sprites {
     ///     </para>
     /// </remarks>
     public sealed class MaterialListDescriptor : DefinitionListDescriptor<MaterialListing> {
+        /// <summary>
+        ///     Width shared by the nineteen material columns.
+        /// </summary>
+        /// <remarks>
+        ///     Wider than the grid default because every heading carries its client field in
+        ///     brackets, and a heading clipped to <c>greyBlendWeigh...</c> costs the reader the
+        ///     citation that makes the name checkable. A list view column's width does not scale
+        ///     with the list around it, so this is stated once rather than per column.
+        /// </remarks>
+        private const int NamedWidth = 170;
+
         private readonly IReadOnlyList<DefinitionColumn> columns;
 
         /// <summary>Lists every slot the material table declares a record for.</summary>
@@ -154,43 +176,72 @@ namespace FlashEditor.Definitions.Sprites {
 
                 //The nineteen columns follow, in the order the file stores them, because that order
                 //is the format: Class260.java:114-208 runs one pass per column over the whole
-                //texture range, so a column's position is where its bytes are.
-                Flag("field1825", row => row.Record.field1825, (row, value) => row.Record.field1825 = value),
-                Flag("field1822", row => row.Record.field1822, (row, value) => row.Record.field1822 = value),
-                Flag("field1833", row => row.Record.field1833, (row, value) => row.Record.field1833 = value),
-                Signed("field1829", row => row.Record.field1829, (row, value) => row.Record.field1829 = value),
-                Signed("field1830", row => row.Record.field1830, (row, value) => row.Record.field1830 = value),
-                Signed("field1820", row => row.Record.field1820, (row, value) => row.Record.field1820 = value),
-                Signed("field1816", row => row.Record.field1816, (row, value) => row.Record.field1816 = value),
+                //texture range, so a column's position is where its bytes are. Each heading keeps
+                //the client field in brackets so the name above it can be checked against
+                //HydraScape/client/src without leaving the grid.
+                Flag("suppressTexture (aBoolean1825)", row => row.Record.suppressTexture,
+                    (row, value) => row.Record.suppressTexture = value),
+                Flag("force64x64 (aBoolean1822)", row => row.Record.force64x64,
+                    (row, value) => row.Record.force64x64 = value),
+                Flag("excludeFromDrawList (aBoolean1833)", row => row.Record.excludeFromDrawList,
+                    (row, value) => row.Record.excludeFromDrawList = value),
 
-                /* One of the two settled columns, and the only one that resolves to a colour. The
-                   cell text stays the stored 16-bit HSL, which is the number an edit has to write
-                   back; the swatch is what the client resolves it to, through the clamp
-                   Class345.method3825 applies. Converting the RGB back would not reproduce it. */
-                DefinitionColumn.EncodedColour<MaterialListing>("field1831",
-                    row => row.Record.field1831, row => row.RepresentativeRgb,
-                    (row, value) => row.Record.field1831 = Math.Clamp(value, 0, 0xFFFF)),
+                /* Unsigned rather than signed, and the correction that matters most on this tab:
+                   every client read of these two masks & 0xff, so 255 is a near-total grey blend
+                   and roughly a doubling of brightness. An sbyte surface showed both as -1, and
+                   255 is the commonest non-zero value in the grey blend column of both caches. */
+                Unsigned("colourGain (aByte1829)", row => row.Record.colourGain,
+                    (row, value) => row.Record.colourGain = value),
+                Unsigned("greyBlendWeight (aByte1830)", row => row.Record.greyBlendWeight,
+                    (row, value) => row.Record.greyBlendWeight = value),
 
-                Signed("field1823", row => row.Record.field1823, (row, value) => row.Record.field1823 = value),
-                Signed("field1837", row => row.Record.field1837, (row, value) => row.Record.field1837 = value),
-                Flag("field1827", row => row.Record.field1827, (row, value) => row.Record.field1827 = value),
+                Signed("effectProgram (aByte1820)", row => row.Record.effectProgram,
+                    (row, value) => row.Record.effectProgram = value),
+                Signed("effectParams (aByte1816)", row => row.Record.effectParams,
+                    (row, value) => row.Record.effectParams = value),
 
-                //The other settled column: the evaluator transposes the generated pixels when it is
-                //set (TextureGraphEvaluator, reached through TextureManager.EnsureRendered).
-                Flag("field1824", row => row.Record.field1824, (row, value) => row.Record.field1824 = value),
+                /* The only column that resolves to a colour. The cell text stays the stored 16-bit
+                   HSL, which is the number an edit has to write back; the swatch is what the client
+                   resolves it to, through the clamp Class345.method3825 applies. Converting the RGB
+                   back would not reproduce it. */
+                DefinitionColumn.EncodedColour<MaterialListing>("representativeHsl (aShort1831)",
+                    row => row.Record.representativeHsl, row => row.RepresentativeRgb,
+                    (row, value) => row.Record.representativeHsl = Math.Clamp(value, 0, 0xFFFF),
+                    width: NamedWidth),
 
-                Signed("field1832", row => row.Record.field1832, (row, value) => row.Record.field1832 = value),
-                Flag("field1826", row => row.Record.field1826, (row, value) => row.Record.field1826 = value),
-                Flag("field1819", row => row.Record.field1819, (row, value) => row.Record.field1819 = value),
-                Flag("field1817", row => row.Record.field1817, (row, value) => row.Record.field1817 = value),
-                Unsigned("field1821", row => row.Record.field1821, (row, value) => row.Record.field1821 = value),
+                Signed("scrollU (aByte1823)", row => row.Record.scrollU,
+                    (row, value) => row.Record.scrollU = value),
+                Signed("scrollV (aByte1837)", row => row.Record.scrollV,
+                    (row, value) => row.Record.scrollV = value),
+
+                //The one column with no name. Class260.java:166 assigns it and only oa.java:160 and
+                //:880 read it, both native method argument lists, so there is nothing to name it
+                //after and a guess here would read as settled.
+                Flag("field1827 (unread)", row => row.Record.field1827,
+                    (row, value) => row.Record.field1827 = value),
+
+                Flag("transposePixels (aBoolean1824)", row => row.Record.transposePixels,
+                    (row, value) => row.Record.transposePixels = value),
+                Signed("mipmap (aByte1832)", row => row.Record.mipmap,
+                    (row, value) => row.Record.mipmap = value),
+                Flag("repeatU (aBoolean1826)", row => row.Record.repeatU,
+                    (row, value) => row.Record.repeatU = value),
+                Flag("repeatV (aBoolean1819)", row => row.Record.repeatV,
+                    (row, value) => row.Record.repeatV = value),
+                Flag("halfFloatUpload (aBoolean1817)", row => row.Record.halfFloatUpload,
+                    (row, value) => row.Record.halfFloatUpload = value),
+                Unsigned("combineMode (anInt1821)", row => row.Record.combineMode,
+                    (row, value) => row.Record.combineMode = value),
 
                 //Four bytes rather than one, so it is not clamped to a byte the way its neighbours
-                //are. Renderer state, not a tint - see TextureDefinition.field1835.
-                DefinitionColumn.Number<MaterialListing>("field1835", row => row.Record.field1835,
-                    (row, value) => row.Record.field1835 = value, 110),
+                //are. Packed water-shader parameters, not a tint - see
+                //TextureDefinition.waterParams.
+                DefinitionColumn.Number<MaterialListing>("waterParams (anInt1835)",
+                    row => row.Record.waterParams, (row, value) => row.Record.waterParams = value,
+                    NamedWidth),
 
-                Unsigned("field1818", row => row.Record.field1818, (row, value) => row.Record.field1818 = value)
+                Unsigned("alphaMode (anInt1818)", row => row.Record.alphaMode,
+                    (row, value) => row.Record.alphaMode = value)
             };
         }
 
@@ -310,13 +361,13 @@ namespace FlashEditor.Definitions.Sprites {
         }
 
         /// <summary>A boolean column of the material table.</summary>
-        /// <param name="header">The client's own field name.</param>
+        /// <param name="header">The column's name and, in brackets, the client field behind it.</param>
         /// <param name="read">Reads the flag off a row.</param>
         /// <param name="write">Writes an edited flag back.</param>
         /// <returns>The column.</returns>
         private static DefinitionColumn Flag(string header, Func<MaterialListing, bool> read,
             Action<MaterialListing, bool> write) {
-            return DefinitionColumn.Flag(header, read, write, 90);
+            return DefinitionColumn.Flag(header, read, write, NamedWidth);
         }
 
         /// <summary>
@@ -327,26 +378,33 @@ namespace FlashEditor.Definitions.Sprites {
         ///     wide, so a value outside the range has to be refused somewhere, and clamping at the
         ///     edit means the cell shows what was stored instead of the value wrapping into an
         ///     unrelated number on the next load.
+        ///     <para>
+        ///     Four columns use this and not seven. <c>colourGain</c> and <c>greyBlendWeight</c> are
+        ///     stored as one byte and read <c>&amp; 0xff</c> by every client consumer, so they go
+        ///     through <see cref="Unsigned"/> instead - a signed cell rendered their meaningful
+        ///     maximum, 255, as -1.
+        ///     </para>
         /// </remarks>
-        /// <param name="header">The client's own field name.</param>
+        /// <param name="header">The column's name and, in brackets, the client field behind it.</param>
         /// <param name="read">Reads the value off a row.</param>
         /// <param name="write">Writes an edited value back.</param>
         /// <returns>The column.</returns>
         private static DefinitionColumn Signed(string header, Func<MaterialListing, sbyte> read,
             Action<MaterialListing, sbyte> write) {
             return DefinitionColumn.Number<MaterialListing>(header, row => (int) read(row),
-                (row, value) => write(row, (sbyte) Math.Clamp(value, sbyte.MinValue, sbyte.MaxValue)), 90);
+                (row, value) => write(row, (sbyte) Math.Clamp(value, sbyte.MinValue, sbyte.MaxValue)),
+                NamedWidth);
         }
 
         /// <summary>An unsigned-byte column of the material table, clamped for the same reason.</summary>
-        /// <param name="header">The client's own field name.</param>
+        /// <param name="header">The column's name and, in brackets, the client field behind it.</param>
         /// <param name="read">Reads the value off a row.</param>
         /// <param name="write">Writes an edited value back.</param>
         /// <returns>The column.</returns>
         private static DefinitionColumn Unsigned(string header, Func<MaterialListing, int> read,
             Action<MaterialListing, int> write) {
             return DefinitionColumn.Number<MaterialListing>(header, row => read(row),
-                (row, value) => write(row, Math.Clamp(value, 0, byte.MaxValue)), 90);
+                (row, value) => write(row, Math.Clamp(value, 0, byte.MaxValue)), NamedWidth);
         }
     }
 }

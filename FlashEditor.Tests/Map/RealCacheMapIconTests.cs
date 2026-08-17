@@ -117,7 +117,7 @@ namespace FlashEditor.Tests.Map
         ///     A textured overlay takes the texture's declared colour, in map HSL space.
         /// </summary>
         /// <remarks>
-        ///     The texture's <c>field1831</c> is already a packed HSL in the same space as an
+        ///     The texture's <c>representativeHsl</c> is already a packed HSL in the same space as an
         ///     overlay's own colours, and the client returns it verbatim (Node_Sub16.java:75-80).
         ///     Routing it through the model palette instead, as an early attempt did, turns the
         ///     world flat green and drains the colour out of water.
@@ -142,8 +142,8 @@ namespace FlashEditor.Tests.Map
                 textured++;
 
                 //Whatever the gate says, the declared colour has to be a legal packed HSL.
-                Assert.InRange(def.field1831 & 0xFFFF, 0, 0xFFFF);
-                Assert.InRange(MapPalette.ToRgb(def.field1831 & 0xFFFF), 0, 0xFFFFFF);
+                Assert.InRange(def.representativeHsl & 0xFFFF, 0, 0xFFFF);
+                Assert.InRange(MapPalette.ToRgb(def.representativeHsl & 0xFFFF), 0, 0xFFFFFF);
             }
 
             Assert.True(textured > 0, "no overlay in the cache references a loadable texture");

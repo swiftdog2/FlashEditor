@@ -74,13 +74,13 @@ namespace FlashEditor.Tests.Rendering
 
             //The colour path, which is what the material fell back to before the particle draw
             //learned to ask for alpha. Uniformly opaque, so every pixel of the quad is drawn.
-            int[] colourOnly = TextureGraphEvaluator.RenderArgb(def.graph, Side, Side, cache, def.field1824,
+            int[] colourOnly = TextureGraphEvaluator.RenderArgb(def.graph, Side, Side, cache, def.transposePixels,
                 SmokeMaterialId);
             Assert.NotNull(colourOnly);
             Assert.Equal(1, DistinctAlphaCount(colourOnly));
             Assert.Equal(255, Alpha(colourOnly, Side, Side / 2, Side / 2));
 
-            int[] withAlpha = TextureGraphEvaluator.RenderArgb(def.graph, Side, Side, cache, def.field1824,
+            int[] withAlpha = TextureGraphEvaluator.RenderArgb(def.graph, Side, Side, cache, def.transposePixels,
                 SmokeMaterialId, sampleAlphaOutput: true);
             Assert.NotNull(withAlpha);
 
@@ -167,7 +167,7 @@ namespace FlashEditor.Tests.Rendering
                     n => n != null && n.Type == 7 && n.MonoOverride == true);
                 smoke.graph.ColourOutputIndex = blendIndex;
 
-                int[] pixels = TextureGraphEvaluator.RenderArgb(smoke.graph, 32, 32, cache, smoke.field1824,
+                int[] pixels = TextureGraphEvaluator.RenderArgb(smoke.graph, 32, 32, cache, smoke.transposePixels,
                     SmokeMaterialId);
                 Assert.NotNull(pixels);
 
@@ -195,7 +195,7 @@ namespace FlashEditor.Tests.Rendering
         ///     <b>Which rasterisation.</b> <c>Class364.method3931:121</c> takes the alpha-sampling
         ///     path when <c>anInt1818 == 2 || !Node_Sub10_Sub7.method1023(1, aByte1820)</c>, and
         ///     <c>method1023</c> (<c>:53-62</c>) is <c>i != 1 &amp;&amp; i != 7</c>. So the condition
-        ///     is <c>field1818 == 2</c> or <c>field1820</c> in {1, 7}. Material 812 satisfies the
+        ///     is <c>alphaMode == 2</c> or <c>effectProgram</c> in {1, 7}. Material 812 satisfies the
         ///     first.
         ///     </para>
         ///     <para>
@@ -216,19 +216,19 @@ namespace FlashEditor.Tests.Rendering
 
             TextureDefinition smoke = TextureManager.Textures[SmokeMaterialId];
 
-            Assert.Equal(2, smoke.field1818);
-            Assert.True(smoke.field1818 == 2 || smoke.field1820 == 1 || smoke.field1820 == 7,
+            Assert.Equal(2, smoke.alphaMode);
+            Assert.True(smoke.alphaMode == 2 || smoke.effectProgram == 1 || smoke.effectProgram == 7,
                 $"material {SmokeMaterialId} would take the colour-derived alpha, which is uniform");
 
             //Mode 0 is method1896's second arm, method1899(8448, 8960, 8448), which sets
             //GL_COMBINE_RGB and GL_COMBINE_ALPHA both to GL_MODULATE - note method1899 writes its
             //third argument to GL_COMBINE_RGB (34161) and its first to GL_COMBINE_ALPHA (34162),
             //which is the reverse of the reading order. texture.frag already computes exactly that.
-            Assert.Equal(0, smoke.field1821);
+            Assert.Equal(0, smoke.combineMode);
 
             var modes = new SortedDictionary<int, int>();
             foreach (TextureDefinition def in TextureManager.Textures.Values)
-                modes[def.field1821] = modes.GetValueOrDefault(def.field1821) + 1;
+                modes[def.combineMode] = modes.GetValueOrDefault(def.combineMode) + 1;
 
             foreach (var mode in modes)
                 _output.WriteLine($"{_fixture.Profile}: combine mode {mode.Key} on {mode.Value} materials");
@@ -243,7 +243,7 @@ namespace FlashEditor.Tests.Rendering
             var nonModulate = new SortedSet<int>();
 
             foreach (TextureDefinition def in TextureManager.Textures.Values)
-                if (def.field1821 != 0)
+                if (def.combineMode != 0)
                     nonModulate.Add(def.id);
 
             var used = new SortedSet<int>();

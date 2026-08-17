@@ -13,8 +13,9 @@ namespace FlashEditor.Rendering
     /// Creates OpenGL texture objects from cache texture definitions and memoises them.
     /// With the Hydra columnar format, texture metadata (Class238) doesn't contain
     /// direct sprite references - those live in the per-texture operation graphs
-    /// (index 9). For now, textures are rendered as solid colours derived from
-    /// field1835 (which encodes an RGB tint).
+    /// (index 9). A texture with no graph falls back to a solid
+    /// <see cref="TextureDefinition.representativeHsl"/>, which is what the client draws for
+    /// one it cannot generate.
     /// </summary>
     /// <remarks>
     /// The constructor runs <see cref="TextureManager.Load"/>, which decodes the index-26
@@ -81,8 +82,9 @@ namespace FlashEditor.Rendering
             }
 
             // Fall back to a solid 1x1 texture in the material's own colour, which is what the
-            // client does for a texture it cannot generate. field1835 was used here before, but
-            // that is renderer state rather than a colour and is zero for most of the cache.
+            // client does for a texture it cannot generate. waterParams was used here before, but
+            // that is packed water-shader state rather than a colour, and it is zero in every
+            // record of both caches, so it produced black.
             {
                 int rgb = TextureManager.RepresentativeRgb(def);
                 int r = (rgb >> 16) & 0xFF;
@@ -151,11 +153,11 @@ namespace FlashEditor.Rendering
 
             //Class364.method3931:110. The client reads its own default from the renderer; 128 is
             //what this project has always rendered a texture at.
-            int side = def.field1822 ? 64 : 128;
+            int side = def.force64x64 ? 64 : 128;
 
-            bool sampleAlpha = def.field1818 == 2 || def.field1820 == 1 || def.field1820 == 7;
+            bool sampleAlpha = def.alphaMode == 2 || def.effectProgram == 1 || def.effectProgram == 7;
 
-            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, side, side, _cache, def.field1824, materialId,
+            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, side, side, _cache, def.transposePixels, materialId,
                 sampleAlpha);
 
             if (pixels == null)
@@ -164,8 +166,8 @@ namespace FlashEditor.Rendering
                 return false;
             }
 
-            _warmed[materialId] = new RasterisedMaterial(pixels, side, def.field1826, def.field1819,
-                def.field1832 != 0);
+            _warmed[materialId] = new RasterisedMaterial(pixels, side, def.repeatU, def.repeatV,
+                def.mipmap != 0);
 
             Debug($"Particle material {materialId} warmed at {side}x{side}, alphaOutput={sampleAlpha}",
                 LOG_DETAIL.BASIC);
