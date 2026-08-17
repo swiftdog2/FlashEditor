@@ -108,17 +108,53 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
 ## Invariants
 
 - **A sweep that tolerates a failure does not test for it.**
-  `RealCacheMapDecodeTests.EveryLocationFileDecodesOrReportsAMissingKey` walks all 1684 `l` groups
-  and asserts `loaded + missingKey == 1684`, which scores a square that failed to decrypt exactly
-  like one that succeeded - a cache whose keys had all stopped working passes it unchanged. XTEA
-  decryption is pinned instead by `RealCacheXteaCoverageTests`, which asserts the claim that cannot
-  be met by giving up: a group the key table has a key for, and which does not open without it,
-  **must** open with it. Squares with no published key are excluded rather than counted, so they
-  cannot absorb a real regression. Measured: every keyed group decrypts, 1587 of 1587 in the
-  vanilla b639 capture and 598 of 598 in the repack. Both caches carry the same 1587 index-5 key
-  entries; the difference is that the repack has already decrypted about a thousand squares in
-  place. **A successful decrypt says the key dump is compatible, not that it matches a build.**
-  Apply the same reading to any future sweep - an `or` in the assertion is usually a hole.
+  `RealCacheMapDecodeTests.EveryLocationFileDecodesOrReportsAMissingKey` used to walk all 1684 `l`
+  groups and assert only `loaded + missingKey == 1684`, which scored a square that failed to
+  decrypt exactly like one that succeeded - a cache whose keys had all stopped working passed it
+  unchanged, because every square simply moved from one bucket to the other. It now asserts the
+  **split**, and decides which bucket a square belongs in from the key table and the stored bytes
+  rather than from the loader's own answer, so the loader cannot reach the forgiving bucket by
+  giving up. Measured: 1622 squares open and 62 have no published key in the vanilla b639 capture,
+  1623 and 61 in the repack. XTEA decryption is pinned independently by
+  `RealCacheXteaCoverageTests`, which asserts the claim that cannot be met by giving up: a group
+  the key table has a key for, and which does not open without it, **must** open with it. Squares
+  with no published key are excluded rather than counted, so they cannot absorb a real regression.
+  Measured: every keyed group decrypts, 1587 of 1587 in the vanilla b639 capture and 598 of 598 in
+  the repack. Both caches carry the same 1587 index-5 key entries; the difference is that the
+  repack has already decrypted about a thousand squares in place. **A successful decrypt says the
+  key dump is compatible, not that it matches a build.** Apply the same reading to any future
+  sweep - an `or` in the assertion is usually a hole.
+- **`XTEA.Encipher` is pinned against ciphertext this project did not write, and must stay that
+  way.** A cipher pair that is inverse and *wrong* - reversed round order, mis-indexed key
+  schedule - round-trips perfectly and produces bytes no client can read, so a round-trip test
+  proves nothing about either direction. `Decipher` was never at risk, because the cache arrives
+  encrypted and 1587 groups exercise it; nothing reads back what the editor writes, so `Encipher`
+  had no captured reference at all until
+  `RealCacheXteaCoverageTests.EveryEncryptedLocationGroupReEnciphersToTheCipherTextOnDisk`
+  required every encrypted `l` group to re-encipher to the bytes already on disk - 1587 of 1587
+  vanilla, 598 of 598 repack - with
+  `CapturedCacheBytesTests.Encipher_ReproducesTheCipherTextTheCacheShipped` doing the same against
+  one committed fixture on machines with no cache. Both also pin the **span**, which is what stops
+  the client's end-offset bug being copied: the enciphered region runs from offset 5 for
+  `compressedLength + 4` bytes, taking in the uncompressed-length field and stopping short of the
+  version trailer.
+- **"Does it inflate" is a broken encryption test, and this project does not perform one.** The
+  hazard is real and was measured on 2026-08-18: a **raw** inflate - one that skips the ten gzip
+  header bytes without reading them, which is exactly what the 637 client does - succeeds over the
+  ciphertext of **64 of 1649** encrypted `l` groups in the vanilla b639 capture and **28 of 659**
+  in the repack, yielding a few bytes to a couple of kilobytes of garbage. It never reaches this
+  editor, because two independent gates stop it and either one would suffice:
+  `CompressionUtils.Gunzip` goes through `GZipInputStream`, which validates the magic, and
+  `RSContainer.Decode` then checks the inflated length against the field that sits *inside* the
+  encrypted region and is therefore garbage over ciphertext. Measured over every `l` group in both
+  caches, "fails to decode without a key" and "the gzip magic is absent at `stored[9..12]`" return
+  the same answer **1684 times out of 1684**, with no false positive and no false negative, so the
+  remedy of detecting on the magic is pinned as an equivalence rather than adopted as a change.
+  Pinned by `RealCacheXteaCoverageTests.EncryptionDetectionAgreesWithTheGzipMagicOnEveryLocationGroup`,
+  which also requires the raw-inflate count to be non-zero - without that it would keep passing in
+  a cache where the trap had gone away and would then be evidence of nothing. **Do not swap
+  `Gunzip` for a header-blind inflater**, here or in a decoder written to match the client: that
+  single change is what turns the hazard live.
 - **The byte-identity sweeps are the primary regression detector.** Every item, NPC and object
   definition, every floor underlay and overlay, and every map square must re-encode to the bytes
   it was read from. The invariant is that **every record the reference table declares** re-encodes
@@ -547,10 +583,12 @@ Reported during the map reverse engineering and plausible, but **not** reproduce
 the suite. Treat each as a lead, and promote it into the sections above only once a test or a
 measurement here confirms it.
 
-- **Encryption cannot be detected by "does it inflate".** Reportedly 20 encrypted `l` groups
-  inflate successfully over their own ciphertext into a few bytes of garbage. If true, detect on
-  the gzip magic at `stored[9..12] == 1F 8B 08` instead. This is the inverse of the failure
-  `AGENTS.md` already covers, where a key that does not fit means "not encrypted".
+**Nothing is currently queued here.** The one entry this section held - that encryption cannot be
+detected by "does it inflate" - was settled on 2026-08-18 and is now an invariant above. Its
+figure was wrong in the way `reference/DOC-CONFLICTS.md` catalogues: the claim said 20 groups, and
+the measurement found 64 in the vanilla capture and 28 in the repack, so a test written from the
+number would have failed against a correct decoder. Keep the section, and add to it rather than
+writing an unproven claim into the invariants.
 
 ## Where to look
 

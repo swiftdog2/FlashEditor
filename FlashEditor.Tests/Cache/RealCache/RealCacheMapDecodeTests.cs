@@ -136,6 +136,15 @@ namespace FlashEditor.Tests.Cache.RealCache
         ///     Every readable location file decodes, and the encrypted ones behave as the client
         ///     does rather than throwing.
         /// </summary>
+        /// <remarks>
+        ///     The split between the two outcomes is asserted, not their sum. Asserting
+        ///     <c>loaded + missingKey == 1684</c> scores a square that failed to decrypt exactly
+        ///     like one that succeeded, so a cache whose keys had all stopped working passed it
+        ///     unchanged - every square would simply move from one bucket to the other. Which
+        ///     bucket a square belongs in is decided here from the key table and the stored bytes
+        ///     rather than from the loader's own answer, so the loader cannot put a square in the
+        ///     forgiving one by giving up on it.
+        /// </remarks>
         [RealCacheFact]
         public void EveryLocationFileDecodesOrReportsAMissingKey()
         {
@@ -145,10 +154,21 @@ namespace FlashEditor.Tests.Cache.RealCache
             int loaded = 0;
             int missingKey = 0;
             int locs = 0;
+            int unopenable = 0;
             var failures = new List<string>();
 
             foreach ((int rx, int ry) in EverySquare(table, "l"))
             {
+                //Established independently of the loader: a square is legitimately unreadable
+                //only when it is stored encrypted and no key was ever published for it.
+                int group = table.GetArchiveId(MapSquareNames.Locations(rx, ry));
+                byte[] stored = _fixture.RawContainer(RSConstants.MAPS_INDEX, group);
+                bool noKeyExists = stored != null &&
+                                   _fixture.IsEncrypted(RSConstants.MAPS_INDEX, group, stored) &&
+                                   _fixture.KeyFor(RSConstants.MAPS_INDEX, group) == null;
+                if (noKeyExists)
+                    unopenable++;
+
                 try
                 {
                     Region region = loader.Load(rx, ry, out LocationLoadResult result);
@@ -160,6 +180,10 @@ namespace FlashEditor.Tests.Cache.RealCache
                         //The client's behaviour for an unreadable loc file is an empty square,
                         //not an error, so this must not surface as a failure.
                         Assert.Empty(region.GetLocations());
+
+                        if (!noKeyExists)
+                            failures.Add($"l{rx}_{ry}: reported MissingKey, but a key is published " +
+                                         "for it and it is stored encrypted - it should have opened");
                         continue;
                     }
 
@@ -181,8 +205,18 @@ namespace FlashEditor.Tests.Cache.RealCache
             }
 
             AssertNoFailures(failures);
+
+            //The sum still has to be every square, but the split is what carries the claim: the
+            //squares that gave up are exactly the ones nobody published a key for, and every
+            //other square opened.
             Assert.Equal(1684, loaded + missingKey);
+            Assert.Equal(unopenable, missingKey);
+            Assert.Equal(1684 - unopenable, loaded);
+            Assert.True(loaded > missingKey,
+                "more squares gave up than opened, so the keys are not working in this cache");
             Assert.True(locs > 0, "no locations decoded at all");
+
+            _output.WriteLine($"{loaded} location squares opened, {missingKey} have no published key");
         }
 
         /// <summary>

@@ -261,6 +261,63 @@ namespace FlashEditor.Tests.Cache
         }
 
         /// <summary>
+        ///     Enciphering the plaintext of a captured map archive reproduces, byte for byte, the
+        ///     ciphertext the cache shipped.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Every other XTEA test in this suite runs this encipher against this decipher -
+        ///     <see cref="EncryptedContainer_ReEncodesToSomethingThatDecryptsBack"/> and
+        ///     <c>XTEATests.EncipherThenDecipher_RoundTripsData</c> both do - and a pair that is
+        ///     inverse and wrong passes either one. A reversed round order, a mis-indexed key
+        ///     schedule, the wrong sum direction: all of them round-trip perfectly and none of
+        ///     them produces bytes the client can read. Only ciphertext this project did not
+        ///     write settles the direction.
+        ///     </para>
+        ///     <para>
+        ///     It is the encipher direction that is otherwise unpinned. <see cref="XTEA.Decipher"/>
+        ///     is proved against captured bytes 1,587 times over by
+        ///     <c>RealCacheXteaCoverageTests</c>, because the cache arrives encrypted; nothing
+        ///     reads what the editor writes back, so <see cref="XTEA.Encipher"/> had no captured
+        ///     reference at all.
+        ///     </para>
+        ///     <para>
+        ///     The plaintext is not taken on trust. It has to inflate to the payload the cache
+        ///     holds first, so a decipher returning noise cannot be re-enciphered back into a
+        ///     match by symmetry and read as a pass.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void Encipher_ReproducesTheCipherTextTheCacheShipped()
+        {
+            byte[] stored = Fixture("archive-xtea.container.bin");
+            int[] key = { 829329687, 2060676264, 581836269, -714741378 };
+
+            //The enciphered region starts after the compression type and the compressed length,
+            //and takes in the uncompressed-length field. Same accounting as RSContainer.Decode,
+            //stated here rather than borrowed from it so a change there cannot move this span.
+            Assert.NotEqual(RSConstants.NO_COMPRESSION, stored[0]);
+            int regionLength = ReadInt(stored, 1) + 4;
+            byte[] cipherText = stored.AsSpan(5, regionLength).ToArray();
+
+            //JagStream aliases the array it is handed and both operations work in place, so every
+            //buffer below is a copy.
+            var deciphered = new JagStream((byte[]) cipherText.Clone());
+            XTEA.Decipher(deciphered, 0, regionLength, key);
+            byte[] plainText = deciphered.ToArray();
+
+            //It really is plaintext: the payload inside it inflates to the bytes the cache holds.
+            Assert.Equal(Fixture("archive-xtea.payload.bin"),
+                         RSContainer.Decode(new JagStream((byte[]) stored.Clone()), key).GetStream().ToArray());
+            Assert.NotEqual(cipherText, plainText);
+
+            var reEnciphered = new JagStream((byte[]) plainText.Clone());
+            XTEA.Encipher(reEnciphered, 0, regionLength, key);
+
+            Assert.Equal(cipherText, reEnciphered.ToArray());
+        }
+
+        /// <summary>
         ///     OpenRS2 key exports name the index "archive" and the archive id "group". Reading
         ///     "archive" as the archive id collapses an entire dump onto archive 5 of index 5,
         ///     which silently yields a table that holds one key and looks like it loaded fine.

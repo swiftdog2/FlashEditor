@@ -2,7 +2,10 @@ using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Cache.Util;
 using FlashEditor.Cache.Util.Crypto;
+using FlashEditor.IO;
 using FlashEditor.Tests.Cache.RealCache;
+using ICSharpCode.SharpZipLib.Zip.Compression;
+using ICSharpCode.SharpZipLib.Zip.Compression.Streams;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -135,6 +138,177 @@ namespace FlashEditor.Tests.Cache.RealCache
         }
 
         /// <summary>
+        ///     Every encrypted location group re-enciphers to the ciphertext already on disk.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     The sweep above proves <see cref="XTEA.Decipher"/> against bytes this project did
+        ///     not write. Nothing proved <see cref="XTEA.Encipher"/> against anything of the kind:
+        ///     every other test of it runs this encipher against this decipher, and a pair that is
+        ///     inverse and wrong round-trips perfectly while producing bytes no client can read.
+        ///     That is the half the editor actually writes, so it is the half a defect ships in.
+        ///     </para>
+        ///     <para>
+        ///     Deciphering first and requiring the encipher to land back on the stored bytes is
+        ///     what makes the target third-party: the ciphertext compared against is the one the
+        ///     cache arrived with. The intermediate is required to differ from it, so a cipher
+        ///     that did nothing at all cannot satisfy both directions by standing still.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EveryEncryptedLocationGroupReEnciphersToTheCipherTextOnDisk()
+        {
+            RSReferenceTable table = _fixture.Table(RSConstants.MAPS_INDEX);
+
+            int reEnciphered = 0;
+            var failures = new List<string>();
+
+            foreach ((int rx, int ry) in EveryLocationSquare(table))
+            {
+                int group = table.GetArchiveId(MapSquareNames.Locations(rx, ry));
+                byte[] stored = _fixture.RawContainer(RSConstants.MAPS_INDEX, group);
+                if (stored == null)
+                    continue;
+
+                int[] key = _fixture.KeyFor(RSConstants.MAPS_INDEX, group);
+                if (key == null || !_fixture.IsEncrypted(RSConstants.MAPS_INDEX, group, stored))
+                    continue;
+
+                //The enciphered region starts after the compression type and the compressed
+                //length, and takes in the uncompressed-length field that sits inside it.
+                int regionLength = ReadInt(stored, 1) +
+                                   (stored[0] == RSConstants.NO_COMPRESSION ? 0 : 4);
+                byte[] cipherText = stored.AsSpan(5, regionLength).ToArray();
+
+                //JagStream aliases what it is handed and both operations work in place.
+                var plain = new JagStream((byte[]) cipherText.Clone());
+                XTEA.Decipher(plain, 0, regionLength, key);
+                byte[] plainText = plain.ToArray();
+
+                if (plainText.AsSpan().SequenceEqual(cipherText))
+                {
+                    failures.Add($"l{rx}_{ry} (group {group}): deciphering left the bytes unchanged");
+                    continue;
+                }
+
+                var again = new JagStream(plainText);
+                XTEA.Encipher(again, 0, regionLength, key);
+
+                if (again.ToArray().AsSpan().SequenceEqual(cipherText))
+                    reEnciphered++;
+                else
+                    failures.Add($"l{rx}_{ry} (group {group}): re-enciphering did not reproduce the " +
+                                 $"{regionLength} stored ciphertext bytes");
+            }
+
+            _output.WriteLine($"encrypted l groups re-enciphered to their stored bytes: {reEnciphered}");
+
+            AssertNoFailures(failures, "did not re-encipher to the ciphertext stored for them");
+            Assert.True(reEnciphered > 0,
+                "no encrypted location group was re-enciphered, so this run tested no encryption at all");
+        }
+
+        /// <summary>
+        ///     Encryption detection agrees, on every location group, with the gzip magic - and the
+        ///     hazard that would make it disagree is present in this cache.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Settles a claim carried as unverified: that encryption cannot be detected by "does
+        ///     it inflate", because some encrypted groups inflate over their own ciphertext into a
+        ///     few bytes of garbage. <b>The hazard is real</b> - the count below is not zero - but
+        ///     it needs a <em>raw</em> inflate, one that skips the ten header bytes without reading
+        ///     them, which is what the 637 client does. This project never performs one:
+        ///     <c>CompressionUtils.Gunzip</c> goes through <c>GZipInputStream</c>, which validates
+        ///     the magic, and <c>RSContainer.Decode</c> then checks the inflated length against the
+        ///     field that sits <em>inside</em> the encrypted region and is therefore garbage over
+        ///     ciphertext. Two independent gates, either one sufficient.
+        ///     </para>
+        ///     <para>
+        ///     So the recommended remedy - detect on the magic instead - is pinned here as an
+        ///     equivalence rather than adopted as a change: the two methods are required to return
+        ///     the same answer for every group. The raw-inflate count is asserted non-zero because
+        ///     without it this test would keep passing in a cache where the trap had gone away,
+        ///     and would then be evidence of nothing at all.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void EncryptionDetectionAgreesWithTheGzipMagicOnEveryLocationGroup()
+        {
+            RSReferenceTable table = _fixture.Table(RSConstants.MAPS_INDEX);
+
+            int swept = 0;
+            int magicAbsent = 0;
+            int rawInflateOverCipherText = 0;
+            var failures = new List<string>();
+
+            foreach ((int rx, int ry) in EveryLocationSquare(table))
+            {
+                int group = table.GetArchiveId(MapSquareNames.Locations(rx, ry));
+                byte[] stored = _fixture.RawContainer(RSConstants.MAPS_INDEX, group);
+                if (stored == null)
+                    continue;
+
+                swept++;
+
+                //A gzip container's payload starts at offset 9, after the compression type, the
+                //compressed length and the uncompressed length. Only the first two are outside
+                //the enciphered region, so on an encrypted group these three bytes are ciphertext.
+                bool magic = stored.Length > 11 &&
+                             stored[9] == 0x1F && stored[10] == 0x8B && stored[11] == 0x08;
+                bool detected = _fixture.IsEncrypted(RSConstants.MAPS_INDEX, group, stored);
+
+                if (magic == detected)
+                {
+                    failures.Add($"l{rx}_{ry} (group {group}): the gzip magic says " +
+                                 $"{(magic ? "plaintext" : "encrypted")} and decoding says " +
+                                 $"{(detected ? "encrypted" : "plaintext")}");
+                    continue;
+                }
+
+                if (magic)
+                    continue;
+
+                magicAbsent++;
+
+                //The trap itself, measured rather than assumed: a raw inflate that takes the ten
+                //header bytes on trust and starts at the deflate stream.
+                int dataLength = ReadInt(stored, 1);
+                if (dataLength < 10 || 9 + dataLength > stored.Length)
+                    continue;
+
+                try
+                {
+                    using var source = new MemoryStream(stored.AsSpan(19, dataLength - 10).ToArray());
+                    using var inflated = new InflaterInputStream(source, new Inflater(true));
+                    using var sink = new MemoryStream();
+                    inflated.CopyTo(sink);
+                    rawInflateOverCipherText++;
+                }
+                catch (Exception)
+                {
+                    //Not inflating is the ordinary case and carries no information.
+                }
+            }
+
+            _output.WriteLine($"{swept} l groups: the gzip magic and \"does it decode\" agree on all of them");
+            _output.WriteLine($"of {magicAbsent} encrypted groups, {rawInflateOverCipherText} raw-inflate " +
+                              "over their own ciphertext - the false positives a header-blind detector would take");
+
+            AssertNoFailures(failures, "were classified differently by the gzip magic and by decoding");
+
+            Assert.True(rawInflateOverCipherText > 0,
+                "no encrypted group raw-inflated over its own ciphertext, so this cache does not " +
+                "exercise the hazard and the agreement above is evidence of nothing");
+        }
+
+        /// <summary>Reads a big-endian 32-bit integer.</summary>
+        private static int ReadInt(byte[] data, int offset)
+        {
+            return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+        }
+
+        /// <summary>
         ///     The key table is loaded, from a file beside the cache the suite actually opened.
         /// </summary>
         /// <remarks>
@@ -183,7 +357,15 @@ namespace FlashEditor.Tests.Cache.RealCache
                         yield return (rx, ry);
         }
 
-        private static void AssertNoFailures(List<string> failures)
+        /// <summary>Fails with the collected detail, truncated so the report stays readable.</summary>
+        /// <param name="failures">The failures collected by a sweep.</param>
+        /// <param name="what">
+        ///     What the failing groups did, completing "N encrypted location groups ...". Named by
+        ///     the caller because the two sweeps here fail for unrelated reasons and a shared
+        ///     message would describe one of them wrongly.
+        /// </param>
+        private static void AssertNoFailures(List<string> failures,
+            string what = "hold a key that did not decrypt them")
         {
             if (failures.Count == 0)
                 return;
@@ -195,8 +377,7 @@ namespace FlashEditor.Tests.Cache.RealCache
             if (failures.Count > MaxReportedFailures)
                 detail += $"{Environment.NewLine}  ... and {failures.Count - MaxReportedFailures} more";
 
-            Assert.Fail($"{failures.Count} encrypted location groups hold a key that did not " +
-                        $"decrypt them:{Environment.NewLine}  {detail}");
+            Assert.Fail($"{failures.Count} encrypted location groups {what}:{Environment.NewLine}  {detail}");
         }
     }
 }
