@@ -309,7 +309,10 @@ namespace FlashEditor.Tests.Definitions.Sprites
             DefinitionAddress address = descriptor.Enumerate(cache).Last();
             MaterialListing listing = descriptor.Decode(cache, address, new JagStream(Array.Empty<byte>()));
 
-            DefinitionColumn colour = descriptor.Columns.Single(column => column.Header == "representativeHsl");
+            //The heading carries the client field in brackets, which is what lets a reader check the
+            //name against HydraScape/client/src, so it is part of the string to match on.
+            DefinitionColumn colour =
+                descriptor.Columns.Single(column => column.Header == "representativeHsl (aShort1831)");
             Assert.True(colour.IsEditable, "the representative colour is the one column a user most wants to change");
 
             string original = (string) colour.Read(listing)!;

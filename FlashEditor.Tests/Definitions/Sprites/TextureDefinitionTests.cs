@@ -215,7 +215,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
         }
 
         [Fact]
-        public void DecodeColumnar_Field1825_InvertedBoolean()
+        public void DecodeColumnar_SuppressTexture_InvertedBoolean()
         {
             // suppressTexture is true when the byte is 0 (inverted)
             var s = new JagStream();

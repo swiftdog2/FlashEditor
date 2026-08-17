@@ -487,12 +487,23 @@ Build the tab: a nineteen-column grid beside the index-9 thumbnail for the same 
 
 Three things this has to get right:
 
- - THE TWO COLUMNS WITH ESTABLISHED MEANINGS get a real presentation. field1831 is the
-   representative colour in raw 16-bit RS HSL (TextureDefinition.cs:111-127) - a swatch. field1824
-   is the pixel transposition flag the evaluator is driven by (:150-157) - a checkbox. The other
-   SEVENTEEN have no established meaning and are named after obfuscated client fields on purpose.
-   Do not invent names for them. field1835 is a 4-byte int that is zero in every record and was
-   once mistaken for a tint, which scaled every texture toward black (:189-198).
+ - EIGHTEEN OF THE NINETEEN COLUMNS ARE SETTLED, each from what the 637 client does with it and
+   each citing the line that settles it - reference/hydra-637-definitions/material-columns.md, with
+   reference/index-survey/index-026-MATERIALS-column-census.md as the measured companion. The names
+   live on TextureDefinition and MaterialColumn, and every grid heading carries the client field in
+   brackets so a name can be checked without leaving the tab. TWO of the eighteen get a real
+   presentation rather than a number: representativeHsl (aShort1831) is the raw 16-bit RS HSL and
+   gets a swatch, and transposePixels (aBoolean1824) is the flag the evaluator is driven by and
+   gets a checkbox.
+
+   FIELD1827 KEEPS ITS OBFUSCATED NAME and no name may be invented for it. Class260.java:166
+   assigns it and only oa.java:160 and oa.java:880 read it, both native method argument lists, so
+   there is nothing to name it after. A plausible name here would be read as settled, and one
+   already was: waterParams (anInt1835) was taken for a tint and multiplied into the generated
+   pixels, which scaled every texture toward black. It is packed water-shader parameters, read by
+   effect programs 2, 8 and 9, and zero in every record of both caches for reasons nobody knows -
+   "the water effects are unused" is refuted, because the one slot in either cache on program 8
+   stores zero too.
 
  - SHOW THE SLOTS WITH NO GRAPH. Index 26 and index 9 are 1:1 in the vanilla capture at 915 each,
    which invites the wrong inference that they are the same population. In the repack it is 1408
