@@ -147,5 +147,38 @@ namespace FlashEditor.Definitions.Interfaces {
                 ? candidate
                 : null;
         }
+
+        /// <summary>
+        ///     The identifier a component should carry once it has been renumbered.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Almost always the one it already had.</b> A name hash is stored, not derived, so
+        ///     moving a component moves its name with it and nothing about the new id enters into
+        ///     it. There is exactly one exception, and it is the one case where the stored hash is
+        ///     a statement about the id rather than about the component: the generated
+        ///     <c>com_&lt;fileId&gt;</c> convention. Where a component's identifier is
+        ///     <c>hash("com_" + oldFileId)</c>, carrying it unchanged leaves a component at id 3
+        ///     called <c>com_5</c>, which is not a name anything can resolve.
+        ///     <para>
+        ///     The convention is safe to act on because it proves itself on every row rather than
+        ///     in aggregate: extending <c>com_&lt;N&gt;</c> over N in 0..3,999 matches 9,219
+        ///     component hashes, and in 9,219 of 9,219 the N equals that component's own file id,
+        ///     with no exceptions. The test here is the same one <see cref="ComponentName"/> makes -
+        ///     re-hash the candidate and require it to reproduce what is stored - so a component
+        ///     whose bespoke name merely looks generated is left alone.
+        ///     </para>
+        /// </remarks>
+        /// <param name="oldFileId">The file id it is moving from.</param>
+        /// <param name="newFileId">The file id it is moving to.</param>
+        /// <param name="identifier">The identifier the table holds for it now.</param>
+        /// <returns>The identifier to store against the new id.</returns>
+        public static int MovedIdentifier(int oldFileId, int newFileId, int identifier) {
+            if (identifier == Unnamed || oldFileId == newFileId)
+                return identifier;
+
+            return NameHasher.GetNameHash("com_" + oldFileId) == identifier
+                ? NameHasher.GetNameHash("com_" + newFileId)
+                : identifier;
+        }
     }
 }

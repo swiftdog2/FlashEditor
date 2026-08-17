@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using FlashEditor.Cache;
+using FlashEditor.Cache.Util;
 using FlashEditor.Definitions.Interfaces;
 using FlashEditor.Definitions.Interfaces.Layout;
 using FlashEditor.IO;
@@ -557,6 +558,122 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
             Assert.Contains(plan.Warnings, warning => warning.Contains("CS2 scripts in index 12"));
         }
 
+        /// <summary>
+        ///     A component whose name is generated from its id is renamed when its id changes, and
+        ///     every other name is carried across untouched.
+        /// </summary>
+        /// <remarks>
+        ///     <b>A name is a stored hash, not a derived one, so moving a component normally moves
+        ///     its name with it and the new id does not enter into it.</b> There is one exception,
+        ///     and it is the case where the stored hash is a statement about the id rather than
+        ///     about the component: the generated <c>com_&lt;fileId&gt;</c> convention. Carrying that
+        ///     one across unchanged does not leave a wrong name, it leaves NO name -
+        ///     <c>InterfaceNames.ComponentName</c> rebuilds the candidate from the component's
+        ///     current file id and requires the rehash to match what is stored, so a component moved
+        ///     from 5 to 3 still holding <c>hash("com_5")</c> matches neither the generated
+        ///     candidate nor the bespoke table and resolves to null. Renumbering silently un-named
+        ///     every generated-name component it moved.
+        ///     <para>
+        ///     <b>Not vacuous by construction.</b> The interface is chosen because it carries a
+        ///     generated name on a component a delete will renumber, and the test asserts that the
+        ///     set it checked was non-empty - an assertion over "every renumbered generated name" is
+        ///     trivially satisfied by a group that has none, which is how this would rot.
+        ///     </para>
+        ///     <para>
+        ///     The bespoke half matters as much as the generated half: a writer that recomputed
+        ///     every identifier from the new id would pass the first assertion and destroy every
+        ///     real name in the cache, so both are asserted together.
+        ///     </para>
+        /// </remarks>
+        [RealCacheFact]
+        public void RenumberingAComponent_RewritesAGeneratedNameAndCarriesEveryOtherNameAcross() {
+            RSCache real = _fixture.OpenCache();
+            RSReferenceTable realTable = real.GetReferenceTable(Index);
+
+            //An interface that satisfies the usual shape AND holds a generated name on something a
+            //delete can move, so the assertion below has a population to run over.
+            int sourceGroupId = -1;
+            int victim = -1;
+
+            foreach (int groupId in real.EnumerateGroups(Index)) {
+                RSArchiveEntry candidate = realTable.GetArchiveEntry(groupId);
+                if (candidate == null || candidate.GetValidFileIds().Length is < 6 or > 60)
+                    continue;
+
+                InterfaceComponentTree shape = TreeOf(real, groupId);
+                int leaf = shape.Components.Keys
+                    .Where(id => shape.ChildrenOf(id).Count == 0
+                        && shape.ParentageOf(id) == InterfaceParentage.Child)
+                    .OrderBy(id => id)
+                    .DefaultIfEmpty(-1)
+                    .First();
+
+                if (leaf < 0)
+                    continue;
+
+                //Generated, and above the leaf, so deleting the leaf renumbers it downwards.
+                bool movable = candidate.GetValidFileIds().Any(id => id > leaf
+                    && candidate.GetFileEntry(id)?.GetIdentifier()
+                        == NameHasher.GetNameHash("com_" + id));
+
+                if (!movable)
+                    continue;
+
+                sourceGroupId = groupId;
+                victim = leaf;
+                break;
+            }
+
+            Assert.True(sourceGroupId >= 0,
+                "No interface in this cache carries a generated com_<id> name on a component that a " +
+                "leaf deletion would renumber, so this test cannot be run against it.");
+
+            Scratch scratch = Copy(sourceGroupId);
+            RSArchiveEntry before = scratch.Cache.GetReferenceTable(Index).GetArchiveEntry(scratch.GroupId);
+
+            //What every surviving component's identifier should be afterwards, worked out from the
+            //table BEFORE the edit so the expectation is not read off the thing under test.
+            var expected = new Dictionary<int, int>();
+            var generated = new List<int>();
+
+            InterfaceComponentTree tree = TreeOf(scratch.Cache, scratch.GroupId);
+            InterfaceStructureEdit plan = InterfaceComponentEdits.PlanDelete(tree, victim);
+
+            foreach (int oldId in before.GetValidFileIds()) {
+                if (plan.Removed.Contains(oldId))
+                    continue;
+
+                int newId = plan.Renumbering.TryGetValue(oldId, out int moved) ? moved : oldId;
+                int identifier = before.GetFileEntry(oldId)?.GetIdentifier() ?? RSGroupFile.Unnamed;
+
+                if (identifier == NameHasher.GetNameHash("com_" + oldId)) {
+                    expected[newId] = NameHasher.GetNameHash("com_" + newId);
+                    if (newId != oldId)
+                        generated.Add(newId);
+                } else {
+                    expected[newId] = identifier;
+                }
+            }
+
+            _output.WriteLine("interface " + scratch.SourceGroupId + ": deleting leaf " + victim +
+                " renumbers " + plan.Renumbering.Count + ", of which " + generated.Count +
+                " carry a generated name");
+
+            Assert.NotEmpty(generated);
+            Assert.True(InterfaceStructureWriter.Apply(scratch.Cache, scratch.GroupId, plan));
+
+            RSCache reopened = SaveAndReopen(scratch.Cache);
+            RSArchiveEntry after = reopened.GetReferenceTable(Index).GetArchiveEntry(scratch.GroupId);
+
+            foreach (KeyValuePair<int, int> want in expected)
+                Assert.Equal(want.Value, after.GetFileEntry(want.Key)?.GetIdentifier() ?? RSGroupFile.Unnamed);
+
+            //And the point of it: the moved components resolve to a name again rather than to null.
+            foreach (int id in generated)
+                Assert.Equal("com_" + id, InterfaceNames.ComponentName(scratch.GroupId, id,
+                    after.GetFileEntry(id).GetIdentifier()));
+        }
+
         // ===================================================================
         //  What it refuses
         // ===================================================================
@@ -676,9 +793,19 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
         ///     </para>
         /// </remarks>
         /// <returns>The temporary cache and the interface inside it.</returns>
-        private Scratch Copy() {
+        private Scratch Copy() => Copy(PickInterface(_fixture.OpenCache()));
+
+        /// <summary>Copies one named interface rather than whichever one fits the usual shape.</summary>
+        /// <remarks>
+        ///     The name test needs an interface carrying generated <c>com_&lt;id&gt;</c> identifiers,
+        ///     which is a different requirement from the nested-subtree shape <see cref="Copy()"/>
+        ///     looks for, and an assertion made against a group with no generated name would pass
+        ///     while testing nothing.
+        /// </remarks>
+        /// <param name="sourceGroupId">The interface to copy.</param>
+        /// <returns>The scratch cache holding it.</returns>
+        private Scratch Copy(int sourceGroupId) {
             RSCache real = _fixture.OpenCache();
-            int sourceGroupId = PickInterface(real);
             const int groupId = 0;
 
             byte[] payload = real.GetContainer(Index, sourceGroupId).GetStream().ToArray();

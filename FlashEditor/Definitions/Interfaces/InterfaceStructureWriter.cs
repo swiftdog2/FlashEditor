@@ -119,7 +119,15 @@ namespace FlashEditor.Definitions.Interfaces {
                     continue;
 
                 int newId = plan.Renumbering.TryGetValue(oldId, out int moved) ? moved : oldId;
-                int identifier = entry.GetFileEntry(oldId)?.GetIdentifier() ?? RSGroupFile.Unnamed;
+                int storedIdentifier = entry.GetFileEntry(oldId)?.GetIdentifier() ?? RSGroupFile.Unnamed;
+
+                /* The name travels with the component, except where the name IS the id. A stored
+                   hash is not derived from the id, so carrying it is right for every bespoke name -
+                   but a generated com_<oldId> hash left on a component now at another id resolves
+                   to nothing at all, because InterfaceNames.ComponentName rebuilds the candidate
+                   from the CURRENT file id and requires the rehash to match. Renumbering without
+                   this silently un-names every generated-name component it moves. */
+                int identifier = InterfaceNames.MovedIdentifier(oldId, newId, storedIdentifier);
 
                 files.Add(new RSGroupFile(newId, Repointed(groupId, oldId, file.Value, plan.Renumbering),
                     identifier));
