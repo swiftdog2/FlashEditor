@@ -10,19 +10,19 @@ using Xunit.Abstractions;
 namespace FlashEditor.Tests.Definitions.Sprites
 {
     /// <summary>
-    ///     Every index-26 slot whose Field1820 selects a high effect program, printed whole.
+    ///     Every index-26 slot whose EffectProgram selects a high effect program, printed whole.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///     Written to settle one disagreement. A reading of the client concluded that Field1835 is
-    ///     read only by the effect programs Field1820 selects at 8 and 9, and that this is why
-    ///     Field1835 is zero everywhere; a census of the data found Field1820 reaching 8 in both
+    ///     Written to settle one disagreement. A reading of the client concluded that WaterParams is
+    ///     read only by the effect programs EffectProgram selects at 8 and 9, and that this is why
+    ///     WaterParams is zero everywhere; a census of the data found EffectProgram reaching 8 in both
     ///     caches, which would make that explanation self-contradictory. Neither half can settle it,
     ///     so this prints the whole row for every slot that reaches the disputed value, and the
-    ///     Field1820 distribution around it, and leaves the client reading to be checked against it.
+    ///     EffectProgram distribution around it, and leaves the client reading to be checked against it.
     ///     </para>
     ///     <para>
-    ///     <b>Read from the stored bytes as well as the decoded fields.</b> Field1820 decodes to a
+    ///     <b>Read from the stored bytes as well as the decoded fields.</b> EffectProgram decodes to a
     ///     signed byte, so "the maximum is 8" is a claim about one of two readings, and a stored 0xF8
     ///     would be -8 signed while looking nothing like 8 raw. Both are printed for every column so
     ///     the question cannot be answered by the decoder's choice alone.
@@ -38,7 +38,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
     public sealed class MaterialEffectProgramSlotTests : IClassFixture<RealCacheFixture>
     {
         /// <summary>
-        ///     The Field1820 value the client investigation attributed a Field1835 read to.
+        ///     The EffectProgram value the client investigation attributed a WaterParams read to.
         /// </summary>
         private const int DisputedProgram = 8;
 
@@ -57,7 +57,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             (MaterialColumn[]) Enum.GetValues(typeof(MaterialColumn));
 
         /// <summary>
-        ///     Prints the Field1820 distribution and the full row of every slot that reaches the
+        ///     Prints the EffectProgram distribution and the full row of every slot that reaches the
         ///     disputed program index.
         /// </summary>
         /// <remarks>
@@ -85,7 +85,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             HashSet<int> graphed = GraphBearingGroups();
 
-            _output.WriteLine("# Index 26 Field1820 effect programs - " + _fixture.Profile.Name);
+            _output.WriteLine("# Index 26 EffectProgram effect programs - " + _fixture.Profile.Name);
             _output.WriteLine("");
             _output.WriteLine("Cache directory: `" + RealCacheLocator.Directory + "`");
             _output.WriteLine("");
@@ -129,7 +129,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             return value;
         }
 
-        /// <summary>The whole Field1820 distribution, both raw and as the signed byte it decodes to.</summary>
+        /// <summary>The whole EffectProgram distribution, both raw and as the signed byte it decodes to.</summary>
         /// <param name="table">The decoded table.</param>
         /// <param name="slots">Present slot ids.</param>
         private void WriteDistribution(MaterialTable table, List<int> slots)
@@ -137,11 +137,11 @@ namespace FlashEditor.Tests.Definitions.Sprites
             var counts = new SortedDictionary<long, int>();
             foreach (int slot in slots)
             {
-                long raw = RawValue(table.Slots[slot].StoredRecord, MaterialColumn.Field1820);
+                long raw = RawValue(table.Slots[slot].StoredRecord, MaterialColumn.EffectProgram);
                 counts[raw] = counts.TryGetValue(raw, out int seen) ? seen + 1 : 1;
             }
 
-            _output.WriteLine("## Field1820 distribution");
+            _output.WriteLine("## EffectProgram distribution");
             _output.WriteLine("");
             _output.WriteLine("| stored byte | hex | signed | slots |");
             _output.WriteLine("|---|---|---|---|");
@@ -163,7 +163,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
         }
 
         /// <summary>
-        ///     Every column of every slot whose Field1820 reaches the disputed program index or beyond.
+        ///     Every column of every slot whose EffectProgram reaches the disputed program index or beyond.
         /// </summary>
         /// <param name="table">The decoded table.</param>
         /// <param name="slots">Present slot ids.</param>
@@ -171,9 +171,9 @@ namespace FlashEditor.Tests.Definitions.Sprites
         private void WriteHighSlots(MaterialTable table, List<int> slots, HashSet<int> graphed)
         {
             var high = slots.Where(slot =>
-                RawValue(table.Slots[slot].StoredRecord, MaterialColumn.Field1820) >= DisputedProgram).ToList();
+                RawValue(table.Slots[slot].StoredRecord, MaterialColumn.EffectProgram) >= DisputedProgram).ToList();
 
-            _output.WriteLine("## Slots whose Field1820 is " + DisputedProgram + " or higher");
+            _output.WriteLine("## Slots whose EffectProgram is " + DisputedProgram + " or higher");
             _output.WriteLine("");
 
             if (high.Count == 0)
@@ -211,23 +211,23 @@ namespace FlashEditor.Tests.Definitions.Sprites
                 }
 
                 _output.WriteLine("");
-                _output.WriteLine("- Field1835 raw: 0x" +
-                                  RawValue(row, MaterialColumn.Field1835).ToString("X8") + " = " +
-                                  RawValue(row, MaterialColumn.Field1835) + " decimal, decoded " +
-                                  def.field1835);
-                _output.WriteLine("- Field1816 raw: " + RawValue(row, MaterialColumn.Field1816) +
-                                  " = 0x" + RawValue(row, MaterialColumn.Field1816).ToString("X2") +
-                                  ", decoded " + def.field1816);
+                _output.WriteLine("- WaterParams raw: 0x" +
+                                  RawValue(row, MaterialColumn.WaterParams).ToString("X8") + " = " +
+                                  RawValue(row, MaterialColumn.WaterParams) + " decimal, decoded " +
+                                  def.waterParams);
+                _output.WriteLine("- EffectParams raw: " + RawValue(row, MaterialColumn.EffectParams) +
+                                  " = 0x" + RawValue(row, MaterialColumn.EffectParams).ToString("X2") +
+                                  ", decoded " + def.effectParams);
                 _output.WriteLine("");
             }
         }
 
         /// <summary>
-        ///     Whether any slot at all carries a non-zero Field1835, independent of Field1820.
+        ///     Whether any slot at all carries a non-zero WaterParams, independent of EffectProgram.
         /// </summary>
         /// <remarks>
-        ///     The other half of the disagreement. "Field1835 is zero because no slot selects the
-        ///     effect that reads it" is only worth arguing about while Field1835 is in fact zero
+        ///     The other half of the disagreement. "WaterParams is zero because no slot selects the
+        ///     effect that reads it" is only worth arguing about while WaterParams is in fact zero
         ///     everywhere, so the claim is measured here rather than carried over.
         /// </remarks>
         /// <param name="table">The decoded table.</param>
@@ -236,10 +236,10 @@ namespace FlashEditor.Tests.Definitions.Sprites
         {
             var nonZero = new List<int>();
             foreach (int slot in slots)
-                if (RawValue(table.Slots[slot].StoredRecord, MaterialColumn.Field1835) != 0)
+                if (RawValue(table.Slots[slot].StoredRecord, MaterialColumn.WaterParams) != 0)
                     nonZero.Add(slot);
 
-            _output.WriteLine("## Field1835 across the whole table");
+            _output.WriteLine("## WaterParams across the whole table");
             _output.WriteLine("");
             _output.WriteLine("- non-zero in " + nonZero.Count + " of " + slots.Count + " present slots");
 
@@ -258,25 +258,25 @@ namespace FlashEditor.Tests.Definitions.Sprites
         {
             switch (column)
             {
-                case MaterialColumn.Field1825: return def.field1825.ToString();
-                case MaterialColumn.Field1822: return def.field1822.ToString();
-                case MaterialColumn.Field1833: return def.field1833.ToString();
-                case MaterialColumn.Field1829: return def.field1829.ToString();
-                case MaterialColumn.Field1830: return def.field1830.ToString();
-                case MaterialColumn.Field1820: return def.field1820.ToString();
-                case MaterialColumn.Field1816: return def.field1816.ToString();
-                case MaterialColumn.Field1831: return def.field1831.ToString();
-                case MaterialColumn.Field1823: return def.field1823.ToString();
-                case MaterialColumn.Field1837: return def.field1837.ToString();
+                case MaterialColumn.SuppressTexture: return def.suppressTexture.ToString();
+                case MaterialColumn.Force64x64: return def.force64x64.ToString();
+                case MaterialColumn.ExcludeFromDrawList: return def.excludeFromDrawList.ToString();
+                case MaterialColumn.ColourGain: return def.colourGain.ToString();
+                case MaterialColumn.GreyBlendWeight: return def.greyBlendWeight.ToString();
+                case MaterialColumn.EffectProgram: return def.effectProgram.ToString();
+                case MaterialColumn.EffectParams: return def.effectParams.ToString();
+                case MaterialColumn.RepresentativeHsl: return def.representativeHsl.ToString();
+                case MaterialColumn.ScrollU: return def.scrollU.ToString();
+                case MaterialColumn.ScrollV: return def.scrollV.ToString();
                 case MaterialColumn.Field1827: return def.field1827.ToString();
-                case MaterialColumn.Field1824: return def.field1824.ToString();
-                case MaterialColumn.Field1832: return def.field1832.ToString();
-                case MaterialColumn.Field1826: return def.field1826.ToString();
-                case MaterialColumn.Field1819: return def.field1819.ToString();
-                case MaterialColumn.Field1817: return def.field1817.ToString();
-                case MaterialColumn.Field1821: return def.field1821.ToString();
-                case MaterialColumn.Field1835: return def.field1835.ToString();
-                case MaterialColumn.Field1818: return def.field1818.ToString();
+                case MaterialColumn.TransposePixels: return def.transposePixels.ToString();
+                case MaterialColumn.Mipmap: return def.mipmap.ToString();
+                case MaterialColumn.RepeatU: return def.repeatU.ToString();
+                case MaterialColumn.RepeatV: return def.repeatV.ToString();
+                case MaterialColumn.HalfFloatUpload: return def.halfFloatUpload.ToString();
+                case MaterialColumn.CombineMode: return def.combineMode.ToString();
+                case MaterialColumn.WaterParams: return def.waterParams.ToString();
+                case MaterialColumn.AlphaMode: return def.alphaMode.ToString();
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(column), column,

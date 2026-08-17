@@ -69,9 +69,9 @@ namespace FlashEditor.Tests.Definitions.Sprites
         /// </remarks>
         private static readonly MaterialColumn[] SignedByteColumns =
         {
-            MaterialColumn.Field1829, MaterialColumn.Field1830, MaterialColumn.Field1820,
-            MaterialColumn.Field1816, MaterialColumn.Field1823, MaterialColumn.Field1837,
-            MaterialColumn.Field1832
+            MaterialColumn.ColourGain, MaterialColumn.GreyBlendWeight, MaterialColumn.EffectProgram,
+            MaterialColumn.EffectParams, MaterialColumn.ScrollU, MaterialColumn.ScrollV,
+            MaterialColumn.Mipmap
         };
 
         /// <summary>
@@ -257,7 +257,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
         /// <param name="slots">Present slot ids.</param>
         private void WriteInversionCheck(MaterialTable table, List<int> slots)
         {
-            _output.WriteLine("## Field1825, stored against decoded");
+            _output.WriteLine("## SuppressTexture, stored against decoded");
             _output.WriteLine("");
             _output.WriteLine("| stored byte | decoded true | decoded false |");
             _output.WriteLine("|---|---|---|");
@@ -266,10 +266,10 @@ namespace FlashEditor.Tests.Definitions.Sprites
             foreach (int slot in slots)
             {
                 TextureDefinition def = table.Slots[slot];
-                long stored = RawValue(def.StoredRecord, MaterialColumn.Field1825);
+                long stored = RawValue(def.StoredRecord, MaterialColumn.SuppressTexture);
                 if (!byStored.TryGetValue(stored, out int[] pair))
                     byStored[stored] = pair = new int[2];
-                pair[def.field1825 ? 0 : 1]++;
+                pair[def.suppressTexture ? 0 : 1]++;
             }
 
             foreach (KeyValuePair<long, int[]> entry in byStored)
@@ -307,15 +307,15 @@ namespace FlashEditor.Tests.Definitions.Sprites
             _output.WriteLine("## Wide columns");
             _output.WriteLine("");
 
-            long[] two = raw[MaterialColumn.Field1831];
-            _output.WriteLine("- Field1831 (2 bytes): distinct " + new HashSet<long>(two).Count +
+            long[] two = raw[MaterialColumn.RepresentativeHsl];
+            _output.WriteLine("- RepresentativeHsl (2 bytes): distinct " + new HashSet<long>(two).Count +
                               ", min " + two.Min() + ", max " + two.Max() + ", zero in " +
                               two.Count(v => v == 0) + " slots, at or above 32768 in " +
                               two.Count(v => v >= 32768) + " slots");
 
-            long[] four = raw[MaterialColumn.Field1835];
+            long[] four = raw[MaterialColumn.WaterParams];
             int nonZero = four.Count(v => v != 0);
-            _output.WriteLine("- Field1835 (4 bytes): non-zero in **" + nonZero + "** of " +
+            _output.WriteLine("- WaterParams (4 bytes): non-zero in **" + nonZero + "** of " +
                               four.Length + " slots, min " + four.Min() + ", max " + four.Max() +
                               ", distinct " + new HashSet<long>(four).Count);
             _output.WriteLine("");
