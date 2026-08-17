@@ -562,8 +562,10 @@ namespace FlashEditor.Rendering {
             if (uTexOffsetLoc >= 0)
                 GL.Uniform2(uTexOffsetLoc, uOff, vOff);
 
-            // Additive blend for textures with field1818 == 2
-            bool additive = b.TexDef?.field1818 == 2;
+            // Mode 2 is the only alphaMode whose texels carry an alpha channel of their own
+            // (SoftwareRasterizer.java:583-588), and the client sorts those faces into its
+            // translucent pass. This viewer approximates that pass with an additive blend.
+            bool additive = b.TexDef?.alphaMode == 2;
             if (additive)
                 GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
 

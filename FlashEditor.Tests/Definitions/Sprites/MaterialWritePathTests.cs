@@ -174,18 +174,18 @@ namespace FlashEditor.Tests.Definitions.Sprites
             RSCache cache = CreateCache(file);
 
             MaterialTable table = MaterialTable.Load(cache);
-            table.Slots[1].field1831 = 0x1234;
+            table.Slots[1].representativeHsl = 0x1234;
 
             Assert.True(table.SaveTo(cache), "an edited table has to stage a write");
 
             RSCache reopened = SaveAndReopen(cache);
             MaterialTable persisted = MaterialTable.Decode(new JagStream(StoredFile(reopened)));
 
-            Assert.Equal(0x1234, persisted.Slots[1].field1831);
+            Assert.Equal(0x1234, persisted.Slots[1].representativeHsl);
 
             //And the record nobody touched came back byte for byte, aliased boolean included.
             Assert.Equal(MaterialFileBuilder.AliasedBooleanByte,
-                         persisted.Slots[0].StoredRecord[MaterialTable.OffsetOf(MaterialColumn.Field1822)]);
+                         persisted.Slots[0].StoredRecord[MaterialTable.OffsetOf(MaterialColumn.Force64x64)]);
         }
 
         /// <summary>
@@ -206,11 +206,11 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable table = MaterialTable.Load(cache);
             TextureDefinition record = table.Slots[1];
 
-            int hsl = record.field1831;
-            record.field1831 = hsl ^ 0x0FF0;
+            int hsl = record.representativeHsl;
+            record.representativeHsl = hsl ^ 0x0FF0;
             Assert.True(table.IsDirty, "the edit has to register before its undoing means anything");
 
-            record.field1831 = hsl;
+            record.representativeHsl = hsl;
 
             Assert.False(table.IsDirty);
             Assert.False(table.SaveTo(cache), "an edit that was undone must not write");
@@ -237,12 +237,12 @@ namespace FlashEditor.Tests.Definitions.Sprites
             MaterialTable table = MaterialTable.Load(cache);
             TextureDefinition aliased = table.Slots[0];
 
-            Assert.False(aliased.field1822, "a boolean byte of 2 is false to the client");
+            Assert.False(aliased.force64x64, "a boolean byte of 2 is false to the client");
 
-            aliased.field1822 = true;
+            aliased.force64x64 = true;
             Assert.True(table.IsDirty);
 
-            aliased.field1822 = false;
+            aliased.force64x64 = false;
 
             Assert.False(table.IsDirty);
             Assert.False(table.SaveTo(cache), "a flag put back where it was must not write");
@@ -309,7 +309,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             DefinitionAddress address = descriptor.Enumerate(cache).Last();
             MaterialListing listing = descriptor.Decode(cache, address, new JagStream(Array.Empty<byte>()));
 
-            DefinitionColumn colour = descriptor.Columns.Single(column => column.Header == "field1831");
+            DefinitionColumn colour = descriptor.Columns.Single(column => column.Header == "representativeHsl");
             Assert.True(colour.IsEditable, "the representative colour is the one column a user most wants to change");
 
             string original = (string) colour.Read(listing)!;
@@ -317,7 +317,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             byte[] edited = descriptor.Encode(listing).ToArray();
             Assert.NotEqual(file, edited);
-            Assert.Equal(0x1234, MaterialTable.Decode(new JagStream(edited)).Slots[listing.TextureId].field1831);
+            Assert.Equal(0x1234, MaterialTable.Decode(new JagStream(edited)).Slots[listing.TextureId].representativeHsl);
 
             //The cell text is the stored 16-bit HSL rather than the RGB the swatch shows, so putting
             //it back is what the user typing the old value again would do.

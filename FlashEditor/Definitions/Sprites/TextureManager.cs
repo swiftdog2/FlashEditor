@@ -291,7 +291,7 @@ namespace FlashEditor.Definitions.Sprites {
                 // hasGraph is the null check; the compiler cannot see through the bool.
                 int nodeCount = hasGraph ? (def.graph!.Nodes?.Length ?? 0) : 0;
                 Debug($"Tex {def.id}: BEGIN - graph={hasGraph} (nodes={nodeCount}), sprites={hasSprites} ({def.spriteFileIds?.Length ?? 0} ids), " +
-                      $"tint=0x{def.field1835:X6}, transpose={def.field1824}", LOG_DETAIL.ADVANCED);
+                      $"water=0x{def.waterParams:X8}, transpose={def.transposePixels}", LOG_DETAIL.ADVANCED);
             }
 
             // Try graph rendering first — this evaluates the full procedural
@@ -319,17 +319,17 @@ namespace FlashEditor.Definitions.Sprites {
                               $"spriteNodes={spriteNodes}", LOG_DETAIL.ADVANCED);
                     }
 
-                    Bitmap rendered = TextureGraphEvaluator.Render(def.graph, 128, 128, _cacheRef, def.field1824, def.id);
+                    Bitmap rendered = TextureGraphEvaluator.Render(def.graph, 128, 128, _cacheRef, def.transposePixels, def.id);
                     graphSw.Stop();
 
                     if (rendered != null) {
                         Debug($"Tex {def.id}: graph render OK in {graphSw.ElapsedMilliseconds}ms — {rendered.Width}x{rendered.Height}", LOG_DETAIL.ADVANCED);
-                        //field1835 is not a tint over the generated pixels. The client passes it
-                        //to the renderer as material state (RenderType_Sub1:4441) and never
-                        //multiplies the graph output by it - doing so here was scaling every
-                        //texture towards black by whatever that field happened to hold. It stays
-                        //a legitimate stand-in colour when there is nothing to render at all,
-                        //which is where GLTextureCache still uses it.
+                        //waterParams is not a tint over the generated pixels. It is packed
+                        //water-shader parameters (Class151_Sub2.java:152-166) that the client hands
+                        //to the renderer at RenderType_Sub1.java:4441 and never multiplies the graph
+                        //output by - doing so here scaled every texture towards black, and it is
+                        //zero in every record of both caches, so it scaled them all the way. The
+                        //stand-in colour when there is nothing to render is representativeHsl.
                         def.thumb = rendered;
                         System.Threading.Interlocked.Increment(ref _diagGraphOk);
                         return;
@@ -400,11 +400,11 @@ namespace FlashEditor.Definitions.Sprites {
         /// This is not a placeholder. The materials index declares 1,408 textures while the
         /// texture index only holds 946 graphs, so every id from 946 up has no procedural
         /// content at all - <c>Class260.method8</c> returns false for them and the client uses
-        /// <see cref="TextureDefinition.field1831"/> instead. Rendering that colour is therefore
+        /// <see cref="TextureDefinition.representativeHsl"/> instead. Rendering that colour is therefore
         /// the correct result for those textures rather than a stand-in for a failure.
         /// </remarks>
         internal static int RepresentativeRgb(TextureDefinition def) {
-            int hsl = def.field1831 & 0xFFFF;
+            int hsl = def.representativeHsl & 0xFFFF;
 
             //Class345.method3825 at neutral brightness: the lightness is clamped into [2, 126]
             //and the hue and saturation bits pass through untouched.

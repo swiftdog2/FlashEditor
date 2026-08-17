@@ -23,7 +23,7 @@ namespace FlashEditor.Definitions.Sprites {
     ///     <b>The slots with no graph are the point of the grid, not noise in it.</b> Index 26 and
     ///     index 9 hold the same number of records in the vanilla b639 capture, which invites the
     ///     conclusion that they are one population; in the repack the table is larger and its tail has
-    ///     no procedural content at all. For those ids <c>field1831</c> is the whole of what a player
+    ///     no procedural content at all. For those ids <c>representativeHsl</c> is the whole of what a player
     ///     ever sees, so a grid that showed only the ids index 9 knows about would hide exactly the
     ///     rows where this table is the only thing there is. Both figures are derived from the loaded
     ///     cache and shown in the header rather than written down here.
@@ -57,13 +57,15 @@ namespace FlashEditor.Definitions.Sprites {
             AutoSize = true,
             Dock = DockStyle.Top,
             Font = GridFont,
-            Text = "Two of the nineteen columns have established meanings. field1831 is the texture's " +
-                   "representative colour in raw 16-bit RS HSL - the cell holds the stored value and the swatch " +
-                   "is what the client resolves it to - and field1824 is the pixel transposition flag the graph " +
-                   "evaluator is driven by. The other seventeen carry the client's own field names because " +
-                   "nothing settles what they mean, and a name invented here would be read as settled: " +
-                   "field1835 was once taken for a tint and multiplied into the generated pixels, which scaled " +
-                   "every texture in the editor towards black."
+            Text = "Eighteen of the nineteen columns are named for what the 637 client does with them, and each " +
+                   "heading carries that client field in brackets so the name above it can be checked - the " +
+                   "evidence is reference/hydra-637-definitions/material-columns.md. field1827 keeps its " +
+                   "obfuscated name because no Java code in the client reads it at all, and a name invented " +
+                   "here would be read as settled: waterParams was once taken for a tint and multiplied into " +
+                   "the generated pixels, which scaled every texture in the editor towards black. Two columns " +
+                   "get a real presentation rather than a number - representativeHsl holds the stored 16-bit " +
+                   "RS HSL with a swatch of what the client resolves it to, and transposePixels is the flag " +
+                   "the graph evaluator is driven by."
         };
 
         private readonly Label cost = new Label {
@@ -281,7 +283,7 @@ namespace FlashEditor.Definitions.Sprites {
 
             header.Text = "Index 26 - the table declares " + declared + " texture slots, " + present +
                           " of which carry a material record, and index 9 holds a procedural graph for " +
-                          withGraph + " of those. The rest draw field1831 and nothing else.";
+                          withGraph + " of those. The rest draw representativeHsl and nothing else.";
         }
 
         /// <summary>Shows one record's fields and preview, or clears them when there is none.</summary>
@@ -298,7 +300,7 @@ namespace FlashEditor.Definitions.Sprites {
             previewNote.Text = listing.Summary + Environment.NewLine +
                                "The preview is this editor's own evaluation of the index-9 graph, not the " +
                                "client's raster. Where there is no graph - and while one is still being " +
-                               "evaluated - it is the flat colour field1831 resolves to.";
+                               "evaluated - it is the flat colour representativeHsl resolves to.";
         }
 
         /// <summary>

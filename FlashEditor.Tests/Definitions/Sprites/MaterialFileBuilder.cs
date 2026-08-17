@@ -62,7 +62,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
         internal static (byte[] Existence, byte[][] Rows, byte[] File) FileWithAnAliasedBoolean()
         {
             byte[][] rows = { Row(0x10), Row(0x40) };
-            rows[0][MaterialTable.OffsetOf(MaterialColumn.Field1822)] = AliasedBooleanByte;
+            rows[0][MaterialTable.OffsetOf(MaterialColumn.Force64x64)] = AliasedBooleanByte;
 
             var existence = new byte[] { 1, 1 };
             return (existence, rows, BuildFile(existence, rows));

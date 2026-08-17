@@ -271,7 +271,7 @@ namespace FlashEditor.Definitions.Editing {
 
             if (definition.graph != null) {
                 Bitmap? rendered = TextureGraphEvaluator.Render(
-                    definition.graph, side, side, cache, definition.field1824, definition.id);
+                    definition.graph, side, side, cache, definition.transposePixels, definition.id);
 
                 if (rendered != null)
                     return rendered;

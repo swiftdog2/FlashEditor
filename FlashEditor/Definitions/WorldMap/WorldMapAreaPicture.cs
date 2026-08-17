@@ -527,7 +527,7 @@ namespace FlashEditor.Definitions.WorldMap {
         /// </summary>
         /// <remarks>
         ///     Secondary, then the texture's declared colour, then primary
-        ///     (<c>Node_Sub16.method1149</c>). The texture's <c>field1831</c> is already packed HSL
+        ///     (<c>Node_Sub16.method1149</c>). The texture's <c>representativeHsl</c> is already packed HSL
         ///     in the same space and is returned verbatim; routing it through the model palette
         ///     instead turns the whole map flat green, which is a mistake this project has already
         ///     made once in <c>MapRasteriser</c>.
@@ -540,10 +540,10 @@ namespace FlashEditor.Definitions.WorldMap {
 
             if (overlay.TextureId >= 0 &&
                 TextureManager.Textures.TryGetValue(overlay.TextureId, out TextureDefinition? texture) &&
-                texture != null && !texture.field1825) {
+                texture != null && !texture.suppressTexture) {
                 //Both consumers clamp the lightness before the palette lookup, so a texture declaring
                 //either extreme would otherwise come out pure black or white.
-                int hsl = texture.field1831 & 0xFFFF;
+                int hsl = texture.representativeHsl & 0xFFFF;
                 return (hsl & 0xFF80) | Math.Clamp(hsl & 0x7F, 2, 126);
             }
 

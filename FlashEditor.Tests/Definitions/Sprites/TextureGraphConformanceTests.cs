@@ -252,7 +252,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
         ///     A texture's declared colour must agree with what its graph actually renders.
         /// </summary>
         /// <remarks>
-        ///     This is what establishes that <see cref="TextureDefinition.field1831"/> is the
+        ///     This is what establishes that <see cref="TextureDefinition.representativeHsl"/> is the
         ///     texture's colour rather than the timing value the field tables call it, and it is
         ///     the only check in the suite that scores the evaluator's output against something
         ///     independent - every other test compares the decoder to itself. The control makes
@@ -279,7 +279,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             foreach (TextureDefinition def in graphed)
             {
-                int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, 32, 32, cache, def.field1824, def.id);
+                int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, 32, 32, cache, def.transposePixels, def.id);
                 if (pixels == null)
                     continue;
 
@@ -372,7 +372,7 @@ namespace FlashEditor.Tests.Definitions.Sprites
             Assert.Equal(1638, keyNode.IntParam2);
             Assert.Equal(2867, keyNode.IntParam3);
 
-            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
+            int[] pixels = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.transposePixels, def.id);
             Assert.NotNull(pixels);
 
             long r = 0, g = 0, b = 0;
@@ -462,14 +462,14 @@ namespace FlashEditor.Tests.Definitions.Sprites
 
             foreach (TextureDefinition def in composing)
             {
-                int[] expected = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
+                int[] expected = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.transposePixels, def.id);
                 if (expected == null)
                     continue;
 
                 var results = new int[16][];
                 System.Threading.Tasks.Parallel.For(0, results.Length, i =>
                 {
-                    results[i] = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.field1824, def.id);
+                    results[i] = TextureGraphEvaluator.RenderArgb(def.graph, 64, 64, cache, def.transposePixels, def.id);
                 });
 
                 //Null rather than different is the shape a render that ran out of its time budget
