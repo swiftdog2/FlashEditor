@@ -180,9 +180,9 @@ namespace FlashEditor.Definitions.Sprites {
 
                 //The nineteen columns follow, in the order the file stores them, because that order
                 //is the format: Class260.java:114-208 runs one pass per column over the whole
-                //texture range, so a column's position is where its bytes are. Each heading keeps
-                //the client field in brackets so the name above it can be checked against
-                //HydraScape/client/src without leaving the grid.
+                //texture range, so a column's position is where its bytes are. A heading carries the
+                //name alone; the client field it was read off is in the detail pane, for the reason
+                //NamedWidth states.
                 Flag("suppressTexture", row => row.Record.suppressTexture,
                     (row, value) => row.Record.suppressTexture = value),
                 Flag("force64x64", row => row.Record.force64x64,

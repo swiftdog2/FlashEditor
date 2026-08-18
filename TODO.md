@@ -471,11 +471,30 @@ Run the suite against both caches. Commit.
 
 ---
 
-### 22. The index 26 materials editor, and its silent write bug
+### 22. The index 26 materials editor, and its silent write bug - DONE
 
-**Small, self-contained, and currently a data-loss hazard.** Index 26 is decoded on every cache open
-and drives the renderer, but **not one of its nineteen columns is displayed or editable anywhere**,
-and `MaterialTable.Save` (`MaterialTable.cs:356`) **has no caller in the solution**.
+**Built.** `MaterialEditorPanel` is registered against index 26 under Media (`Editor.cs:1090`): a
+`DefinitionListPanel` over `MaterialListDescriptor`, the nineteen columns beside the index-9
+preview and the detail pane naming the client field behind each one. The prompt below is kept
+because it is the statement of what the tab is for.
+
+**The silent write is fixed, and the fix is per column rather than per record.**
+`TextureManager.EncodeColumnar` used to hand back the captured blob whenever it had one, which
+discarded every field edit; it now goes through `MaterialTable.Encode`, which replays each record's
+stored bytes and re-encodes only the columns whose fields disagree with them. The dirty bit is
+cleared again when a field is put back, and the test is against the stored bytes rather than
+against the value the field held a moment ago - a boolean column decodes many-to-one, so a record
+edited to true and back to false would otherwise re-encode that column from its field and store a
+`0` where the file had a `2`. `MaterialTable.SaveTo` still has no production caller, which is
+deliberate and says so at `MaterialTable.cs:405-423`: a grid edit commits through
+`DefinitionListPanel.CommitEdit`, the same path every index editor shares, and `SaveTo` is the
+route for a caller that has a table and no grid.
+
+**One correction to the prompt below.** It asks for the client field in every grid heading. It is in
+the detail pane instead, and `MaterialListDescriptor.cs:159-168` records the measurement that
+settled it: a heading wide enough for `effectParams (aByte1816)` needs about 240 pixels, nineteen of
+those turn the grid into a horizontal ribbon, and anything narrower clips the citation mid-name -
+which reads as checkable and is not.
 
 ```
 Read CLAUDE.md and AGENTS.md first, including the UI conventions section.

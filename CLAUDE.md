@@ -445,8 +445,13 @@ the nearest tab happens to do - three of the tabs still predate it.**
   and never the name someone attached to it. Corrected 2026-08-02; the rows now cite that usage.
 - **Index 26's columns are named, and one of them deliberately is not.** Eighteen of the nineteen
   carry names read off what the 637 client does with them, and **every one cites the `file:line`
-  that settles it, in its own doc comment and in its grid heading** - the name is the claim and the
-  citation is what makes the claim checkable. The evidence is
+  that settles it in its own doc comment** - the name is the claim and the citation is what makes
+  the claim checkable. **The grid heading carries the name alone and must keep to it**; the
+  obfuscated client field sits in the detail pane, because a heading wide enough to hold
+  `effectParams (aByte1816)` needs about 240 pixels and nineteen of those turn the grid into a
+  horizontal ribbon, while a narrower one clips the citation mid-name - which reads as checkable and
+  is not. Measured, and stated at `MaterialListDescriptor.cs:159-168`, so do not put it back. The
+  evidence is
   `reference/hydra-637-definitions/material-columns.md`, with the measured companion
   `reference/index-survey/index-026-MATERIALS-column-census.md`; the two were produced blind to each
   other. **`field1827` keeps its obfuscated name and must keep it**: `Class260.java:166` assigns it
