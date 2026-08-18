@@ -55,10 +55,34 @@ namespace FlashEditor.Definitions.Editing {
     ///     every child inherits it, which is half again what these columns are laid out for.
     /// </remarks>
     public sealed class DetailFieldGrid : FastObjectListView {
+        /// <summary>
+        ///     What the value column keeps for itself however long the field names run.
+        /// </summary>
+        /// <remarks>
+        ///     Wide enough for the values these panes actually hold, which are flags, small integers
+        ///     and hex words. Without a floor the field column takes the pane and the values leave
+        ///     the control entirely, which is what a stated 320 and 760 did in a pane a third of a
+        ///     tab wide: the value column sat behind a horizontal scrollbar nobody scrolls, so the
+        ///     grid read as a list of names with no values at all.
+        /// </remarks>
+        private const int ValueFloor = 90;
+
+        /// <summary>Room for the cell margin and the grid line, which the text measurement excludes.</summary>
+        private const int NamePadding = 16;
+
+        private readonly OLVColumn fieldColumn;
+
+        private IReadOnlyList<DetailField> shown = Array.Empty<DetailField>();
+
         /// <summary>Creates an empty grid with its two columns already built.</summary>
         public DetailFieldGrid() {
             Dock = DockStyle.Fill;
             Font = new Font("Consolas", 9F);
+
+            /* FullRowSelect is also what makes a truncated cell readable: the list shows the full
+               text of a clipped value on hover, and only ever for a full-row-select list view.
+               Several field names carry the client field the name above them was read off, and a
+               citation clipped mid-name reads as checkable when it is not. */
             FullRowSelect = true;
             GridLines = true;
             ShowGroups = false;
@@ -67,8 +91,10 @@ namespace FlashEditor.Definitions.Editing {
 
             //Delegates rather than aspect names: a name looked up by reflection blanks the column
             //when the property is renamed, where a delegate stops compiling.
-            AddColumn("Field", 320, row => ((DetailField) row).Name);
-            AddColumn("Value", 760, row => ((DetailField) row).Value);
+            fieldColumn = AddColumn("Field", row => ((DetailField) row).Name);
+            OLVColumn value = AddColumn("Value", row => ((DetailField) row).Value);
+            value.FillsFreeSpace = true;
+            value.MinimumWidth = ValueFloor;
         }
 
         /// <summary>Shows one record's fields, or clears the grid when there is no record.</summary>
@@ -80,16 +106,49 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="row">The selected record, or null.</param>
         public void ShowFields(IDetailRow? row) {
             if (row == null) {
+                shown = Array.Empty<DetailField>();
                 ClearObjects();
                 return;
             }
 
-            SetObjects(new List<DetailField>(row.Fields));
+            shown = new List<DetailField>(row.Fields);
+            SetObjects(shown);
+            SizeFieldColumn();
         }
 
-        private void AddColumn(string heading, int width, Func<object, object?> read) {
+        /// <summary>Re-divides the two columns when the pane holding them changes width.</summary>
+        /// <param name="e">The event data.</param>
+        protected override void OnClientSizeChanged(EventArgs e) {
+            base.OnClientSizeChanged(e);
+            SizeFieldColumn();
+        }
+
+        /// <summary>
+        ///     Gives the field column the width its longest name needs, up to what the value column
+        ///     can spare.
+        /// </summary>
+        /// <remarks>
+        ///     Measured rather than stated, which is the layout rule this project works to, and
+        ///     measured here rather than through <c>AutoResizeColumn</c>: this is a virtual list, and
+        ///     content-based auto-sizing is not supported in virtual mode - it reports the header's
+        ///     width and the names are what overflow.
+        /// </remarks>
+        private void SizeFieldColumn() {
+            int room = ClientSize.Width - ValueFloor;
+            if (room <= 0)
+                return;
+
+            int widest = TextRenderer.MeasureText(fieldColumn.Text, Font).Width;
+            foreach (DetailField field in shown)
+                widest = Math.Max(widest, TextRenderer.MeasureText(field.Name, Font).Width);
+
+            int width = Math.Min(widest + NamePadding, room);
+            if (fieldColumn.Width != width)
+                fieldColumn.Width = width;
+        }
+
+        private OLVColumn AddColumn(string heading, Func<object, object?> read) {
             var column = new OLVColumn(heading, null) {
-                Width = width,
                 Groupable = false,
                 IsEditable = false,
                 //Null is what the grid hands an aspect getter for a row it is recycling, for a
@@ -99,6 +158,7 @@ namespace FlashEditor.Definitions.Editing {
 
             AllColumns.Add(column);
             Columns.Add(column);
+            return column;
         }
     }
 
