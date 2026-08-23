@@ -1,4 +1,4 @@
-using BrightIdeasSoftware;
+﻿using BrightIdeasSoftware;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Interfaces.Layout;
@@ -105,6 +105,14 @@ namespace FlashEditor.Definitions.Interfaces {
         };
 
         private readonly EditorToolStrip structureTools = new EditorToolStrip {
+            Dock = DockStyle.Top,
+            GripStyle = ToolStripGripStyle.Hidden
+        };
+
+        /* Separate from structureTools because it acts at a different level. Everything on that
+           strip needs an interface selected and edits inside it; these two make interfaces, and
+           creating one needs no selection at all. */
+        private readonly EditorToolStrip groupTools = new EditorToolStrip {
             Dock = DockStyle.Top,
             GripStyle = ToolStripGripStyle.Hidden
         };
@@ -392,9 +400,12 @@ namespace FlashEditor.Definitions.Interfaces {
             componentsAndFields.Panel1.Controls.Add(treeAndComponents);
             componentsAndFields.Panel2.Controls.Add(canvasAndFields);
 
+            BuildGroupTools();
+
             //Docking resolves from the end of the Controls collection backwards, so the header has to
             //be added after the filled splitter or the splitter claims the whole panel.
             listAndDetail.Panel1.Controls.Add(interfaces);
+            listAndDetail.Panel1.Controls.Add(groupTools);
             listAndDetail.Panel2.Controls.Add(componentsAndFields);
             listAndDetail.Panel2.Controls.Add(header);
 
@@ -438,6 +449,49 @@ namespace FlashEditor.Definitions.Interfaces {
                 "index-13 metric record paired with an index-8 glyph sheet, and laying text out " +
                 "through that pair is not built yet - so the string, the colour and the alignment are " +
                 "right and the letterforms are wrong.")) {
+                Alignment = ToolStripItemAlignment.Right
+            });
+        }
+
+        private void BuildGroupTools() {
+            /* Both state their cost in their own tooltip, the same rule the structure strip
+               follows: what these do to the rest of the cache is invisible from the list. */
+            groupTools.AddAction(EditorIcon.Add,
+                "Create a new interface at the next free group id."
+                + " It takes the one id the index file can accept, which is the id past its last"
+                + " record - a hole cannot be expressed, so the id is not a choice."
+                + " Nothing anywhere references a new interface, which is what makes this the one"
+                + " structural edit on this index that breaks nothing.",
+                Keys.None, (_, _) => CreateInterface());
+
+            groupTools.AddAction(EditorIcon.Duplicate,
+                "Copy the selected interface into a new one under a different name."
+                + " The components are copied byte for byte and keep their names."
+                + " What they cannot keep is what points at them: hook arguments and CS2 scripts"
+                + " address components as (interface << 16) | component, so the copy stays wired to"
+                + " the original and nothing drives the copy.",
+                Keys.None, (_, _) => DuplicateInterface());
+
+            groupTools.Items.Add(new ToolStripControlHost(InfoAffordance.For(interfaces,
+                InfoKind.Limitation,
+                "A NEW INTERFACE TAKES THE NEXT FREE GROUP ID, AND THAT IS NOT A CHOICE. An index " +
+                "file is an array of six-byte records addressed by group id, so a record can be " +
+                "appended at the end and a hole cannot be expressed. The id offered is the id past " +
+                "the last record, which is not always the id past the last interface: the repack " +
+                "carries three groups on this index that hold bytes no reference table declares.\n\n" +
+                "A NAME IS REQUIRED AND CANNOT BE ADDED LATER. This index stores a name as a hash " +
+                "and this editor recovers it by re-hashing candidates, so an interface created " +
+                "without one can only be named by rewriting it. A name already taken is refused, " +
+                "because the client resolves a name to whichever group its hash table reaches " +
+                "first, and two interfaces sharing one leave the other unreachable by name.\n\n" +
+                "A DUPLICATE IS NOT WIRED TO ANYTHING. Components are addressed from outside their " +
+                "interface as (interface << 16) | component. A copy keeps every one of those " +
+                "references pointing at the original, so hooks inside the copy act on the source " +
+                "and CS2 scripts in index 12 go on driving the source. Rewriting them is not " +
+                "attempted: an integer operand whose high half happens to equal a group id may be " +
+                "an ordinary constant, and changing one would corrupt it with nothing to notice.\n\n" +
+                "SAVING IS SEPARATE. Both actions stage into the open cache. Nothing reaches disk " +
+                "until File > Save.")) {
                 Alignment = ToolStripItemAlignment.Right
             });
         }
@@ -518,6 +572,119 @@ namespace FlashEditor.Definitions.Interfaces {
         ///     nowhere on the canvas, which reads as an edit that failed.
         ///     </para>
         /// </remarks>
+        /// <summary>
+        ///     Creates a new interface, after asking what it should be.
+        /// </summary>
+        /// <remarks>
+        ///     The group id is read before the dialog opens so it can be shown rather than sprung,
+        ///     and read again by the writer when the write happens - this one is for the user, not
+        ///     for the write.
+        /// </remarks>
+        private void CreateInterface() {
+            if (cache == null) {
+                components.ReportStatus("No cache is loaded.");
+                return;
+            }
+
+            RSCache open = cache;
+            using var dialog = new NewInterfaceDialog(
+                open.NextCreatableGroupId(RSConstants.INTERFACE_DEFINITIONS_INDEX));
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            int created;
+            try {
+                created = InterfaceGroupWriter.Create(open, dialog.InterfaceName, new[] {
+                    InterfaceComponentEdits.NewRootComponent(
+                        open.NextCreatableGroupId(RSConstants.INTERFACE_DEFINITIONS_INDEX),
+                        dialog.RootType, dialog.RootWidth, dialog.RootHeight)
+                });
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) {
+                //Reported rather than thrown, as every other refusal on this panel is: each one is
+                //a statement about what the format allows, and a stack trace says none of it.
+                components.ReportStatus(ex.Message);
+                Debug("Interface creation refused: " + ex);
+                return;
+            }
+
+            ReloadInterface(open, created);
+            components.ReportStatus("Created interface " + created + " as \"" + dialog.InterfaceName +
+                "\". Saved to the open cache; use File > Save to write it out.");
+        }
+
+        /// <summary>
+        ///     Copies the selected interface, after showing what the copy cannot carry.
+        /// </summary>
+        /// <remarks>
+        ///     The warnings are read and shown <b>before</b> the copy is written, which is the order
+        ///     a structural edit is confirmed in. They are never empty, so this always confirms.
+        /// </remarks>
+        private void DuplicateInterface() {
+            if (cache == null) {
+                components.ReportStatus("No cache is loaded.");
+                return;
+            }
+
+            if (interfaces.SelectedObject is not InterfaceListing listing) {
+                components.ReportStatus("Select an interface to copy first.");
+                return;
+            }
+
+            RSCache open = cache;
+
+            //Short, because this becomes a window caption. Describe() is the header line and runs to
+            //component counts and an id range, which a title bar simply truncates.
+            string label = listing.Name.Length > 0
+                ? "\"" + listing.Name + "\""
+                : "interface " + listing.GroupId;
+
+            using var dialog = new NewInterfaceDialog(
+                open.NextCreatableGroupId(RSConstants.INTERFACE_DEFINITIONS_INDEX), label);
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            InterfaceGroupWriter.DuplicateResult result;
+            try {
+                if (!ConfirmCopy(listing, open))
+                    return;
+
+                result = InterfaceGroupWriter.Duplicate(open, listing.GroupId, dialog.InterfaceName);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) {
+                components.ReportStatus(ex.Message);
+                Debug("Interface duplication refused: " + ex);
+                return;
+            }
+
+            ReloadInterface(open, result.GroupId);
+            components.ReportStatus("Copied interface " + listing.GroupId + " to " + result.GroupId +
+                " as \"" + dialog.InterfaceName + "\". Saved to the open cache; use File > Save to" +
+                " write it out.");
+        }
+
+        /// <summary>
+        ///     Shows what a copy would carry over before it is made.
+        /// </summary>
+        /// <param name="listing">The interface being copied.</param>
+        /// <param name="open">The open cache.</param>
+        /// <returns>Whether the user wants to go ahead.</returns>
+        private bool ConfirmCopy(InterfaceListing listing, RSCache open) {
+            var message = new System.Text.StringBuilder();
+            message.AppendLine("Copy interface " + listing.GroupId + " into a new one.");
+
+            foreach (string warning in InterfaceGroupWriter.CopiedReferenceWarnings(open, listing.GroupId)) {
+                message.AppendLine();
+                message.AppendLine(warning);
+            }
+
+            return MessageBox.Show(this, message.ToString(), "Duplicating an interface",
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+                == DialogResult.OK;
+        }
+
         private void CreateComponent() {
             if (!TryBeginStructuralEdit(out RSCache open, out InterfaceComponentTree tree, out int groupId))
                 return;
