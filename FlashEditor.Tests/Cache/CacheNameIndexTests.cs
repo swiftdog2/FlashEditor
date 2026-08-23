@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using FlashEditor.Cache;
 using FlashEditor.Cache.Util;
 using Xunit;
@@ -197,6 +197,80 @@ namespace FlashEditor.Tests.Cache
             AddGroup(table, 3, "dx", (0, "transparent_water"));
 
             Assert.Equal(3, table.Names.GroupId("dx"));
+        }
+
+        /// <summary>
+        ///     The older group-level lookup must see a group added after it was first used.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="RSReferenceTable.GetArchiveId"/> reads a second index, built from the same
+        ///     identifiers. It was assigned once at decode and never rebuilt, so a group added by a
+        ///     write stayed invisible to it for the rest of the session while
+        ///     <see cref="RSReferenceTable.Names"/> saw it - and the map, world-map and Huffman name
+        ///     lookups all read the one that could not.
+        ///     <para>
+        ///     Queried before the add on purpose, so the index is already built and memoised when
+        ///     the group arrives. Without that the test passes on a lazy index that never
+        ///     invalidates.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void GetArchiveId_SeesAGroupAddedAfterItWasFirstUsed()
+        {
+            RSReferenceTable table = Table(RSConstants.GRAPHICS_SHADERS, withIdentifiers: true);
+            AddGroup(table, 1, "gl", (0, "transparent_water"));
+
+            Assert.Equal(1, table.GetArchiveId("gl"));
+            Assert.Equal(-1, table.GetArchiveId("dx"));
+
+            AddGroup(table, 3, "dx", (0, "transparent_water"));
+
+            Assert.Equal(3, table.GetArchiveId("dx"));
+            Assert.Equal(1, table.GetArchiveId("gl"));
+        }
+
+        /// <summary>
+        ///     The two name lookups over one table must not come to disagree.
+        /// </summary>
+        /// <remarks>
+        ///     Asserted as an equality rather than as two separate expectations, because the failure
+        ///     this guards is precisely that one of them answers and the other does not.
+        /// </remarks>
+        [Fact]
+        public void BothNameLookups_AgreeAfterAGroupIsAdded()
+        {
+            RSReferenceTable table = Table(RSConstants.GRAPHICS_SHADERS, withIdentifiers: true);
+            AddGroup(table, 1, "gl", (0, "transparent_water"));
+
+            //Both built and memoised before the group arrives.
+            Assert.Equal(table.Names.GroupId("gl"), table.GetArchiveId("gl"));
+
+            AddGroup(table, 3, "dx", (0, "transparent_water"));
+
+            foreach (string name in new[] { "gl", "dx", "vulkan" })
+                Assert.Equal(table.Names.GroupId(name), table.GetArchiveId(name));
+        }
+
+        /// <summary>
+        ///     The declared-archive count follows the entries rather than the wire header.
+        /// </summary>
+        /// <remarks>
+        ///     It is bound to a grid column, so a stale count is visible to a user as an interface
+        ///     index that claims one fewer group than it holds.
+        /// </remarks>
+        [Fact]
+        public void TheArchiveCountAndIdList_FollowTheEntries()
+        {
+            RSReferenceTable table = Table(RSConstants.GRAPHICS_SHADERS, withIdentifiers: true);
+            AddGroup(table, 1, "gl", (0, "transparent_water"));
+
+            Assert.Equal(1, table.validArchivesCount);
+            Assert.Equal(new[] { 1 }, table.validArchiveIds);
+
+            AddGroup(table, 3, "dx", (0, "transparent_water"));
+
+            Assert.Equal(2, table.validArchivesCount);
+            Assert.Equal(new[] { 1, 3 }, table.validArchiveIds);
         }
     }
 }

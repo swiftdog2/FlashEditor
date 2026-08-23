@@ -1,4 +1,5 @@
-﻿using FlashEditor.Cache.CheckSum;
+﻿using System;
+using FlashEditor.Cache.CheckSum;
 using FlashEditor.Cache.Util;
 using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
@@ -73,7 +74,54 @@ namespace FlashEditor.Cache
 
         public int indexId;
 
-        internal RSIdentifiers identifiers;
+        private RSIdentifiers? identifierIndex;
+        private readonly object identifierIndexLock = new object();
+
+        /// <summary>
+        ///     The group-level name hash to archive id lookup behind <see cref="GetArchiveId"/>.
+        /// </summary>
+        /// <remarks>
+        ///     Built on first use and dropped by <see cref="PutArchiveEntry"/>, for the same reason
+        ///     <see cref="Names"/> is. It used to be assigned once by
+        ///     <see cref="ReferenceTableCodec.Decode"/> and never rebuilt, so after any write that
+        ///     added a group this answered from the table as it arrived from disk while
+        ///     <see cref="Names"/> answered from the table as it now stands - two name lookups over
+        ///     one table, disagreeing, with <c>MapSquareLoader.ResolveGroup</c>,
+        ///     <c>WorldMapNaming</c> and <c>HuffmanTable</c> reading the stale one.
+        ///     <para>
+        ///     Dropped rather than rebuilt eagerly: a batch of map-square writes would otherwise
+        ///     rebuild index 5's 5203-entry table once per square with nothing reading it in
+        ///     between.
+        ///     </para>
+        /// </remarks>
+        internal RSIdentifiers identifiers {
+            get {
+                lock (identifierIndexLock)
+                    return identifierIndex ??= BuildIdentifiers();
+            }
+        }
+
+        /// <summary>
+        ///     Builds the dense identifier array <see cref="RSIdentifiers"/> indexes.
+        /// </summary>
+        /// <remarks>
+        ///     Sized to the highest declared id plus one and indexed by archive id, so an id the
+        ///     table does not declare keeps a zero. A table with the identifiers flag clear is
+        ///     built all-zero rather than from the entries, which sit at -1: that is what the
+        ///     decoder did, and changing it here would change what <see cref="GetArchiveId"/>
+        ///     answers on every index that carries no names.
+        /// </remarks>
+        private RSIdentifiers BuildIdentifiers() {
+            int[] dense = archiveEntries.Count == 0
+                ? Array.Empty<int>()
+                : new int[archiveEntries.Keys.Last() + 1];
+
+            if (hasIdentifiers)
+                foreach (KeyValuePair<int, RSArchiveEntry> entry in archiveEntries)
+                    dense[entry.Key] = entry.Value.GetIdentifier();
+
+            return new RSIdentifiers(dense);
+        }
 
         private CacheNameIndex? nameIndex;
         private readonly object nameIndexLock = new object();
@@ -111,7 +159,7 @@ namespace FlashEditor.Cache
         /// <returns>The archive id, or -1 when the table has no group of that name.</returns>
         public int GetArchiveId(string name)
         {
-            if (identifiers == null || name == null)
+            if (name == null)
                 return -1;
             return identifiers.getFile(NameHasher.GetNameHash(name));
         }
@@ -169,6 +217,12 @@ namespace FlashEditor.Cache
             //the three happened.
             lock (nameIndexLock)
                 nameIndex = null;
+
+            //The group-level lookup is keyed on the same identifiers, so it goes with it. Both are
+            //dropped here rather than at the staging layer because this is the single funnel every
+            //entry enters a table through, whatever order a caller sets things in.
+            lock (identifierIndexLock)
+                identifierIndex = null;
         }
 
 

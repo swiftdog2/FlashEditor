@@ -57,22 +57,14 @@ namespace FlashEditor.Cache
             }
 
             /* ── Optional 32-bit identifier hashes ─────────────────── */
-            //A table may legitimately hold no archives at all - the reference cache ships one
-            //such table, a four byte format-5 stub. Max() throws on an empty sequence, so the
-            //table that describes an empty index used to take the whole decode down with it.
-            int[] identifiersTmp = table.GetArchiveEntries().Count == 0
-                ? Array.Empty<int>()
-                : new int[table.GetArchiveEntries().Keys.Max() + 1];
+            //Read onto the entries and nowhere else. The hash-to-id lookup RSReferenceTable
+            //exposes is built from these on demand, so it cannot be left describing the table as
+            //it arrived once a write has added a group.
             if (table.hasIdentifiers)
             {
                 foreach (var kv in table.GetArchiveEntries())
-                {
-                    int ident = stream.ReadInt();
-                    identifiersTmp[kv.Key] = ident;
-                    kv.Value.SetIdentifier(ident);
-                }
+                    kv.Value.SetIdentifier(stream.ReadInt());
             }
-            table.identifiers = new RSIdentifiers(identifiersTmp);
 
             /* ── CRC-32 for each archive (always) ───────────────────── */
             for (int i = 0; i < declaredArchives; i++)
