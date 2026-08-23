@@ -1,4 +1,4 @@
-using FlashEditor.Cache;
+﻿using FlashEditor.Cache;
 using FlashEditor.Cache.Util;
 using FlashEditor.Definitions.Interfaces;
 using FlashEditor.IO;
@@ -56,11 +56,18 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
 
         /// <summary>Two components, so the seeded interface is a shape a copy can be checked against.</summary>
         private static InterfaceComponentDefinition[] SeededComponents() {
-            return new[] {
-                InterfaceComponentEdits.NewRootComponent(Existing,
-                    InterfaceComponentEdits.RootComponentType.Container, 512, 334),
-                InterfaceComponentEdits.NewComponent(Existing, 1, 0)
+            InterfaceComponentDefinition root = InterfaceComponentEdits.NewRootComponent(Existing,
+                InterfaceComponentEdits.RootComponentType.Container, 512, 334);
+            InterfaceComponentDefinition child = InterfaceComponentEdits.NewComponent(Existing, 1, 0);
+
+            /* A hook argument naming a component of this very interface, folded the way the client
+               folds one. It is what gives a copy something real to warn about: the operand is a
+               plain integer and survives a copy unchanged, so it goes on addressing the original. */
+            child.Hooks[0] = new[] {
+                InterfaceScriptOperand.OfInteger((Existing << 16) | 1)
             };
+
+            return new[] { root, child };
         }
 
         private static byte[] SeededPayload() {
@@ -363,6 +370,160 @@ namespace FlashEditor.Tests.Definitions.Interfaces {
                 }));
 
             Assert.Contains("built for interface 97", thrown.Message);
+        }
+
+        // ===================================================================
+        //  Duplicating
+        // ===================================================================
+
+        /// <summary>
+        ///     A copy has to hold the same components, byte for byte.
+        /// </summary>
+        /// <remarks>
+        ///     Compared on the decompressed payload rather than the stored container, because the
+        ///     copy is stored GZip and the source uncompressed - a container comparison would fail
+        ///     for a copy that was perfectly correct.
+        /// </remarks>
+        [Fact]
+        public void Duplicate_ReproducesEveryComponentByteForByte() {
+            RSCache cache = CreateCache();
+
+            InterfaceGroupWriter.DuplicateResult result =
+                InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            RSCache reopened = SaveAndReopen(cache);
+            IReadOnlyDictionary<int, JagStream> source = reopened.ReadGroup(Index, Existing);
+            IReadOnlyDictionary<int, JagStream> copy = reopened.ReadGroup(Index, result.GroupId);
+
+            Assert.Equal(source.Keys.OrderBy(id => id), copy.Keys.OrderBy(id => id));
+
+            foreach (int fileId in source.Keys) {
+                source[fileId].Seek0();
+                copy[fileId].Seek0();
+                Assert.Equal(source[fileId].ToArray(), copy[fileId].ToArray());
+            }
+        }
+
+        /// <summary>
+        ///     Every per-file name travels with the copy.
+        /// </summary>
+        /// <remarks>
+        ///     Correct here specifically because a copy preserves the numbering, so a generated
+        ///     com_&lt;fileId&gt; hash is still true of the file it lands on. A copy that renumbered
+        ///     would have to rehash them.
+        /// </remarks>
+        [Fact]
+        public void Duplicate_CarriesEveryComponentName() {
+            RSCache cache = CreateCache();
+
+            InterfaceGroupWriter.DuplicateResult result =
+                InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            RSCache reopened = SaveAndReopen(cache);
+            RSArchiveEntry source = reopened.GetReferenceTable(Index).GetArchiveEntry(Existing);
+            RSArchiveEntry copy = reopened.GetReferenceTable(Index).GetArchiveEntry(result.GroupId);
+
+            foreach (int fileId in source.GetValidFileIds()) {
+                Assert.Equal(source.GetFileEntry(fileId).GetIdentifier(),
+                    copy.GetFileEntry(fileId).GetIdentifier());
+                Assert.Equal("com_" + fileId,
+                    InterfaceNames.ComponentName(result.GroupId, fileId,
+                        copy.GetFileEntry(fileId).GetIdentifier()));
+            }
+        }
+
+        /// <summary>
+        ///     The copy takes the name it was given, never the one it was copied from.
+        /// </summary>
+        /// <remarks>
+        ///     Two groups sharing a name hash leave one of them unreachable by name, and which one
+        ///     depends on the order the client hash table happens to reach them.
+        /// </remarks>
+        [Fact]
+        public void Duplicate_TakesItsOwnNameAndNotTheSourceName() {
+            RSCache cache = CreateCache();
+
+            InterfaceGroupWriter.DuplicateResult result =
+                InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            RSCache reopened = SaveAndReopen(cache);
+            RSReferenceTable table = reopened.GetReferenceTable(Index);
+
+            Assert.Equal(NameHasher.GetNameHash("my_copy"),
+                table.GetArchiveEntry(result.GroupId).GetIdentifier());
+            Assert.Equal(Existing, table.Names.GroupId(ExistingName));
+            Assert.Equal(result.GroupId, table.Names.GroupId("my_copy"));
+        }
+
+        [Fact]
+        public void Duplicate_LeavesTheSourceStoredBytesAlone() {
+            RSCache cache = CreateCache();
+            byte[] before = cache.LoadContainer(Index, Existing).ToArray();
+
+            InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            Assert.Equal(before, SaveAndReopen(cache).LoadContainer(Index, Existing).ToArray());
+        }
+
+        /// <summary>
+        ///     A copy is never wired to anything and has to say so.
+        /// </summary>
+        /// <remarks>
+        ///     The warning is unconditional because the absence of references to the copy is not
+        ///     something that can be detected - CS2 scripts in index 12 address components as
+        ///     packed integers and nothing here scans them. A caller that showed no warning would be
+        ///     stating the copy works, which is the one thing it certainly does not.
+        /// </remarks>
+        [Fact]
+        public void Duplicate_AlwaysWarnsThatNothingDrivesTheCopy() {
+            RSCache cache = CreateCache();
+
+            InterfaceGroupWriter.DuplicateResult result =
+                InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            Assert.NotEmpty(result.Warnings);
+            Assert.Contains(result.Warnings, warning => warning.Contains("CS2 scripts in index 12"));
+        }
+
+        /// <summary>
+        ///     A hook that addresses the source is reported, and left alone.
+        /// </summary>
+        /// <remarks>
+        ///     Rewriting the high half of every operand that happens to equal the source group id is
+        ///     the heuristic the renumber planner deliberately only warns about: such an operand may
+        ///     be an ordinary constant, and rewriting one corrupts it with nothing to notice.
+        /// </remarks>
+        [Fact]
+        public void Duplicate_ReportsHooksStillPointingAtTheSourceRatherThanRewritingThem() {
+            RSCache cache = CreateCache();
+
+            InterfaceGroupWriter.DuplicateResult result =
+                InterfaceGroupWriter.Duplicate(cache, Existing, "my_copy");
+
+            Assert.Contains(result.Warnings,
+                warning => warning.Contains("hook arguments") && warning.Contains("interface " + Existing));
+
+            //And the operand really is untouched in the copy.
+            InterfaceComponentDefinition copied = Decode(SaveAndReopen(cache), result.GroupId, 1);
+            Assert.Equal((Existing << 16) | 1, copied.Hooks[0][0].Integer);
+        }
+
+        [Fact]
+        public void Duplicate_WithANameAnotherInterfaceCarries_IsRefused() {
+            RSCache cache = CreateCache();
+
+            Assert.Throws<InvalidOperationException>(
+                () => InterfaceGroupWriter.Duplicate(cache, Existing, ExistingName));
+        }
+
+        [Fact]
+        public void Duplicate_OfAnInterfaceTheTableDoesNotDeclare_IsRefused() {
+            RSCache cache = CreateCache();
+
+            var thrown = Assert.Throws<InvalidOperationException>(
+                () => InterfaceGroupWriter.Duplicate(cache, 44, "my_copy"));
+
+            Assert.Contains("not declared", thrown.Message);
         }
     }
 }
