@@ -1,3 +1,4 @@
+﻿using System.Collections.Concurrent;
 using System.Collections.Generic;
 using FlashEditor.Cache.Util;
 
@@ -107,11 +108,54 @@ namespace FlashEditor.Definitions.Interfaces {
             if (identifier == Unnamed)
                 return null;
 
-            return InterfaceNameTable.Groups.TryGetValue(groupId, out string? candidate) &&
-                   NameHasher.GetNameHash(candidate) == identifier
-                ? candidate
+            if (InterfaceNameTable.Groups.TryGetValue(groupId, out string? shipped) &&
+                NameHasher.GetNameHash(shipped) == identifier) {
+                return shipped;
+            }
+
+            return created.TryGetValue(groupId, out string? made) &&
+                   NameHasher.GetNameHash(made) == identifier
+                ? made
                 : null;
         }
+
+        /// <summary>
+        ///     Names a group the editor has just made, so it can show the name back.
+        /// </summary>
+        /// <remarks>
+        ///     The shipped table is keyed by group id and cannot know about a group that did not
+        ///     exist when it was written, so without this an interface the user named would render
+        ///     as unnamed the moment it was created - the name would be in the cache and nowhere on
+        ///     screen.
+        ///     <para>
+        ///     Session-scoped, and that is not a limitation worth working around here: the name is
+        ///     stored in the cache as a hash, and recovering it in a later session is the same
+        ///     candidate-list problem every other group name poses.
+        ///     </para>
+        ///     <para>
+        ///     Safe across a change of cache for the reason the whole class is: what is remembered
+        ///     is a <i>candidate</i>, and <see cref="GroupName"/> still refuses to return one that
+        ///     does not hash to the identifier the table holds. Point the editor at another cache
+        ///     and a name that no longer fits simply stops being shown.
+        ///     </para>
+        /// </remarks>
+        /// <param name="groupId">The group that was created.</param>
+        /// <param name="name">The name it was created with.</param>
+        public static void RememberCreatedName(int groupId, string name) {
+            if (string.IsNullOrEmpty(name))
+                return;
+
+            created[groupId] = name;
+        }
+
+        /// <summary>
+        ///     Candidate names for groups made in this session, by group id.
+        /// </summary>
+        /// <remarks>
+        ///     Concurrent because the definition panels decode off the UI thread while the grid
+        ///     reads names on it.
+        /// </remarks>
+        private static readonly ConcurrentDictionary<int, string> created = new ConcurrentDictionary<int, string>();
 
         /// <summary>
         ///     The name of a component, or null when nothing verifiable is known.

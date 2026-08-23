@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using FlashEditor.Cache;
 using FlashEditor.IO;
@@ -23,15 +23,17 @@ namespace FlashEditor.Definitions.Interfaces {
     ///     moves verbatim.
     ///     </para>
     ///     <para>
-    ///     <b>Dense numbering is enforced here rather than in <c>RSCache.WriteGroup</c>.</b> Sparse
-    ///     groups are legal in this format and common on other indexes, so the archive layer does
-    ///     not impose density on every index. Index 3 is measured dense in every declared group
+    ///     <b>Dense numbering is enforced above <c>RSCache.WriteGroup</c>, in
+    ///     <see cref="InterfaceGroupRules"/>.</b> Sparse groups are legal in this format and common
+    ///     on other indexes, so the archive layer does not impose density on every index. Index 3 is
+    ///     measured dense in every declared group
     ///     (<c>RealCacheInterfaceStructureTests.EveryInterface_NumbersItsComponentsDenselyFromZero</c>)
     ///     and the client depends on it: it derives a group's file count as <c>maxFileId + 1</c>
     ///     and discards the explicit id list whenever the two agree
     ///     (<c>VersionTable.java:183,185</c>), so a hole left in an interface is read with a file
-    ///     count that does not match its contents. This is the caller that knows, so this is where
-    ///     the check belongs.
+    ///     count that does not match its contents. Shared with
+    ///     <see cref="InterfaceGroupWriter"/>, which has to apply the same rule to a group it is
+    ///     making rather than editing.
     ///     </para>
     ///     <para>
     ///     Staged like every other write. Nothing reaches the filesystem until
@@ -141,7 +143,7 @@ namespace FlashEditor.Definitions.Interfaces {
             //among the components that keep them, so the enumeration order above is the OLD order.
             files.Sort((left, right) => left.FileId.CompareTo(right.FileId));
 
-            RequireDenseNumbering(groupId, files);
+            InterfaceGroupRules.RequireDenseNumbering(groupId, files);
 
             return cache.WriteGroup(index, groupId, files);
         }
@@ -182,41 +184,6 @@ namespace FlashEditor.Definitions.Interfaces {
 
             component.RawParentId = moved;
             return component.Encode();
-        }
-
-        /// <summary>
-        ///     Refuses a file set that is not numbered 0 to n-1.
-        /// </summary>
-        /// <remarks>
-        ///     The one rule index 3 imposes that the archive layer deliberately does not. See the
-        ///     type's remarks: the client reads a group's file count as <c>maxFileId + 1</c> and
-        ///     drops the explicit id list when that agrees with the declared count, so a hole is
-        ///     read as a component that is not there and shifts every component after it.
-        ///     <para>
-        ///     A check rather than a fix. Closing a hole here would silently perform a renumbering
-        ///     the user was never shown and never warned about, which is precisely what the
-        ///     planner's warnings exist to prevent.
-        ///     </para>
-        /// </remarks>
-        /// <param name="groupId">The interface, for the message.</param>
-        /// <param name="files">The proposed contents, ascending.</param>
-        private static void RequireDenseNumbering(int groupId, IReadOnlyList<RSGroupFile> files) {
-            if (files.Count == 0)
-                throw new InvalidOperationException(
-                    "Interface " + groupId + " would be left with no components. A group with no" +
-                    " payload cannot be stored, so deleting the last component means deleting the" +
-                    " interface, which is a different operation.");
-
-            for (int i = 0; i < files.Count; i++) {
-                if (files[i].FileId == i)
-                    continue;
-
-                throw new InvalidOperationException(
-                    "Interface " + groupId + " would be numbered with a hole: position " + i +
-                    " holds component " + files[i].FileId + ". The client reads a group's file count" +
-                    " as the highest id plus one, so a hole shifts every component after it onto a" +
-                    " different id.");
-            }
         }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using FlashEditor.Definitions.Interfaces.Layout;
@@ -250,6 +250,65 @@ namespace FlashEditor.Definitions.Interfaces {
                 Colour = 0x808080,
                 RectangleFilledByte = 1
             };
+        }
+
+        /// <summary>
+        ///     The types a newly created interface can be rooted on.
+        /// </summary>
+        /// <remarks>
+        ///     Two rather than the six the codec handles, because these are the two whose default
+        ///     state is a complete component. A text root needs a font and a message, and a sprite
+        ///     or model root needs an asset id, none of which a create dialog collects - so rooting
+        ///     on one would write a component that decodes correctly and draws nothing, which reads
+        ///     as a broken interface rather than as an unfinished one.
+        /// </remarks>
+        public enum RootComponentType {
+            /// <summary>A layer: draws nothing itself and holds other components.</summary>
+            Container = 0,
+
+            /// <summary>A filled rectangle.</summary>
+            Rectangle = 3
+        }
+
+        /// <summary>
+        ///     The single component a newly created interface starts with.
+        /// </summary>
+        /// <remarks>
+        ///     An interface cannot be created empty - a group with no payload cannot be stored - so
+        ///     this is the seed rather than a convenience.
+        ///     <para>
+        ///     <b>A container is left drawing nothing on purpose</b>, unlike
+        ///     <see cref="NewComponent"/>, which is a filled rectangle precisely so a created
+        ///     component is visible. A root container is the surface the user drops components onto
+        ///     and its emptiness is the point; the canvas shows its bounds regardless.
+        ///     </para>
+        ///     <para>
+        ///     The version is left at the class default, which reads as -1. Every one of the 42,256
+        ///     component files in this cache stores -1, and on a container it is also what makes the
+        ///     layer flag byte present - the client reads that byte only when the version is
+        ///     negative, because an if3 file has no settings bit to carry the flag.
+        ///     </para>
+        /// </remarks>
+        /// <param name="groupId">The interface being created.</param>
+        /// <param name="type">What the root should be.</param>
+        /// <param name="width">Its width in pixels.</param>
+        /// <param name="height">Its height in pixels.</param>
+        /// <returns>The component, at file id 0 with no parent.</returns>
+        public static InterfaceComponentDefinition NewRootComponent(int groupId,
+            RootComponentType type, int width, int height) {
+            var component = new InterfaceComponentDefinition(groupId, 0) {
+                RawParentId = InterfaceComponentDefinition.NoParent,
+                ComponentType = (int) type,
+                BaseWidth = width,
+                BaseHeight = height
+            };
+
+            if (type == RootComponentType.Rectangle) {
+                component.Colour = 0x808080;
+                component.RectangleFilledByte = 1;
+            }
+
+            return component;
         }
 
         /// <summary>
