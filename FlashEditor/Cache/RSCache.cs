@@ -720,8 +720,17 @@ namespace FlashEditor.Cache {
         /// <param name="archiveId">The archive id</param>
         /// <returns>Container for archive <paramref name="archiveId"/> from the specified index</returns>
         public RSContainer GetContainer(int indexId, int archiveId) {
-            if (archiveId < 0 || archiveId >= store.GetFileCount(indexId))
-                throw new FileNotFoundException("Could not find container for index " + indexId);
+            int records = store.GetFileCount(indexId);
+            if (archiveId < 0 || archiveId >= records) {
+                //Names the archive and the bound it failed. The old message gave the index alone,
+                //so an off-by-one on a group id and a request against an index that holds nothing
+                //produced the same sentence, and neither said which archive was asked for.
+                throw new FileNotFoundException(records == 0
+                    ? "Index " + indexId + " holds no archives, so archive " + archiveId +
+                      " cannot be read."
+                    : "Index " + indexId + " holds " + records + " archive records, ids 0 to " +
+                      (records - 1) + ", so archive " + archiveId + " cannot be read.");
+            }
 
             lock (_containerLock) {
                 //Initialise the container dictionary

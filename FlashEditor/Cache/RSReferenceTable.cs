@@ -52,8 +52,25 @@ namespace FlashEditor.Cache
         /// <summary>Whether the table carries a compressed and an uncompressed size per archive.</summary>
         public bool sizes => (flags & FLAG_SIZES) != 0;
 
-        public int validArchivesCount;
-        public int[] validArchiveIds;
+        /// <summary>How many archives the table declares.</summary>
+        /// <remarks>
+        /// A view over <see cref="archiveEntries"/> rather than a stored count, for the same
+        /// reason <see cref="hasIdentifiers"/> is a view over <see cref="flags"/>. It was a field
+        /// set once by <see cref="ReferenceTableCodec.Decode"/> and never refreshed by
+        /// <see cref="PutArchiveEntry"/>, so a write that added a group left it describing the
+        /// table as it arrived from disk - and it is bound to a grid column, so the count on
+        /// screen would simply have been wrong. <see cref="ReferenceTableCodec.Encode"/> already
+        /// wrote the count from the dictionary, so the two could disagree about the same table.
+        /// </remarks>
+        public int validArchivesCount => archiveEntries.Count;
+
+        /// <summary>The declared archive ids, ascending.</summary>
+        /// <remarks>
+        /// Computed for the reason given on <see cref="validArchivesCount"/>. Allocates per call,
+        /// so a loop wanting it more than once should hold it in a local.
+        /// </remarks>
+        public int[] validArchiveIds => archiveEntries.Keys.ToArray();
+
         public int indexId;
 
         internal RSIdentifiers identifiers;

@@ -1,4 +1,4 @@
-using FlashEditor.Cache.CheckSum;
+﻿using FlashEditor.Cache.CheckSum;
 using static FlashEditor.Utils.DebugUtil;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,20 +31,29 @@ namespace FlashEditor.Cache
             //hasIdentifiers, usesWhirlpool, entryHashes and sizes all read off this byte
             table.flags = stream.ReadByte();
 
-            table.validArchivesCount = stream.ReadUnsignedShort();
+            /* Locals rather than fields on the table. The count and the id list are views over
+               archiveEntries there, so that a write which adds a group cannot leave them
+               describing the table as it arrived from disk. Every loop below is driven from
+               these instead, which also keeps the wire count - what the file claims - separate
+               from what was actually read into the dictionary. */
+            int declaredArchives = stream.ReadUnsignedShort();
 
             Debug($"Table v{table.version} | fmt {table.format} | flags {DebugUtil.ToBitString(table.flags)} | " +
-                  $"archives {table.validArchivesCount}", LOG_DETAIL.ADVANCED);
+                  $"archives {declaredArchives}", LOG_DETAIL.ADVANCED);
 
             /* ── Delta-encoded archive IDs ──────────────────────────── */
-            table.validArchiveIds = new int[table.validArchivesCount];
+            int[] archiveIds = new int[declaredArchives];
 
             int lastArchiveId = 0;
-            for (int i = 0; i < table.validArchivesCount; i++)
+            for (int i = 0; i < declaredArchives; i++)
             {
                 lastArchiveId += stream.ReadUnsignedShort();
-                table.validArchiveIds[i] = lastArchiveId;
-                table.GetArchiveEntries().Add(lastArchiveId, new RSArchiveEntry(i));
+                archiveIds[i] = lastArchiveId;
+
+                //The entry is told its own archive id, not the loop ordinal. They agree only
+                //while the ids are contiguous from zero, and index 3 already declares 1078
+                //groups over ids 0..1080 in the repack.
+                table.GetArchiveEntries().Add(lastArchiveId, new RSArchiveEntry(lastArchiveId));
             }
 
             /* ── Optional 32-bit identifier hashes ─────────────────── */
@@ -66,8 +75,8 @@ namespace FlashEditor.Cache
             table.identifiers = new RSIdentifiers(identifiersTmp);
 
             /* ── CRC-32 for each archive (always) ───────────────────── */
-            for (int i = 0; i < table.validArchivesCount; i++)
-                table.GetArchiveEntries()[table.validArchiveIds[i]].SetCrc(stream.ReadInt());
+            for (int i = 0; i < declaredArchives; i++)
+                table.GetArchiveEntries()[archiveIds[i]].SetCrc(stream.ReadInt());
 
             /* ── Optional entry hash (32-bit) ───────────────────────── */
             if (table.entryHashes)
@@ -78,7 +87,7 @@ namespace FlashEditor.Cache
             if (table.usesWhirlpool)
             {
                 /* One buffer for the whole loop. A stackalloc inside the loop body is not
-                   reclaimed until Decode returns, and validArchivesCount is an unbounded
+                   reclaimed until Decode returns, and the declared count is an unbounded
                    16-bit field read from the file, so a corrupt table could burn up to
                    65535 * 64 bytes (~4 MB) of stack and kill the process.
 
@@ -87,11 +96,11 @@ namespace FlashEditor.Cache
                    so the unread tail must stay zero rather than carry the previous archive's
                    digest forward. SetWhirlpool copies the span into the entry's own byte[64]. */
                 Span<byte> whirl = stackalloc byte[64];
-                for (int i = 0; i < table.validArchivesCount; i++)
+                for (int i = 0; i < declaredArchives; i++)
                 {
                     whirl.Clear();
                     stream.Read(whirl);
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].SetWhirlpool(whirl);
+                    table.GetArchiveEntries()[archiveIds[i]].SetWhirlpool(whirl);
                 }
             }
 
@@ -113,8 +122,8 @@ namespace FlashEditor.Cache
             if (table.format >= 7)
             {
                 //Keep the whole byte, not just the XTEA bit - see RSArchiveEntry.ArchiveFlags.
-                for (int i = 0; i < table.validArchivesCount; i++)
-                    table.GetArchiveEntries()[table.validArchiveIds[i]].ArchiveFlags = (byte) stream.ReadByte();
+                for (int i = 0; i < declaredArchives; i++)
+                    table.GetArchiveEntries()[archiveIds[i]].ArchiveFlags = (byte) stream.ReadByte();
             }
 
             /* ── File counts (one 16-bit per archive) ──────────────── */
@@ -122,9 +131,9 @@ namespace FlashEditor.Cache
                 kv.Value.SetValidFileIds(new int[stream.ReadUnsignedShort()]);
 
             /* ── File IDs, delta-encoded ───────────────────────────── */
-            for (int i = 0; i < table.validArchivesCount; i++)
+            for (int i = 0; i < declaredArchives; i++)
             {
-                RSArchiveEntry entry = table.GetArchiveEntries()[table.validArchiveIds[i]];
+                RSArchiveEntry entry = table.GetArchiveEntries()[archiveIds[i]];
                 int lastFileId = 0;
 
                 for (int j = 0; j < entry.GetValidFileIds().Length; j++)
@@ -144,9 +153,9 @@ namespace FlashEditor.Cache
                 //These are name hashes, the per-file counterpart of the archive identifiers
                 //read above, and Encode writes them back from GetIdentifier. Storing them in
                 //the separate hash field would drop every file name on the next encode.
-                for (int i = 0; i < table.validArchivesCount; i++)
+                for (int i = 0; i < declaredArchives; i++)
                 {
-                    RSArchiveEntry entry = table.GetArchiveEntries()[table.validArchiveIds[i]];
+                    RSArchiveEntry entry = table.GetArchiveEntries()[archiveIds[i]];
                     foreach (int fileId in entry.GetValidFileIds())
                         entry.GetFileEntries()[fileId].SetIdentifier(stream.ReadInt());
                 }
