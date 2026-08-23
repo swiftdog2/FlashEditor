@@ -415,17 +415,24 @@ namespace FlashEditor.Cache {
         /// <exception cref="IOException">The index is the meta index.</exception>
         /// <exception cref="ArgumentException">The file set is empty, out of order, or out of range.</exception>
         /// <exception cref="InvalidOperationException">The group is in the idx file but not in the table.</exception>
-        public bool WriteGroup(int indexId, int groupId, IReadOnlyList<RSGroupFile> files) {
+        /// <param name="groupIdentifier">
+        ///     The group's own name hash, or <c>null</c> to leave whatever the table records
+        ///     alone. <c>null</c> rather than -1 because -1 is a real value the format uses to
+        ///     mean unnamed, so it cannot double as "do not touch this".
+        /// </param>
+        public bool WriteGroup(int indexId, int groupId, IReadOnlyList<RSGroupFile> files,
+            int? groupIdentifier = null) {
             if (files == null)
                 throw new ArgumentNullException(nameof(files));
 
             //Same critical section as every other read and write: this mutates the container, its
             //archive and the table entry in place.
             lock (_containerLock)
-                return WriteGroupLocked(indexId, groupId, files);
+                return WriteGroupLocked(indexId, groupId, files, groupIdentifier);
         }
 
-        private bool WriteGroupLocked(int indexId, int groupId, IReadOnlyList<RSGroupFile> files) {
+        private bool WriteGroupLocked(int indexId, int groupId, IReadOnlyList<RSGroupFile> files,
+            int? groupIdentifier) {
             if (indexId == RSConstants.META_INDEX)
                 throw new IOException("Reference tables can only be modified with the low level FileStore API!");
 
@@ -441,10 +448,20 @@ namespace FlashEditor.Cache {
                into a declared group is a decision nobody asked for. EnumerateOrphanGroups exists to
                report these; this refuses to be the thing that quietly absorbs one. */
             if (!entryExisted && HasLiveIndexRecord(indexId, groupId))
+                throw OrphanGroupRefusal(indexId, groupId);
+
+            /* Otherwise the group does not exist at all, and this is a rewrite. It used to reach
+               GetContainer and come back as a FileNotFoundException naming only the index, which
+               read as a missing file rather than as a group that was never there - and creating
+               one is a different operation, with its own refusals about where it may sit and what
+               it may be called. */
+            if (!entryExisted && !HasLiveIndexRecord(indexId, groupId))
                 throw new InvalidOperationException(
-                    "Index " + indexId + " group " + groupId + " holds bytes in the idx file that its" +
-                    " reference table does not declare. Writing it would adopt an undeclared group" +
-                    " into the table, which is a different change from the one asked for.");
+                    "Index " + indexId + " has no group " + groupId + " to rewrite: its reference" +
+                    " table does not declare one and its idx file holds no bytes for one. Creating" +
+                    " a group is a different operation - use CreateGroup.");
+
+            RequireNameIsStorable(table, indexId, groupIdentifier);
 
             RSArchiveEntry archiveEntry = entryExisted
                 ? table.GetArchiveEntry(groupId)
@@ -494,7 +511,7 @@ namespace FlashEditor.Cache {
                afterwards and roll back" is not available: by then the table has already moved. */
             if (entryExisted
                 && storedFileIds.AsSpan().SequenceEqual(newFileIds)
-                && IdentifiersUnchanged(table, archiveEntry, files)
+                && NamesUnchanged(table, archiveEntry, files, groupIdentifier)
                 && storedPayload != null
                 && SameBytes(payload, storedPayload)) {
                 Debug("Unchanged group " + indexId + "," + groupId + " - leaving the stored bytes alone");
@@ -516,8 +533,208 @@ namespace FlashEditor.Cache {
             archiveEntry.SetFileEntries(fileEntries);
             archiveEntry.SetValidFileIds(newFileIds);
 
+            //Before StageArchive, because that is what calls PutArchiveEntry, and the table's name
+            //lookups are dropped there. Set afterwards, the rename would not be visible until the
+            //next unrelated write happened to drop them again.
+            if (groupIdentifier.HasValue)
+                archiveEntry.SetIdentifier(groupIdentifier.Value);
+
             StageArchive(indexId, groupId, table, archiveEntry, container, payload);
             return true;
+        }
+
+        /// <summary>
+        ///     The only group id an index can currently accept a new group at.
+        /// </summary>
+        /// <remarks>
+        ///     There is one, not a choice among the free ones. An idx file is an array of six-byte
+        ///     records addressed by group id, so a record can be appended at the end and a hole
+        ///     cannot be expressed - <c>RSFileStore.Write</c> accepts <c>ptr == length</c> and
+        ///     refuses anything past it.
+        ///     <para>
+        ///     Every orphan is below this by construction, since
+        ///     <see cref="EnumerateOrphanGroups"/> walks the records that exist, so the id this
+        ///     returns cannot collide with one.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index to append to.</param>
+        /// <returns>The group id <see cref="CreateGroup"/> will accept.</returns>
+        public int NextCreatableGroupId(int indexId) {
+            lock (_containerLock)
+                return store.GetFileCount(indexId);
+        }
+
+        /// <summary>
+        ///     Creates a group that does not exist yet, with its contents and its name.
+        /// </summary>
+        /// <remarks>
+        ///     <b>Separate from <see cref="WriteGroup"/> deliberately.</b> A rewrite reads the
+        ///     stored container so it can carry across the files it was not asked to change and so
+        ///     it can decline a write that changes nothing; a group being created has neither, and
+        ///     that is the whole reason the rewrite path could not do this - it fetched a container
+        ///     for a group that has none. Letting <see cref="WriteGroup"/> create instead would
+        ///     turn every mistyped group id in the application into a new group rather than a
+        ///     refusal.
+        ///     <para>
+        ///     <b>Index-specific rules are not applied here.</b> Density, and whether a group is
+        ///     required to carry a name, belong to the caller that knows which index it is writing:
+        ///     sparse groups are normal elsewhere, and most indexes carry no names at all.
+        ///     </para>
+        ///     <para>
+        ///     Staged like every other write. Nothing reaches the filesystem until
+        ///     <see cref="WriteCache"/>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="indexId">The index to create the group in.</param>
+        /// <param name="groupId">
+        ///     The new group id, which must be <see cref="NextCreatableGroupId"/>.
+        /// </param>
+        /// <param name="files">The group's contents, ascending by file id, at least one.</param>
+        /// <param name="identifier">
+        ///     The group's name hash, or <see cref="RSGroupFile.Unnamed"/> for a group with no
+        ///     name. Unnamed groups are normal - eleven of index 3's are.
+        /// </param>
+        /// <returns>Always true; a create cannot be a no-op.</returns>
+        /// <exception cref="IOException">The index is the meta index.</exception>
+        /// <exception cref="ArgumentException">
+        ///     The file set is empty, out of order or out of range, or a name was supplied for a
+        ///     table that cannot store one.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     The id is not the one the index can accept.
+        /// </exception>
+        /// <exception cref="InvalidOperationException">
+        ///     The group already exists, holds undeclared bytes, or the name is already taken.
+        /// </exception>
+        public bool CreateGroup(int indexId, int groupId, IReadOnlyList<RSGroupFile> files,
+            int identifier = RSGroupFile.Unnamed) {
+            if (files == null)
+                throw new ArgumentNullException(nameof(files));
+
+            lock (_containerLock)
+                return CreateGroupLocked(indexId, groupId, files, identifier);
+        }
+
+        private bool CreateGroupLocked(int indexId, int groupId, IReadOnlyList<RSGroupFile> files,
+            int identifier) {
+            if (indexId == RSConstants.META_INDEX)
+                throw new IOException("Reference tables can only be modified with the low level FileStore API!");
+
+            //Every refusal below runs before anything is staged, so a refused create leaves the
+            //store byte for byte as it was.
+            int[] newFileIds = ValidateGroupFiles(indexId, groupId, files);
+
+            RSReferenceTable table = GetReferenceTable(indexId);
+
+            if (table.archiveEntries.ContainsKey(groupId))
+                throw new InvalidOperationException(
+                    "Index " + indexId + " already declares group " + groupId + ", so it cannot be" +
+                    " created. Rewriting a group that exists is WriteGroup.");
+
+            if (HasLiveIndexRecord(indexId, groupId))
+                throw OrphanGroupRefusal(indexId, groupId);
+
+            int creatable = store.GetFileCount(indexId);
+            if (groupId != creatable)
+                throw new ArgumentOutOfRangeException(nameof(groupId),
+                    "Index " + indexId + " holds " + creatable + " idx records, so the only group id" +
+                    " it can accept is " + creatable + ", not " + groupId + ". An idx file is an" +
+                    " array of six-byte records addressed by group id and cannot express a hole.");
+
+            RequireNameIsStorable(table, indexId, identifier);
+
+            /* Skipped for an unnamed group, because -1 is not a name and index 3 already carries
+               eleven groups that share it. A real hash is refused, because the client resolves a
+               name to whichever group its hash table reaches first, so a second group answering to
+               the same name makes one of the two unreachable by name for good. */
+            if (identifier != RSGroupFile.Unnamed) {
+                int taken = table.Names.GroupIdOfHash(identifier);
+                if (taken >= 0)
+                    throw new InvalidOperationException(
+                        "Index " + indexId + " group " + taken + " already carries the name hash " +
+                        identifier + ". Two groups sharing a name leave one of them unreachable by" +
+                        " name, because the client stops at the first its hash table reaches.");
+            }
+
+            Debug("Creating group " + indexId + "," + groupId + " with " + files.Count + " files");
+
+            var archiveEntry = new RSArchiveEntry(groupId);
+            archiveEntry.SetIdentifier(identifier);
+
+            /* Seeded at version 1 rather than at the constant WriteFile uses, because StageArchive
+               encodes the container - writing the trailer from this field - before it sets the
+               entry version to 0 + 1. Seeding it at 1 is what makes a created group satisfy the
+               relationship every group on disk satisfies, that its container trailer and its table
+               entry state the same version. */
+            var container = new RSContainer(indexId, groupId,
+                (byte) RSConstants.GZIP_COMPRESSION, null, 1);
+
+            var archive = new RSArchive();
+            container.SetArchive(archive);
+
+            foreach (RSGroupFile file in files)
+                archive.PutFile(file.FileId, file.Data);
+
+            var fileEntries = new SortedDictionary<int, RSFileEntry>();
+            foreach (RSGroupFile file in files) {
+                var entry = new RSFileEntry(file.FileId);
+                entry.SetIdentifier(file.Identifier);
+                fileEntries[file.FileId] = entry;
+            }
+
+            archiveEntry.SetFileEntries(fileEntries);
+            archiveEntry.SetValidFileIds(newFileIds);
+
+            StageArchive(indexId, groupId, table, archiveEntry, container, archive.Encode());
+
+            //Cached under the same key every read goes through, or the next read of the group just
+            //created would go back to the store and decode the bytes again.
+            if (!containers.ContainsKey(indexId))
+                containers.Add(indexId, new SortedDictionary<int, RSContainer>());
+            containers[indexId][groupId] = container;
+
+            return true;
+        }
+
+        /// <summary>
+        ///     The refusal to promote an undeclared group into the reference table.
+        /// </summary>
+        /// <remarks>
+        ///     Shared by the rewrite and the create path so the two cannot come to disagree about
+        ///     what counts as adopting one. The repack carries eight such groups, three of them on
+        ///     index 3.
+        /// </remarks>
+        /// <param name="indexId">The index.</param>
+        /// <param name="groupId">The group.</param>
+        /// <returns>The exception to throw.</returns>
+        private static InvalidOperationException OrphanGroupRefusal(int indexId, int groupId) {
+            return new InvalidOperationException(
+                "Index " + indexId + " group " + groupId + " holds bytes in the idx file that its" +
+                " reference table does not declare. Writing it would adopt an undeclared group" +
+                " into the table, which is a different change from the one asked for." +
+                " EnumerateOrphanGroups reports these.");
+        }
+
+        /// <summary>
+        ///     Refuses a group name the table has nowhere to put.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="ReferenceTableCodec.Encode"/> writes the identifier block only when the
+        ///     flag is set, so a name given to a table without it is dropped on the way out with
+        ///     nothing anywhere reporting it. <see cref="RSGroupFile.Unnamed"/> passes, because it
+        ///     is the absence of a name rather than one.
+        /// </remarks>
+        /// <param name="table">The index's reference table.</param>
+        /// <param name="indexId">The index, for the message.</param>
+        /// <param name="identifier">The name hash being written, if any.</param>
+        private static void RequireNameIsStorable(RSReferenceTable table, int indexId, int? identifier) {
+            if (!identifier.HasValue || identifier.Value == RSGroupFile.Unnamed || table.hasIdentifiers)
+                return;
+
+            throw new ArgumentException(
+                "Index " + indexId + "s reference table sets no identifiers flag, so it has no" +
+                " field to store a group name in and the name would be dropped silently.",
+                nameof(identifier));
         }
 
         /// <summary>
@@ -575,22 +792,33 @@ namespace FlashEditor.Cache {
         }
 
         /// <summary>
-        ///     Whether a rewrite leaves every file's name hash as the table already records it.
+        ///     Whether a rewrite leaves the group's name and every file's name as the table
+        ///     already records them.
         /// </summary>
         /// <remarks>
         ///     Part of the no-op test, and not a formality: index 3 names both levels, so moving a
         ///     component without moving its identifier renames it, and re-stating the identifiers a
         ///     group already carries has to stay free. Skipped outright on a table with the
         ///     identifiers flag clear, where nothing is written and nothing can differ.
+        ///     <para>
+        ///     The group's own name is checked as well as its files'. A rename moves nothing else -
+        ///     the file ids match, the payload matches - so without this the no-op test would
+        ///     discard it as a write that changes nothing, and the group would keep its old name
+        ///     with nothing reporting that the rename had been dropped.
+        ///     </para>
         /// </remarks>
         /// <param name="table">The index's reference table.</param>
         /// <param name="entry">The group's current entry.</param>
         /// <param name="files">The proposed contents.</param>
-        /// <returns>Whether the identifiers are unchanged.</returns>
-        private static bool IdentifiersUnchanged(RSReferenceTable table, RSArchiveEntry entry,
-            IReadOnlyList<RSGroupFile> files) {
+        /// <param name="groupIdentifier">The group's new name hash, if one was supplied.</param>
+        /// <returns>Whether the names are unchanged.</returns>
+        private static bool NamesUnchanged(RSReferenceTable table, RSArchiveEntry entry,
+            IReadOnlyList<RSGroupFile> files, int? groupIdentifier) {
             if (!table.hasIdentifiers)
                 return true;
+
+            if (groupIdentifier.HasValue && entry.GetIdentifier() != groupIdentifier.Value)
+                return false;
 
             foreach (RSGroupFile file in files) {
                 RSFileEntry? current = entry.GetFileEntry(file.FileId);

@@ -1,4 +1,4 @@
-using FlashEditor;
+﻿using FlashEditor;
 using FlashEditor.Cache;
 using FlashEditor.IO;
 using FlashEditor.Utils;
@@ -499,9 +499,15 @@ namespace FlashEditor.Tests.Cache {
         ///     archive - there the missing thing is the entry for an archive the caller is editing
         ///     on purpose. Here the whole file set is being restated, and adopting a group nobody
         ///     named is a different change from the one asked for.
+        ///     <para>
+        ///     Named for the bytes rather than for the table since <see cref="RSCache.CreateGroup"/>
+        ///     arrived: a group that is undeclared <i>and</i> unstored is now something that can be
+        ///     made, and is refused here for a different reason and with a different message. This
+        ///     one is about adoption, and stands unchanged.
+        ///     </para>
         /// </remarks>
         [Fact]
-        public void WriteGroup_UndeclaredGroup_IsRefusedRatherThanAdopted() {
+        public void WriteGroup_UndeclaredGroupWithLiveBytes_IsRefusedRatherThanAdopted() {
             var archive = new RSArchive();
             archive.PutFile(0, new JagStream(new byte[] { 1, 2, 3 }));
 
