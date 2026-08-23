@@ -81,6 +81,7 @@ named in its own section. Items 20 and 27 are under way.** What landed, and what
 `; the client's wrap rule is unsettled |
 | **26f** opcode naming | Done. 126 newly named, 71 -> 197 | ~70 deliberately left numbered because the dispatcher does not settle them |
 | **26h** structural edits | Done. `RSCache.WriteGroup` in the archive layer, `InterfaceStructureWriter` above it, four toolbar actions above that | **A renumber is still an informed risk, not a safe operation**, and stays one until the CS2 reference scan in item 19's territory exists. The editor finds only the references inside the interface being edited and says so |
+| **26i** whole interfaces | Done. `RSCache.CreateGroup` in the archive layer, `InterfaceGroupWriter` above it, a create and a duplicate action on their own strip above the interface list | Nothing on this item. It went in *because* of the 26h caveat rather than despite it: a created interface is referenced by nothing, so it is the only structural edit on this index that renumbers nothing, and a duplicate leaves its source untouched. What a duplicate cannot do - repoint the hooks and CS2 references the copy inherits - is reported and never attempted |
 
 **Corrections to this file's own item 18, found by doing it.** All three would have mis-scoped the
 work, and they are logged in `reference/DOC-CONFLICTS.md`:

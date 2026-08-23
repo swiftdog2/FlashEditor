@@ -10,11 +10,17 @@
 > declared interface re-encodes to the bytes it was read from, with six non-canonical cases
 > captured. The "Gaps" list below is a list of finished work.
 >
-> What is genuinely still missing is the *editor*: no canvas, no layout resolver, no tree, no
-> colour picker, no route from a hook to its script. That is `TODO.md` item 26.
+> **The editor arrived too, and this document predates all of it.** There is a layout resolver, a
+> component tree, a canvas that draws types 0, 3, 4, 5 and 9, structural edits inside an interface,
+> and - since `TODO.md` item 26i - creating and duplicating whole interfaces through
+> `InterfaceGroupWriter` over `RSCache.CreateGroup`. What is still missing is a route from a hook to
+> its script, which needs a CS2 reference scan nobody has built.
+>
+> Read `reference/index-architect-03.md` and `CLAUDE.md` for the current state; the sections below
+> are kept for the format detail alone.
 
 **Format:** partially-understood  
-**Capability:** none  
+**Capability:** read-write  
 **Effort:** large
 
 ## What it is

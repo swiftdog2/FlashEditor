@@ -254,7 +254,31 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   dimension is positional. **An undeclared group is refused rather than adopted** - writing one
   would promote repack residue into the table as though the editor had made it. Density is *not*
   imposed here: sparse groups are legal and normal on other indexes, so the caller that knows
-  asserts it, which for index 3 is `InterfaceStructureWriter`.
+  asserts it, which for index 3 is `InterfaceGroupRules`, shared by `InterfaceStructureWriter` and
+  `InterfaceGroupWriter`.
+- **`CreateGroup` makes a group that does not exist; `WriteGroup` never does, and the difference is
+  not a technicality.** `WriteGroup` looked like it could create one - it tolerates an entry the
+  table omits and builds a fresh `RSArchiveEntry` - but it then fetches the stored container, and a
+  group being created has none, so it died in `GetContainer`. What it actually tolerated was a group
+  the *idx* already had a record for, which is repack residue, and which it refuses to adopt anyway.
+  Both refusals still stand and the orphan one is now shared between the two paths so they cannot
+  come to disagree about what adoption means.
+  **There is exactly one creatable id per index and it is not a choice**: an idx file is an array of
+  six-byte records addressed by group id, so `RSFileStore.Write` appends at `ptr == length` and can
+  express no hole. `RSCache.NextCreatableGroupId` is that id, and every orphan is below it by
+  construction. Measured by a raw read of the idx files rather than from any document: **idx3 is 6420
+  bytes in the vanilla capture, 1070 records, with 772, 825 and 891 dead** (size 0, sector 0), and
+  **6486 bytes in the repack, 1081 records, with those same three live**. So the append slot is the
+  highest declared id plus one in both, and in-range dead slots are deliberately *not* creatable -
+  they are the ids that are residue in the other cache, so a group made there is maximally
+  confusable with an orphan.
+- **A group's own name hash is written by the call that stages the write, never by a later one.**
+  `RSGroupFile` carries only the *file* identifier, so before `CreateGroup` there was no route to a
+  group name at all and a created group would have been unnamed for good. `WriteGroup` takes
+  `int? groupIdentifier`, and the sentinel has to be `null` rather than -1 because **-1 is a real
+  value** - the format's own "unnamed", carried by eleven of index 3's groups. The no-op guard
+  compares it too: a rename moves no file id and no payload byte, so without that it was discarded
+  as a write that changed nothing and the group silently kept its old name.
 - **Index 3's groups are dense, 0 to n-1, and the client depends on it.** Measured in both caches
   by `RealCacheInterfaceStructureTests.EveryInterface_NumbersItsComponentsDenselyFromZero`. The
   client reads a group's file count as `maxFileId + 1` and throws the explicit id list away
@@ -266,6 +290,23 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   editor reports the references it can see and says out loud that the rest exist.** Finding the
   CS2 ones means scanning every compiled script for a constant and is not built, so no surface may
   present a renumber as safe.
+- **Creating an interface is the one index-3 structural operation that is safe by construction**,
+  and duplicating one is the next safest. Nothing anywhere references a group that did not exist a
+  moment ago, so a create renumbers nothing and breaks nothing; a duplicate leaves the source
+  untouched, so nothing addressing the source moves either. `InterfaceGroupWriter` owns both.
+  **A name is required there although the archive layer allows an unnamed group**: index 3 stores a
+  name as a hash and this editor recovers it by re-hashing candidates, so a name not chosen at
+  creation cannot be chosen later without rewriting the group. That also means a group made in this
+  session has no entry in `InterfaceNameTable`, which is keyed by group id and cannot know about it -
+  so `InterfaceNames` remembers created names for the session, still hash-verified, or a named
+  interface would render as unnamed with its name sitting in the cache.
+  **A duplicate copies stored bytes verbatim and repairs nothing.** Hook arguments carry
+  `(interface << 16) | component` as plain integers, so every hook in the copy still addresses the
+  original and CS2 keeps driving the source. Rewriting the high half of operands that happen to
+  match is exactly the heuristic `ExternalReferenceWarnings` deliberately only *warns* about - such
+  an operand may be an ordinary constant - so the copy reports and never acts. Its chunk split is
+  not preserved either, which is safe only because `AGENTS.md` measures every multi-chunk group as
+  living in index 0.
 ## UI conventions
 
 **This is the reference for anything with a user interface. Follow it rather than copying whatever
