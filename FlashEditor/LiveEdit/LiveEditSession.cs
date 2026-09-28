@@ -20,8 +20,8 @@ namespace FlashEditor.LiveEdit {
 
         private readonly LiveEditCoalescer coalescer;
 
-        //Handed over by the committing thread rather than read back from RSCache on the flush's
-        //timer thread, because RSCache's staging overlay is written from the UI thread unlocked.
+        //Filled by the committing thread. The flush runs on a timer thread and must not read
+        //RSCache's staging overlay, which the UI thread writes without a lock.
         private readonly ConcurrentDictionary<(LiveEditKind Kind, int Id), byte[]> committed =
             new ConcurrentDictionary<(LiveEditKind, int), byte[]>();
 

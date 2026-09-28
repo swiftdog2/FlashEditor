@@ -36,7 +36,7 @@ namespace FlashEditor.LiveEdit {
     ///     The link never touches the cache.
     /// </remarks>
     public sealed class LiveEditLink : IDisposable {
-        /// <summary>How long a connection attempt may take before the batch is dropped.</summary>
+        /// <summary>How long a connection attempt may take before it fails; the batch's frames are then held for the next batch.</summary>
         public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
 
         /// <summary>How long the server may take to acknowledge one frame before the connection is abandoned.</summary>

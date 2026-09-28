@@ -816,8 +816,7 @@ namespace FlashEditor {
             js5LiveReloadToolStripMenuItem.Checked = Properties.Settings.Default.js5LiveReload;
 
             //Before the cache opens, so the first edit on the Map tab already has somewhere to go.
-            //A persisted port no TCP port can be falls back to the default rather than failing
-            //the form's load over a preview feature.
+            //A persisted port that is not a usable TCP port falls back to the default.
             int livePort = Properties.Settings.Default.liveEditPort;
             liveEdit = new LiveEditSession(livePort > 0 && LiveEditLink.IsValidPort(livePort)
                 ? livePort : LiveEditSession.DefaultPort, MapEditorPanel.RunExclusive);
