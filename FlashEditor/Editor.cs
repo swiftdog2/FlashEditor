@@ -9,6 +9,7 @@ using FlashEditor.Definitions.Billboards;
 using FlashEditor.Definitions.Editing;
 using FlashEditor.Definitions.Entities;
 using FlashEditor.Definitions.Fonts;
+using FlashEditor.LiveEdit;
 using FlashEditor.Definitions.SpotAnims;
 using FlashEditor.Rendering;
 using FlashEditor.UI;
@@ -36,6 +37,9 @@ using FlashEditor.Export;
 namespace FlashEditor {
     public partial class Editor : Form {
         internal RSCache cache;
+
+        //Shared by the Map and Config tabs for the form's lifetime; created in Editor_Load.
+        private LiveEditSession? liveEdit;
         private readonly ModelRenderer _modelRenderer = new ModelRenderer();
         private GLTextureCache? _textureCache;
         private readonly Dictionary<int, System.Threading.Tasks.Task<ModelDefinition>> _modelTasks = new();
@@ -810,6 +814,23 @@ namespace FlashEditor {
             //answer rather than the designer's unticked default - a session that turned it on and
             //restarted would otherwise be saving through the handshake with the box unticked.
             js5LiveReloadToolStripMenuItem.Checked = Properties.Settings.Default.js5LiveReload;
+
+            //Before the cache opens, so the first edit on the Map tab already has somewhere to go.
+            //A persisted port no TCP port can be falls back to the default rather than failing
+            //the form's load over a preview feature.
+            int livePort = Properties.Settings.Default.liveEditPort;
+            liveEdit = new LiveEditSession(livePort is >= 1 and <= 65535 ? livePort : LiveEditSession.DefaultPort,
+                MapEditorPanel.RunExclusive);
+            liveEdit.Link.Enabled = Properties.Settings.Default.liveEditEnabled;
+            MapEditorPanel.LiveEdit = liveEdit;
+            MapEditorPanel.LivePreviewToggled += (_, _) => {
+                Properties.Settings.Default.liveEditEnabled = liveEdit?.Link.Enabled == true;
+                Properties.Settings.Default.Save();
+            };
+            ConfigPanel.DefinitionStaged += (_, e) => {
+                if (cache != null)
+                    liveEdit?.MarkStaged(cache, e.IndexId, e.Address.GroupId, e.Address.FileId);
+            };
 
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
             //all and say nothing about it; asking for a folder here would be worse, because the
@@ -3160,6 +3181,9 @@ namespace FlashEditor {
 
         protected override void OnFormClosed(FormClosedEventArgs e) {
             _fpsTimer.Stop();
+            MapEditorPanel.LiveEdit = null;
+            liveEdit?.Dispose();
+            liveEdit = null;
             DisposeOldResources();
 
             /* The sprite placeholder and its marker font outlive a cache: the grid's columns are

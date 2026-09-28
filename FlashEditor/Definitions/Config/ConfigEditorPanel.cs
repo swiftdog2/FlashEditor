@@ -133,6 +133,7 @@ namespace FlashEditor.Definitions.Config {
             //which is what the same palette does on the map tab.
             preview.FloorPicked += (_, id) => records.SelectRecord(id);
             preview.Navigate += (_, e) => Navigate?.Invoke(this, e);
+            records.DefinitionStaged += (_, e) => DefinitionStaged?.Invoke(this, e);
         }
 
         /// <summary>
@@ -144,6 +145,12 @@ namespace FlashEditor.Definitions.Config {
         ///     same statement from the preview, which is not a grid and so has no cell to click.
         /// </remarks>
         public event EventHandler<ConfigNavigationEventArgs>? Navigate;
+
+        /// <summary>
+        ///     Raised when a record edit, from the grid or the field pane, staged a write, with the
+        ///     file written.
+        /// </summary>
+        public event EventHandler<DefinitionStagedEventArgs>? DefinitionStaged;
 
         /// <summary>
         ///     Points the panel at a cache, or clears it when given none.

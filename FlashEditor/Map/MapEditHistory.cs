@@ -22,7 +22,7 @@ namespace FlashEditor.Map {
         ///     Raised on the thread that stepped the history, which for the Map tab is inside the
         ///     square store's exclusive section, so a handler must not wait on anything that takes it.
         /// </remarks>
-        public event EventHandler<IMapEdit> MapChanged;
+        public event EventHandler<IMapEdit>? MapChanged;
 
         /// <summary>Whether there is anything to undo.</summary>
         public bool CanUndo => done.Count > 0;

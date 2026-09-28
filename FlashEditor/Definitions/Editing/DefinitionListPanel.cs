@@ -602,6 +602,12 @@ namespace FlashEditor.Definitions.Editing {
         /// </remarks>
         public event EventHandler? RowCommitted;
 
+        /// <summary>
+        ///     Raised when a commit staged a write, with the file written, before
+        ///     <see cref="RowCommitted"/>. Not raised for a commit that staged nothing or failed.
+        /// </summary>
+        public event EventHandler<DefinitionStagedEventArgs>? DefinitionStaged;
+
         /// <summary>Raised on the UI thread once a load has published its rows.</summary>
         /// <remarks>
         ///     Not raised for a cancelled or faulted load, so a handler can take <see cref="Rows"/>
@@ -1035,6 +1041,7 @@ namespace FlashEditor.Definitions.Editing {
 
                 list.RefreshObject(row);
                 status.Text = "Staged " + descriptor.RowNoun + " at " + address;
+                DefinitionStaged?.Invoke(this, new DefinitionStagedEventArgs(descriptor.IndexId, address));
             }
             catch (Exception ex) {
                 //Reported rather than thrown: this runs from a cell editor, and an exception out of

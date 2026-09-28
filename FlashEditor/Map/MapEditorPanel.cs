@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 using FlashEditor.Cache;
 using FlashEditor.Cache.Region;
 using FlashEditor.Definitions;
+using FlashEditor.LiveEdit;
 using FlashEditor.UI;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
@@ -135,6 +137,10 @@ namespace FlashEditor.Map {
             new System.Windows.Forms.Timer { Interval = 400 };
 
         private readonly MapEditHistory history = new MapEditHistory();
+
+        private readonly Label liveStatus = new Label { Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
+        private EditorToolButton? liveToggle;
+        private LiveEditSession? liveEdit;
 
         /// <summary>
         ///     Whether the status line currently holds the live readout rather than a one-off message.
@@ -474,6 +480,9 @@ namespace FlashEditor.Map {
 
             undoButton.Click += (_, _) => StepHistory(history.Undo, "undone", reversed: true);
             redoButton.Click += (_, _) => StepHistory(history.Redo, "redone", reversed: false);
+            //Inside the store's exclusive section: MarkEdit only records the squares, it never
+            //encodes or touches the network here.
+            history.MapChanged += (_, edit) => liveEdit?.MarkEdit(edit);
             history.Changed += (_, _) => {
                 undoButton.Enabled = history.CanUndo;
                 redoButton.Enabled = history.CanRedo;
@@ -1922,6 +1931,8 @@ namespace FlashEditor.Map {
 
             Controls.Add(split);
             Controls.Add(status);
+            Controls.Add(liveStatus);
+            UpdateLiveStatus();
 
             for (int p = 0; p < 4; p++)
                 planeBox.Items.Add("Plane " + p);
@@ -2130,6 +2141,12 @@ namespace FlashEditor.Map {
             toolStrip.AddAction(EditorIcon.Redo, "Redo the last undone edit", Keys.Control | Keys.Y,
                 (_, _) => StepHistory(history.Redo, "redone", reversed: false));
 
+            toolStrip.AddSeparator();
+            liveToggle = toolStrip.AddToggle(EditorIcon.Link,
+                "Live preview: push every edit, undo and redo to a HydraScape server on this machine. " +
+                "It does not save - use Save cache", Keys.None, (_, _) => OnLiveToggled());
+            liveToggle.Enabled = false;
+
             toolButtons[MapTool.Inspect].Arm();
             currentTool = MapTool.Inspect;
 
@@ -2266,6 +2283,7 @@ namespace FlashEditor.Map {
             //Docked to the bottom with a literal height, which scaling cut below the text it carries -
             //the descenders on "plane" and "px/tile" were being clipped by the window edge.
             status.Height = Font.Height + 8;
+            liveStatus.Height = Font.Height + 8;
 
             //A floor for the navigator, which otherwise has a Percent row and nothing to stop it
             //collapsing on a short window. Nine text lines is roughly the thumbnail's old size, so
@@ -2657,6 +2675,71 @@ namespace FlashEditor.Map {
         }
 
         /// <summary>
+        ///     The live-preview session the toggle drives and every edit, undo and redo is marked
+        ///     with, or null for none. The form owns it and disposes it; the panel only listens.
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public LiveEditSession? LiveEdit {
+            get => liveEdit;
+            set {
+                if (liveEdit != null)
+                    liveEdit.Link.StatusChanged -= OnLiveStatusChanged;
+                liveEdit = value;
+                if (liveEdit != null)
+                    liveEdit.Link.StatusChanged += OnLiveStatusChanged;
+                if (liveToggle != null) {
+                    liveToggle.Enabled = liveEdit != null;
+                    liveToggle.Checked = liveEdit?.Link.Enabled == true;
+                }
+                UpdateLiveStatus();
+            }
+        }
+
+        /// <summary>Raised when the user turns live preview on or off, after the link has been switched.</summary>
+        public event EventHandler? LivePreviewToggled;
+
+        private void OnLiveToggled() {
+            if (liveEdit == null || liveToggle == null || liveEdit.Link.Enabled == liveToggle.Checked)
+                return;
+
+            liveEdit.Link.Enabled = liveToggle.Checked;
+            LivePreviewToggled?.Invoke(this, EventArgs.Empty);
+            UpdateLiveStatus();
+        }
+
+        private void OnLiveStatusChanged(object? sender, EventArgs e) {
+            //Raised on the link's worker. A handle torn down between the check and the post is a
+            //closing form, which has nothing left to show the status on.
+            if (!IsHandleCreated || IsDisposed)
+                return;
+            try {
+                BeginInvoke(new Action(UpdateLiveStatus));
+            }
+            catch (InvalidOperationException) {
+            }
+        }
+
+        private void UpdateLiveStatus() {
+            LiveEditLink? link = liveEdit?.Link;
+            if (link == null || !link.Enabled) {
+                liveStatus.Text = "Live preview off";
+                return;
+            }
+
+            string state = link.Status == LiveEditLinkStatus.Connected
+                ? $"connected to 127.0.0.1:{link.Port}"
+                : $"not connected to 127.0.0.1:{link.Port}";
+            string pushed = link.LastAcknowledged is DateTimeOffset at
+                ? $", last push acknowledged {at.ToLocalTime():HH:mm:ss}"
+                : ", nothing acknowledged yet";
+            string? error = link.LastError?.Split(Environment.NewLine)[0];
+            liveStatus.Text = $"Live preview {state}{pushed}"
+                              + (error == null ? "" : $" ({error})")
+                              + "  -  Live preview does not save - use Save cache";
+        }
+
+        /// <summary>
         ///     Runs a whole-cache operation with the map's render thread held off.
         /// </summary>
         /// <remarks>
@@ -2681,6 +2764,9 @@ namespace FlashEditor.Map {
         /// <inheritdoc/>
         protected override void Dispose(bool disposing) {
             if (disposing) {
+                if (liveEdit != null)
+                    liveEdit.Link.StatusChanged -= OnLiveStatusChanged;
+
                 reliefDebounce.Stop();
                 reliefDebounce.Dispose();
 

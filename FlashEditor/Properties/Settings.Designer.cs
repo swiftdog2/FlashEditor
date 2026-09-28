@@ -58,5 +58,29 @@ namespace FlashEditor.Properties {
                 this["js5LiveReloadTimeoutSeconds"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool liveEditEnabled {
+            get {
+                return ((bool)(this["liveEditEnabled"]));
+            }
+            set {
+                this["liveEditEnabled"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("43600")]
+        public int liveEditPort {
+            get {
+                return ((int)(this["liveEditPort"]));
+            }
+            set {
+                this["liveEditPort"] = value;
+            }
+        }
     }
 }
