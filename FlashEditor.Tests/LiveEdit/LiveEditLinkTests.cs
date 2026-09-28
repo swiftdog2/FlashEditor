@@ -200,6 +200,36 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         [Fact]
+        public async Task ABatchWhoseBatchEndIsNeverAcknowledgedIsHeldWholeAndResentInTheNextBatch() {
+            using var link = new LiveEditLink(Port) { Enabled = true };
+            var terrain = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var locations = new LiveEditFrame(LiveEditKind.Locations, 7, new byte[] { 2 });
+            var next = new LiveEditFrame(LiveEditKind.FloorOverlay, 3, new byte[] { 3 });
+
+            Task<byte[]> server = Task.Run(async () => {
+                using (TcpClient peer = await listener.AcceptTcpClientAsync()) {
+                    //Both frames acknowledged, then the connection dies with the batch end unread,
+                    //so a real server discards the whole batch.
+                    NetworkStream stream = peer.GetStream();
+                    await ServeFrames(stream, 2);
+                    await stream.ReadExactlyAsync(new byte[BatchEndBytes.Length]);
+                }
+                using TcpClient again = await listener.AcceptTcpClientAsync();
+                return await ServeFrames(again.GetStream(), 4);
+            });
+
+            await link.Send(Batch(terrain, locations)).WaitAsync(Patience);
+            Assert.Equal(LiveEditLinkStatus.Disconnected, link.Status);
+            Assert.Null(link.LastAcknowledged);
+
+            await link.Send(Batch(next)).WaitAsync(Patience);
+
+            Assert.Equal(Wire(terrain, locations, next), await server.WaitAsync(Patience));
+            Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
+            Assert.Null(link.LastError);
+        }
+
+        [Fact]
         public async Task AHeldFrameIsNotResentWhenTheNextBatchCarriesTheSameFile() {
             int port = Port;
             listener.Stop();
