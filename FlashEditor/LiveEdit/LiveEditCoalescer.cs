@@ -24,10 +24,12 @@ namespace FlashEditor.LiveEdit {
         private readonly object gate = new object();
         private readonly object flushGate = new object();
         private readonly Action<Action> runExclusive;
+        private readonly Func<LiveEditKind, int, byte[]> readDefinition;
         private readonly Action<LiveEditBatch> sink;
         private readonly ITimer timer;
 
         private List<MapRegion> squares = new List<MapRegion>();
+        private List<(LiveEditKind Kind, int Id)> definitions = new List<(LiveEditKind, int)>();
 
         /// <summary>
         ///     Creates a coalescer.
@@ -37,7 +39,10 @@ namespace FlashEditor.LiveEdit {
         ///     definition read happens inside one call, because the squares are live objects the
         ///     editor mutates on the UI thread.
         /// </param>
-        /// <param name="readDefinition">Returns the committed bytes of a floor definition.</param>
+        /// <param name="readDefinition">
+        ///     Returns the committed bytes of a floor definition. Throwing or returning null skips
+        ///     that definition and reports it.
+        /// </param>
         /// <param name="sink">
         ///     Receives each batch on the flushing thread. It must not block for long, and an
         ///     exception from it is discarded, because the flush runs on a timer thread where an
@@ -50,7 +55,7 @@ namespace FlashEditor.LiveEdit {
             Action<LiveEditBatch> sink,
             TimeProvider? time = null) {
             this.runExclusive = runExclusive ?? throw new ArgumentNullException(nameof(runExclusive));
-            ArgumentNullException.ThrowIfNull(readDefinition);
+            this.readDefinition = readDefinition ?? throw new ArgumentNullException(nameof(readDefinition));
             this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
             timer = (time ?? TimeProvider.System).CreateTimer(
                 _ => Flush(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -71,25 +76,91 @@ namespace FlashEditor.LiveEdit {
             }
         }
 
-        private void Flush() {
-            List<MapRegion> taken;
+        /// <summary>
+        ///     Marks a floor definition dirty and restarts the quiet period. Its bytes are read
+        ///     through the definition source at flush time, so they must already be committed.
+        /// </summary>
+        /// <exception cref="ArgumentException">
+        ///     <paramref name="kind"/> is not <see cref="LiveEditKind.FloorUnderlay"/> or
+        ///     <see cref="LiveEditKind.FloorOverlay"/>, or <paramref name="id"/> does not fit the
+        ///     16-bit id field.
+        /// </exception>
+        public void MarkDefinition(LiveEditKind kind, int id) {
+            if (kind != LiveEditKind.FloorUnderlay && kind != LiveEditKind.FloorOverlay)
+                throw new ArgumentException($"{kind} is not a floor definition kind.", nameof(kind));
+            if (id < 0 || id > ushort.MaxValue)
+                throw new ArgumentException($"Id {id} does not fit the 16-bit id field.", nameof(id));
             lock (gate) {
-                taken = squares;
+                if (!definitions.Contains((kind, id)))
+                    definitions.Add((kind, id));
+                timer.Change(QuietPeriod, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        private void Flush() {
+            List<MapRegion> takenSquares;
+            List<(LiveEditKind Kind, int Id)> takenDefinitions;
+            lock (gate) {
+                takenSquares = squares;
+                takenDefinitions = definitions;
                 squares = new List<MapRegion>();
+                definitions = new List<(LiveEditKind, int)>();
             }
 
-            var frames = new List<LiveEditFrame>();
-            var failures = new List<LiveEditFailure>();
+            //Serialised so that a slow flush cannot hand the sink older bytes after a newer one.
             lock (flushGate) {
-                runExclusive(() => {
-                    foreach (MapRegion square in taken) {
-                        int id = square.GetRegionID();
-                        (LiveEditKind terrain, LiveEditKind locations) = KindsOf(square.Layer);
-                        frames.Add(new LiveEditFrame(terrain, id, RegionCodec.EncodeTerrain(square)));
-                        frames.Add(new LiveEditFrame(locations, id, RegionCodec.EncodeLocations(square)));
+                var frames = new List<LiveEditFrame>();
+                var failures = new List<LiveEditFailure>();
+                int squaresDone = 0, definitionsDone = 0;
+                try {
+                    runExclusive(() => {
+                        for (; squaresDone < takenSquares.Count; squaresDone++)
+                            EncodeSquare(takenSquares[squaresDone], frames, failures);
+                        for (; definitionsDone < takenDefinitions.Count; definitionsDone++)
+                            ReadDefinition(takenDefinitions[definitionsDone], frames, failures);
+                    });
+                } catch (Exception e) {
+                    for (; squaresDone < takenSquares.Count; squaresDone++) {
+                        MapRegion square = takenSquares[squaresDone];
+                        failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
                     }
-                });
-                sink(new LiveEditBatch(frames, failures));
+                    for (; definitionsDone < takenDefinitions.Count; definitionsDone++) {
+                        (LiveEditKind kind, int id) = takenDefinitions[definitionsDone];
+                        failures.Add(new LiveEditFailure(kind, id, e.Message));
+                    }
+                }
+
+                try {
+                    sink(new LiveEditBatch(frames, failures));
+                } catch {
+                    //Discarded by contract; see the sink parameter on the constructor.
+                }
+            }
+        }
+
+        private static void EncodeSquare(MapRegion square, List<LiveEditFrame> frames, List<LiveEditFailure> failures) {
+            int id = square.GetRegionID();
+            (LiveEditKind terrainKind, LiveEditKind locationsKind) = KindsOf(square.Layer);
+            LiveEditKind attempting = terrainKind;
+            try {
+                byte[] terrain = RegionCodec.EncodeTerrain(square);
+                attempting = locationsKind;
+                byte[] locations = RegionCodec.EncodeLocations(square);
+                frames.Add(new LiveEditFrame(terrainKind, id, terrain));
+                frames.Add(new LiveEditFrame(locationsKind, id, locations));
+            } catch (Exception e) {
+                failures.Add(new LiveEditFailure(attempting, id, e.Message));
+            }
+        }
+
+        private void ReadDefinition((LiveEditKind Kind, int Id) definition, List<LiveEditFrame> frames,
+            List<LiveEditFailure> failures) {
+            try {
+                byte[] bytes = readDefinition(definition.Kind, definition.Id)
+                               ?? throw new InvalidOperationException("The definition source returned no bytes.");
+                frames.Add(new LiveEditFrame(definition.Kind, definition.Id, bytes));
+            } catch (Exception e) {
+                failures.Add(new LiveEditFailure(definition.Kind, definition.Id, e.Message));
             }
         }
 

@@ -108,5 +108,119 @@ namespace FlashEditor.Tests.LiveEdit
                 },
                 Assert.Single(batches).Frames.Select(f => (f.Kind, f.Id)));
         }
+
+        [Fact]
+        public void AnEncodeThatThrowsIsReportedAndTheOtherSquaresStillFlush()
+        {
+            using LiveEditCoalescer coalescer = NewCoalescer();
+            MapRegion bad = Square(50, 50);
+            //One step (-32 on plane 0) is the reserved height byte, so the terrain cannot encode.
+            bad.SetTileHeight(0, 0, 0, -32);
+            Assert.Throws<InvalidOperationException>(() => RegionCodec.EncodeTerrain(bad));
+
+            coalescer.Mark(bad);
+            coalescer.Mark(Square(51, 50));
+            time.Advance(Quiet);
+
+            LiveEditBatch batch = Assert.Single(batches);
+            Assert.Equal(
+                new[] { (LiveEditKind.Terrain, 0x3332), (LiveEditKind.Locations, 0x3332) },
+                batch.Frames.Select(f => (f.Kind, f.Id)));
+            LiveEditFailure failure = Assert.Single(batch.Failures);
+            Assert.Equal((LiveEditKind.Terrain, 0x3232), (failure.Kind, failure.Id));
+            Assert.Contains("not encodable", failure.Message);
+        }
+
+        [Fact]
+        public void ASinkThatThrowsDoesNotEscapeTheFlushAndTheNextWindowStillFlushes()
+        {
+            int calls = 0;
+            using var coalescer = new LiveEditCoalescer(
+                action => action(),
+                (kind, id) => Array.Empty<byte>(),
+                _ => { calls++; throw new InvalidOperationException("sink down"); },
+                time);
+
+            coalescer.Mark(Square(50, 50));
+            time.Advance(Quiet);
+            coalescer.Mark(Square(50, 50));
+            time.Advance(Quiet);
+
+            Assert.Equal(2, calls);
+        }
+
+        [Fact]
+        public void AnExclusiveSectionThatThrowsReportsEverySquareAsFailed()
+        {
+            using var coalescer = new LiveEditCoalescer(
+                _ => throw new InvalidOperationException("store closed"),
+                (kind, id) => Array.Empty<byte>(),
+                batches.Add,
+                time);
+
+            coalescer.Mark(Square(50, 50));
+            time.Advance(Quiet);
+
+            LiveEditBatch batch = Assert.Single(batches);
+            Assert.Empty(batch.Frames);
+            LiveEditFailure failure = Assert.Single(batch.Failures);
+            Assert.Equal((LiveEditKind.Terrain, 0x3232), (failure.Kind, failure.Id));
+            Assert.Contains("store closed", failure.Message);
+        }
+
+        [Fact]
+        public void FloorDefinitionsFlushAfterTheSquaresWithTheirCommittedBytes()
+        {
+            var reads = new List<(LiveEditKind, int)>();
+            using LiveEditCoalescer coalescer = NewCoalescer((kind, id) => {
+                reads.Add((kind, id));
+                return new[] { (byte) kind, (byte) id };
+            });
+
+            coalescer.MarkDefinition(LiveEditKind.FloorOverlay, 7);
+            coalescer.Mark(Square(50, 50));
+            coalescer.MarkDefinition(LiveEditKind.FloorUnderlay, 9);
+            coalescer.MarkDefinition(LiveEditKind.FloorOverlay, 7);
+            time.Advance(Quiet);
+
+            LiveEditBatch batch = Assert.Single(batches);
+            Assert.Equal(
+                new[] {
+                    (LiveEditKind.Terrain, 0x3232), (LiveEditKind.Locations, 0x3232),
+                    (LiveEditKind.FloorOverlay, 7), (LiveEditKind.FloorUnderlay, 9)
+                },
+                batch.Frames.Select(f => (f.Kind, f.Id)));
+            Assert.Equal(new byte[] { 5, 7 }, batch.Frames[2].Payload);
+            Assert.Equal(new byte[] { 4, 9 }, batch.Frames[3].Payload);
+            Assert.Equal(new[] { (LiveEditKind.FloorOverlay, 7), (LiveEditKind.FloorUnderlay, 9) }, reads);
+        }
+
+        [Fact]
+        public void ADefinitionThatCannotBeReadIsReportedAndSkipped()
+        {
+            using LiveEditCoalescer coalescer = NewCoalescer((kind, id) =>
+                id == 1 ? throw new InvalidOperationException("no such file") : new byte[] { 1 });
+
+            coalescer.MarkDefinition(LiveEditKind.FloorUnderlay, 1);
+            coalescer.MarkDefinition(LiveEditKind.FloorUnderlay, 2);
+            time.Advance(Quiet);
+
+            LiveEditBatch batch = Assert.Single(batches);
+            Assert.Equal((LiveEditKind.FloorUnderlay, 2), (Assert.Single(batch.Frames).Kind, batch.Frames[0].Id));
+            LiveEditFailure failure = Assert.Single(batch.Failures);
+            Assert.Equal((LiveEditKind.FloorUnderlay, 1), (failure.Kind, failure.Id));
+        }
+
+        [Theory]
+        [InlineData(LiveEditKind.Terrain)]
+        [InlineData(LiveEditKind.Locations)]
+        [InlineData(LiveEditKind.UnderwaterTerrain)]
+        [InlineData(LiveEditKind.UnderwaterLocations)]
+        [InlineData(LiveEditKind.Rebuild)]
+        public void MarkDefinitionRefusesAKindThatIsNotAFloorDefinition(LiveEditKind kind)
+        {
+            using LiveEditCoalescer coalescer = NewCoalescer();
+            Assert.Throws<ArgumentException>(() => coalescer.MarkDefinition(kind, 1));
+        }
     }
 }
