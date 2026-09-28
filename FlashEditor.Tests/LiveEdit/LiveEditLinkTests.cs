@@ -38,12 +38,14 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         /// <summary>
-        ///     Reads <paramref name="frames"/> frames off one connection, the batch end included,
-        ///     answering the batch end with 0 and every other frame with <paramref name="ack"/>.
+        ///     Reads one batch off a connection: <paramref name="frames"/> frames, each answered with
+        ///     <paramref name="ack"/>, then the batch end, answered with 0 unless
+        ///     <paramref name="answerBatchEnd"/> is false.
         /// </summary>
-        private static async Task<byte[]> ServeFrames(NetworkStream stream, int frames, byte ack = 0) {
+        private static async Task<byte[]> ServeFrames(NetworkStream stream, int frames, byte ack = 0,
+            bool answerBatchEnd = true) {
             var received = new MemoryStream();
-            for (int i = 0 ; i < frames ; i++) {
+            for (int i = 0 ; i <= frames ; i++) {
                 byte[] header = new byte[10];
                 await stream.ReadExactlyAsync(header);
                 int length = (header[6] << 24) | (header[7] << 16) | (header[8] << 8) | header[9];
@@ -51,7 +53,10 @@ namespace FlashEditor.Tests.LiveEdit {
                 await stream.ReadExactlyAsync(payload);
                 received.Write(header);
                 received.Write(payload);
-                stream.WriteByte(header[3] == (byte) LiveEditKind.BatchEnd ? (byte) 0 : ack);
+                bool batchEnd = header[3] == (byte) LiveEditKind.BatchEnd;
+                Assert.Equal(i == frames, batchEnd);
+                if (!batchEnd) stream.WriteByte(ack);
+                else if (answerBatchEnd) stream.WriteByte(0);
             }
             return received.ToArray();
         }
@@ -65,7 +70,7 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Task<byte[]> server = Task.Run(async () => {
                 using TcpClient peer = await listener.AcceptTcpClientAsync();
-                return await ServeFrames(peer.GetStream(), 3);
+                return await ServeFrames(peer.GetStream(), 2);
             });
 
             await link.Send(Batch(
@@ -117,7 +122,7 @@ namespace FlashEditor.Tests.LiveEdit {
             using var link = new LiveEditLink(Port) { Enabled = true };
             Task server = Task.Run(async () => {
                 using TcpClient peer = await listener.AcceptTcpClientAsync();
-                await ServeFrames(peer.GetStream(), 2, ack: 1);
+                await ServeFrames(peer.GetStream(), 1, ack: 1);
             });
 
             await link.Send(Batch(new LiveEditFrame(LiveEditKind.FloorOverlay, 9, new byte[] { 1 })))
@@ -150,10 +155,10 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Task<byte[]> server = Task.Run(async () => {
                 using (TcpClient peer = await listener.AcceptTcpClientAsync())
-                    await ServeFrames(peer.GetStream(), 2);
+                    await ServeFrames(peer.GetStream(), 1);
                 //The first connection is now closed, as a server restart would leave it.
                 using TcpClient again = await listener.AcceptTcpClientAsync();
-                return await ServeFrames(again.GetStream(), 2);
+                return await ServeFrames(again.GetStream(), 1);
             });
 
             await link.Send(Batch(first)).WaitAsync(Patience);
@@ -184,7 +189,7 @@ namespace FlashEditor.Tests.LiveEdit {
             try {
                 Task<byte[]> server = Task.Run(async () => {
                     using TcpClient peer = await restarted.AcceptTcpClientAsync();
-                    return await ServeFrames(peer.GetStream(), 4);
+                    return await ServeFrames(peer.GetStream(), 3);
                 });
 
                 await link.Send(Batch(next)).WaitAsync(Patience);
@@ -208,14 +213,12 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Task<byte[]> server = Task.Run(async () => {
                 using (TcpClient peer = await listener.AcceptTcpClientAsync()) {
-                    //Both frames acknowledged, then the connection dies with the batch end unread,
-                    //so a real server discards the whole batch.
-                    NetworkStream stream = peer.GetStream();
-                    await ServeFrames(stream, 2);
-                    await stream.ReadExactlyAsync(new byte[BatchEndBytes.Length]);
+                    //Both frames acknowledged, then the connection dies with the batch end
+                    //unanswered, so a real server discards the whole batch.
+                    await ServeFrames(peer.GetStream(), 2, answerBatchEnd: false);
                 }
                 using TcpClient again = await listener.AcceptTcpClientAsync();
-                return await ServeFrames(again.GetStream(), 4);
+                return await ServeFrames(again.GetStream(), 3);
             });
 
             await link.Send(Batch(terrain, locations)).WaitAsync(Patience);
@@ -244,7 +247,7 @@ namespace FlashEditor.Tests.LiveEdit {
             try {
                 Task<byte[]> server = Task.Run(async () => {
                     using TcpClient peer = await restarted.AcceptTcpClientAsync();
-                    return await ServeFrames(peer.GetStream(), 2);
+                    return await ServeFrames(peer.GetStream(), 1);
                 });
 
                 await link.Send(Batch(newer)).WaitAsync(Patience);
@@ -279,7 +282,7 @@ namespace FlashEditor.Tests.LiveEdit {
             Task<TcpClient> accepted = listener.AcceptTcpClientAsync();
             Task sent = link.Send(Batch(new LiveEditFrame(LiveEditKind.Terrain, 1, new byte[] { 1 })));
             using TcpClient peer = await accepted.WaitAsync(Patience);
-            await ServeFrames(peer.GetStream(), 2).WaitAsync(Patience);
+            await ServeFrames(peer.GetStream(), 1).WaitAsync(Patience);
             await sent.WaitAsync(Patience);
 
             link.Enabled = false;

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -178,10 +177,9 @@ namespace FlashEditor.LiveEdit {
                 return;
             }
 
-            //Indexes of the frames the server rejected on the last attempt; those are not held.
-            var rejected = new Dictionary<int, byte>();
-            bool delivered = false;
-            bool acknowledged = false;
+            //Each frame's ack on the last attempt, 0 until one arrives; a rejected frame is not held.
+            byte[] acks = new byte[encoded.Count];
+            byte? endAck = null;
             try {
                 //A connection the server dropped while idle - a restart, typically - still reads as
                 //connected until it is used, so a failure on a reused connection earns one retry on
@@ -189,17 +187,11 @@ namespace FlashEditor.LiveEdit {
                 //batch whose connection closed before its batch end.
                 for (int attempt = 0 ; ; attempt++) {
                     (NetworkStream stream, bool reused) = await Connect();
-                    rejected.Clear();
+                    Array.Clear(acks);
                     try {
-                        for (int i = 0 ; i < encoded.Count ; i++) {
-                            byte ack = await Exchange(stream, encoded[i].Bytes);
-                            if (ack != 0) rejected[i] = ack;
-                        }
-                        byte endAck = await Exchange(stream, BatchEndBytes);
-                        delivered = true;
-                        acknowledged = endAck == 0 && rejected.Count < encoded.Count;
-                        if (endAck != 0)
-                            errors.Add($"Server rejected the batch end (status {endAck}); it may not speak this protocol.");
+                        for (int i = 0 ; i < encoded.Count ; i++)
+                            acks[i] = await Exchange(stream, encoded[i].Bytes);
+                        endAck = await Exchange(stream, BatchEndBytes);
                         break;
                     }
                     catch (IOException) when (reused && attempt == 0 && !disposal.IsCancellationRequested) {
@@ -213,19 +205,22 @@ namespace FlashEditor.LiveEdit {
                 errors.Add(e.Message);
             }
 
-            foreach ((int i, byte status) in rejected) {
-                LiveEditFrame frame = encoded[i].Frame;
-                errors.Add($"Server rejected {frame.Kind} {frame.Id} (status {status}).");
-            }
-
             //Nothing counts as delivered until the batch end is acknowledged, frames the server
             //acknowledged included: the server drops the whole batch when the connection closes first.
-            held = delivered
-                ? new List<LiveEditFrame>()
-                : encoded.Where((_, i) => !rejected.ContainsKey(i)).Select(e => e.Frame).ToList();
+            var unsent = new List<LiveEditFrame>();
+            for (int i = 0 ; i < encoded.Count ; i++) {
+                if (acks[i] != 0)
+                    errors.Add($"Server rejected {encoded[i].Frame.Kind} {encoded[i].Frame.Id} (status {acks[i]}).");
+                else if (endAck == null)
+                    unsent.Add(encoded[i].Frame);
+            }
+            held = unsent;
+            if (endAck is > 0)
+                errors.Add($"Server rejected the batch end (status {endAck}); it may not speak this protocol.");
 
-            LiveEditLinkStatus outcome = delivered ? LiveEditLinkStatus.Connected : LiveEditLinkStatus.Disconnected;
-            Update(s => s == LiveEditLinkStatus.Disabled ? s : outcome,
+            bool acknowledged = endAck == 0 && Array.IndexOf(acks, (byte) 0) >= 0;
+            Update(s => s == LiveEditLinkStatus.Disabled ? s
+                    : endAck == null ? LiveEditLinkStatus.Disconnected : LiveEditLinkStatus.Connected,
                 acknowledged ? time.GetUtcNow() : null, errors);
         }
 

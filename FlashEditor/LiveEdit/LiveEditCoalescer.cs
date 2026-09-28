@@ -113,22 +113,7 @@ namespace FlashEditor.LiveEdit {
             lock (flushGate) {
                 var frames = new List<LiveEditFrame>();
                 var failures = new List<LiveEditFailure>();
-                if (takenSquares.Count > 0) {
-                    bool ran = false;
-                    try {
-                        runExclusive(() => {
-                            //Each square catches its own failure, so this runs to the end once entered.
-                            foreach (MapRegion square in takenSquares)
-                                EncodeSquare(square, frames, failures);
-                            ran = true;
-                        });
-                    }
-                    catch (Exception e) {
-                        if (!ran)
-                            foreach (MapRegion square in takenSquares)
-                                failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
-                    }
-                }
+                EncodeSquares(takenSquares, frames, failures);
                 foreach ((LiveEditKind Kind, int Id) definition in takenDefinitions)
                     ReadDefinition(definition, frames, failures);
 
@@ -138,6 +123,25 @@ namespace FlashEditor.LiveEdit {
                 catch {
                     //Discarded by contract; see the sink parameter on the constructor.
                 }
+            }
+        }
+
+        private void EncodeSquares(List<MapRegion> taken, List<LiveEditFrame> frames, List<LiveEditFailure> failures) {
+            if (taken.Count == 0) return;
+
+            bool ran = false;
+            try {
+                runExclusive(() => {
+                    //Each square catches its own failure, so this runs to the end once entered.
+                    foreach (MapRegion square in taken)
+                        EncodeSquare(square, frames, failures);
+                    ran = true;
+                });
+            }
+            catch (Exception e) {
+                if (!ran)
+                    foreach (MapRegion square in taken)
+                        failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
             }
         }
 

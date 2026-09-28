@@ -48,7 +48,7 @@ namespace FlashEditor.LiveEdit {
             if (frame.Payload.Length > MaxPayloadLength)
                 throw new ArgumentException(
                     $"Payload of {frame.Payload.Length} bytes is over the {MaxPayloadLength}-byte limit.", nameof(frame));
-            if (!IsWellFormedBatchEnd(frame.Kind, frame.Id, frame.Payload.Length))
+            if (IsMalformedBatchEnd(frame.Kind, frame.Id, frame.Payload.Length))
                 throw new ArgumentException("A batch end carries id 0 and no payload.", nameof(frame));
 
             byte[] bytes = new byte[HeaderLength + frame.Payload.Length];
@@ -78,6 +78,7 @@ namespace FlashEditor.LiveEdit {
                 throw new LiveEditProtocolException($"Bad magic 0x{magic:X4}; expected 0x{Magic:X4}.");
             if (bytes[2] != Version)
                 throw new LiveEditProtocolException($"Unsupported version {bytes[2]}; expected {Version}.");
+            var kind = (LiveEditKind) bytes[3];
             if (!IsLegAKind(bytes[3]))
                 throw new LiveEditProtocolException($"Kind {bytes[3]} is not carried on leg A.");
 
@@ -88,17 +89,17 @@ namespace FlashEditor.LiveEdit {
             if (bytes.Length != HeaderLength + length)
                 throw new LiveEditProtocolException(
                     $"Frame declares {length} payload bytes but carries {bytes.Length - HeaderLength}.");
-            if (!IsWellFormedBatchEnd((LiveEditKind) bytes[3], id, (int) length))
+            if (IsMalformedBatchEnd(kind, id, (int) length))
                 throw new LiveEditProtocolException("A batch end carries id 0 and no payload.");
 
-            return new LiveEditFrame((LiveEditKind) bytes[3], id, bytes[HeaderLength..].ToArray());
+            return new LiveEditFrame(kind, id, bytes[HeaderLength..].ToArray());
         }
 
         private static bool IsLegAKind(byte kind) =>
             kind <= (byte) LiveEditKind.FloorOverlay || kind == (byte) LiveEditKind.BatchEnd;
 
-        private static bool IsWellFormedBatchEnd(LiveEditKind kind, int id, int length) =>
-            kind != LiveEditKind.BatchEnd || (id == 0 && length == 0);
+        private static bool IsMalformedBatchEnd(LiveEditKind kind, int id, int length) =>
+            kind == LiveEditKind.BatchEnd && (id != 0 || length != 0);
     }
 
     /// <summary>

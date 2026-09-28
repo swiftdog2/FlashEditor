@@ -161,10 +161,9 @@ namespace FlashEditor.Tests.LiveEdit {
 
         [Fact]
         public void AnExclusiveSectionThatRefusesDropsTheSquaresButStillFlushesTheDefinitions() {
-            bool ran = false;
             using var coalescer = new LiveEditCoalescer(
                 _ => throw new InvalidOperationException("no map store is bound"),
-                (kind, id) => { ran = true; return new byte[] { 9 }; },
+                (kind, id) => new byte[] { 9 },
                 batches.Add,
                 time);
 
@@ -178,7 +177,6 @@ namespace FlashEditor.Tests.LiveEdit {
             LiveEditFailure failure = Assert.Single(batch.Failures);
             Assert.Equal((LiveEditKind.Terrain, 0x3232), (failure.Kind, failure.Id));
             Assert.Contains("no map store is bound", failure.Message);
-            Assert.True(ran);
         }
 
         [Fact]
