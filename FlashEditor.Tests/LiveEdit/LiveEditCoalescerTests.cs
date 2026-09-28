@@ -7,15 +7,13 @@ using Xunit;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
-namespace FlashEditor.Tests.LiveEdit
-{
+namespace FlashEditor.Tests.LiveEdit {
     /// <summary>
     ///     Pins the coalescer at its public seam: what it marks, when it flushes, and which frames
     ///     a flush hands on. Time is a <see cref="ManualTimeProvider"/>, so every window boundary
     ///     is exact rather than raced against a real timer.
     /// </summary>
-    public sealed class LiveEditCoalescerTests
-    {
+    public sealed class LiveEditCoalescerTests {
         private static readonly TimeSpan Quiet = TimeSpan.FromMilliseconds(150);
 
         private readonly ManualTimeProvider time = new ManualTimeProvider();
@@ -33,8 +31,7 @@ namespace FlashEditor.Tests.LiveEdit
             new MapRegion(MapSquareNames.RegionId(x, y), layer);
 
         [Fact]
-        public void ManyMarksInsideTheQuietPeriodFlushOnceWithEachSquareOnce()
-        {
+        public void ManyMarksInsideTheQuietPeriodFlushOnceWithEachSquareOnce() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             MapRegion a = Square(50, 50);
             MapRegion b = Square(51, 50);
@@ -63,8 +60,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void MarksAfterAFlushOpenANewWindowHoldingOnlyTheNewSquares()
-        {
+        public void MarksAfterAFlushOpenANewWindowHoldingOnlyTheNewSquares() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             coalescer.Mark(Square(50, 50));
             time.Advance(Quiet);
@@ -80,8 +76,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void NothingMarkedFlushesNothing()
-        {
+        public void NothingMarkedFlushesNothing() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             coalescer.Mark(Square(50, 50));
             time.Advance(Quiet);
@@ -91,8 +86,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void AnUnderwaterSquareFlushesAsItsUnderwaterFamily()
-        {
+        public void AnUnderwaterSquareFlushesAsItsUnderwaterFamily() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             MapRegion surface = Square(50, 50);
             MapRegion underwater = Square(50, 50, MapSquareLayer.Underwater);
@@ -110,8 +104,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void AnEncodeThatThrowsIsReportedAndTheOtherSquaresStillFlush()
-        {
+        public void AnEncodeThatThrowsIsReportedAndTheOtherSquaresStillFlush() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             MapRegion bad = Square(50, 50);
             //One step (-32 on plane 0) is the reserved height byte, so the terrain cannot encode.
@@ -132,8 +125,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void ASinkThatThrowsDoesNotEscapeTheFlushAndTheNextWindowStillFlushes()
-        {
+        public void ASinkThatThrowsDoesNotEscapeTheFlushAndTheNextWindowStillFlushes() {
             int calls = 0;
             using var coalescer = new LiveEditCoalescer(
                 action => action(),
@@ -150,8 +142,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void AnExclusiveSectionThatThrowsReportsEverySquareAsFailed()
-        {
+        public void AnExclusiveSectionThatThrowsReportsEverySquareAsFailed() {
             using var coalescer = new LiveEditCoalescer(
                 _ => throw new InvalidOperationException("store closed"),
                 (kind, id) => Array.Empty<byte>(),
@@ -169,8 +160,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void FloorDefinitionsFlushAfterTheSquaresWithTheirCommittedBytes()
-        {
+        public void FloorDefinitionsFlushAfterTheSquaresWithTheirCommittedBytes() {
             var reads = new List<(LiveEditKind, int)>();
             using LiveEditCoalescer coalescer = NewCoalescer((kind, id) => {
                 reads.Add((kind, id));
@@ -196,8 +186,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public void ADefinitionThatCannotBeReadIsReportedAndSkipped()
-        {
+        public void ADefinitionThatCannotBeReadIsReportedAndSkipped() {
             using LiveEditCoalescer coalescer = NewCoalescer((kind, id) =>
                 id == 1 ? throw new InvalidOperationException("no such file") : new byte[] { 1 });
 
@@ -217,8 +206,7 @@ namespace FlashEditor.Tests.LiveEdit
         [InlineData(LiveEditKind.UnderwaterTerrain)]
         [InlineData(LiveEditKind.UnderwaterLocations)]
         [InlineData(LiveEditKind.Rebuild)]
-        public void MarkDefinitionRefusesAKindThatIsNotAFloorDefinition(LiveEditKind kind)
-        {
+        public void MarkDefinitionRefusesAKindThatIsNotAFloorDefinition(LiveEditKind kind) {
             using LiveEditCoalescer coalescer = NewCoalescer();
             Assert.Throws<ArgumentException>(() => coalescer.MarkDefinition(kind, 1));
         }

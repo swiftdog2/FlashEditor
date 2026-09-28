@@ -114,17 +114,18 @@ namespace FlashEditor.LiveEdit {
                 int squaresDone = 0, definitionsDone = 0;
                 try {
                     runExclusive(() => {
-                        for (; squaresDone < takenSquares.Count; squaresDone++)
+                        for (; squaresDone < takenSquares.Count ; squaresDone++)
                             EncodeSquare(takenSquares[squaresDone], frames, failures);
-                        for (; definitionsDone < takenDefinitions.Count; definitionsDone++)
+                        for (; definitionsDone < takenDefinitions.Count ; definitionsDone++)
                             ReadDefinition(takenDefinitions[definitionsDone], frames, failures);
                     });
-                } catch (Exception e) {
-                    for (; squaresDone < takenSquares.Count; squaresDone++) {
+                }
+                catch (Exception e) {
+                    for (; squaresDone < takenSquares.Count ; squaresDone++) {
                         MapRegion square = takenSquares[squaresDone];
                         failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
                     }
-                    for (; definitionsDone < takenDefinitions.Count; definitionsDone++) {
+                    for (; definitionsDone < takenDefinitions.Count ; definitionsDone++) {
                         (LiveEditKind kind, int id) = takenDefinitions[definitionsDone];
                         failures.Add(new LiveEditFailure(kind, id, e.Message));
                     }
@@ -132,7 +133,8 @@ namespace FlashEditor.LiveEdit {
 
                 try {
                     sink(new LiveEditBatch(frames, failures));
-                } catch {
+                }
+                catch {
                     //Discarded by contract; see the sink parameter on the constructor.
                 }
             }
@@ -148,7 +150,8 @@ namespace FlashEditor.LiveEdit {
                 byte[] locations = RegionCodec.EncodeLocations(square);
                 frames.Add(new LiveEditFrame(terrainKind, id, terrain));
                 frames.Add(new LiveEditFrame(locationsKind, id, locations));
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 failures.Add(new LiveEditFailure(attempting, id, e.Message));
             }
         }
@@ -159,7 +162,8 @@ namespace FlashEditor.LiveEdit {
                 byte[] bytes = readDefinition(definition.Kind, definition.Id)
                                ?? throw new InvalidOperationException("The definition source returned no bytes.");
                 frames.Add(new LiveEditFrame(definition.Kind, definition.Id, bytes));
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 failures.Add(new LiveEditFailure(definition.Kind, definition.Id, e.Message));
             }
         }

@@ -8,14 +8,12 @@ using System.Threading.Tasks;
 using FlashEditor.LiveEdit;
 using Xunit;
 
-namespace FlashEditor.Tests.LiveEdit
-{
+namespace FlashEditor.Tests.LiveEdit {
     /// <summary>
     ///     Drives the link against a real loopback listener on an ephemeral port, standing in for
     ///     the HydraScape server's leg-A endpoint. Nothing here reaches a live server.
     /// </summary>
-    public sealed class LiveEditLinkTests : IDisposable
-    {
+    public sealed class LiveEditLinkTests : IDisposable {
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
         private readonly TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
@@ -30,11 +28,9 @@ namespace FlashEditor.Tests.LiveEdit
             new LiveEditBatch(frames, Array.Empty<LiveEditFailure>());
 
         /// <summary>Reads <paramref name="frames"/> frames off one connection, answering each with <paramref name="ack"/>.</summary>
-        private static async Task<byte[]> ServeFrames(NetworkStream stream, int frames, byte ack = 0)
-        {
+        private static async Task<byte[]> ServeFrames(NetworkStream stream, int frames, byte ack = 0) {
             var received = new MemoryStream();
-            for (int i = 0; i < frames; i++)
-            {
+            for (int i = 0 ; i < frames ; i++) {
                 byte[] header = new byte[10];
                 await stream.ReadExactlyAsync(header);
                 int length = (header[6] << 24) | (header[7] << 16) | (header[8] << 8) | header[9];
@@ -48,8 +44,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task ABatchArrivesAsTheExactFramesAndTheLinkReportsConnectedWithAnAckTime()
-        {
+        public async Task ABatchArrivesAsTheExactFramesAndTheLinkReportsConnectedWithAnAckTime() {
             var time = new ManualTimeProvider();
             using var link = new LiveEditLink(Port, time) { Enabled = true };
             Assert.Equal(LiveEditLinkStatus.Disconnected, link.Status);
@@ -75,8 +70,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task WithNoListenerTheLinkReportsDisconnectedAndNothingEscapes()
-        {
+        public async Task WithNoListenerTheLinkReportsDisconnectedAndNothingEscapes() {
             int port = Port;
             listener.Stop();
             var changes = 0;
@@ -93,8 +87,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task ADisabledLinkSendsNothingAndSaysSo()
-        {
+        public async Task ADisabledLinkSendsNothingAndSaysSo() {
             using var link = new LiveEditLink(Port);
             Assert.Equal(LiveEditLinkStatus.Disabled, link.Status);
 
@@ -106,8 +99,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task ARejectedFrameIsReportedWithoutDroppingTheConnection()
-        {
+        public async Task ARejectedFrameIsReportedWithoutDroppingTheConnection() {
             using var link = new LiveEditLink(Port) { Enabled = true };
             Task server = Task.Run(async () => {
                 using TcpClient peer = await listener.AcceptTcpClientAsync();
@@ -124,8 +116,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task SkippedSquaresInABatchAreReportedAsTheLastError()
-        {
+        public async Task SkippedSquaresInABatchAreReportedAsTheLastError() {
             using var link = new LiveEditLink(Port) { Enabled = true };
             await link.Send(new LiveEditBatch(
                     Array.Empty<LiveEditFrame>(),
@@ -136,8 +127,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task AfterTheServerDropsTheConnectionTheNextSendReconnectsAndDelivers()
-        {
+        public async Task AfterTheServerDropsTheConnectionTheNextSendReconnectsAndDelivers() {
             var time = new ManualTimeProvider();
             using var link = new LiveEditLink(Port, time) { Enabled = true };
             var first = new LiveEditFrame(LiveEditKind.Terrain, 1, new byte[] { 1 });
@@ -161,8 +151,7 @@ namespace FlashEditor.Tests.LiveEdit
         }
 
         [Fact]
-        public async Task DisablingALiveLinkClosesTheConnection()
-        {
+        public async Task DisablingALiveLinkClosesTheConnection() {
             using var link = new LiveEditLink(Port) { Enabled = true };
             Task<TcpClient> accepted = listener.AcceptTcpClientAsync();
             Task sent = link.Send(Batch(new LiveEditFrame(LiveEditKind.Terrain, 1, new byte[] { 1 })));

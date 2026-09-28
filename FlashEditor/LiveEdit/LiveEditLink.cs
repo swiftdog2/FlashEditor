@@ -137,12 +137,13 @@ namespace FlashEditor.LiveEdit {
             ArgumentNullException.ThrowIfNull(batch);
             var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             if (!Enqueue(async () => {
-                    try {
-                        await Deliver(batch);
-                    } finally {
-                        done.TrySetResult();
-                    }
-                }))
+                try {
+                    await Deliver(batch);
+                }
+                finally {
+                    done.TrySetResult();
+                }
+            }))
                 done.TrySetResult();
             return done.Task;
         }
@@ -158,7 +159,8 @@ namespace FlashEditor.LiveEdit {
             foreach (LiveEditFrame frame in batch.Frames) {
                 try {
                     encoded.Add((frame, LiveEditFrameCodec.Encode(frame)));
-                } catch (ArgumentException e) {
+                }
+                catch (ArgumentException e) {
                     errors.Add($"Skipped {frame.Kind} {frame.Id}: {e.Message}");
                 }
             }
@@ -174,18 +176,19 @@ namespace FlashEditor.LiveEdit {
                 //A connection the server dropped while idle - a restart, typically - still reads as
                 //connected until it is used, so a failure on a reused connection earns one retry on
                 //a fresh one. Resending frames that did arrive is harmless: each is a full replacement.
-                for (int attempt = 0; ; attempt++) {
+                for (int attempt = 0 ; ; attempt++) {
                     bool reused = client is { Connected: true };
                     try {
                         NetworkStream stream = await Connect();
-                        for (; next < encoded.Count; next++) {
+                        for (; next < encoded.Count ; next++) {
                             (LiveEditFrame frame, byte[] bytes) = encoded[next];
                             byte ack = await Exchange(stream, bytes);
                             if (ack == 0) acknowledged = true;
                             else errors.Add($"Server rejected {frame.Kind} {frame.Id} (status {ack}).");
                         }
                         break;
-                    } catch (IOException) when (reused && attempt == 0 && !disposal.IsCancellationRequested) {
+                    }
+                    catch (IOException) when (reused && attempt == 0 && !disposal.IsCancellationRequested) {
                         CloseConnection();
                     }
                 }
@@ -195,7 +198,8 @@ namespace FlashEditor.LiveEdit {
                     acknowledged ? now : null,
                     errors.Count == 0 ? null : string.Join(Environment.NewLine, errors),
                     replaceError: true);
-            } catch (Exception e) when (e is IOException or SocketException or OperationCanceledException
+            }
+            catch (Exception e) when (e is IOException or SocketException or OperationCanceledException
                                             or ObjectDisposedException) {
                 CloseConnection();
                 errors.Add(e.Message);
@@ -214,7 +218,8 @@ namespace FlashEditor.LiveEdit {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(disposal.Token);
                 timeout.CancelAfter(ConnectTimeout);
                 await fresh.ConnectAsync(IPAddress.Loopback, Port, timeout.Token);
-            } catch {
+            }
+            catch {
                 fresh.Dispose();
                 throw;
             }
@@ -249,18 +254,22 @@ namespace FlashEditor.LiveEdit {
                 await foreach (Func<Task> item in work.Reader.ReadAllAsync(disposal.Token)) {
                     try {
                         await item();
-                    } catch {
+                    }
+                    catch {
                         //Deliver catches every network failure; this guards the worker against
                         //anything else ending it, which would silently stop all future pushes.
                     }
                 }
-            } catch (OperationCanceledException) {
-            } finally {
+            }
+            catch (OperationCanceledException) {
+            }
+            finally {
                 //Run what is left so every Send task completes; Deliver returns at once once disposed.
                 while (work.Reader.TryRead(out Func<Task>? item)) {
                     try {
                         await item();
-                    } catch {
+                    }
+                    catch {
                     }
                 }
                 CloseConnection();
@@ -290,7 +299,8 @@ namespace FlashEditor.LiveEdit {
             disposal.Cancel();
             try {
                 worker.Wait(TimeSpan.FromSeconds(1));
-            } catch (AggregateException) {
+            }
+            catch (AggregateException) {
             }
             disposal.Dispose();
         }
