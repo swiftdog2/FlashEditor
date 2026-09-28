@@ -76,13 +76,17 @@ Worked example: square 50,50 (`0x3232`) terrain with payload `01 02 03` is
   order.
   - `0` - well formed and accepted for the engine. The server acks on its reader thread and the
     engine applies the batch later, so a `0` never means the frame has been applied.
-  - `1` - rejected: a kind outside 0 to 5 and 7, or a length over the limit. Every 16-bit id is a
-    valid square or definition id, so the id is never a reason.
+  - `1` - rejected: a kind outside 0 to 5 and 7, a length over the limit, or a kind-7 frame
+    whose id or length is not 0. For kinds 0 to 5 every 16-bit id is a valid square or
+    definition id, so the id is never a reason there.
 - A frame with a bad kind is rejected only after its payload has been read, so the stream stays
   in sync and the connection stays open.
 - A bad magic or version **closes the connection without an ack**. The sender cannot tell a
   mismatched peer from a dead one by waiting, so it treats the missing ack as a failed push.
 - The sender may pipeline, but must read one ack per frame it wrote.
+- If the kind-7 ack is lost, so the editor's ack timeout fires after the server has already
+  queued the batch, the editor holds and resends the whole batch and the server applies it twice.
+  Frames are full replacements, so the only cost is one extra collision and scene rebuild.
 
 ### Limit
 
