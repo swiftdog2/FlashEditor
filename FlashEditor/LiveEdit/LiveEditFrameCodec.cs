@@ -23,9 +23,10 @@ namespace FlashEditor.LiveEdit {
         public const int HeaderLength = 10;
 
         /// <summary>
-        ///     The largest payload the server accepts. Loose map files reach 63814 bytes, so this
-        ///     leaves room; a frame over it is rejected and the connection closed, because the
-        ///     stream cannot be resynchronised after a length nobody will read.
+        ///     The largest payload the server accepts, and so the largest file that can be pushed,
+        ///     since a frame always carries a whole file. A frame over it is rejected and the
+        ///     connection closed, because the stream cannot be resynchronised after a length nobody
+        ///     will read.
         /// </summary>
         public const int MaxPayloadLength = 262144;
 

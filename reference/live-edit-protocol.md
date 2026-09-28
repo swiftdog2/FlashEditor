@@ -23,6 +23,7 @@ Both legs share one kind byte.
 | 4 | floor underlay definition (index 2, group 1) | definition id = file id |
 | 5 | floor overlay definition (index 2, group 4) | definition id = file id |
 | 6 | rebuild (server to client only; no payload) | 0 |
+| 7 | batch end (editor to server only; no payload) | 0 |
 
 **Map payloads (kinds 0 to 3)** are the decompressed file bytes exactly as the cache group's file
 0 holds them after container decode and decryption - what `RegionCodec.EncodeTerrain` and
@@ -47,7 +48,7 @@ ack   := status:u8
 |---|---|---|
 | 0 | 2 | magic `0x46 0x4C` |
 | 2 | 1 | version `0x01` |
-| 3 | 1 | kind, 0 to 5 |
+| 3 | 1 | kind, 0 to 5 or 7 |
 | 4 | 2 | id |
 | 6 | 4 | payload length |
 | 10 | length | payload |
@@ -58,12 +59,25 @@ Worked example: square 50,50 (`0x3232`) terrain with payload `01 02 03` is
 46 4C 01 00 32 32 00 00 00 03 01 02 03
 ```
 
+### Batch end
+
+- Every editor flush is sent as its frames followed by one kind-7 frame, `id = 0`, `length = 0`.
+  A flush with no frames sends nothing, not even the batch end.
+- The server holds a connection's frames until kind 7 arrives, then hands the whole batch to the
+  engine thread at once, so one flush is applied in one drain: one collision rebuild per square,
+  never from a new `m` beside an old `l`, and one kind-6 rebuild per player.
+- Frames held when the connection closes are **discarded**. A sender therefore counts no frame of
+  a batch as delivered until the batch end is acknowledged, and resends the whole batch after a
+  connection failure, including frames that were individually acknowledged.
+
 ### Acknowledgement
 
-- The server replies with **exactly one ack byte per frame**, in frame order.
-  - `0` - queued. The server acks on its reader thread and applies the frame later, on the engine
-    thread, so a `0` says the frame was well formed, not that it has been applied.
-  - `1` - rejected: a kind outside 0 to 5, or a length over the limit. The id is not checked.
+- The server replies with **exactly one ack byte per frame**, the batch end included, in frame
+  order.
+  - `0` - well formed and accepted for the engine. The server acks on its reader thread and the
+    engine applies the batch later, so a `0` never means the frame has been applied.
+  - `1` - rejected: a kind outside 0 to 5 and 7, or a length over the limit. Every 16-bit id is a
+    valid square or definition id, so the id is never a reason.
 - A frame with a bad kind is rejected only after its payload has been read, so the stream stays
   in sync and the connection stays open.
 - A bad magic or version **closes the connection without an ack**. The sender cannot tell a
@@ -75,7 +89,8 @@ Worked example: square 50,50 (`0x3232`) terrain with payload `01 02 03` is
 - Maximum payload length: **262144** bytes. A frame declaring more is rejected with status `1`
   and the connection is then closed, because the declared payload is never read and the stream
   cannot be resynchronised past it. A sender must not rely on the server skipping it.
-- Loose map files reach 63814 bytes, so every real map file fits one frame.
+- Every map file must fit one frame under this limit: a frame never carries a delta or a part of
+  a file, so a file over it cannot be pushed at all.
 
 ## Leg B - server to client
 
