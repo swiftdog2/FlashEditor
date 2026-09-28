@@ -61,9 +61,11 @@ Worked example: square 50,50 (`0x3232`) terrain with payload `01 02 03` is
 ### Acknowledgement
 
 - The server replies with **exactly one ack byte per frame**, in frame order.
-  - `0` - applied or queued.
-  - `1` - rejected: a kind outside 0 to 5, an id out of range for the kind, or a length over the
-    limit.
+  - `0` - queued. The server acks on its reader thread and applies the frame later, on the engine
+    thread, so a `0` says the frame was well formed, not that it has been applied.
+  - `1` - rejected: a kind outside 0 to 5, or a length over the limit. The id is not checked.
+- A frame with a bad kind is rejected only after its payload has been read, so the stream stays
+  in sync and the connection stays open.
 - A bad magic or version **closes the connection without an ack**. The sender cannot tell a
   mismatched peer from a dead one by waiting, so it treats the missing ack as a failed push.
 - The sender may pipeline, but must read one ack per frame it wrote.
@@ -110,10 +112,26 @@ The client reassembles per `(kind, id)`:
 
 - `offset == 0` starts a new buffer of `total` bytes, discarding any partial one for that key.
 - A chunk whose `offset` is not the end of the previous chunk discards the partial buffer.
+- A chunk whose `total` differs from the partial buffer's, or which would run past `total`, also
+  discards the partial buffer.
 - The payload is applied when `offset + chunk.length == total`.
+- A body shorter than 12 bytes, or with a version other than 1, a kind over 6, or a `total` over
+  262144, is ignored.
 
 ### Rebuild
 
 Kind 6 has `id = 0`, `total = 0`, `offset = 0` and no chunk. It asks the client to rebuild the
-scene if it is in a built state. The server sends one after each applied batch, and after the
-overrides it resends on every region send, so a batch costs one rebuild rather than one per file.
+scene if it is in a built state. The client reads only its version and kind, but still ignores
+a body shorter than 12 bytes, so the header is sent in full. The server sends one after each
+applied batch, and after the overrides it resends on every region send, so a batch costs one
+rebuild rather than one per file.
+
+## Lifetime
+
+- The server keeps the latest payload per `(kind, id)` until it restarts. After every region
+  packet it sends a player, it resends every map payload inside the new area, every floor
+  definition, then one rebuild.
+- The client keeps every completed payload until it returns to the login screen, which clears
+  them.
+- A map payload for a square with no group in the client's cache is kept but never read, because
+  the client's map loader skips such a square.
