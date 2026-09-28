@@ -153,6 +153,16 @@ namespace FlashEditor.LiveEdit {
             return done.Task;
         }
 
+        /// <summary>
+        ///     Drops every held frame without closing the connection or changing
+        ///     <see cref="Status"/>. Returns at once; a batch sent before the call is delivered
+        ///     first and anything it leaves held is dropped too.
+        /// </summary>
+        public void Reset() => Enqueue(() => {
+            held = new List<LiveEditFrame>();
+            return Task.CompletedTask;
+        });
+
         private async Task Deliver(LiveEditBatch batch) {
             if (!Enabled || disposal.IsCancellationRequested) return;
 

@@ -259,6 +259,54 @@ namespace FlashEditor.Tests.LiveEdit {
             }
         }
 
+        [Fact]
+        public async Task FramesHeldAcrossAnOutageAreNotSentAfterAReset() {
+            int port = Port;
+            listener.Stop();
+            using var link = new LiveEditLink(port) { Enabled = true };
+            var missed = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var next = new LiveEditFrame(LiveEditKind.Locations, 8, new byte[] { 2 });
+
+            await link.Send(Batch(missed)).WaitAsync(Patience);
+            link.Reset();
+            Assert.Equal(LiveEditLinkStatus.Disconnected, link.Status);
+
+            var restarted = new TcpListener(IPAddress.Loopback, port);
+            restarted.Start();
+            try {
+                Task<byte[]> server = Task.Run(async () => {
+                    using TcpClient peer = await restarted.AcceptTcpClientAsync();
+                    return await ServeFrames(peer.GetStream(), 1);
+                });
+
+                await link.Send(Batch(next)).WaitAsync(Patience);
+
+                Assert.Equal(Wire(next), await server.WaitAsync(Patience));
+            }
+            finally {
+                restarted.Stop();
+            }
+        }
+
+        [Fact]
+        public async Task AResetKeepsTheConnectionOpen() {
+            using var link = new LiveEditLink(Port) { Enabled = true };
+            var first = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var second = new LiveEditFrame(LiveEditKind.Terrain, 8, new byte[] { 2 });
+            Task<byte[]> server = Task.Run(async () => {
+                using TcpClient peer = await listener.AcceptTcpClientAsync();
+                await ServeFrames(peer.GetStream(), 1);
+                return await ServeFrames(peer.GetStream(), 1);
+            });
+
+            await link.Send(Batch(first)).WaitAsync(Patience);
+            link.Reset();
+            await link.Send(Batch(second)).WaitAsync(Patience);
+
+            Assert.Equal(Wire(second), await server.WaitAsync(Patience));
+            Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
+        }
+
         [Theory]
         [InlineData(0, false)]
         [InlineData(-1, false)]
