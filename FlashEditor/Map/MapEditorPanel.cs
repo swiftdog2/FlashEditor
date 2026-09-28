@@ -2767,7 +2767,7 @@ namespace FlashEditor.Map {
         /// </remarks>
         /// <exception cref="InvalidOperationException">No store is bound; the action did not run.</exception>
         public void RunLocked(Action action) {
-            if (action == null) throw new ArgumentNullException(nameof(action));
+            ArgumentNullException.ThrowIfNull(action);
 
             MapSquareStore bound = store
                 ?? throw new InvalidOperationException("No map is loaded, so the map square was not encoded for live preview.");
