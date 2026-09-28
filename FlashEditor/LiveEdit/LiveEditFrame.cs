@@ -13,5 +13,8 @@ namespace FlashEditor.LiveEdit {
     public sealed record LiveEditFrame(LiveEditKind Kind, int Id, byte[] Payload) {
         /// <summary>The payload, never null.</summary>
         public byte[] Payload { get; init; } = Payload ?? throw new ArgumentNullException(nameof(Payload));
+
+        /// <summary>The one valid <see cref="LiveEditKind.BatchEnd"/> frame.</summary>
+        public static LiveEditFrame BatchEnd { get; } = new LiveEditFrame(LiveEditKind.BatchEnd, 0, Array.Empty<byte>());
     }
 }

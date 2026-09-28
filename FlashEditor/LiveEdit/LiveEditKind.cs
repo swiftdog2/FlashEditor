@@ -27,6 +27,13 @@ namespace FlashEditor.LiveEdit {
         ///     A scene rebuild request. Server to client only: the editor never sends it and the
         ///     server rejects it on leg A.
         /// </summary>
-        Rebuild = 6
+        Rebuild = 6,
+
+        /// <summary>
+        ///     The end of one editor flush. Editor to server only, always id 0 with no payload: the
+        ///     server holds a connection's frames until it arrives and applies them in one drain,
+        ///     and discards them if the connection closes first.
+        /// </summary>
+        BatchEnd = 7
     }
 }

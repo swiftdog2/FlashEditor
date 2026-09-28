@@ -33,9 +33,10 @@ namespace FlashEditor.LiveEdit {
         ///     Encodes one frame.
         /// </summary>
         /// <exception cref="ArgumentException">
-        ///     The kind is not one leg A carries (0 to 5), the id does not fit 16 bits, or the
-        ///     payload is over <see cref="MaxPayloadLength"/>. The server would reject any of them,
-        ///     and an oversize one would cost the connection.
+        ///     The kind is not one leg A carries (0 to 5 and 7), the id does not fit 16 bits, the
+        ///     payload is over <see cref="MaxPayloadLength"/>, or a batch end carries an id or a
+        ///     payload. The server would reject any of them, and an oversize one would cost the
+        ///     connection.
         /// </exception>
         public static byte[] Encode(LiveEditFrame frame) {
             ArgumentNullException.ThrowIfNull(frame);
@@ -46,6 +47,8 @@ namespace FlashEditor.LiveEdit {
             if (frame.Payload.Length > MaxPayloadLength)
                 throw new ArgumentException(
                     $"Payload of {frame.Payload.Length} bytes is over the {MaxPayloadLength}-byte limit.", nameof(frame));
+            if (!IsWellFormedBatchEnd(frame.Kind, frame.Id, frame.Payload.Length))
+                throw new ArgumentException("A batch end carries id 0 and no payload.", nameof(frame));
 
             byte[] bytes = new byte[HeaderLength + frame.Payload.Length];
             Span<byte> header = bytes;
@@ -62,8 +65,8 @@ namespace FlashEditor.LiveEdit {
         ///     Decodes exactly one frame occupying all of <paramref name="bytes"/>.
         /// </summary>
         /// <exception cref="LiveEditProtocolException">
-        ///     Bad magic, version or kind, a length over <see cref="MaxPayloadLength"/>, or a buffer
-        ///     that is not exactly one frame long.
+        ///     Bad magic, version or kind, a length over <see cref="MaxPayloadLength"/>, a batch end
+        ///     with an id or a payload, or a buffer that is not exactly one frame long.
         /// </exception>
         public static LiveEditFrame Decode(ReadOnlySpan<byte> bytes) {
             if (bytes.Length < HeaderLength)
@@ -84,11 +87,17 @@ namespace FlashEditor.LiveEdit {
             if (bytes.Length != HeaderLength + length)
                 throw new LiveEditProtocolException(
                     $"Frame declares {length} payload bytes but carries {bytes.Length - HeaderLength}.");
+            if (!IsWellFormedBatchEnd((LiveEditKind) bytes[3], id, (int) length))
+                throw new LiveEditProtocolException("A batch end carries id 0 and no payload.");
 
             return new LiveEditFrame((LiveEditKind) bytes[3], id, bytes[HeaderLength..].ToArray());
         }
 
-        private static bool IsLegAKind(byte kind) => kind <= (byte) LiveEditKind.FloorOverlay;
+        private static bool IsLegAKind(byte kind) =>
+            kind <= (byte) LiveEditKind.FloorOverlay || kind == (byte) LiveEditKind.BatchEnd;
+
+        private static bool IsWellFormedBatchEnd(LiveEditKind kind, int id, int length) =>
+            kind != LiveEditKind.BatchEnd || (id == 0 && length == 0);
     }
 
     /// <summary>

@@ -69,10 +69,40 @@ namespace FlashEditor.Tests.LiveEdit {
 
         [Theory]
         [InlineData(6)]
-        [InlineData(7)]
+        [InlineData(8)]
         [InlineData(255)]
         public void DecodeRejectsAKindLegADoesNotCarry(byte kind) {
             byte[] wire = { 0x46, 0x4C, 0x01, kind, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            Assert.Throws<LiveEditProtocolException>(() => LiveEditFrameCodec.Decode(wire));
+        }
+
+        [Fact]
+        public void EncodesTheBatchEndAsAnEmptyFrameWithIdZero() {
+            Assert.Equal(new byte[] { 0x46, 0x4C, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+                LiveEditFrameCodec.Encode(LiveEditFrame.BatchEnd));
+        }
+
+        [Fact]
+        public void DecodeAcceptsTheBatchEnd() {
+            byte[] wire = { 0x46, 0x4C, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            LiveEditFrame frame = LiveEditFrameCodec.Decode(wire);
+            Assert.Equal(LiveEditKind.BatchEnd, frame.Kind);
+            Assert.Equal(0, frame.Id);
+            Assert.Empty(frame.Payload);
+        }
+
+        [Theory]
+        [InlineData(0, 1)]
+        [InlineData(1, 0)]
+        public void EncodeRefusesABatchEndWithAnIdOrAPayload(int id, int length) {
+            Assert.Throws<ArgumentException>(() =>
+                LiveEditFrameCodec.Encode(new LiveEditFrame(LiveEditKind.BatchEnd, id, new byte[length])));
+        }
+
+        [Theory]
+        [InlineData(new byte[] { 0x46, 0x4C, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xAA })]
+        [InlineData(new byte[] { 0x46, 0x4C, 0x01, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00 })]
+        public void DecodeRejectsABatchEndWithAnIdOrAPayload(byte[] wire) {
             Assert.Throws<LiveEditProtocolException>(() => LiveEditFrameCodec.Decode(wire));
         }
 
