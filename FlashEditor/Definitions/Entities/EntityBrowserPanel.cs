@@ -842,6 +842,10 @@ namespace FlashEditor.Definitions.Entities {
         ///     the cache's - and this format is not canonical, so the two legitimately differ in
         ///     opcode order for a record nobody has touched. An export that is not the file is not
         ///     an export.
+        ///     <para>
+        ///     A model also gets a Wavefront OBJ and its material library beside the <c>.dat</c>,
+        ///     named by the same id, because the stored bytes open in no modeller.
+        ///     </para>
         /// </remarks>
         private void ExportButton_Click(object? sender, EventArgs e) {
             if (cache == null)
@@ -858,6 +862,7 @@ namespace FlashEditor.Definitions.Entities {
 
             int written = 0;
             int failed = 0;
+            int objFailed = 0;
 
             try {
                 Directory.CreateDirectory(directory);
@@ -872,6 +877,9 @@ namespace FlashEditor.Definitions.Entities {
                             : address.GroupId + "_" + address.FileId;
                         File.WriteAllBytes(Path.Combine(directory, name + ".dat"), stored);
                         written++;
+
+                        if (row is ModelListing model)
+                            objFailed += WriteModelObj(cache, model, directory, name) ? 0 : 1;
                     }
                     catch (Exception failure) {
                         failed++;
@@ -888,7 +896,27 @@ namespace FlashEditor.Definitions.Entities {
             }
 
             ReportStatus("Exported " + written + " " + descriptor.RowPlural + " to " + directory +
-                (failed > 0 ? ", " + failed + " failed" : string.Empty));
+                (kind == EntityKind.Model ? " as .dat and .obj" : string.Empty) +
+                (failed > 0 ? ", " + failed + " failed" : string.Empty) +
+                (objFailed > 0 ? ", " + objFailed + " without an .obj" : string.Empty));
+        }
+
+        /// <summary>Writes the OBJ and material library beside a model's exported <c>.dat</c>.</summary>
+        /// <remarks>
+        ///     A model whose stored bytes export but will not decode keeps its <c>.dat</c>: that file
+        ///     is the cache's own bytes and is still correct, so the OBJ failing is reported on its
+        ///     own count rather than as a failed export.
+        /// </remarks>
+        /// <returns>Whether the OBJ was written.</returns>
+        private static bool WriteModelObj(RSCache open, ModelListing model, string directory, string name) {
+            try {
+                BuildModelObj(open, model, name + ".mtl").Save(Path.Combine(directory, name + ".obj"));
+                return true;
+            }
+            catch (Exception failure) {
+                Debug("OBJ export of model " + model.ModelId + " failed: " + failure.Message);
+                return false;
+            }
         }
 
         /// <summary>
