@@ -245,6 +245,22 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         [Fact]
+        public void AResetDuringAFlushDropsTheBatchThatFlushWasBuilding() {
+            LiveEditCoalescer coalescer = null;
+            coalescer = new LiveEditCoalescer(
+                action => { coalescer.Reset(); action(); },
+                (kind, id) => new byte[] { 1 },
+                batches.Add,
+                time);
+            using (coalescer) {
+                coalescer.Mark(Square(50, 50));
+                time.Advance(Quiet);
+            }
+
+            Assert.Empty(batches);
+        }
+
+        [Fact]
         public void MarksAfterAResetFlushOnlyTheNewSquare() {
             using LiveEditCoalescer coalescer = NewCoalescer();
             coalescer.Mark(Square(50, 50));

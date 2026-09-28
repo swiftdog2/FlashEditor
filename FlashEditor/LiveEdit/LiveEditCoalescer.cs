@@ -30,6 +30,7 @@ namespace FlashEditor.LiveEdit {
 
         private List<MapRegion> squares = new List<MapRegion>();
         private List<(LiveEditKind Kind, int Id)> definitions = new List<(LiveEditKind, int)>();
+        private int generation;
 
         /// <summary>
         ///     Creates a coalescer.
@@ -46,9 +47,10 @@ namespace FlashEditor.LiveEdit {
         ///     that definition and reports it.
         /// </param>
         /// <param name="sink">
-        ///     Receives each batch on the flushing thread. It must not block for long, and an
-        ///     exception from it is discarded, because the flush runs on a timer thread where an
-        ///     unhandled exception ends the process.
+        ///     Receives each batch on the flushing thread, holding the lock every mark takes, so it
+        ///     must not block for long and must not mark or reset. An exception from it is
+        ///     discarded, because the flush runs on a timer thread where an unhandled exception
+        ///     ends the process.
         /// </param>
         /// <param name="time">The clock and timer source; <see cref="TimeProvider.System"/> when null.</param>
         public LiveEditCoalescer(
@@ -100,25 +102,33 @@ namespace FlashEditor.LiveEdit {
         }
 
         /// <summary>
-        ///     Forgets every marked square and definition and cancels the pending flush. A flush
-        ///     already running when this is called still hands its batch on.
+        ///     Forgets every marked square and definition, cancels the pending flush, and drops the
+        ///     batch of a flush already running, so nothing marked before the call reaches the sink
+        ///     after it returns.
         /// </summary>
         public void Reset() {
             lock (gate) {
-                squares = new List<MapRegion>();
-                definitions = new List<(LiveEditKind, int)>();
+                generation++;
+                TakeMarks();
                 timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
             }
+        }
+
+        /// <summary>Hands back everything marked and starts empty sets. Call holding <see cref="gate"/>.</summary>
+        private (List<MapRegion> Squares, List<(LiveEditKind Kind, int Id)> Definitions) TakeMarks() {
+            var taken = (squares, definitions);
+            squares = new List<MapRegion>();
+            definitions = new List<(LiveEditKind, int)>();
+            return taken;
         }
 
         private void Flush() {
             List<MapRegion> takenSquares;
             List<(LiveEditKind Kind, int Id)> takenDefinitions;
+            int takenGeneration;
             lock (gate) {
-                takenSquares = squares;
-                takenDefinitions = definitions;
-                squares = new List<MapRegion>();
-                definitions = new List<(LiveEditKind, int)>();
+                (takenSquares, takenDefinitions) = TakeMarks();
+                takenGeneration = generation;
             }
 
             //Serialised so that a slow flush cannot hand the sink older bytes after a newer one.
@@ -129,11 +139,16 @@ namespace FlashEditor.LiveEdit {
                 foreach ((LiveEditKind Kind, int Id) definition in takenDefinitions)
                     ReadDefinition(definition, frames, failures);
 
-                try {
-                    sink(new LiveEditBatch(frames, failures));
-                }
-                catch {
-                    //Discarded by contract; see the sink parameter on the constructor.
+                //Checked and handed on under the gate, so a Reset either drops this batch or
+                //returns only after the sink has it.
+                lock (gate) {
+                    if (takenGeneration != generation) return;
+                    try {
+                        sink(new LiveEditBatch(frames, failures));
+                    }
+                    catch {
+                        //Discarded by contract; see the sink parameter on the constructor.
+                    }
                 }
             }
         }
