@@ -14,6 +14,16 @@ namespace FlashEditor.Map {
         /// <summary>Raised after any change to the history.</summary>
         public event EventHandler Changed;
 
+        /// <summary>
+        ///     Raised after an edit is applied, undone or redone, with that edit, before
+        ///     <see cref="Changed"/>. Not raised by <see cref="Clear"/>, which changes no square.
+        /// </summary>
+        /// <remarks>
+        ///     Raised on the thread that stepped the history, which for the Map tab is inside the
+        ///     square store's exclusive section, so a handler must not wait on anything that takes it.
+        /// </remarks>
+        public event EventHandler<IMapEdit> MapChanged;
+
         /// <summary>Whether there is anything to undo.</summary>
         public bool CanUndo => done.Count > 0;
 
@@ -37,6 +47,7 @@ namespace FlashEditor.Map {
             edit.Apply();
             done.Add(edit);
             undone.Clear();
+            MapChanged?.Invoke(this, edit);
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
@@ -50,6 +61,7 @@ namespace FlashEditor.Map {
             done.RemoveAt(done.Count - 1);
             edit.Undo();
             undone.Add(edit);
+            MapChanged?.Invoke(this, edit);
             Changed?.Invoke(this, EventArgs.Empty);
             return edit;
         }
@@ -64,6 +76,7 @@ namespace FlashEditor.Map {
             undone.RemoveAt(undone.Count - 1);
             edit.Apply();
             done.Add(edit);
+            MapChanged?.Invoke(this, edit);
             Changed?.Invoke(this, EventArgs.Empty);
             return edit;
         }

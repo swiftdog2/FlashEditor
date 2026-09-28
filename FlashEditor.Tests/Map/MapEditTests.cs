@@ -181,6 +181,25 @@ namespace FlashEditor.Tests.Map
         }
 
         [Fact]
+        public void EveryApplyUndoAndRedoReportsTheEditItMovedButClearReportsNone()
+        {
+            MapRegion square = Square();
+            var history = new MapEditHistory();
+            var reported = new List<IMapEdit>();
+            history.MapChanged += (_, edit) => reported.Add(edit);
+
+            var first = new SetUnderlayEdit(square, 0, 0, 0, 5);
+            var second = new SetUnderlayEdit(square, 0, 1, 0, 6);
+            history.Apply(first);
+            history.Apply(second);
+            history.Undo();
+            history.Redo();
+            history.Clear();
+
+            Assert.Equal(new IMapEdit[] { first, second, second, second }, reported);
+        }
+
+        [Fact]
         public void ApplyingAfterUndoDiscardsTheRedoStack()
         {
             MapRegion square = Square();
