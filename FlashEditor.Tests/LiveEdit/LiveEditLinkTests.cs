@@ -151,6 +151,69 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         [Fact]
+        public async Task AFrameThatMissedADownServerIsSentAheadOfTheNextBatchOnceItIsBack() {
+            int port = Port;
+            listener.Stop();
+            using var link = new LiveEditLink(port) { Enabled = true };
+            var stale = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var missed = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 2 });
+            var other = new LiveEditFrame(LiveEditKind.FloorUnderlay, 3, new byte[] { 3 });
+            var next = new LiveEditFrame(LiveEditKind.Locations, 8, new byte[] { 4 });
+
+            await link.Send(Batch(stale, other)).WaitAsync(Patience);
+            await link.Send(Batch(missed)).WaitAsync(Patience);
+            Assert.Equal(LiveEditLinkStatus.Disconnected, link.Status);
+
+            var restarted = new TcpListener(IPAddress.Loopback, port);
+            restarted.Start();
+            try {
+                Task<byte[]> server = Task.Run(async () => {
+                    using TcpClient peer = await restarted.AcceptTcpClientAsync();
+                    return await ServeFrames(peer.GetStream(), 3);
+                });
+
+                await link.Send(Batch(next)).WaitAsync(Patience);
+
+                //The newer bytes for square 7 replaced the older ones rather than following them.
+                var expected = new MemoryStream();
+                foreach (LiveEditFrame frame in new[] { other, missed, next })
+                    expected.Write(LiveEditFrameCodec.Encode(frame));
+                Assert.Equal(expected.ToArray(), await server.WaitAsync(Patience));
+                Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
+            }
+            finally {
+                restarted.Stop();
+            }
+        }
+
+        [Fact]
+        public async Task AHeldFrameIsNotResentWhenTheNextBatchCarriesTheSameFile() {
+            int port = Port;
+            listener.Stop();
+            using var link = new LiveEditLink(port) { Enabled = true };
+            var missed = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var newer = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 2 });
+
+            await link.Send(Batch(missed)).WaitAsync(Patience);
+
+            var restarted = new TcpListener(IPAddress.Loopback, port);
+            restarted.Start();
+            try {
+                Task<byte[]> server = Task.Run(async () => {
+                    using TcpClient peer = await restarted.AcceptTcpClientAsync();
+                    return await ServeFrames(peer.GetStream(), 1);
+                });
+
+                await link.Send(Batch(newer)).WaitAsync(Patience);
+
+                Assert.Equal(LiveEditFrameCodec.Encode(newer), await server.WaitAsync(Patience));
+            }
+            finally {
+                restarted.Stop();
+            }
+        }
+
+        [Fact]
         public async Task DisablingALiveLinkClosesTheConnection() {
             using var link = new LiveEditLink(Port) { Enabled = true };
             Task<TcpClient> accepted = listener.AcceptTcpClientAsync();

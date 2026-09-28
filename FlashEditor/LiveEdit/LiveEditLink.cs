@@ -27,9 +27,11 @@ namespace FlashEditor.LiveEdit {
     /// <remarks>
     ///     Nothing here may stall or interrupt editing, so no member blocks on the network and none
     ///     throws because of it: a failure becomes <see cref="LastError"/> and
-    ///     <see cref="LiveEditLinkStatus.Disconnected"/>, the batch is dropped, and the next
-    ///     <see cref="Send"/> connects again. Dropping is safe because every frame is a full
-    ///     replacement of its file, so the next push of a square supersedes anything lost.
+    ///     <see cref="LiveEditLinkStatus.Disconnected"/>, and the next <see cref="Send"/> connects
+    ///     again. Every frame that did not reach the server is held, the latest per kind and id,
+    ///     and goes ahead of the next batch; without that a square edited while the server was
+    ///     down stays stale in game until it happens to be edited again. A frame the server
+    ///     rejected is not held, because it would be rejected again.
     ///     Only the loopback address is ever dialled; the port is the only thing configurable.
     ///     The link never touches the cache.
     /// </remarks>
@@ -54,6 +56,7 @@ namespace FlashEditor.LiveEdit {
 
         //Touched only on the worker.
         private TcpClient? client;
+        private List<LiveEditFrame> held = new List<LiveEditFrame>();
 
         /// <summary>
         ///     Creates a disabled link to <c>127.0.0.1:</c><paramref name="port"/>.
@@ -147,7 +150,7 @@ namespace FlashEditor.LiveEdit {
 
             var failures = new List<LiveEditFailure>(batch.Failures);
             var encoded = new List<(LiveEditFrame Frame, byte[] Bytes)>();
-            foreach (LiveEditFrame frame in batch.Frames) {
+            foreach (LiveEditFrame frame in WithHeldFrames(batch.Frames)) {
                 try {
                     encoded.Add((frame, LiveEditFrameCodec.Encode(frame)));
                 }
@@ -195,9 +198,23 @@ namespace FlashEditor.LiveEdit {
                 errors.Add(e.Message);
             }
 
+            //The frame at next may have been written before the failure; resending it is harmless.
+            held = encoded.GetRange(next, encoded.Count - next).ConvertAll(e => e.Frame);
+
             LiveEditLinkStatus outcome = connected ? LiveEditLinkStatus.Connected : LiveEditLinkStatus.Disconnected;
             Update(s => s == LiveEditLinkStatus.Disabled ? s : outcome,
                 acknowledged ? time.GetUtcNow() : null, errors);
+        }
+
+        /// <summary>The held frames the batch does not supersede, in the order they were held, then the batch.</summary>
+        private List<LiveEditFrame> WithHeldFrames(IReadOnlyList<LiveEditFrame> frames) {
+            var superseded = new HashSet<(LiveEditKind, int)>();
+            foreach (LiveEditFrame frame in frames)
+                superseded.Add((frame.Kind, frame.Id));
+            List<LiveEditFrame> result = held.FindAll(h => !superseded.Contains((h.Kind, h.Id)));
+            result.AddRange(frames);
+            held = new List<LiveEditFrame>();
+            return result;
         }
 
         private async Task<(NetworkStream Stream, bool Reused)> Connect() {
