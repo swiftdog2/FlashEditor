@@ -1041,7 +1041,7 @@ namespace FlashEditor.Definitions.Editing {
 
                 list.RefreshObject(row);
                 status.Text = "Staged " + descriptor.RowNoun + " at " + address;
-                DefinitionStaged?.Invoke(this, new DefinitionStagedEventArgs(descriptor.IndexId, address));
+                DefinitionStaged?.Invoke(this, new DefinitionStagedEventArgs(descriptor.IndexId, address, encoded));
             }
             catch (Exception ex) {
                 //Reported rather than thrown: this runs from a cell editor, and an exception out of

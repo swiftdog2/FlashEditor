@@ -20,8 +20,8 @@ namespace FlashEditor.LiveEdit {
 
         private readonly LiveEditCoalescer coalescer;
 
-        //Captured on the thread that committed the definition, because the flush runs on a timer
-        //thread and RSCache's staging overlay is written from the UI thread without a lock.
+        //Handed over by the committing thread rather than read back from RSCache on the flush's
+        //timer thread, because RSCache's staging overlay is written from the UI thread unlocked.
         private readonly ConcurrentDictionary<(LiveEditKind Kind, int Id), byte[]> committed =
             new ConcurrentDictionary<(LiveEditKind, int), byte[]>();
 
@@ -47,21 +47,18 @@ namespace FlashEditor.LiveEdit {
             ArgumentNullException.ThrowIfNull(edit);
             if (!Link.Enabled) return;
 
-            if (edit is CompositeEdit composite) {
-                foreach (MapRegion square in composite.Targets)
+            foreach (MapRegion square in CompositeEdit.TargetsOf(edit))
+                if (square != null)
                     coalescer.Mark(square);
-            }
-            else {
-                coalescer.Mark(edit.Target);
-            }
         }
 
         /// <summary>
         ///     Marks a staged index-2 file when it is a floor underlay or overlay; any other file
-        ///     is ignored. Reads the staged bytes now, so call it after the write.
+        ///     is ignored.
         /// </summary>
-        public void MarkStaged(RSCache cache, int indexId, int groupId, int fileId) {
-            ArgumentNullException.ThrowIfNull(cache);
+        /// <param name="payload">The bytes staged, as the file now holds them. Kept, not copied.</param>
+        public void MarkStaged(int indexId, int groupId, int fileId, byte[] payload) {
+            ArgumentNullException.ThrowIfNull(payload);
             if (!Link.Enabled || indexId != RSConstants.CONFIG) return;
 
             LiveEditKind kind;
@@ -69,7 +66,7 @@ namespace FlashEditor.LiveEdit {
             else if (groupId == RSConstants.FLOOR_OVERLAY_GROUP) kind = LiveEditKind.FloorOverlay;
             else return;
 
-            committed[(kind, fileId)] = cache.ReadFileBytes(indexId, groupId, fileId);
+            committed[(kind, fileId)] = payload;
             coalescer.MarkDefinition(kind, fileId);
         }
 

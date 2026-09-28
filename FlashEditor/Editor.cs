@@ -819,18 +819,22 @@ namespace FlashEditor {
             //A persisted port no TCP port can be falls back to the default rather than failing
             //the form's load over a preview feature.
             int livePort = Properties.Settings.Default.liveEditPort;
-            liveEdit = new LiveEditSession(livePort is >= 1 and <= 65535 ? livePort : LiveEditSession.DefaultPort,
-                MapEditorPanel.RunExclusive);
+            liveEdit = new LiveEditSession(livePort > 0 && LiveEditLink.IsValidPort(livePort)
+                ? livePort : LiveEditSession.DefaultPort, MapEditorPanel.RunExclusive);
             liveEdit.Link.Enabled = Properties.Settings.Default.liveEditEnabled;
-            MapEditorPanel.LiveEdit = liveEdit;
-            MapEditorPanel.LivePreviewToggled += (_, _) => {
-                Properties.Settings.Default.liveEditEnabled = liveEdit?.Link.Enabled == true;
+
+            //Saved when the link's switch moves, whichever control moved it, and at once rather
+            //than on exit for the reason js5LiveReload is. The setter raises on the UI thread; the
+            //worker's own raises leave Enabled unchanged and so never reach Save.
+            liveEdit.Link.StatusChanged += (_, _) => {
+                bool enabled = liveEdit?.Link.Enabled == true;
+                if (enabled == Properties.Settings.Default.liveEditEnabled) return;
+                Properties.Settings.Default.liveEditEnabled = enabled;
                 Properties.Settings.Default.Save();
             };
-            ConfigPanel.DefinitionStaged += (_, e) => {
-                if (cache != null)
-                    liveEdit?.MarkStaged(cache, e.IndexId, e.Address.GroupId, e.Address.FileId);
-            };
+            MapEditorPanel.LiveEdit = liveEdit;
+            ConfigPanel.DefinitionStaged += (_, e) =>
+                liveEdit?.MarkStaged(e.IndexId, e.Address.GroupId, e.Address.FileId, e.Payload);
 
             //Seeded rather than prompted for. A first run with no setting used to open nothing at
             //all and say nothing about it; asking for a folder here would be worse, because the

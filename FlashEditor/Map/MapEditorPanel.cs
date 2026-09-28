@@ -1605,11 +1605,7 @@ namespace FlashEditor.Map {
             if (edit == null)
                 return;
 
-            IEnumerable<MapRegion> targets = edit is CompositeEdit composite
-                ? composite.Targets
-                : new[] { edit.Target };
-
-            foreach (MapRegion target in targets) {
+            foreach (MapRegion target in CompositeEdit.TargetsOf(edit)) {
                 if (target == null)
                     continue;
 
@@ -2688,23 +2684,17 @@ namespace FlashEditor.Map {
                 liveEdit = value;
                 if (liveEdit != null)
                     liveEdit.Link.StatusChanged += OnLiveStatusChanged;
-                if (liveToggle != null) {
+                if (liveToggle != null)
                     liveToggle.Enabled = liveEdit != null;
-                    liveToggle.Checked = liveEdit?.Link.Enabled == true;
-                }
                 UpdateLiveStatus();
             }
         }
-
-        /// <summary>Raised when the user turns live preview on or off, after the link has been switched.</summary>
-        public event EventHandler? LivePreviewToggled;
 
         private void OnLiveToggled() {
             if (liveEdit == null || liveToggle == null || liveEdit.Link.Enabled == liveToggle.Checked)
                 return;
 
             liveEdit.Link.Enabled = liveToggle.Checked;
-            LivePreviewToggled?.Invoke(this, EventArgs.Empty);
             UpdateLiveStatus();
         }
 
@@ -2722,6 +2712,11 @@ namespace FlashEditor.Map {
 
         private void UpdateLiveStatus() {
             LiveEditLink? link = liveEdit?.Link;
+
+            //The link is the source of truth for the switch; the toggle only mirrors it.
+            if (liveToggle != null)
+                liveToggle.Checked = link?.Enabled == true;
+
             if (link == null || !link.Enabled) {
                 liveStatus.Text = "Live preview off";
                 return;
@@ -2764,9 +2759,6 @@ namespace FlashEditor.Map {
         /// <inheritdoc/>
         protected override void Dispose(bool disposing) {
             if (disposing) {
-                if (liveEdit != null)
-                    liveEdit.Link.StatusChanged -= OnLiveStatusChanged;
-
                 reliefDebounce.Stop();
                 reliefDebounce.Dispose();
 

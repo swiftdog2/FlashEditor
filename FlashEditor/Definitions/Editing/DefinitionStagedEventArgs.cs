@@ -6,9 +6,11 @@ namespace FlashEditor.Definitions.Editing {
         /// <summary>Creates the arguments.</summary>
         /// <param name="indexId">The cache index written.</param>
         /// <param name="address">The group and file written.</param>
-        public DefinitionStagedEventArgs(int indexId, DefinitionAddress address) {
+        /// <param name="payload">The bytes staged, exactly as the file now holds them.</param>
+        public DefinitionStagedEventArgs(int indexId, DefinitionAddress address, byte[] payload) {
             IndexId = indexId;
             Address = address;
+            Payload = payload ?? throw new ArgumentNullException(nameof(payload));
         }
 
         /// <summary>The cache index written.</summary>
@@ -16,5 +18,8 @@ namespace FlashEditor.Definitions.Editing {
 
         /// <summary>The group and file written.</summary>
         public DefinitionAddress Address { get; }
+
+        /// <summary>The bytes staged. Shared with the caller, so a handler that keeps them must not mutate them.</summary>
+        public byte[] Payload { get; }
     }
 }

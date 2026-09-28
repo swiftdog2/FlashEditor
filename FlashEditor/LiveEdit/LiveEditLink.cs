@@ -164,6 +164,7 @@ namespace FlashEditor.LiveEdit {
                 errors.Add($"Skipped {failure.Kind} {failure.Id}: {failure.Message}");
 
             if (encoded.Count == 0) {
+                held = new List<LiveEditFrame>();
                 if (errors.Count > 0) Update(s => s, errors: errors);
                 return;
             }
@@ -213,7 +214,6 @@ namespace FlashEditor.LiveEdit {
                 superseded.Add((frame.Kind, frame.Id));
             List<LiveEditFrame> result = held.FindAll(h => !superseded.Contains((h.Kind, h.Id)));
             result.AddRange(frames);
-            held = new List<LiveEditFrame>();
             return result;
         }
 
@@ -292,8 +292,11 @@ namespace FlashEditor.LiveEdit {
             if (changed) StatusChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        /// <summary>Whether <paramref name="port"/> is a TCP port number this link accepts.</summary>
+        public static bool IsValidPort(int port) => port is >= IPEndPoint.MinPort and <= IPEndPoint.MaxPort;
+
         private static int ValidPort(int value) =>
-            value is >= IPEndPoint.MinPort and <= IPEndPoint.MaxPort
+            IsValidPort(value)
                 ? value
                 : throw new ArgumentOutOfRangeException(nameof(value), value, "Not a TCP port.");
 

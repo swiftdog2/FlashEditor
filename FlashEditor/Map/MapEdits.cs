@@ -491,6 +491,14 @@ namespace FlashEditor.Map {
         /// </remarks>
         public IReadOnlyList<IMapEdit> Edits => edits;
 
+        /// <summary>
+        ///     The squares any edit touches: a group's <see cref="Targets"/>, else the edit's own
+        ///     target. Every consumer that acts per square goes through this, so the redraw and the
+        ///     live push cannot come to disagree about which squares an edit moved.
+        /// </summary>
+        public static IEnumerable<MapRegion> TargetsOf(IMapEdit edit) =>
+            edit is CompositeEdit composite ? composite.Targets : new[] { edit.Target };
+
         /// <summary>The squares this group touches.</summary>
         public IEnumerable<MapRegion> Targets {
             get {
