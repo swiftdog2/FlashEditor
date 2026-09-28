@@ -289,6 +289,40 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         [Fact]
+        public async Task ABatchQueuedBeforeAResetIsNotSent() {
+            using var link = new LiveEditLink(Port) { Enabled = true };
+            var inFlight = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });
+            var queued = new LiveEditFrame(LiveEditKind.Terrain, 8, new byte[] { 2 });
+            var after = new LiveEditFrame(LiveEditKind.Terrain, 9, new byte[] { 3 });
+            var frameRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            Task<byte[]> server = Task.Run(async () => {
+                using TcpClient peer = await listener.AcceptTcpClientAsync();
+                NetworkStream stream = peer.GetStream();
+                //Holds the worker inside the first batch until the next one is queued behind it.
+                byte[] frame = new byte[LiveEditFrameCodec.Encode(inFlight).Length];
+                await stream.ReadExactlyAsync(frame);
+                frameRead.SetResult();
+                await release.Task;
+                stream.WriteByte(0);
+                await stream.ReadExactlyAsync(new byte[BatchEndBytes.Length]);
+                stream.WriteByte(0);
+                return await ServeFrames(stream, 1);
+            });
+
+            Task first = link.Send(Batch(inFlight));
+            await frameRead.Task.WaitAsync(Patience);
+            Task second = link.Send(Batch(queued));
+            link.Reset();
+            release.SetResult();
+            await Task.WhenAll(first, second).WaitAsync(Patience);
+            await link.Send(Batch(after)).WaitAsync(Patience);
+
+            Assert.Equal(Wire(after), await server.WaitAsync(Patience));
+        }
+
+        [Fact]
         public async Task AResetKeepsTheConnectionOpen() {
             using var link = new LiveEditLink(Port) { Enabled = true };
             var first = new LiveEditFrame(LiveEditKind.Terrain, 7, new byte[] { 1 });

@@ -3092,6 +3092,11 @@ namespace FlashEditor {
             //would otherwise leave that thread decoding out of a disposed file store.
             MapEditorPanel.Bind(null);
 
+            //Every live-preview frame pending or held now describes the cache being closed - map
+            //squares and the Config tab's floor definitions alike - and sent after the new cache
+            //opens it would overwrite the server's copy with the old one.
+            liveEdit?.Reset();
+
             //Same reason again, and the one that runs on a timer rather than a worker: the viewport's
             //animation and particle sources read frames, skeletons and emitters straight through the
             //cache on every tick, so the timer has to be stopped and both unbound before the store

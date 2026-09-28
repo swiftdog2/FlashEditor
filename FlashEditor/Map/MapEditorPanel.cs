@@ -2336,10 +2336,6 @@ namespace FlashEditor.Map {
             //Names a tile in a cache that is no longer the one on screen.
             lastEditNote = null;
 
-            //Pending and held live-preview frames were encoded from the previous cache. Editor.LoadCache
-            //reaches here through Bind(null) as well, so a reload drops them too.
-            liveEdit?.Reset();
-
             if (cache == null) {
                 loader = null;
                 navigator.Build(null);

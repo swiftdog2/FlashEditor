@@ -57,6 +57,7 @@ namespace FlashEditor.LiveEdit {
         private LiveEditLinkStatus status = LiveEditLinkStatus.Disabled;
         private DateTimeOffset? lastAcknowledged;
         private string? lastError;
+        private int generation;
 
         //Touched only on the worker.
         private TcpClient? client;
@@ -141,9 +142,10 @@ namespace FlashEditor.LiveEdit {
         public Task Send(LiveEditBatch batch) {
             ArgumentNullException.ThrowIfNull(batch);
             var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            int sentIn = Generation;
             if (!Enqueue(async () => {
                 try {
-                    await Deliver(batch);
+                    if (sentIn == Generation) await Deliver(batch);
                 }
                 finally {
                     done.TrySetResult();
@@ -154,14 +156,21 @@ namespace FlashEditor.LiveEdit {
         }
 
         /// <summary>
-        ///     Drops every held frame without closing the connection or changing
-        ///     <see cref="Status"/>. Returns at once; a batch sent before the call is delivered
-        ///     first and anything it leaves held is dropped too.
+        ///     Drops every held frame and every batch sent before the call and not yet begun,
+        ///     without closing the connection or changing <see cref="Status"/>. Returns at once; a
+        ///     batch already on the wire finishes, and whatever it leaves held is dropped too.
         /// </summary>
-        public void Reset() => Enqueue(() => {
-            held = new List<LiveEditFrame>();
-            return Task.CompletedTask;
-        });
+        public void Reset() {
+            lock (gate) generation++;
+            Enqueue(() => {
+                held = new List<LiveEditFrame>();
+                return Task.CompletedTask;
+            });
+        }
+
+        private int Generation {
+            get { lock (gate) return generation; }
+        }
 
         private async Task Deliver(LiveEditBatch batch) {
             if (!Enabled || disposal.IsCancellationRequested) return;
