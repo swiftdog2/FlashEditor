@@ -99,6 +99,18 @@ namespace FlashEditor.LiveEdit {
             }
         }
 
+        /// <summary>
+        ///     Forgets every marked square and definition and cancels the pending flush. A flush
+        ///     already running when this is called still hands its batch on.
+        /// </summary>
+        public void Reset() {
+            lock (gate) {
+                squares = new List<MapRegion>();
+                definitions = new List<(LiveEditKind, int)>();
+                timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            }
+        }
+
         private void Flush() {
             List<MapRegion> takenSquares;
             List<(LiveEditKind Kind, int Id)> takenDefinitions;

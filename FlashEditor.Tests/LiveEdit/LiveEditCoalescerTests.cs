@@ -231,6 +231,33 @@ namespace FlashEditor.Tests.LiveEdit {
             Assert.Equal((LiveEditKind.FloorUnderlay, 1), (failure.Kind, failure.Id));
         }
 
+        [Fact]
+        public void MarksFollowedByAResetProduceNoFlush() {
+            using LiveEditCoalescer coalescer = NewCoalescer((kind, id) => new byte[] { 1 });
+            coalescer.Mark(Square(50, 50));
+            coalescer.MarkDefinition(LiveEditKind.FloorOverlay, 7);
+
+            coalescer.Reset();
+            time.Advance(Quiet);
+
+            Assert.Empty(batches);
+            Assert.Equal(0, exclusiveSections);
+        }
+
+        [Fact]
+        public void MarksAfterAResetFlushOnlyTheNewSquare() {
+            using LiveEditCoalescer coalescer = NewCoalescer();
+            coalescer.Mark(Square(50, 50));
+            coalescer.Reset();
+
+            coalescer.Mark(Square(10, 20));
+            time.Advance(Quiet);
+
+            Assert.Equal(
+                new[] { (LiveEditKind.Terrain, 0x0A14), (LiveEditKind.Locations, 0x0A14) },
+                Assert.Single(batches).Frames.Select(f => (f.Kind, f.Id)));
+        }
+
         [Theory]
         [InlineData(LiveEditKind.Terrain)]
         [InlineData(LiveEditKind.Locations)]
