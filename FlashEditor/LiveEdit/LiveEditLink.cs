@@ -314,8 +314,11 @@ namespace FlashEditor.LiveEdit {
             if (changed) StatusChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>Whether <paramref name="port"/> is a TCP port number this link accepts.</summary>
-        public static bool IsValidPort(int port) => port is >= IPEndPoint.MinPort and <= IPEndPoint.MaxPort;
+        /// <summary>
+        ///     Whether <paramref name="port"/> is a port this link can dial: 1 to 65535. Port 0 is a
+        ///     valid endpoint to listen on but not to connect to.
+        /// </summary>
+        public static bool IsValidPort(int port) => port is > IPEndPoint.MinPort and <= IPEndPoint.MaxPort;
 
         private static int ValidPort(int value) =>
             IsValidPort(value)

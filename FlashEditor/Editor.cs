@@ -818,7 +818,7 @@ namespace FlashEditor {
             //Before the cache opens, so the first edit on the Map tab already has somewhere to go.
             //A persisted port that is not a usable TCP port falls back to the default.
             int livePort = Properties.Settings.Default.liveEditPort;
-            liveEdit = new LiveEditSession(livePort > 0 && LiveEditLink.IsValidPort(livePort)
+            liveEdit = new LiveEditSession(LiveEditLink.IsValidPort(livePort)
                 ? livePort : LiveEditSession.DefaultPort, MapEditorPanel.RunLocked);
             liveEdit.Link.Enabled = Properties.Settings.Default.liveEditEnabled;
 

@@ -256,6 +256,23 @@ namespace FlashEditor.Tests.LiveEdit {
             }
         }
 
+        [Theory]
+        [InlineData(0, false)]
+        [InlineData(-1, false)]
+        [InlineData(65536, false)]
+        [InlineData(1, true)]
+        [InlineData(65535, true)]
+        public void IsValidPortAcceptsOnlyAPortTheLinkCanDial(int port, bool valid) {
+            Assert.Equal(valid, LiveEditLink.IsValidPort(port));
+        }
+
+        [Fact]
+        public void PortZeroIsRefusedByTheConstructorAndTheSetter() {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new LiveEditLink(0));
+            using var link = new LiveEditLink(Port);
+            Assert.Throws<ArgumentOutOfRangeException>(() => link.Port = 0);
+        }
+
         [Fact]
         public async Task DisablingALiveLinkClosesTheConnection() {
             using var link = new LiveEditLink(Port) { Enabled = true };
