@@ -48,7 +48,6 @@ namespace FlashEditor.LiveEdit {
         private readonly Task worker;
 
         private int port;
-        private bool enabled;
         private LiveEditLinkStatus status = LiveEditLinkStatus.Disabled;
         private DateTimeOffset? lastAcknowledged;
         private string? lastError;
@@ -62,16 +61,15 @@ namespace FlashEditor.LiveEdit {
         /// <param name="port">The server's <c>editor_link_port</c>.</param>
         /// <param name="time">Stamps <see cref="LastAcknowledged"/>; <see cref="TimeProvider.System"/> when null.</param>
         public LiveEditLink(int port, TimeProvider? time = null) {
-            Port = port;
+            this.port = ValidPort(port);
             this.time = time ?? TimeProvider.System;
             worker = Task.Run(RunWorker);
         }
 
         /// <summary>
         ///     Raised whenever <see cref="Status"/>, <see cref="LastAcknowledged"/> or
-        ///     <see cref="LastError"/> changes. Raised on the worker or on the thread that changed
-        ///     <see cref="Enabled"/> or <see cref="Port"/>, never on the UI thread by design, so a
-        ///     control handling it must marshal.
+        ///     <see cref="LastError"/> changes. Raised on the worker, or on whichever thread set
+        ///     <see cref="Enabled"/> or <see cref="Port"/>, so a control handling it must marshal.
         /// </summary>
         public event EventHandler? StatusChanged;
 
@@ -82,14 +80,13 @@ namespace FlashEditor.LiveEdit {
         public int Port {
             get { lock (gate) return port; }
             set {
-                if (value < IPEndPoint.MinPort || value > IPEndPoint.MaxPort)
-                    throw new ArgumentOutOfRangeException(nameof(value), value, "Not a TCP port.");
+                ValidPort(value);
                 lock (gate) {
                     if (port == value) return;
                     port = value;
                 }
                 EnqueueClose();
-                SetState(s => s == LiveEditLinkStatus.Connected ? LiveEditLinkStatus.Disconnected : s);
+                Update(s => s == LiveEditLinkStatus.Connected ? LiveEditLinkStatus.Disconnected : s);
             }
         }
 
@@ -97,14 +94,11 @@ namespace FlashEditor.LiveEdit {
         ///     Whether batches are sent. Off drops every batch and closes any open connection.
         /// </summary>
         public bool Enabled {
-            get { lock (gate) return enabled; }
+            get => Status != LiveEditLinkStatus.Disabled;
             set {
-                lock (gate) {
-                    if (enabled == value) return;
-                    enabled = value;
-                }
                 if (!value) EnqueueClose();
-                SetState(_ => value ? LiveEditLinkStatus.Disconnected : LiveEditLinkStatus.Disabled);
+                Update(s => !value ? LiveEditLinkStatus.Disabled
+                    : s == LiveEditLinkStatus.Disabled ? LiveEditLinkStatus.Disconnected : s);
             }
         }
 
@@ -151,35 +145,36 @@ namespace FlashEditor.LiveEdit {
         private async Task Deliver(LiveEditBatch batch) {
             if (!Enabled || disposal.IsCancellationRequested) return;
 
-            var errors = new List<string>();
-            foreach (LiveEditFailure failure in batch.Failures)
-                errors.Add($"Skipped {failure.Kind} {failure.Id}: {failure.Message}");
-
+            var failures = new List<LiveEditFailure>(batch.Failures);
             var encoded = new List<(LiveEditFrame Frame, byte[] Bytes)>();
             foreach (LiveEditFrame frame in batch.Frames) {
                 try {
                     encoded.Add((frame, LiveEditFrameCodec.Encode(frame)));
                 }
                 catch (ArgumentException e) {
-                    errors.Add($"Skipped {frame.Kind} {frame.Id}: {e.Message}");
+                    failures.Add(new LiveEditFailure(frame.Kind, frame.Id, e.Message));
                 }
             }
 
+            var errors = new List<string>();
+            foreach (LiveEditFailure failure in failures)
+                errors.Add($"Skipped {failure.Kind} {failure.Id}: {failure.Message}");
+
             if (encoded.Count == 0) {
-                if (errors.Count > 0) SetError(string.Join(Environment.NewLine, errors));
+                if (errors.Count > 0) Update(s => s, errors: errors);
                 return;
             }
 
             int next = 0;
             bool acknowledged = false;
+            bool connected = true;
             try {
                 //A connection the server dropped while idle - a restart, typically - still reads as
                 //connected until it is used, so a failure on a reused connection earns one retry on
                 //a fresh one. Resending frames that did arrive is harmless: each is a full replacement.
                 for (int attempt = 0 ; ; attempt++) {
-                    bool reused = client is { Connected: true };
+                    (NetworkStream stream, bool reused) = await Connect();
                     try {
-                        NetworkStream stream = await Connect();
                         for (; next < encoded.Count ; next++) {
                             (LiveEditFrame frame, byte[] bytes) = encoded[next];
                             byte ack = await Exchange(stream, bytes);
@@ -192,25 +187,22 @@ namespace FlashEditor.LiveEdit {
                         CloseConnection();
                     }
                 }
-
-                DateTimeOffset now = time.GetUtcNow();
-                SetState(_ => Enabled ? LiveEditLinkStatus.Connected : LiveEditLinkStatus.Disabled,
-                    acknowledged ? now : null,
-                    errors.Count == 0 ? null : string.Join(Environment.NewLine, errors),
-                    replaceError: true);
             }
             catch (Exception e) when (e is IOException or SocketException or OperationCanceledException
                                             or ObjectDisposedException) {
                 CloseConnection();
+                connected = false;
                 errors.Add(e.Message);
-                SetState(_ => Enabled ? LiveEditLinkStatus.Disconnected : LiveEditLinkStatus.Disabled,
-                    acknowledged ? time.GetUtcNow() : null, string.Join(Environment.NewLine, errors), replaceError: true);
             }
+
+            LiveEditLinkStatus outcome = connected ? LiveEditLinkStatus.Connected : LiveEditLinkStatus.Disconnected;
+            Update(s => s == LiveEditLinkStatus.Disabled ? s : outcome,
+                acknowledged ? time.GetUtcNow() : null, errors);
         }
 
-        private async Task<NetworkStream> Connect() {
+        private async Task<(NetworkStream Stream, bool Reused)> Connect() {
             if (client is { Connected: true })
-                return client.GetStream();
+                return (client.GetStream(), true);
 
             CloseConnection();
             var fresh = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };
@@ -224,7 +216,7 @@ namespace FlashEditor.LiveEdit {
                 throw;
             }
             client = fresh;
-            return fresh.GetStream();
+            return (fresh.GetStream(), false);
         }
 
         private async Task<byte> Exchange(NetworkStream stream, byte[] frame) {
@@ -250,41 +242,31 @@ namespace FlashEditor.LiveEdit {
         private bool Enqueue(Func<Task> item) => work.Writer.TryWrite(item);
 
         private async Task RunWorker() {
-            try {
-                await foreach (Func<Task> item in work.Reader.ReadAllAsync(disposal.Token)) {
-                    try {
-                        await item();
-                    }
-                    catch {
-                        //Deliver catches every network failure; this guards the worker against
-                        //anything else ending it, which would silently stop all future pushes.
-                    }
+            //Not cancellable: Dispose completes the writer and the loop drains what is queued, so
+            //every Send task completes; Deliver returns at once once disposal is requested.
+            await foreach (Func<Task> item in work.Reader.ReadAllAsync()) {
+                try {
+                    await item();
+                }
+                catch {
+                    //Deliver catches every network failure; this guards the worker against
+                    //anything else ending it, which would silently stop all future pushes.
                 }
             }
-            catch (OperationCanceledException) {
-            }
-            finally {
-                //Run what is left so every Send task completes; Deliver returns at once once disposed.
-                while (work.Reader.TryRead(out Func<Task>? item)) {
-                    try {
-                        await item();
-                    }
-                    catch {
-                    }
-                }
-                CloseConnection();
-            }
+            CloseConnection();
         }
 
-        private void SetError(string error) => SetState(s => s, null, error, replaceError: true);
-
-        private void SetState(Func<LiveEditLinkStatus, LiveEditLinkStatus> next,
-            DateTimeOffset? acknowledged = null, string? error = null, bool replaceError = false) {
+        /// <param name="next">The new status from the current one.</param>
+        /// <param name="acknowledged">A new acknowledgement time, or null to keep the last one.</param>
+        /// <param name="errors">A batch result: replaces <see cref="LastError"/>, empty clearing it. Null keeps it.</param>
+        private void Update(Func<LiveEditLinkStatus, LiveEditLinkStatus> next,
+            DateTimeOffset? acknowledged = null, List<string>? errors = null) {
             bool changed;
             lock (gate) {
                 LiveEditLinkStatus newStatus = next(status);
                 DateTimeOffset? newAck = acknowledged ?? lastAcknowledged;
-                string? newError = replaceError ? error : lastError;
+                string? newError = errors == null ? lastError
+                    : errors.Count == 0 ? null : string.Join(Environment.NewLine, errors);
                 changed = newStatus != status || newAck != lastAcknowledged || newError != lastError;
                 status = newStatus;
                 lastAcknowledged = newAck;
@@ -292,6 +274,11 @@ namespace FlashEditor.LiveEdit {
             }
             if (changed) StatusChanged?.Invoke(this, EventArgs.Empty);
         }
+
+        private static int ValidPort(int value) =>
+            value is >= IPEndPoint.MinPort and <= IPEndPoint.MaxPort
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(value), value, "Not a TCP port.");
 
         /// <summary>Stops the worker and closes the connection; batches still queued are dropped.</summary>
         public void Dispose() {

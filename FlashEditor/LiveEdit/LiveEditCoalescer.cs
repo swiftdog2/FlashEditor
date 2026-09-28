@@ -111,23 +111,23 @@ namespace FlashEditor.LiveEdit {
             lock (flushGate) {
                 var frames = new List<LiveEditFrame>();
                 var failures = new List<LiveEditFailure>();
-                int squaresDone = 0, definitionsDone = 0;
+                bool ran = false;
                 try {
                     runExclusive(() => {
-                        for (; squaresDone < takenSquares.Count ; squaresDone++)
-                            EncodeSquare(takenSquares[squaresDone], frames, failures);
-                        for (; definitionsDone < takenDefinitions.Count ; definitionsDone++)
-                            ReadDefinition(takenDefinitions[definitionsDone], frames, failures);
+                        //Each item catches its own failure, so this runs to the end once entered.
+                        foreach (MapRegion square in takenSquares)
+                            EncodeSquare(square, frames, failures);
+                        foreach ((LiveEditKind Kind, int Id) definition in takenDefinitions)
+                            ReadDefinition(definition, frames, failures);
+                        ran = true;
                     });
                 }
                 catch (Exception e) {
-                    for (; squaresDone < takenSquares.Count ; squaresDone++) {
-                        MapRegion square = takenSquares[squaresDone];
-                        failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
-                    }
-                    for (; definitionsDone < takenDefinitions.Count ; definitionsDone++) {
-                        (LiveEditKind kind, int id) = takenDefinitions[definitionsDone];
-                        failures.Add(new LiveEditFailure(kind, id, e.Message));
+                    if (!ran) {
+                        foreach (MapRegion square in takenSquares)
+                            failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
+                        foreach ((LiveEditKind kind, int id) in takenDefinitions)
+                            failures.Add(new LiveEditFailure(kind, id, e.Message));
                     }
                 }
 
