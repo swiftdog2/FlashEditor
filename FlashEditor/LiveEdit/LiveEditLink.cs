@@ -42,6 +42,8 @@ namespace FlashEditor.LiveEdit {
         /// <summary>How long the server may take to acknowledge one frame before the connection is abandoned.</summary>
         public static readonly TimeSpan AckTimeout = TimeSpan.FromSeconds(5);
 
+        private static readonly byte[] BatchEndBytes = LiveEditFrameCodec.Encode(LiveEditFrame.BatchEnd);
+
         private readonly object gate = new object();
         private readonly TimeProvider time;
         private readonly Channel<Func<Task>> work =
@@ -185,6 +187,7 @@ namespace FlashEditor.LiveEdit {
                             if (ack == 0) acknowledged = true;
                             else errors.Add($"Server rejected {frame.Kind} {frame.Id} (status {ack}).");
                         }
+                        await Exchange(stream, BatchEndBytes);
                         break;
                     }
                     catch (IOException) when (reused && attempt == 0 && !disposal.IsCancellationRequested) {

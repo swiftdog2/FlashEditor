@@ -27,7 +27,20 @@ namespace FlashEditor.Tests.LiveEdit {
         private static LiveEditBatch Batch(params LiveEditFrame[] frames) =>
             new LiveEditBatch(frames, Array.Empty<LiveEditFailure>());
 
-        /// <summary>Reads <paramref name="frames"/> frames off one connection, answering each with <paramref name="ack"/>.</summary>
+        private static readonly byte[] BatchEndBytes = { 0x46, 0x4C, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+        private static byte[] Wire(params LiveEditFrame[] frames) {
+            var wire = new MemoryStream();
+            foreach (LiveEditFrame frame in frames)
+                wire.Write(LiveEditFrameCodec.Encode(frame));
+            wire.Write(BatchEndBytes);
+            return wire.ToArray();
+        }
+
+        /// <summary>
+        ///     Reads <paramref name="frames"/> frames off one connection, the batch end included,
+        ///     answering the batch end with 0 and every other frame with <paramref name="ack"/>.
+        /// </summary>
         private static async Task<byte[]> ServeFrames(NetworkStream stream, int frames, byte ack = 0) {
             var received = new MemoryStream();
             for (int i = 0 ; i < frames ; i++) {
@@ -38,7 +51,7 @@ namespace FlashEditor.Tests.LiveEdit {
                 await stream.ReadExactlyAsync(payload);
                 received.Write(header);
                 received.Write(payload);
-                stream.WriteByte(ack);
+                stream.WriteByte(header[3] == (byte) LiveEditKind.BatchEnd ? (byte) 0 : ack);
             }
             return received.ToArray();
         }
@@ -52,7 +65,7 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Task<byte[]> server = Task.Run(async () => {
                 using TcpClient peer = await listener.AcceptTcpClientAsync();
-                return await ServeFrames(peer.GetStream(), 2);
+                return await ServeFrames(peer.GetStream(), 3);
             });
 
             await link.Send(Batch(
@@ -62,7 +75,8 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Assert.Equal(new byte[] {
                 0x46, 0x4C, 0x01, 0x00, 0x32, 0x32, 0x00, 0x00, 0x00, 0x01, 0x01,
-                0x46, 0x4C, 0x01, 0x01, 0x32, 0x32, 0x00, 0x00, 0x00, 0x02, 0x02, 0x03
+                0x46, 0x4C, 0x01, 0x01, 0x32, 0x32, 0x00, 0x00, 0x00, 0x02, 0x02, 0x03,
+                0x46, 0x4C, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
             }, await server.WaitAsync(Patience));
             Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
             Assert.Equal(time.GetUtcNow(), link.LastAcknowledged);
@@ -103,7 +117,7 @@ namespace FlashEditor.Tests.LiveEdit {
             using var link = new LiveEditLink(Port) { Enabled = true };
             Task server = Task.Run(async () => {
                 using TcpClient peer = await listener.AcceptTcpClientAsync();
-                await ServeFrames(peer.GetStream(), 1, ack: 1);
+                await ServeFrames(peer.GetStream(), 2, ack: 1);
             });
 
             await link.Send(Batch(new LiveEditFrame(LiveEditKind.FloorOverlay, 9, new byte[] { 1 })))
@@ -124,6 +138,7 @@ namespace FlashEditor.Tests.LiveEdit {
                 .WaitAsync(Patience);
 
             Assert.Contains("height not encodable", link.LastError);
+            Assert.False(listener.Pending(), "A batch with no frames must not even connect.");
         }
 
         [Fact]
@@ -135,17 +150,17 @@ namespace FlashEditor.Tests.LiveEdit {
 
             Task<byte[]> server = Task.Run(async () => {
                 using (TcpClient peer = await listener.AcceptTcpClientAsync())
-                    await ServeFrames(peer.GetStream(), 1);
+                    await ServeFrames(peer.GetStream(), 2);
                 //The first connection is now closed, as a server restart would leave it.
                 using TcpClient again = await listener.AcceptTcpClientAsync();
-                return await ServeFrames(again.GetStream(), 1);
+                return await ServeFrames(again.GetStream(), 2);
             });
 
             await link.Send(Batch(first)).WaitAsync(Patience);
             await Task.Delay(200);
             await link.Send(Batch(second)).WaitAsync(Patience);
 
-            Assert.Equal(LiveEditFrameCodec.Encode(second), await server.WaitAsync(Patience));
+            Assert.Equal(Wire(second), await server.WaitAsync(Patience));
             Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
             Assert.Null(link.LastError);
         }
@@ -169,16 +184,14 @@ namespace FlashEditor.Tests.LiveEdit {
             try {
                 Task<byte[]> server = Task.Run(async () => {
                     using TcpClient peer = await restarted.AcceptTcpClientAsync();
-                    return await ServeFrames(peer.GetStream(), 3);
+                    return await ServeFrames(peer.GetStream(), 4);
                 });
 
                 await link.Send(Batch(next)).WaitAsync(Patience);
 
-                //The newer bytes for square 7 replaced the older ones rather than following them.
-                var expected = new MemoryStream();
-                foreach (LiveEditFrame frame in new[] { other, missed, next })
-                    expected.Write(LiveEditFrameCodec.Encode(frame));
-                Assert.Equal(expected.ToArray(), await server.WaitAsync(Patience));
+                //The newer bytes for square 7 replaced the older ones rather than following them,
+                //and the held frames travel inside the new batch, ahead of its own frames.
+                Assert.Equal(Wire(other, missed, next), await server.WaitAsync(Patience));
                 Assert.Equal(LiveEditLinkStatus.Connected, link.Status);
             }
             finally {
@@ -201,12 +214,12 @@ namespace FlashEditor.Tests.LiveEdit {
             try {
                 Task<byte[]> server = Task.Run(async () => {
                     using TcpClient peer = await restarted.AcceptTcpClientAsync();
-                    return await ServeFrames(peer.GetStream(), 1);
+                    return await ServeFrames(peer.GetStream(), 2);
                 });
 
                 await link.Send(Batch(newer)).WaitAsync(Patience);
 
-                Assert.Equal(LiveEditFrameCodec.Encode(newer), await server.WaitAsync(Patience));
+                Assert.Equal(Wire(newer), await server.WaitAsync(Patience));
             }
             finally {
                 restarted.Stop();
@@ -219,7 +232,7 @@ namespace FlashEditor.Tests.LiveEdit {
             Task<TcpClient> accepted = listener.AcceptTcpClientAsync();
             Task sent = link.Send(Batch(new LiveEditFrame(LiveEditKind.Terrain, 1, new byte[] { 1 })));
             using TcpClient peer = await accepted.WaitAsync(Patience);
-            await ServeFrames(peer.GetStream(), 1).WaitAsync(Patience);
+            await ServeFrames(peer.GetStream(), 2).WaitAsync(Patience);
             await sent.WaitAsync(Patience);
 
             link.Enabled = false;
