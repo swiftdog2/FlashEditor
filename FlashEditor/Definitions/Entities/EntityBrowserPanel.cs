@@ -864,6 +864,7 @@ namespace FlashEditor.Definitions.Entities {
             int failed = 0;
             int objWritten = 0;
             int objFailed = 0;
+            string? firstFile = null;
 
             try {
                 Directory.CreateDirectory(directory);
@@ -876,7 +877,9 @@ namespace FlashEditor.Definitions.Entities {
                         string name = address.HasDefinitionId
                             ? address.DefinitionId.ToString()
                             : address.GroupId + "_" + address.FileId;
-                        File.WriteAllBytes(Path.Combine(directory, name + ".dat"), stored);
+                        string datPath = Path.Combine(directory, name + ".dat");
+                        File.WriteAllBytes(datPath, stored);
+                        firstFile ??= datPath;
                         written++;
 
                         foreach ((string suffix, int modelId, int fileId) in ReferencedModels(row)) {
@@ -904,6 +907,28 @@ namespace FlashEditor.Definitions.Entities {
                 (objWritten > 0 ? ", with " + objWritten + " .obj model" + (objWritten == 1 ? string.Empty : "s") : string.Empty) +
                 (failed > 0 ? ", " + failed + " failed" : string.Empty) +
                 (objFailed > 0 ? ", " + objFailed + " model" + (objFailed == 1 ? string.Empty : "s") + " would not decode to .obj" : string.Empty));
+
+            if (written > 0)
+                RevealExport(directory, firstFile);
+        }
+
+        /// <summary>Opens Explorer on an export's folder, with the first file it wrote selected.</summary>
+        /// <remarks>
+        ///     <c>Process.Start</c> on a path throws on .NET unless <c>UseShellExecute</c> is set. A
+        ///     failure here is logged and nothing more: the export itself has already succeeded.
+        /// </remarks>
+        private static void RevealExport(string directory, string? file) {
+            try {
+                string arguments = file != null && File.Exists(file)
+                    ? "/select,\"" + file + "\""
+                    : "\"" + directory + "\"";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", arguments) {
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception failure) {
+                Debug("Could not open " + directory + " after export: " + failure.Message);
+            }
         }
 
         /// <summary>
@@ -1093,10 +1118,15 @@ namespace FlashEditor.Definitions.Entities {
                 }
 
                 ReportStatus((string) args.Result!);
+                RevealExport(directory, singlePath ?? FirstObjIn(directory, listings));
             };
 
             exporter.RunWorkerAsync();
         }
+
+        /// <summary>The first OBJ a multi-model export would have written, for selecting in Explorer.</summary>
+        private static string? FirstObjIn(string directory, IReadOnlyList<ModelListing> listings) =>
+            listings.Count == 0 ? null : Path.Combine(directory, "model_" + listings[0].ModelId + ".obj");
 
         /// <summary>Decodes and writes each model, off the UI thread.</summary>
         /// <returns>What to say on the status line.</returns>
