@@ -843,8 +843,8 @@ namespace FlashEditor.Definitions.Entities {
         ///     opcode order for a record nobody has touched. An export that is not the file is not
         ///     an export.
         ///     <para>
-        ///     A model also gets a Wavefront OBJ and its material library beside the <c>.dat</c>,
-        ///     named by the same id, because the stored bytes open in no modeller.
+        ///     Every model the row draws with also gets a Wavefront OBJ and its material library
+        ///     beside the <c>.dat</c>, because the stored bytes open in no modeller.
         ///     </para>
         /// </remarks>
         private void ExportButton_Click(object? sender, EventArgs e) {
@@ -862,6 +862,7 @@ namespace FlashEditor.Definitions.Entities {
 
             int written = 0;
             int failed = 0;
+            int objWritten = 0;
             int objFailed = 0;
 
             try {
@@ -878,8 +879,12 @@ namespace FlashEditor.Definitions.Entities {
                         File.WriteAllBytes(Path.Combine(directory, name + ".dat"), stored);
                         written++;
 
-                        if (row is ModelListing model)
-                            objFailed += WriteModelObj(cache, model, directory, name) ? 0 : 1;
+                        foreach ((string suffix, int modelId, int fileId) in ReferencedModels(row)) {
+                            if (WriteModelObj(cache, modelId, fileId, directory, name + suffix))
+                                objWritten++;
+                            else
+                                objFailed++;
+                        }
                     }
                     catch (Exception failure) {
                         failed++;
@@ -896,25 +901,75 @@ namespace FlashEditor.Definitions.Entities {
             }
 
             ReportStatus("Exported " + written + " " + descriptor.RowPlural + " to " + directory +
-                (kind == EntityKind.Model ? " as .dat and .obj" : string.Empty) +
+                (objWritten > 0 ? ", with " + objWritten + " .obj model" + (objWritten == 1 ? string.Empty : "s") : string.Empty) +
                 (failed > 0 ? ", " + failed + " failed" : string.Empty) +
-                (objFailed > 0 ? ", " + objFailed + " without an .obj" : string.Empty));
+                (objFailed > 0 ? ", " + objFailed + " model" + (objFailed == 1 ? string.Empty : "s") + " would not decode to .obj" : string.Empty));
         }
 
-        /// <summary>Writes the OBJ and material library beside a model's exported <c>.dat</c>.</summary>
+        /// <summary>
+        ///     The index-7 models a row draws with, each with the file-name suffix its OBJ gets.
+        /// </summary>
         /// <remarks>
-        ///     A model whose stored bytes export but will not decode keeps its <c>.dat</c>: that file
-        ///     is the cache's own bytes and is still correct, so the OBJ failing is reported on its
-        ///     own count rather than as a failed export.
+        ///     An item, NPC or object has no mesh of its own, only model ids, so exporting one means
+        ///     exporting what it points at. The suffix carries the model id so the file says which
+        ///     model an edited mesh has to be imported over. Item model fields are zero when the
+        ///     opcode is absent, and 65535 is the unsigned spelling of the client's -1, so neither is
+        ///     treated as a model. The OBJ is the raw model: an item's or NPC's recolours are applied
+        ///     by the client at draw time and are not baked in.
+        /// </remarks>
+        internal static IEnumerable<(string Suffix, int ModelId, int FileId)> ReferencedModels(object row) {
+            static bool Real(int id) => id > 0 && id != 0xFFFF;
+
+            switch (row) {
+                case ModelListing model:
+                    yield return (string.Empty, model.ModelId, model.FileId);
+                    break;
+
+                case ItemDefinition item:
+                    (string, int)[] slots = {
+                        ("inventory", item.inventoryModelId),
+                        ("male1", item.maleWearModel1), ("male2", item.maleWearModel2), ("male3", item.maleWearModel3),
+                        ("female1", item.femaleWearModel1), ("female2", item.femaleWearModel2), ("female3", item.femaleWearModel3)
+                    };
+                    foreach ((string slot, int id) in slots)
+                        if (Real(id))
+                            yield return ("_" + slot + "_model" + id, id, 0);
+                    break;
+
+                case NPCDefinition npc when npc.modelIds != null:
+                    for (int i = 0; i < npc.modelIds.Length; i++)
+                        if (Real(npc.modelIds[i]))
+                            yield return ("_part" + i + "_model" + npc.modelIds[i], npc.modelIds[i], 0);
+                    break;
+
+                case ObjectDefinition obj when obj.modelIds != null:
+                    for (int g = 0; g < obj.modelIds.Length; g++) {
+                        if (obj.modelIds[g] == null)
+                            continue;
+
+                        for (int m = 0; m < obj.modelIds[g].Length; m++)
+                            if (Real(obj.modelIds[g][m]))
+                                yield return ("_type" + obj.modelTypes[g] + "_" + m + "_model" + obj.modelIds[g][m],
+                                    obj.modelIds[g][m], 0);
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>Writes one model as an OBJ and its material library, both named after <paramref name="name"/>.</summary>
+        /// <remarks>
+        ///     A model that will not decode costs only its own OBJ: the row's <c>.dat</c> is the
+        ///     cache's own bytes and is still correct, so the failure is counted on its own.
         /// </remarks>
         /// <returns>Whether the OBJ was written.</returns>
-        private static bool WriteModelObj(RSCache open, ModelListing model, string directory, string name) {
+        internal static bool WriteModelObj(RSCache open, int modelId, int fileId, string directory, string name) {
             try {
-                BuildModelObj(open, model, name + ".mtl").Save(Path.Combine(directory, name + ".obj"));
+                ModelDefinition definition = open.GetModelDefinition(modelId, fileId);
+                ModelObjExporter.Export(definition, name + ".mtl").Save(Path.Combine(directory, name + ".obj"));
                 return true;
             }
             catch (Exception failure) {
-                Debug("OBJ export of model " + model.ModelId + " failed: " + failure.Message);
+                Debug("OBJ export of model " + modelId + " failed: " + failure.Message);
                 return false;
             }
         }
