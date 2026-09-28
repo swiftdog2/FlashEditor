@@ -58,13 +58,15 @@ namespace FlashEditor.LiveEdit {
 
         /// <summary>
         ///     Marks a square dirty and restarts the quiet period. The square is read at flush
-        ///     time, not now.
+        ///     time, not now. A square is its layer plus its id, so the surface and underwater
+        ///     squares at one coordinate are marked separately.
         /// </summary>
         public void Mark(MapRegion square) {
             ArgumentNullException.ThrowIfNull(square);
             lock (gate) {
-                if (!squares.Contains(square))
-                    squares.Add(square);
+                int at = squares.FindIndex(s => s.Layer == square.Layer && s.GetRegionID() == square.GetRegionID());
+                if (at < 0) squares.Add(square);
+                else squares[at] = square;
                 timer.Change(QuietPeriod, Timeout.InfiniteTimeSpan);
             }
         }
@@ -82,13 +84,19 @@ namespace FlashEditor.LiveEdit {
                 runExclusive(() => {
                     foreach (MapRegion square in taken) {
                         int id = square.GetRegionID();
-                        frames.Add(new LiveEditFrame(LiveEditKind.Terrain, id, RegionCodec.EncodeTerrain(square)));
-                        frames.Add(new LiveEditFrame(LiveEditKind.Locations, id, RegionCodec.EncodeLocations(square)));
+                        (LiveEditKind terrain, LiveEditKind locations) = KindsOf(square.Layer);
+                        frames.Add(new LiveEditFrame(terrain, id, RegionCodec.EncodeTerrain(square)));
+                        frames.Add(new LiveEditFrame(locations, id, RegionCodec.EncodeLocations(square)));
                     }
                 });
                 sink(new LiveEditBatch(frames, failures));
             }
         }
+
+        private static (LiveEditKind Terrain, LiveEditKind Locations) KindsOf(MapSquareLayer layer) =>
+            layer == MapSquareLayer.Underwater
+                ? (LiveEditKind.UnderwaterTerrain, LiveEditKind.UnderwaterLocations)
+                : (LiveEditKind.Terrain, LiveEditKind.Locations);
 
         /// <summary>Stops the timer; anything still marked is dropped.</summary>
         public void Dispose() => timer.Dispose();
