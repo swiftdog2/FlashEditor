@@ -819,7 +819,7 @@ namespace FlashEditor {
             //A persisted port that is not a usable TCP port falls back to the default.
             int livePort = Properties.Settings.Default.liveEditPort;
             liveEdit = new LiveEditSession(livePort > 0 && LiveEditLink.IsValidPort(livePort)
-                ? livePort : LiveEditSession.DefaultPort, MapEditorPanel.RunExclusive);
+                ? livePort : LiveEditSession.DefaultPort, MapEditorPanel.RunLocked);
             liveEdit.Link.Enabled = Properties.Settings.Default.liveEditEnabled;
 
             //Saved when the link's switch moves, whichever control moved it, and at once rather

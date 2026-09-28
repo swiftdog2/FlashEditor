@@ -35,9 +35,11 @@ namespace FlashEditor.LiveEdit {
         ///     Creates a coalescer.
         /// </summary>
         /// <param name="runExclusive">
-        ///     Runs its argument while holding the map store's exclusive section. Every encode and
-        ///     definition read happens inside one call, because the squares are live objects the
-        ///     editor mutates on the UI thread.
+        ///     Runs its argument while holding the map store's exclusive section. Every square is
+        ///     encoded inside one call, because the squares are live objects the editor mutates on
+        ///     the UI thread. It must throw rather than run its argument when it has no section to
+        ///     hold; the flush then reports every square as skipped and still sends the definitions,
+        ///     which are read outside it. Not called for a flush with no squares.
         /// </param>
         /// <param name="readDefinition">
         ///     Returns the committed bytes of a floor definition. Throwing or returning null skips
@@ -111,25 +113,24 @@ namespace FlashEditor.LiveEdit {
             lock (flushGate) {
                 var frames = new List<LiveEditFrame>();
                 var failures = new List<LiveEditFailure>();
-                bool ran = false;
-                try {
-                    runExclusive(() => {
-                        //Each item catches its own failure, so this runs to the end once entered.
-                        foreach (MapRegion square in takenSquares)
-                            EncodeSquare(square, frames, failures);
-                        foreach ((LiveEditKind Kind, int Id) definition in takenDefinitions)
-                            ReadDefinition(definition, frames, failures);
-                        ran = true;
-                    });
-                }
-                catch (Exception e) {
-                    if (!ran) {
-                        foreach (MapRegion square in takenSquares)
-                            failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
-                        foreach ((LiveEditKind kind, int id) in takenDefinitions)
-                            failures.Add(new LiveEditFailure(kind, id, e.Message));
+                if (takenSquares.Count > 0) {
+                    bool ran = false;
+                    try {
+                        runExclusive(() => {
+                            //Each square catches its own failure, so this runs to the end once entered.
+                            foreach (MapRegion square in takenSquares)
+                                EncodeSquare(square, frames, failures);
+                            ran = true;
+                        });
+                    }
+                    catch (Exception e) {
+                        if (!ran)
+                            foreach (MapRegion square in takenSquares)
+                                failures.Add(new LiveEditFailure(KindsOf(square.Layer).Terrain, square.GetRegionID(), e.Message));
                     }
                 }
+                foreach ((LiveEditKind Kind, int Id) definition in takenDefinitions)
+                    ReadDefinition(definition, frames, failures);
 
                 try {
                     sink(new LiveEditBatch(frames, failures));

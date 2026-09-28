@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using FlashEditor.Cache.Region;
@@ -342,6 +343,23 @@ namespace FlashEditor.Tests.Map
             using var panel = new MapEditorPanel();
             panel.Bind(null);
             panel.LoadRegion(50, 50);
+        }
+
+        /// <summary>
+        ///     The live-preview flush encodes live squares the UI thread mutates, so with no store
+        ///     bound there is no lock to take and the section must refuse rather than run unlocked.
+        /// </summary>
+        [Fact]
+        public void TheLockedSectionRefusesToRunWithNoStoreBound()
+        {
+            using var panel = new MapEditorPanel();
+            panel.Bind(null);
+            bool ran = false;
+
+            var refused = Assert.Throws<InvalidOperationException>(() => panel.RunLocked(() => ran = true));
+
+            Assert.False(ran);
+            Assert.Contains("no map", refused.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

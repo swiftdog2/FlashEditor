@@ -2756,6 +2756,24 @@ namespace FlashEditor.Map {
                 store.RunExclusive(action);
         }
 
+        /// <summary>
+        ///     Runs <paramref name="action"/> holding the store's exclusive section, for work that
+        ///     reads the live squares off the UI thread.
+        /// </summary>
+        /// <remarks>
+        ///     Unlike <see cref="RunExclusive"/>, this refuses when no store is bound instead of
+        ///     running unlocked: the squares a caller reads may still be the ones the UI thread is
+        ///     editing.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">No store is bound; the action did not run.</exception>
+        public void RunLocked(Action action) {
+            if (action == null) throw new ArgumentNullException(nameof(action));
+
+            MapSquareStore bound = store
+                ?? throw new InvalidOperationException("No map is loaded, so the map square was not encoded for live preview.");
+            bound.RunExclusive(action);
+        }
+
         /// <inheritdoc/>
         protected override void Dispose(bool disposing) {
             if (disposing) {

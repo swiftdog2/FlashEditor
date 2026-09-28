@@ -28,8 +28,9 @@ namespace FlashEditor.LiveEdit {
         /// <summary>Creates a session whose link starts disabled.</summary>
         /// <param name="port">The server's <c>editor_link_port</c>.</param>
         /// <param name="runExclusive">
-        ///     Runs its argument holding the map square store's exclusive section; squares are
-        ///     encoded inside it on the flush thread.
+        ///     Runs its argument holding the map square store's exclusive section, and throws
+        ///     without running it when no store is bound; squares are encoded inside it on the
+        ///     flush thread, and a refusal reaches <see cref="LiveEditLink.LastError"/>.
         /// </param>
         public LiveEditSession(int port, Action<Action> runExclusive) {
             Link = new LiveEditLink(port);

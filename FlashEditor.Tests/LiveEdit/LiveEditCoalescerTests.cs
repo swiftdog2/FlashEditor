@@ -160,6 +160,39 @@ namespace FlashEditor.Tests.LiveEdit {
         }
 
         [Fact]
+        public void AnExclusiveSectionThatRefusesDropsTheSquaresButStillFlushesTheDefinitions() {
+            bool ran = false;
+            using var coalescer = new LiveEditCoalescer(
+                _ => throw new InvalidOperationException("no map store is bound"),
+                (kind, id) => { ran = true; return new byte[] { 9 }; },
+                batches.Add,
+                time);
+
+            coalescer.Mark(Square(50, 50));
+            coalescer.MarkDefinition(LiveEditKind.FloorUnderlay, 4);
+            time.Advance(Quiet);
+
+            LiveEditBatch batch = Assert.Single(batches);
+            LiveEditFrame frame = Assert.Single(batch.Frames);
+            Assert.Equal((LiveEditKind.FloorUnderlay, 4), (frame.Kind, frame.Id));
+            LiveEditFailure failure = Assert.Single(batch.Failures);
+            Assert.Equal((LiveEditKind.Terrain, 0x3232), (failure.Kind, failure.Id));
+            Assert.Contains("no map store is bound", failure.Message);
+            Assert.True(ran);
+        }
+
+        [Fact]
+        public void ABatchOfDefinitionsAloneTakesNoExclusiveSection() {
+            using LiveEditCoalescer coalescer = NewCoalescer((kind, id) => new byte[] { 1 });
+
+            coalescer.MarkDefinition(LiveEditKind.FloorOverlay, 2);
+            time.Advance(Quiet);
+
+            Assert.Single(Assert.Single(batches).Frames);
+            Assert.Equal(0, exclusiveSections);
+        }
+
+        [Fact]
         public void FloorDefinitionsFlushAfterTheSquaresWithTheirCommittedBytes() {
             var reads = new List<(LiveEditKind, int)>();
             using LiveEditCoalescer coalescer = NewCoalescer((kind, id) => {
