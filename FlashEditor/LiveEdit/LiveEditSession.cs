@@ -76,6 +76,18 @@ namespace FlashEditor.LiveEdit {
                 ? bytes
                 : throw new InvalidOperationException("No staged bytes were captured for this definition.");
 
+        /// <summary>
+        ///     Drops every square and definition marked but not yet flushed and every frame the
+        ///     link holds, without disconnecting. Call it when the cache behind the marks goes
+        ///     away: those bytes describe that cache, and sent after a rebind they would overwrite
+        ///     the server's copy with it.
+        /// </summary>
+        public void Reset() {
+            coalescer.Reset();
+            committed.Clear();
+            Link.Reset();
+        }
+
         /// <summary>Stops the coalescer, then the link; anything not yet sent is dropped.</summary>
         public void Dispose() {
             coalescer.Dispose();
