@@ -307,6 +307,18 @@ when no cache is present, and takes `RealCacheFixture` for a shared opened cache
   an operand may be an ordinary constant - so the copy reports and never acts. Its chunk split is
   not preserved either, which is safe only because `AGENTS.md` measures every multi-chunk group as
   living in index 0.
+- **A live push never stages into `RSCache`, and Save is still the only persistence.**
+  `FlashEditor/LiveEdit/` sends decompressed file bytes to the HydraScape server, which keeps them
+  for its session and forwards them to the client; nothing on that path bumps a version, a CRC or
+  a reference-table entry. A floor definition's bytes are handed over by the commit that staged
+  them, never read back from the staging overlay on the flush thread, because the UI thread writes
+  that overlay without a lock. The wire format is `reference/live-edit-protocol.md`, and the C#
+  codec, the server's and the client's change together with its version byte. **Leg B's chunk
+  limit is set by the client**: the 637 client's game socket has a 7500-byte ring buffer
+  (`Class332_Sub1.java:93-94`) and a larger packet drops the connection, so a chunk size raised
+  past it disconnects the player it was meant for, although the server's encoder would still
+  accept it up to 50000.
+
 ## UI conventions
 
 **This is the reference for anything with a user interface. Follow it rather than copying whatever
@@ -644,6 +656,7 @@ writing an unproven claim into the invariants.
 | `reference/hydra-637-definitions/` | De-obfuscated 637 opcode tables, every claim citing a `file:line` |
 | `reference/hydra-637-maps/` | The map path end to end: index-5 addressing and XTEA, the `m` and `l` byte formats, floor definitions, the colour model, and how to read the obfuscated client |
 | `reference/hydra-model-decoding/` | The three model decoders, the face field-name map, and the render types |
+| `reference/live-edit-protocol.md` | The live-preview wire format, editor to server and server to client, that all three codecs cite |
 | `TODO.md` | **The running work list**, and where each open item carries the prompt that resumes it. Prompts cite the rules here rather than repeating them, so a rule changed in this file changes every prompt at once. Update it at milestones, not per commit |
 | `CLAUDE.md` UI conventions | The single reference for anything with a surface. Three tabs predate it; copy it rather than the nearest tab |
 | `reference/viewer-eyeball-checklist.md` | The only verification the 3D viewport has. No capture on this machine sees the GL surface, so a human runs this after any render change |
