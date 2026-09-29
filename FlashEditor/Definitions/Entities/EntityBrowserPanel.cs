@@ -120,6 +120,7 @@ namespace FlashEditor.Definitions.Entities {
         //the first row.
         private readonly Button exportObjButton = new Button { AutoSize = true, Text = "Export .obj..." };
         private readonly Button importObjButton = new Button { AutoSize = true, Text = "Import .obj..." };
+        private readonly Button newModelButton = new Button { AutoSize = true, Text = "New model from OBJ..." };
 
         private readonly Label noticeLabel = new Label { AutoSize = true };
 
@@ -204,6 +205,7 @@ namespace FlashEditor.Definitions.Entities {
             importButton.Click += ImportButton_Click;
             exportObjButton.Click += ExportObjButton_Click;
             importObjButton.Click += ImportObjButton_Click;
+            newModelButton.Click += NewModelButton_Click;
 
             animationSelector.SelectedIndexChanged += AnimationSelector_SelectedIndexChanged;
             previousAnimation.Click += (_, _) => StepAnimation(-1);
@@ -226,6 +228,7 @@ namespace FlashEditor.Definitions.Entities {
             toolStrip.Controls.Add(importButton);
             toolStrip.Controls.Add(exportObjButton);
             toolStrip.Controls.Add(importObjButton);
+            toolStrip.Controls.Add(newModelButton);
             toolStrip.Controls.Add(noticeLabel);
 
             /* The two cycle buttons sit between the caption and the box rather than after it. The
@@ -762,7 +765,7 @@ namespace FlashEditor.Definitions.Entities {
                decodes its models out of index 7 and re-uploads the viewport's buffers; picking an
                NPC or an object picks up several models at once. */
             noticeLabel.Text = kind == EntityKind.Model
-                ? "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. Staged, not written."
+                ? "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. A new model from OBJ takes the next model id. Staged, not written."
                 : descriptor.IsEditable
                     ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
                     : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
@@ -796,6 +799,7 @@ namespace FlashEditor.Definitions.Entities {
             exportButton.Enabled = ready;
             exportObjButton.Enabled = ready && isModel;
             importObjButton.Enabled = ready && isModel;
+            newModelButton.Enabled = ready && isModel;
         }
 
         private void List_SelectedRowChanged(object? sender, EventArgs e) {
@@ -1407,6 +1411,95 @@ namespace FlashEditor.Definitions.Entities {
 
             open.WriteFile(RSConstants.MODELS_INDEX, row.Address.GroupId, row.FileId, new JagStream(encoded));
             return true;
+        }
+
+        /// <summary>
+        ///     Builds a new model from an OBJ and its material library and stages it at the next
+        ///     model id.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="ImportObjButton_Click"/> because the contracts differ: that one
+        ///     writes a mesh over the selected model and keeps everything else of it, and this one has
+        ///     no model to keep anything from, so every attribute OBJ cannot state is fixed by
+        ///     <see cref="NewModelFromObj"/>. The id is not chosen either - index 7 can only append.
+        /// </remarks>
+        private void NewModelButton_Click(object? sender, EventArgs e) {
+            if (cache == null || kind != EntityKind.Model)
+                return;
+
+            using OpenFileDialog picker = new OpenFileDialog {
+                Title = "New model from an OBJ (its MTL is read from beside it)",
+                Filter = "Wavefront OBJ (*.obj)|*.obj|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            int? vertexLabel = AskVertexLabel(cache.NextCreatableGroupId(RSConstants.MODELS_INDEX));
+            if (vertexLabel == NoAnswer)
+                return;
+
+            try {
+                ModelImportResult result = NewModelFromObj.StageFile(cache, picker.FileName, vertexLabel);
+
+                foreach (ModelImportEntry entry in result.Entries)
+                    Debug("new model import: " + entry);
+
+                if (!result.Succeeded) {
+                    ReportStatus("New model refused - " + result.Message);
+                    MessageBox.Show(this, Account(result), "New model",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int modelId = result.Model!.ModelId;
+                list.Bind(cache, Descriptor);
+                EntitySelected?.Invoke(this, new EntitySelectionEventArgs(kind,
+                    new ModelListing(new DefinitionAddress(modelId, 0))));
+
+                ReportStatus("Staged new model " + modelId + " from " + Path.GetFileName(picker.FileName) +
+                    " - " + result.Message + " Save to write it.");
+                MessageBox.Show(this, Account(result), "New model " + modelId,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception failure) {
+                //A malformed or missing file must cost the import and nothing else.
+                Debug("New model from OBJ failed: " + failure);
+                ReportStatus("New model failed: " + failure.Message);
+                MessageBox.Show(this, "Could not build a model from that OBJ:" + Environment.NewLine +
+                    failure.Message, "New model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>The answer <see cref="AskVertexLabel"/> gives when the user cancels.</summary>
+        private const int NoAnswer = int.MinValue;
+
+        /// <summary>
+        ///     Asks whether every vertex of the new model carries the weapon label, or none does.
+        /// </summary>
+        /// <param name="modelId">The id the model will take, shown so the user knows it before it is spent.</param>
+        /// <returns>The label, null for none, or <see cref="NoAnswer"/> when cancelled.</returns>
+        private int? AskVertexLabel(int modelId) {
+            var weapon = new TaskDialogRadioButton(
+                "Worn weapon: vertex label " + NewModelFromObj.WeaponVertexLabel + " on every vertex, as Dharok's greataxe (6702)") {
+                Checked = true
+            };
+            var none = new TaskDialogRadioButton("No vertex labels: nothing animates it (an inventory or ground model)");
+
+            var page = new TaskDialogPage {
+                Caption = "New model from OBJ",
+                Heading = "Vertex labels for model " + modelId,
+                Text = "Face label " + NewModelFromObj.FaceLabel + ", priority " + NewModelFromObj.Priority +
+                       ", render type 0 and format type " + NewModelFromObj.FormatType + " are fixed. " +
+                       "Ids " + ModelCodec.FirstNewProtocolModelId + "-" + ModelCodec.LastNewProtocolModelId +
+                       " are refused, because the client reads them with a different decoder.",
+                RadioButtons = { weapon, none },
+                Buttons = { TaskDialogButton.OK, TaskDialogButton.Cancel }
+            };
+
+            if (TaskDialog.ShowDialog(this, page) != TaskDialogButton.OK)
+                return NoAnswer;
+            return weapon.Checked ? NewModelFromObj.WeaponVertexLabel : null;
         }
 
         /// <summary>Restates a refusal with the triangulation that most likely caused it.</summary>
