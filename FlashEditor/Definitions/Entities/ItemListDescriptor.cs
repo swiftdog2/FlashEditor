@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
@@ -30,34 +31,69 @@ namespace FlashEditor.Definitions.Entities {
             DefinitionColumn.ReadOnly<ItemDefinition>("ID", row => row.id, 70),
             DefinitionColumn.Text<ItemDefinition>("Name", row => row.name,
                 (row, value) => row.name = value, 190),
-            DefinitionColumn.Number<ItemDefinition>("InvModel", row => row.inventoryModelId,
-                (row, value) => row.inventoryModelId = value, 90),
-            DefinitionColumn.Number<ItemDefinition>("ManModel1", row => row.maleWearModel1,
-                (row, value) => row.maleWearModel1 = value, 95),
-            DefinitionColumn.Number<ItemDefinition>("ManModel2", row => row.maleWearModel2,
-                (row, value) => row.maleWearModel2 = value, 95),
-            DefinitionColumn.Number<ItemDefinition>("Female1", row => row.femaleWearModel1,
-                (row, value) => row.femaleWearModel1 = value, 85),
-            DefinitionColumn.Number<ItemDefinition>("Female2", row => row.femaleWearModel2,
-                (row, value) => row.femaleWearModel2 = value, 85),
-            DefinitionColumn.Number<ItemDefinition>("Rotate1", row => row.modelRotation1,
-                (row, value) => row.modelRotation1 = value, 85),
-            DefinitionColumn.Number<ItemDefinition>("Rotate2", row => row.modelRotation2,
-                (row, value) => row.modelRotation2 = value, 85),
+            UShort("InvModel", row => row.inventoryModelId, (row, value) => row.inventoryModelId = value, 90),
+            UShort("ManModel1", row => row.maleWearModel1, (row, value) => row.maleWearModel1 = value, 95),
+            UShort("ManModel2", row => row.maleWearModel2, (row, value) => row.maleWearModel2 = value, 95),
+            UShort("ManModel3", row => row.maleWearModel3, (row, value) => row.maleWearModel3 = value, 95),
+            UShort("Female1", row => row.femaleWearModel1, (row, value) => row.femaleWearModel1 = value, 85),
+            UShort("Female2", row => row.femaleWearModel2, (row, value) => row.femaleWearModel2 = value, 85),
+            UShort("Female3", row => row.femaleWearModel3, (row, value) => row.femaleWearModel3 = value, 85),
+            UShort("Zoom", row => row.modelZoom, (row, value) => row.modelZoom = value, 70),
+            UShort("Rotate1", row => row.modelRotation1, (row, value) => row.modelRotation1 = value, 85),
+            UShort("Rotate2", row => row.modelRotation2, (row, value) => row.modelRotation2 = value, 85),
+            UShort("Zan2d", row => row.zan2d, (row, value) => row.zan2d = value, 70),
+            Short("OffsetX", row => row.modelOffsetX, (row, value) => row.modelOffsetX = value, 75),
+            Short("OffsetY", row => row.modelOffsetY, (row, value) => row.modelOffsetY = value, 75),
+            DefinitionColumn.Text<ItemDefinition>("ManOffset",
+                row => ItemFieldText.FormatOffset(row.manWearXOffset, row.manWearYOffset, row.manWearZOffset),
+                (row, value) => (row.manWearXOffset, row.manWearYOffset, row.manWearZOffset) =
+                    ItemFieldText.ParseOffset(value), 100),
+            DefinitionColumn.Text<ItemDefinition>("FemaleOffset",
+                row => ItemFieldText.FormatOffset(row.womanWearXOffset, row.womanWearYOffset, row.womanWearZOffset),
+                (row, value) => (row.womanWearXOffset, row.womanWearYOffset, row.womanWearZOffset) =
+                    ItemFieldText.ParseOffset(value), 100),
+            DefinitionColumn.Text<ItemDefinition>("Ground", row => ItemFieldText.FormatOptions(row.groundOptions),
+                (row, value) => row.groundOptions = ItemFieldText.ParseOptions(value), 140),
+            DefinitionColumn.Text<ItemDefinition>("Inventory", row => ItemFieldText.FormatOptions(row.inventoryOptions),
+                (row, value) => row.inventoryOptions = ItemFieldText.ParseOptions(value), 140),
+            DefinitionColumn.Text<ItemDefinition>("Recolours",
+                row => ItemFieldText.FormatRecolours(row.originalModelColors, row.modifiedModelColors),
+                (row, value) => (row.originalModelColors, row.modifiedModelColors) =
+                    ItemFieldText.ParseRecolours(value) ?? (null, null), 140),
+            DefinitionColumn.Text<ItemDefinition>("Params", row => ItemFieldText.FormatParams(row.itemParams),
+                (row, value) => row.itemParams = ItemFieldText.ParseParams(value), 200),
             DefinitionColumn.Number<ItemDefinition>("Value", row => row.value,
                 (row, value) => row.value = value, 85),
-            DefinitionColumn.Number<ItemDefinition>("Stack", row => row.stackable,
-                (row, value) => row.stackable = value, 70),
-            /* Stored as a byte in the record, so the setter narrows rather than the column carrying
-               a byte: the cell editor decides the type it hands back and DefinitionColumn.Number is
-               the one place that conversion is written. */
-            DefinitionColumn.Number<ItemDefinition>("Slot", row => row.equipSlotId,
-                (row, value) => row.equipSlotId = (byte) value, 70),
-            DefinitionColumn.Number<ItemDefinition>("EquipId", row => row.equipId,
-                (row, value) => row.equipId = (byte) value, 85),
+            //A flag rather than a number: opcode 11 carries no payload, so any value but set or clear
+            //would be shown and then lost on save.
+            DefinitionColumn.Flag<ItemDefinition>("Stack", row => row.stackable == 1,
+                (row, value) => row.stackable = value ? 1 : 0, 70),
             DefinitionColumn.Flag<ItemDefinition>("Members", row => row.membersOnly,
                 (row, value) => row.membersOnly = value, 90)
         };
+
+        /// <summary>A column over a field the record stores as an unsigned short.</summary>
+        /// <remarks>Refuses what the short cannot hold rather than letting the encoder wrap it.</remarks>
+        private static DefinitionColumn UShort(string header, Func<ItemDefinition, int> read,
+            Action<ItemDefinition, int> write, int width) {
+            return Ranged(header, read, write, width, 0, ushort.MaxValue);
+        }
+
+        /// <summary>A column over a field the record stores as a signed short.</summary>
+        private static DefinitionColumn Short(string header, Func<ItemDefinition, int> read,
+            Action<ItemDefinition, int> write, int width) {
+            return Ranged(header, read, write, width, short.MinValue, short.MaxValue);
+        }
+
+        private static DefinitionColumn Ranged(string header, Func<ItemDefinition, int> read,
+            Action<ItemDefinition, int> write, int width, int min, int max) {
+            return DefinitionColumn.Number<ItemDefinition>(header, row => read(row), (row, value) => {
+                if (value < min || value > max)
+                    throw new FormatException(header + " is stored in two bytes, so it must be from " + min +
+                                              " to " + max + "; " + value + " cannot be saved.");
+                write(row, value);
+            }, width);
+        }
 
         /// <inheritdoc/>
         public override int IndexId => RSConstants.ITEM_DEFINITIONS_INDEX;

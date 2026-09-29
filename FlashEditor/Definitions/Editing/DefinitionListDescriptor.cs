@@ -120,6 +120,32 @@ namespace FlashEditor.Definitions.Editing {
         public bool IsEditable => Write != null;
 
         /// <summary>
+        ///     Writes an edited value, or says why the value cannot be stored.
+        /// </summary>
+        /// <remarks>
+        ///     A setter refuses a value the record cannot hold by throwing a
+        ///     <see cref="FormatException"/> or an <see cref="OverflowException"/>. This turns that into
+        ///     a message, because the grid calls it from a cell editor, where an exception takes the
+        ///     form down.
+        /// </remarks>
+        /// <param name="row">The row being edited.</param>
+        /// <param name="value">What the cell editor handed back.</param>
+        /// <returns>Null when the value was written; otherwise why it was refused.</returns>
+        /// <exception cref="InvalidOperationException">The column is read only.</exception>
+        public string? TryWrite(object row, object? value) {
+            if (Write == null)
+                throw new InvalidOperationException("Column " + Header + " is read only.");
+
+            try {
+                Write(row, value);
+                return null;
+            }
+            catch (Exception refusal) when (refusal is FormatException or OverflowException) {
+                return refusal.Message;
+            }
+        }
+
+        /// <summary>
         ///     What this column's cell draws besides its text, or null for text only.
         /// </summary>
         /// <remarks>

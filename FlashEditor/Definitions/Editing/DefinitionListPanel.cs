@@ -64,6 +64,9 @@ namespace FlashEditor.Definitions.Editing {
            because someone clicked away and back would also throw away the sort and the selection. */
         private RSCache? cache;
         private IDefinitionListDescriptor? descriptor;
+
+        /// <summary>Why the cell edit in progress was refused, until its commit reports it.</summary>
+        private string? refusedEdit;
         private IDefinitionThumbnailSource? thumbnails;
 
         /* A record asked for before its rows existed. Navigating to a record usually means opening
@@ -769,7 +772,7 @@ namespace FlashEditor.Definitions.Editing {
                 };
 
                 if (column.Write != null)
-                    olv.AspectPutter = (row, value) => column.Write(row, value);
+                    olv.AspectPutter = (row, value) => refusedEdit = column.TryWrite(row, value);
 
                 //Only where the descriptor asked for one, so every column that does not want art
                 //keeps the grid's own renderer and nothing changes for it.
@@ -1020,6 +1023,14 @@ namespace FlashEditor.Definitions.Editing {
         private void CommitEdit(object? row) {
             if (row == null || cache == null || descriptor == null || !descriptor.IsEditable)
                 return;
+
+            //The row was left as it was, so there is nothing to stage and the reason is the news.
+            if (refusedEdit != null) {
+                status.Text = "Edit refused: " + refusedEdit;
+                refusedEdit = null;
+                RowCommitted?.Invoke(this, EventArgs.Empty);
+                return;
+            }
 
             //Raised on every path out of the try, including the one that stages nothing: a companion
             //view has to be able to redraw after an edit that was undone just as much as after one

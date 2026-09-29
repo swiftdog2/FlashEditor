@@ -370,7 +370,7 @@ namespace FlashEditor.Definitions.Entities {
         ///     The <b>widest</b> family, not the selected one, because the splitter must not jump
         ///     every time the type selector moves - a viewport that resized itself under the cursor
         ///     as the user browsed would be worse than one column too narrow. Items is the widest at
-        ///     fourteen columns, but that is measured rather than assumed here so a new column
+        ///     most columns, but that is measured rather than assumed here so a new column
         ///     anywhere widens it.
         ///     </para>
         /// </remarks>

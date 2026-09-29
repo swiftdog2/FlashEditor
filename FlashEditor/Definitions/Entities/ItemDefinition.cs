@@ -92,11 +92,6 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>Female chathead model ids - opcodes 91 and 93.</summary>
         public int femaleHeadModel1, femaleHeadModel2;
 
-        /// <summary>Equipment slot this item occupies (UI binding, not in rev 639 cache).</summary>
-        public byte equipSlotId;
-        /// <summary>Equipment appearance identifier (UI binding, not in rev 639 cache).</summary>
-        public byte equipId;
-
         /// <summary>Male equipment translation offsets (pre-shifted by 2 bits).</summary>
         public int manWearXOffset, manWearYOffset, manWearZOffset;
         /// <summary>Female equipment translation offsets (pre-shifted by 2 bits).</summary>
