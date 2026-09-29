@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FlashEditor.Cache.Region;
 using FlashEditor.Map;
 using Xunit;
@@ -178,6 +179,62 @@ namespace FlashEditor.Tests.Map
 
             history.Redo();
             Assert.Equal(5, square.GetUnderlayId(0, 0, 0));
+        }
+
+        public static TheoryData<string> EveryEditKind => new TheoryData<string>
+        {
+            "underlay", "overlay", "height", "flags", "add location", "remove location", "replace location",
+        };
+
+        /// <summary>
+        ///     A save clears <c>Region.Dirty</c> and keeps the history, so an undo or redo stepped
+        ///     after it must dirty the square again, or the next save skips it and the disk keeps the
+        ///     state the user just stepped away from.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(EveryEditKind))]
+        public void AnUndoOrRedoAfterASave_DirtiesTheSquareAgain(string kind)
+        {
+            MapRegion square = Square();
+            Location resident = NewLoc(10, 4, 4);
+            square.AddLocation(resident);
+            square.SetUnderlayId(0, 5, 5, 42);
+
+            (IMapEdit edit, Func<string> read) = kind switch
+            {
+                "underlay" => ((IMapEdit)new SetUnderlayEdit(square, 0, 5, 5, 99),
+                    (Func<string>)(() => square.GetUnderlayId(0, 5, 5).ToString())),
+                "overlay" => (new SetOverlayEdit(square, 0, 5, 5, 12, 5, 3),
+                    () => $"{square.GetOverlayId(0, 5, 5)}/{square.GetOverlayShape(0, 5, 5)}/{square.GetOverlayRotation(0, 5, 5)}"),
+                "height" => (new SetHeightEdit(square, 0, 5, 5, -960),
+                    () => square.GetTileHeight(0, 5, 5).ToString()),
+                "flags" => (new SetTileFlagsEdit(square, 0, 5, 5, 0x9),
+                    () => square.GetRenderRule(0, 5, 5).ToString()),
+                "add location" => (new AddLocationEdit(square, NewLoc(20, 6, 6)),
+                    () => square.GetLocations().Count.ToString()),
+                "remove location" => (new RemoveLocationEdit(square, resident),
+                    () => square.GetLocations().Count.ToString()),
+                "replace location" => (new ReplaceLocationEdit(square, resident, NewLoc(30, 4, 4)),
+                    () => string.Join(",", square.GetLocations().Select(l => l.Id))),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+
+            var history = new MapEditHistory();
+            string before = read();
+
+            history.Apply(edit);
+            string after = read();
+            Assert.NotEqual(before, after);
+
+            square.ClearDirty(); //what MapSquareLoader.Save does once the square is staged
+            history.Undo();
+            Assert.True(square.Dirty, $"{kind}: undo after a save left the square clean");
+            Assert.Equal(before, read());
+
+            square.ClearDirty();
+            history.Redo();
+            Assert.True(square.Dirty, $"{kind}: redo after a save left the square clean");
+            Assert.Equal(after, read());
         }
 
         [Fact]
