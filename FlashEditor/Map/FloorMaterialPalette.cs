@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using FlashEditor.Cache;
-using FlashEditor.Definitions.Config;
 using FlashEditor.UI;
 using static FlashEditor.Utils.DebugUtil;
 
@@ -34,11 +34,13 @@ namespace FlashEditor.Map {
     ///     expected to be there.
     ///     </para>
     ///     <para>
-    ///     <b>A texture beats a colour where a record has one</b>, because that is what the renderer
-    ///     does with it - a floor with a texture draws the texture and its colour is only the flat
-    ///     fallback. The swatch shows the texture's representative colour where one can be had, and
-    ///     marks the record as textured either way, so two floors that differ only by texture do not
-    ///     look identical.
+    ///     <b>A swatch is the colour the top-down map draws</b>, built by <see cref="FloorSwatch"/>
+    ///     through the same <see cref="FloorColour"/> the rasteriser draws with. For an overlay that
+    ///     is the secondary colour, then the texture's representative colour, then the primary; for
+    ///     an underlay it is the blended colour of a field of that underlay alone, not its raw RGB.
+    ///     It is not the in-game 3D ground colour, which comes from an overlay's primary, so the
+    ///     caption lists the primary separately. A record that names a texture carries a corner
+    ///     mark either way, so two floors that differ only by texture do not look identical.
     ///     </para>
     /// </remarks>
     public sealed class FloorMaterialPalette : UserControl {
@@ -48,7 +50,7 @@ namespace FlashEditor.Map {
         private const int SwatchSide = 18;
         private const int Gap = 2;
 
-        private readonly List<Entry> entries = new();
+        private readonly List<FloorSwatch> entries = new();
         private readonly EditorToolStrip tools = new EditorToolStrip { Dock = DockStyle.Top };
         private readonly Label caption = new Label { Dock = DockStyle.Bottom, AutoSize = true };
 
@@ -131,7 +133,7 @@ namespace FlashEditor.Map {
             using var hover = new Pen(EditorTheme.Accent(EditorSurface.Canvas), 2f);
             using var idBrush = new SolidBrush(EditorTheme.InkMuted(EditorSurface.Canvas));
 
-            foreach (Entry entry in entries) {
+            foreach (FloorSwatch entry in entries) {
                 if (entry.Kind != showing) {
                     index++;
                     continue;
@@ -143,8 +145,7 @@ namespace FlashEditor.Map {
 
                 var box = new Rectangle(x, y, SwatchSide, SwatchSide);
 
-                using (var fill = new SolidBrush(entry.Colour))
-                    g.FillRectangle(fill, box);
+                PaintFill(g, entry, box);
 
                 /* A corner mark rather than a different swatch colour. Two floors can share a
                    colour and differ only by texture, and the renderer draws the texture - so
@@ -196,7 +197,7 @@ namespace FlashEditor.Map {
             if (hit < 0)
                 return;
 
-            Entry entry = entries[hit];
+            FloorSwatch entry = entries[hit];
             Picked?.Invoke(this, new FloorPick(entry.Kind, entry.Id));
         }
 
@@ -211,7 +212,11 @@ namespace FlashEditor.Map {
             underlays.Arm();
 
             tools.Items.Add(new ToolStripControlHost(InfoAffordance.For(this, InfoKind.Help,
-                "Every floor material in the cache, in the colour the renderer uses for it.\n\n" +
+                "Every floor material in the cache, in the colour the top-down map draws for it.\n\n" +
+                "This is not the in-game 3D ground colour: the game draws an overlay's primary " +
+                "colour, the map draws its secondary first. Hover a swatch to see both.\n\n" +
+                "A crossed swatch is a hole: the map draws nothing there, underlay included. A " +
+                "hatched one has no colour of its own and lets the underlay show.\n\n" +
                 "A small dark mark in the corner means the record names a texture. The renderer " +
                 "draws that texture and treats the colour as the flat fallback, so two floors can " +
                 "share a colour and look completely different in game.\n\n" +
@@ -267,18 +272,9 @@ namespace FlashEditor.Map {
 
             foreach (int id in ids) {
                 try {
-                    if (kind == FloorKind.Underlay) {
-                        FloorUnderlayDefinition floor = cache.GetFloorUnderlay(id);
-                        entries.Add(new Entry(kind, id, Opaque(floor.Rgb), floor.TextureId));
-                    }
-                    else {
-                        FloorOverlayDefinition floor = cache.GetFloorOverlay(id);
-
-                        //An overlay with no stored colour is a real state, and black is the honest
-                        //stand-in: the renderer has nothing else to draw for it either.
-                        entries.Add(new Entry(kind, id,
-                            Opaque(floor.HasPrimaryRgb ? floor.PrimaryRgb : 0), floor.TextureId));
-                    }
+                    entries.Add(kind == FloorKind.Underlay
+                        ? FloorSwatch.Underlay(cache.GetFloorUnderlay(id))
+                        : FloorSwatch.Overlay(cache.GetFloorOverlay(id), FloorColour.TextureHsl));
                 }
                 catch (Exception ex) {
                     Debug("Floor palette could not decode " + kind + " " + id + ": " + ex.Message);
@@ -288,15 +284,13 @@ namespace FlashEditor.Map {
 
         private void UpdateCaption() {
             int shown = 0;
-            foreach (Entry entry in entries) {
+            foreach (FloorSwatch entry in entries) {
                 if (entry.Kind == showing)
                     shown++;
             }
 
             if (hovered >= 0 && hovered < entries.Count) {
-                Entry entry = entries[hovered];
-                caption.Text = entry.Kind + " " + entry.Id + "   " + Hex(entry.Colour) +
-                    (entry.TextureId >= 0 ? "   texture " + entry.TextureId : "");
+                caption.Text = entries[hovered].Caption;
                 return;
             }
 
@@ -316,7 +310,7 @@ namespace FlashEditor.Map {
             int index = 0;
             int seen = 0;
 
-            foreach (Entry entry in entries) {
+            foreach (FloorSwatch entry in entries) {
                 if (entry.Kind == showing) {
                     if (seen == position)
                         return index;
@@ -345,7 +339,7 @@ namespace FlashEditor.Map {
             columns = Math.Max(1, (ClientSize.Width - SystemInformation.VerticalScrollBarWidth - Gap) / cell);
 
             int shown = 0;
-            foreach (Entry entry in entries) {
+            foreach (FloorSwatch entry in entries) {
                 if (entry.Kind == showing)
                     shown++;
             }
@@ -354,29 +348,34 @@ namespace FlashEditor.Map {
             AutoScrollMinSize = new Size(0, ToolsHeight + rows * cell + Gap + caption.Height);
         }
 
-        private static Color Opaque(int packedRgb) {
-            return Color.FromArgb(0xFF, (packedRgb >> 16) & 0xFF, (packedRgb >> 8) & 0xFF, packedRgb & 0xFF);
-        }
+        /// <summary>Fills one swatch box with what the map draws for its record.</summary>
+        /// <remarks>
+        ///     A hole and an overlay with no colour of its own both draw no overlay colour, and a
+        ///     black fill would make each indistinguishable from a real black floor and from the
+        ///     other. A hole gets a cross over the canvas; an overlay that lets the underlay show
+        ///     gets a hatch.
+        /// </remarks>
+        private void PaintFill(Graphics g, FloorSwatch entry, Rectangle box) {
+            Color ink = EditorTheme.InkMuted(EditorSurface.Canvas);
 
-        private static string Hex(Color colour) {
-            return "0x" + colour.R.ToString("X2") + colour.G.ToString("X2") + colour.B.ToString("X2");
-        }
+            switch (entry.Fill) {
+                case FloorSwatchFill.Hole:
+                    using (var pen = new Pen(ink, 1.5f)) {
+                        g.DrawLine(pen, box.Left + 3, box.Top + 3, box.Right - 4, box.Bottom - 4);
+                        g.DrawLine(pen, box.Left + 3, box.Bottom - 4, box.Right - 4, box.Top + 3);
+                    }
+                    break;
 
-        private readonly struct Entry {
-            internal Entry(FloorKind kind, int id, Color colour, int textureId) {
-                Kind = kind;
-                Id = id;
-                Colour = colour;
-                TextureId = textureId;
+                case FloorSwatchFill.UnderlayShows:
+                    using (var hatch = new HatchBrush(HatchStyle.WideUpwardDiagonal, ink, BackColor))
+                        g.FillRectangle(hatch, box);
+                    break;
+
+                default:
+                    using (var fill = new SolidBrush(Color.FromArgb(0xFF, Color.FromArgb(entry.MapRgb))))
+                        g.FillRectangle(fill, box);
+                    break;
             }
-
-            internal FloorKind Kind { get; }
-
-            internal int Id { get; }
-
-            internal Color Colour { get; }
-
-            internal int TextureId { get; }
         }
     }
 
