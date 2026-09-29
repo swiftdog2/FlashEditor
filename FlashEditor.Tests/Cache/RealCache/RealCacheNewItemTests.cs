@@ -92,6 +92,20 @@ namespace FlashEditor.Tests.Cache.RealCache {
             Assert.Contains(Greataxe.ToString(), refusal.Message);
         }
 
+        [RealCacheFact]
+        public void NextItemId_IsOnePastTheHighestDeclaredItem() {
+            RSCache cache = _cache.OpenCache();
+            int next = NewItemFromTemplate.NextItemId(cache);
+            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+
+            int[] lastGroupFiles = cache.GetFileIds(RSConstants.ITEM_DEFINITIONS_INDEX, addressing.GroupOf(next - 1));
+            Assert.Contains(addressing.FileOf(next - 1), lastGroupFiles);
+            foreach ((int group, int file) in cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX))
+                Assert.True(addressing.DefinitionId(group, file) < next);
+
+            _cache.Profile.AssertCensus(_output, "item.nextId", next);
+        }
+
         private byte[] StoredBytes(int itemId) {
             CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
             return _cache.OpenCache().ReadFileBytes(RSConstants.ITEM_DEFINITIONS_INDEX,

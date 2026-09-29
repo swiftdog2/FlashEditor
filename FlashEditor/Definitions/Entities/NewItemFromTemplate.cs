@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FlashEditor.Cache;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Entities {
     /// <summary>
@@ -53,6 +54,81 @@ namespace FlashEditor.Definitions.Entities {
                 copy.Opcodes.Remove(opcode);
             copy.notedId = 0;
             copy.lendId = 0;
+
+            return copy;
+        }
+
+        /// <summary>
+        ///     The id the next new item takes: one past the highest item the reference table declares.
+        /// </summary>
+        /// <remarks>
+        ///     Past the highest rather than into a gap, because the server builds its equipment index
+        ///     from the item ids in order, so an id taken below the highest would renumber every
+        ///     wearable item after it.
+        /// </remarks>
+        /// <param name="cache">The open cache.</param>
+        /// <returns>The next item id.</returns>
+        public static int NextItemId(RSCache cache) {
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+
+            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+            int highest = -1;
+            foreach ((int group, int file) in cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX))
+                highest = Math.Max(highest, addressing.DefinitionId(group, file));
+            return highest + 1;
+        }
+
+        /// <summary>
+        ///     Refuses an item id that server code treats specially whatever the item is.
+        /// </summary>
+        /// <param name="itemId">The id a new item would take.</param>
+        /// <exception cref="NewItemRefusedException">The id is <see cref="ReservedItemId"/>.</exception>
+        public static void RefuseReservedId(int itemId) {
+            if (itemId == ReservedItemId)
+                throw new NewItemRefusedException(
+                    "The next item id is " + ReservedItemId + ", and the HydraScape server hard-codes " +
+                    ReservedItemId + " as a full helmet (EquipmentTypes.isFullHelmet), so any item made " +
+                    "there hides the wearer's head. No item was made.");
+        }
+
+        /// <summary>The item id <c>EquipmentTypes.isFullHelmet</c> in the HydraScape server names.</summary>
+        public const int ReservedItemId = 20474;
+
+        /// <summary>
+        ///     Copies item <paramref name="templateId"/> into <see cref="NextItemId"/> and stages it.
+        /// </summary>
+        /// <remarks>
+        ///     Staged like any edit: nothing reaches the disk until the cache is saved. A copy that
+        ///     lands in a group the table already declares is a new file in it; one past a full group
+        ///     creates the next group. Every refusal is raised before anything is staged.
+        /// </remarks>
+        /// <param name="cache">The open cache to stage into.</param>
+        /// <param name="templateId">The item to copy.</param>
+        /// <returns>The staged copy, whose <see cref="ItemDefinition.id"/> is the id it took.</returns>
+        /// <exception cref="NewItemRefusedException">
+        ///     The next id is <see cref="ReservedItemId"/>, or the template is a note or a lent copy.
+        /// </exception>
+        public static ItemDefinition Stage(RSCache cache, int templateId) {
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+
+            int itemId = NextItemId(cache);
+            RefuseReservedId(itemId);
+
+            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+            ItemDefinition template = ItemDefinition.DecodeFromStream(new JagStream(cache.ReadFileBytes(
+                RSConstants.ITEM_DEFINITIONS_INDEX, addressing.GroupOf(templateId), addressing.FileOf(templateId))));
+            template.id = templateId;
+
+            ItemDefinition copy = Duplicate(template, itemId);
+            int group = addressing.GroupOf(itemId);
+            int file = addressing.FileOf(itemId);
+
+            if (file == 0)
+                cache.CreateGroup(RSConstants.ITEM_DEFINITIONS_INDEX, group, new[] { new RSGroupFile(file, copy.Encode()) });
+            else
+                cache.WriteFile(RSConstants.ITEM_DEFINITIONS_INDEX, group, file, copy.Encode());
 
             return copy;
         }

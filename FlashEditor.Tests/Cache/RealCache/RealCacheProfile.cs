@@ -188,6 +188,8 @@ namespace FlashEditor.Tests.Cache.RealCache
                 new Dictionary<int, int[]>(),
                 new Dictionary<string, long>
                 {
+                    //Index 19. One past the highest declared item; the ids below it are not dense.
+                    ["item.nextId"] = 20430,
                     //Index 3. Every group and every file of it carries a name here, so the two
                     //unnamed counts are zero rather than absent - which is why the listing test
                     //asserts that real names came through instead of counting the unnamed.
@@ -379,6 +381,8 @@ namespace FlashEditor.Tests.Cache.RealCache
                 },
                 new Dictionary<string, long>
                 {
+                    //Index 19. One past the highest declared item, 20472.
+                    ["item.nextId"] = 20473,
                     //Index 3. The file counts recovered for the three undeclared groups, and the
                     //population of every branch the byte-identity sweep cannot speak for.
                     ["interface.undeclared.772.files"] = 14,
