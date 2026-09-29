@@ -297,6 +297,13 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 mesh.MaterialNames.Count + " named materials. Colours, alphas and texture ids come " +
                 "from the model"));
 
+            AddMeshNotes(entries, mesh, snapped);
+        }
+
+        /// <summary>
+        ///     Reports the two ways reading a mesh changed it: fanned polygons and rounded coordinates.
+        /// </summary>
+        internal static void AddMeshNotes(List<ModelImportEntry> entries, ObjMesh mesh, double snapped) {
             if (mesh.TriangulatedPolygons > 0) {
                 entries.Add(new ModelImportEntry("OBJ polygons", ModelImportDisposition.Ignored,
                     mesh.TriangulatedPolygons + " faces had more than three corners and were fanned " +
@@ -311,7 +318,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
             }
         }
 
-        private static ModelImportResult Refused(string message) {
+        internal static ModelImportResult Refused(string message) {
             var entries = new List<ModelImportEntry> {
                 new ModelImportEntry("import", ModelImportDisposition.Refused, message)
             };

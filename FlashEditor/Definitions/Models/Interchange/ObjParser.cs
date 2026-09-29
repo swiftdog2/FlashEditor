@@ -58,6 +58,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
             var texCoords = new List<ObjTexCoord>();
             var faces = new List<ObjFace>();
             var materialNames = new List<string>();
+            var materialLibraries = new List<string>();
             int normals = 0;
             int polygons = 0;
             string? material = null;
@@ -90,6 +91,11 @@ namespace FlashEditor.Definitions.Models.Interchange {
                             parts.Length >= 3 ? Number(parts[2], lineNumber) : 0.0));
                         break;
 
+                    case "mtllib":
+                        if (parts.Length >= 2)
+                            materialLibraries.Add(string.Join(" ", parts, 1, parts.Length - 1));
+                        break;
+
                     case "vn":
                         normals++;
                         break;
@@ -107,7 +113,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 }
             }
 
-            return new ObjMesh(positions, texCoords, faces, normals, polygons, materialNames);
+            return new ObjMesh(positions, texCoords, faces, normals, polygons, materialNames, materialLibraries);
         }
 
         /// <summary>

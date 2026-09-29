@@ -87,22 +87,10 @@ namespace FlashEditor.Tests.Cache.RealCache {
             byte[] stored = open.ReadFileBytes(RSConstants.MODELS_INDEX, Greataxe, fileId);
             decoded = ModelCodec.Decode(stored, Greataxe);
 
-            _output.WriteLine($"model {Greataxe}: {decoded.Encoding}, format type {decoded.FormatType}, " +
-                              $"{decoded.VertexCount} vertices, {decoded.FaceCount} faces, " +
-                              $"priority flag {decoded.PriorityFlag}, alpha flag {decoded.AlphaFlag}, " +
-                              $"flags 0x{decoded.Flags:X2}, textured {decoded.TexturedFaceCount}");
-            _output.WriteLine("vertex skins: " + Distinct(decoded.VertexSkins?.Select(s => s.Value)));
-            _output.WriteLine("face skins: " + Distinct(decoded.FaceSkins?.Select(s => s.Value)));
-            _output.WriteLine("raw face texture ids: " + Distinct(decoded.FaceTextureIds?.Select(t => (int) t)) +
-                              ", textured triangle types: " + Distinct(decoded.TextureTypes?.Select(t => (int) t)) +
-                              ", projection slack: " + BitConverter.ToString(decoded.SlackTextureScale));
-            _output.WriteLine("render types: " + Distinct(decoded.FaceTypeBytes?.Select(b => (int) b)));
-            _output.WriteLine("next creatable model id: " + open.NextCreatableGroupId(RSConstants.MODELS_INDEX));
+            _output.WriteLine($"model {Greataxe}: format type {decoded.FormatType}, {decoded.VertexCount} vertices, " +
+                              $"{decoded.FaceCount} faces, {decoded.TexturedFaceCount} textured triangles");
             return stored;
         }
-
-        private static string Distinct(System.Collections.Generic.IEnumerable<int>? values) =>
-            values == null ? "absent" : string.Join(",", values.Distinct().OrderBy(v => v));
 
         /// <summary>Everything a from-scratch model states, read off a decoded one.</summary>
         private static ModelBlueprint BlueprintOf(ModelFile file) => new ModelBlueprint {

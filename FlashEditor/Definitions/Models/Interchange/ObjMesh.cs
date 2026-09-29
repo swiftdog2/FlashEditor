@@ -130,6 +130,16 @@ namespace FlashEditor.Definitions.Models.Interchange {
         /// <summary>Distinct <c>usemtl</c> names, in first-seen order.</summary>
         public IReadOnlyList<string> MaterialNames { get; }
 
+        /// <summary>
+        ///     What each <c>mtllib</c> line names, in file order, as written after the keyword.
+        /// </summary>
+        /// <remarks>
+        ///     Kept whole rather than split, because the format allows several names on one line and
+        ///     Blender writes a single name containing spaces as it stands; only a reader that can
+        ///     look at the directory can tell the two apart.
+        /// </remarks>
+        public IReadOnlyList<string> MaterialLibraries { get; }
+
         /// <summary>Binds a parsed file.</summary>
         /// <param name="positions">Every <c>v</c> line.</param>
         /// <param name="texCoords">Every <c>vt</c> line.</param>
@@ -137,15 +147,17 @@ namespace FlashEditor.Definitions.Models.Interchange {
         /// <param name="normalCount">How many <c>vn</c> lines were seen.</param>
         /// <param name="triangulatedPolygons">How many faces had more than three corners.</param>
         /// <param name="materialNames">Distinct material names, in first-seen order.</param>
+        /// <param name="materialLibraries">Each <c>mtllib</c> line's names, or null for none.</param>
         public ObjMesh(IReadOnlyList<ObjVertex> positions, IReadOnlyList<ObjTexCoord> texCoords,
             IReadOnlyList<ObjFace> faces, int normalCount, int triangulatedPolygons,
-            IReadOnlyList<string> materialNames) {
+            IReadOnlyList<string> materialNames, IReadOnlyList<string>? materialLibraries = null) {
             Positions = positions ?? throw new ArgumentNullException(nameof(positions));
             TexCoords = texCoords ?? throw new ArgumentNullException(nameof(texCoords));
             Faces = faces ?? throw new ArgumentNullException(nameof(faces));
             NormalCount = normalCount;
             TriangulatedPolygons = triangulatedPolygons;
             MaterialNames = materialNames ?? throw new ArgumentNullException(nameof(materialNames));
+            MaterialLibraries = materialLibraries ?? Array.Empty<string>();
         }
     }
 }

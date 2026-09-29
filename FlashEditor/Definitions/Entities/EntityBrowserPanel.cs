@@ -90,7 +90,9 @@ namespace FlashEditor.Definitions.Entities {
         private readonly ItemListDescriptor items = new ItemListDescriptor();
         private readonly NPCListDescriptor npcs = new NPCListDescriptor();
         private readonly ObjectListDescriptor objects = new ObjectListDescriptor();
-        private readonly ModelListDescriptor models = new ModelListDescriptor();
+        //Replaced rather than reused after a model is created: the grid's Bind treats the same
+        //descriptor instance as the same rows and would keep the new model off the list.
+        private ModelListDescriptor models = new ModelListDescriptor();
 
         private readonly DefinitionListPanel list = new DefinitionListPanel();
 
@@ -1427,16 +1429,26 @@ namespace FlashEditor.Definitions.Entities {
             if (cache == null || kind != EntityKind.Model)
                 return;
 
+            //Refused before any dialog, because the id is fixed by the cache and not by the file.
+            int nextId = cache.NextCreatableGroupId(RSConstants.MODELS_INDEX);
+            try {
+                ModelFileBuilder.RefuseNewProtocolId(nextId);
+            }
+            catch (ModelImportException refusal) {
+                ReportStatus("New model refused - " + refusal.Message);
+                MessageBox.Show(this, refusal.Message, "New model", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             using OpenFileDialog picker = new OpenFileDialog {
-                Title = "New model from an OBJ (its MTL is read from beside it)",
+                Title = "New model " + nextId + " from an OBJ (its MTL is read from beside it)",
                 Filter = "Wavefront OBJ (*.obj)|*.obj|All files (*.*)|*.*"
             };
 
             if (picker.ShowDialog(this) != DialogResult.OK)
                 return;
 
-            int? vertexLabel = AskVertexLabel(cache.NextCreatableGroupId(RSConstants.MODELS_INDEX));
-            if (vertexLabel == NoAnswer)
+            if (!TryAskVertexLabel(nextId, out int? vertexLabel))
                 return;
 
             try {
@@ -1453,7 +1465,8 @@ namespace FlashEditor.Definitions.Entities {
                 }
 
                 int modelId = result.Model!.ModelId;
-                list.Bind(cache, Descriptor);
+                models = new ModelListDescriptor();
+                list.Bind(cache, models);
                 EntitySelected?.Invoke(this, new EntitySelectionEventArgs(kind,
                     new ModelListing(new DefinitionAddress(modelId, 0))));
 
@@ -1471,15 +1484,13 @@ namespace FlashEditor.Definitions.Entities {
             }
         }
 
-        /// <summary>The answer <see cref="AskVertexLabel"/> gives when the user cancels.</summary>
-        private const int NoAnswer = int.MinValue;
-
         /// <summary>
         ///     Asks whether every vertex of the new model carries the weapon label, or none does.
         /// </summary>
         /// <param name="modelId">The id the model will take, shown so the user knows it before it is spent.</param>
-        /// <returns>The label, null for none, or <see cref="NoAnswer"/> when cancelled.</returns>
-        private int? AskVertexLabel(int modelId) {
+        /// <param name="label">The label, or null for none.</param>
+        /// <returns>False when the user cancelled.</returns>
+        private bool TryAskVertexLabel(int modelId, out int? label) {
             var weapon = new TaskDialogRadioButton(
                 "Worn weapon: vertex label " + NewModelFromObj.WeaponVertexLabel + " on every vertex, as Dharok's greataxe (6702)") {
                 Checked = true
@@ -1490,16 +1501,17 @@ namespace FlashEditor.Definitions.Entities {
                 Caption = "New model from OBJ",
                 Heading = "Vertex labels for model " + modelId,
                 Text = "Face label " + NewModelFromObj.FaceLabel + ", priority " + NewModelFromObj.Priority +
-                       ", render type 0 and format type " + NewModelFromObj.FormatType + " are fixed. " +
-                       "Ids " + ModelCodec.FirstNewProtocolModelId + "-" + ModelCodec.LastNewProtocolModelId +
-                       " are refused, because the client reads them with a different decoder.",
+                       ", render type 0 and format type " + NewModelFromObj.FormatType + " are fixed.",
                 RadioButtons = { weapon, none },
                 Buttons = { TaskDialogButton.OK, TaskDialogButton.Cancel }
             };
 
+            label = null;
             if (TaskDialog.ShowDialog(this, page) != TaskDialogButton.OK)
-                return NoAnswer;
-            return weapon.Checked ? NewModelFromObj.WeaponVertexLabel : null;
+                return false;
+            if (weapon.Checked)
+                label = NewModelFromObj.WeaponVertexLabel;
+            return true;
         }
 
         /// <summary>Restates a refusal with the triangulation that most likely caused it.</summary>

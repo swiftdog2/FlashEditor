@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using FlashEditor.Cache;
 
@@ -81,9 +80,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 return Built(model, mesh, materialsUsed, vertexLabel, snapped);
             }
             catch (ModelImportException failure) {
-                return new ModelImportResult(false, false, null, failure.Message, new[] {
-                    new ModelImportEntry("new model", ModelImportDisposition.Refused, failure.Message)
-                });
+                return ModelObjImporter.Refused(failure.Message);
             }
         }
 
@@ -122,9 +119,8 @@ namespace FlashEditor.Definitions.Models.Interchange {
             if (objPath == null)
                 throw new ArgumentNullException(nameof(objPath));
 
-            string objText = File.ReadAllText(objPath);
-            ObjMesh mesh = ObjParser.Parse(objText);
-            IReadOnlyDictionary<string, int> materials = ReadLibraries(objText, objPath);
+            ObjMesh mesh = ObjParser.ParseFile(objPath);
+            IReadOnlyDictionary<string, int> materials = ReadLibraries(mesh, objPath);
 
             int modelId = cache.NextCreatableGroupId(RSConstants.MODELS_INDEX);
             ModelImportResult result = Build(mesh, materials, modelId, vertexLabel);
@@ -141,22 +137,16 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     Every <c>Kd</c> in the libraries an OBJ names, later libraries overriding earlier ones.
         /// </summary>
         /// <remarks>
-        ///     Read from the OBJ text here because <see cref="ObjMesh"/> carries only the mesh. A
-        ///     library that is named and missing throws rather than yielding no colours, so the failure
-        ///     names the file instead of every face.
+        ///     A library that is named and missing throws rather than yielding no colours, so the
+        ///     failure names the file instead of every face.
         /// </remarks>
-        private static IReadOnlyDictionary<string, int> ReadLibraries(string objText, string objPath) {
+        private static IReadOnlyDictionary<string, int> ReadLibraries(ObjMesh mesh, string objPath) {
             string directory = Path.GetDirectoryName(Path.GetFullPath(objPath)) ?? string.Empty;
             var merged = new Dictionary<string, int>(StringComparer.Ordinal);
 
-            foreach (string raw in objText.Split('\n')) {
-                string line = raw.Trim();
-                if (!line.StartsWith("mtllib ", StringComparison.Ordinal) && !line.StartsWith("mtllib\t", StringComparison.Ordinal))
-                    continue;
-
+            foreach (string rest in mesh.MaterialLibraries) {
                 //The format allows several names on one line, and Blender writes a name with
                 //spaces as it stands, so a single name is taken whole when it exists.
-                string rest = line.Substring("mtllib".Length).Trim();
                 string[] names = File.Exists(Path.Combine(directory, rest))
                     ? new[] { rest }
                     : rest.Split((char[]?) null, StringSplitOptions.RemoveEmptyEntries);
@@ -229,19 +219,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 new ModelImportEntry("OBJ normals", ModelImportDisposition.Ignored,
                     mesh.NormalCount + " vn entries; the client computes its own")
             };
-
-            if (mesh.TriangulatedPolygons > 0) {
-                entries.Add(new ModelImportEntry("OBJ polygons", ModelImportDisposition.Replaced,
-                    mesh.TriangulatedPolygons + " faces had more than three corners and were fanned " +
-                    "into triangles"));
-            }
-
-            if (snapped > 0.0) {
-                entries.Add(new ModelImportEntry("coordinate rounding", ModelImportDisposition.Replaced,
-                    "the furthest a vertex moved to reach a whole number was " +
-                    snapped.ToString("0.######", CultureInfo.InvariantCulture) +
-                    "; model coordinates are integers"));
-            }
+            ModelObjImporter.AddMeshNotes(entries, mesh, snapped);
 
             return new ModelImportResult(true, true, model,
                 $"Model {model.ModelId}: {model.VertexCount} vertices, {model.FaceCount} faces, " +

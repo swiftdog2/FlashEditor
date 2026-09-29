@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Models.Interchange {
@@ -12,19 +13,19 @@ namespace FlashEditor.Definitions.Models.Interchange {
     /// </remarks>
     public sealed class ModelBlueprint {
         /// <summary>The model id, which is its index-7 group id.</summary>
-        public int ModelId { get; init; }
+        public required int ModelId { get; init; }
 
         /// <summary>
         ///     The format type. Below 13 the client draws the model four times larger
         ///     (<see cref="ModelFile.VertexShift"/>), so a mesh in world units wants 13 or more.
         /// </summary>
-        public int FormatType { get; init; } = 15;
+        public required int FormatType { get; init; }
 
         /// <summary>The vertices and faces, in stored space.</summary>
-        public ModelGeometry Geometry { get; init; } = null!;
+        public required ModelGeometry Geometry { get; init; }
 
         /// <summary>One packed HSL colour word per face, as the file stores it.</summary>
-        public ushort[] FaceColours { get; init; } = null!;
+        public required ushort[] FaceColours { get; init; }
 
         /// <summary>
         ///     One render type per face (0 Gouraud, 1 flat, 2 not drawn), or null for no block, which
@@ -41,8 +42,14 @@ namespace FlashEditor.Definitions.Models.Interchange {
         /// <summary>One vertex label (skin group) per vertex, 0 to 255, or null for none.</summary>
         public int[]? VertexSkins { get; init; }
 
-        /// <summary>Per-face textures and the triangles that map them, or null for an untextured model.</summary>
-        public ModelTexturing? Texturing { get; init; }
+        /// <summary>
+        ///     Per-face textures and the triangles that map them, or null for an untextured model.
+        /// </summary>
+        /// <remarks>
+        ///     Internal: nothing in the editor authors texture mapping, and this exists so a shipped
+        ///     textured model can be rebuilt byte for byte against its stored file.
+        /// </remarks>
+        internal ModelTexturing? Texturing { get; init; }
     }
 
     /// <summary>
@@ -54,7 +61,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
     ///     <see cref="ScaleSlack"/> holds bytes the client never reads yet the shipped files do not
     ///     leave zero (model 6702 carries <c>0A 00 00 52 00 00 53 00</c> there).
     /// </remarks>
-    public sealed class ModelTexturing {
+    internal sealed class ModelTexturing {
         /// <summary>Raw per-face texture id, one per face: the index-9 id plus one, 0 for none.</summary>
         public ushort[] FaceTextureIds { get; init; } = Array.Empty<ushort>();
 
@@ -140,31 +147,18 @@ namespace FlashEditor.Definitions.Models.Interchange {
         public static ModelFile Build(ModelBlueprint blueprint) {
             if (blueprint == null)
                 throw new ArgumentNullException(nameof(blueprint));
-            if (blueprint.Geometry == null)
-                throw new ArgumentException("A blueprint needs a mesh.", nameof(blueprint));
-            if (blueprint.FaceColours == null)
-                throw new ArgumentException("A blueprint needs a colour per face.", nameof(blueprint));
 
             ModelGeometry geometry = blueprint.Geometry;
             int vertices = geometry.VertexCount;
             int faces = geometry.FaceCount;
 
             RefuseNewProtocolId(blueprint.ModelId);
-            RefuseCount(vertices, "vertices");
-            RefuseCount(faces, "faces");
             RefuseLength(blueprint.FaceColours.Length, faces, "face colours");
             RefuseLength(blueprint.FaceRenderTypes?.Length, faces, "face render types");
             RefuseLength(blueprint.FaceSkins?.Length, faces, "face labels");
             RefuseLength(blueprint.VertexSkins?.Length, vertices, "vertex labels");
             RefuseRange(blueprint.FormatType, 0, 255, "format type");
             RefuseRange(blueprint.GlobalPriority, 0, 254, "global priority");
-            ModelGeometryEncoder.RefuseOutOfRangeIndices(geometry);
-
-            ModelGeometryEncoder.EncodeVertices(geometry, out byte[] vertexFlags,
-                out StoredSmart[] deltasX, out StoredSmart[] deltasY, out StoredSmart[] deltasZ,
-                out int lengthX, out int lengthY, out int lengthZ);
-            ModelGeometryEncoder.EncodeFaces(geometry, out byte[] opcodes,
-                out StoredSmart[] faceDeltas, out int faceLength);
 
             byte flags = 0;
             if (blueprint.FaceRenderTypes != null)
@@ -175,36 +169,21 @@ namespace FlashEditor.Definitions.Models.Interchange {
             var model = new ModelFile {
                 Encoding = ModelEncoding.Newer,
                 ModelId = blueprint.ModelId,
-                VertexCount = vertices,
-                FaceCount = faces,
                 FormatType = blueprint.FormatType,
                 Flags = flags,
                 PriorityFlag = (byte) blueprint.GlobalPriority,
                 FaceSkinFlag = (byte) (blueprint.FaceSkins != null ? 1 : 0),
                 VertexSkinFlag = (byte) (blueprint.VertexSkins != null ? 1 : 0),
-                VertexXLength = lengthX,
-                VertexYLength = lengthY,
-                VertexZLength = lengthZ,
-                FaceIndexLength = faceLength,
                 Sentinel = new byte[] { 0xFF, 0xFF },
-                VertexFlags = vertexFlags,
                 FaceTypeBytes = blueprint.FaceRenderTypes,
-                FaceOpcodes = opcodes,
                 FaceSkins = Labels(blueprint.FaceSkins, "face label"),
                 VertexSkins = Labels(blueprint.VertexSkins, "vertex label"),
                 FaceColours = blueprint.FaceColours,
-                VertexDeltasX = deltasX,
-                VertexDeltasY = deltasY,
-                VertexDeltasZ = deltasZ,
-                FaceIndexDeltas = faceDeltas,
-                SlackVertexX = Array.Empty<byte>(),
-                SlackVertexY = Array.Empty<byte>(),
-                SlackVertexZ = Array.Empty<byte>(),
-                SlackFaceIndex = Array.Empty<byte>(),
                 SlackTextureCoord = Array.Empty<byte>(),
                 Gap = Array.Empty<byte>()
             };
 
+            ModelGeometryEncoder.WriteGeometry(model, geometry);
             ApplyTexturing(model, blueprint.Texturing ?? new ModelTexturing());
             return model;
         }
@@ -226,8 +205,16 @@ namespace FlashEditor.Definitions.Models.Interchange {
             RefuseLength(texturing.FieldC.Length, triangles, "i_98_ bytes");
             RefuseLength(texturing.Type2FieldA.Length, triangles, "first type-2 bytes");
             RefuseLength(texturing.Type2FieldB.Length, triangles, "second type-2 bytes");
-            foreach (byte type in texturing.TextureTypes)
+
+            //The projection block is sized at a per-entry maximum the narrower entries do not fill.
+            int consumed = 0;
+            foreach (byte type in texturing.TextureTypes) {
                 RefuseRange(type, 0, 3, "textured triangle type");
+                if (type == 0)
+                    continue;
+                ModelFile.ScaleWidths(model.FormatType, type, out int p, out int q, out int r);
+                consumed += p + q + r;
+            }
 
             bool hasIds = texturing.FaceTextureIds.Length > 0;
             if (hasIds)
@@ -235,13 +222,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
 
             //The client reads a coordinate only where both the ids and a textured triangle exist
             //(Model.java:539-541), one per face with a non-zero id.
-            int expectedCoords = 0;
-            if (hasIds && triangles > 0) {
-                foreach (ushort id in texturing.FaceTextureIds) {
-                    if (id != 0)
-                        expectedCoords++;
-                }
-            }
+            int expectedCoords = hasIds && triangles > 0 ? texturing.FaceTextureIds.Count(id => id != 0) : 0;
             RefuseLength(texturing.TextureCoords.Length, expectedCoords, "texture coordinate indices");
 
             var coords = new StoredSmart[expectedCoords];
@@ -268,13 +249,6 @@ namespace FlashEditor.Definitions.Models.Interchange {
             model.TextureType2FieldA = texturing.Type2FieldA;
             model.TextureType2FieldB = texturing.Type2FieldB;
 
-            int consumed = 0;
-            foreach (byte type in texturing.TextureTypes) {
-                if (type < 1)
-                    continue;
-                ModelFile.ScaleWidths(model.FormatType, type, out int p, out int q, out int r);
-                consumed += p + q + r;
-            }
             int slack = model.Type1To3FaceCount * ModelFile.ScaleStride(model.FormatType) - consumed;
             RefuseLength(texturing.ScaleSlack.Length, slack, "unread projection-block bytes");
             model.SlackTextureScale = texturing.ScaleSlack;
@@ -299,14 +273,6 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 "new-protocol decoder (Model.java:90-94). A model built here is newer-format and " +
                 "would be read with the wrong layout there. Index 7 can only append at the next id, " +
                 "so no new model can be created in this cache until that range is behind it.");
-        }
-
-        private static void RefuseCount(int count, string what) {
-            if (count <= ModelGeometryEncoder.MaxCount)
-                return;
-            throw new ModelImportException(
-                $"The mesh has {count} {what}, and the footer stores the count in two bytes, so " +
-                $"{ModelGeometryEncoder.MaxCount} is the most a model can hold.");
         }
 
         private static void RefuseLength(int? length, int expected, string what) {

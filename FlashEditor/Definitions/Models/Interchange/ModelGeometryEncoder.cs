@@ -64,33 +64,54 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 throw new ArgumentNullException(nameof(geometry));
 
             RefuseUnmappableCounts(original, geometry);
-            RefuseOutOfRangeIndices(geometry);
             RefuseUnrepresentableOpcodeFlags(original);
+
+            var rebuilt = CopyPreserving(original);
+            WriteGeometry(rebuilt, geometry);
+            return rebuilt;
+        }
+
+        /// <summary>
+        ///     Encodes a mesh into a model's vertex and face blocks, replacing the counts, the flag
+        ///     masks, the delta streams, the strip opcodes, their declared lengths and their slack.
+        /// </summary>
+        /// <remarks>
+        ///     The one place a mesh becomes stored bytes, shared by <see cref="Rebuild"/> and
+        ///     <see cref="ModelFileBuilder"/> so an edited model and a built one spell a mesh alike.
+        ///     Every other field of <paramref name="target"/> is left alone.
+        /// </remarks>
+        /// <param name="target">The model to write into.</param>
+        /// <param name="geometry">The mesh.</param>
+        /// <exception cref="ModelImportException">
+        ///     A count, a face index, a delta or a block length does not fit the format.
+        /// </exception>
+        internal static void WriteGeometry(ModelFile target, ModelGeometry geometry) {
+            RefuseCount(geometry.VertexCount, "vertices");
+            RefuseCount(geometry.FaceCount, "faces");
+            RefuseOutOfRangeIndices(geometry);
 
             EncodeVertices(geometry, out byte[] vertexFlags,
                 out StoredSmart[] deltasX, out StoredSmart[] deltasY, out StoredSmart[] deltasZ,
                 out int lengthX, out int lengthY, out int lengthZ);
             EncodeFaces(geometry, out byte[] opcodes, out StoredSmart[] faceDeltas, out int faceLength);
 
-            var rebuilt = CopyPreserving(original);
-            rebuilt.VertexCount = geometry.VertexCount;
-            rebuilt.VertexFlags = vertexFlags;
-            rebuilt.VertexDeltasX = deltasX;
-            rebuilt.VertexDeltasY = deltasY;
-            rebuilt.VertexDeltasZ = deltasZ;
-            rebuilt.VertexXLength = lengthX;
-            rebuilt.VertexYLength = lengthY;
-            rebuilt.VertexZLength = lengthZ;
-            rebuilt.SlackVertexX = Array.Empty<byte>();
-            rebuilt.SlackVertexY = Array.Empty<byte>();
-            rebuilt.SlackVertexZ = Array.Empty<byte>();
+            target.VertexCount = geometry.VertexCount;
+            target.FaceCount = geometry.FaceCount;
+            target.VertexFlags = vertexFlags;
+            target.VertexDeltasX = deltasX;
+            target.VertexDeltasY = deltasY;
+            target.VertexDeltasZ = deltasZ;
+            target.VertexXLength = lengthX;
+            target.VertexYLength = lengthY;
+            target.VertexZLength = lengthZ;
+            target.SlackVertexX = Array.Empty<byte>();
+            target.SlackVertexY = Array.Empty<byte>();
+            target.SlackVertexZ = Array.Empty<byte>();
 
-            rebuilt.FaceOpcodes = opcodes;
-            rebuilt.FaceIndexDeltas = faceDeltas;
-            rebuilt.FaceIndexLength = faceLength;
-            rebuilt.SlackFaceIndex = Array.Empty<byte>();
-
-            return rebuilt;
+            target.FaceOpcodes = opcodes;
+            target.FaceIndexDeltas = faceDeltas;
+            target.FaceIndexLength = faceLength;
+            target.SlackFaceIndex = Array.Empty<byte>();
         }
 
         // ===================================================================
@@ -124,11 +145,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
                     "without inventing values. Change the geometry, not the face count.");
             }
 
-            if (geometry.VertexCount > MaxCount) {
-                throw new ModelImportException(
-                    $"The mesh has {geometry.VertexCount} vertices and the footer stores the count " +
-                    $"in two bytes, so {MaxCount} is the most a model can hold.");
-            }
+            RefuseCount(geometry.VertexCount, "vertices");
 
             if (geometry.VertexCount == original.VertexCount)
                 return;
@@ -152,9 +169,18 @@ namespace FlashEditor.Definitions.Models.Interchange {
                 ". Keep the vertex count, or edit those arrays in the editor first.");
         }
 
+        private static void RefuseCount(int count, string what) {
+            if (count <= MaxCount)
+                return;
+
+            throw new ModelImportException(
+                $"The mesh has {count} {what} and the footer stores the count in two bytes, so " +
+                $"{MaxCount} is the most a model can hold.");
+        }
+
         /// <summary>Refuses a mesh whose faces name vertices it does not contain.</summary>
         /// <param name="geometry">The incoming mesh.</param>
-        internal static void RefuseOutOfRangeIndices(ModelGeometry geometry) {
+        private static void RefuseOutOfRangeIndices(ModelGeometry geometry) {
             for (int i = 0; i < geometry.FaceCount; i++) {
                 Check(geometry, i, geometry.FaceA[i]);
                 Check(geometry, i, geometry.FaceB[i]);
@@ -214,7 +240,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     wrote, which is why an unchanged mesh keeps its original bytes rather than coming
         ///     through here.
         /// </remarks>
-        internal static void EncodeVertices(ModelGeometry geometry, out byte[] vertexFlags,
+        private static void EncodeVertices(ModelGeometry geometry, out byte[] vertexFlags,
             out StoredSmart[] deltasX, out StoredSmart[] deltasY, out StoredSmart[] deltasZ,
             out int lengthX, out int lengthY, out int lengthZ) {
             int count = geometry.VertexCount;
@@ -272,7 +298,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     <c>(a, c)</c>, opcode 3 keeps <c>(c, b)</c> and opcode 4 keeps <c>(b, a)</c>
         ///     (Model.java, the four <c>if</c> arms the projection replays).
         /// </remarks>
-        internal static void EncodeFaces(ModelGeometry geometry, out byte[] opcodes,
+        private static void EncodeFaces(ModelGeometry geometry, out byte[] opcodes,
             out StoredSmart[] faceDeltas, out int length) {
             int count = geometry.FaceCount;
             opcodes = new byte[count];
