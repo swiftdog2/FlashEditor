@@ -46,8 +46,29 @@ namespace FlashEditor.Definitions.Editing {
                 throw new ArgumentNullException(nameof(encoded));
 
             CacheAddressing addressing = CacheAddressing.For(indexId);
-            int groupId = addressing.GroupOf(definitionId);
-            int fileId = addressing.FileOf(definitionId);
+            return SaveFile(cache, indexId, addressing.GroupOf(definitionId), addressing.FileOf(definitionId), encoded);
+        }
+
+        /// <summary>
+        ///     Writes <paramref name="encoded"/> into a file addressed by group and file, unless the
+        ///     cache already holds exactly those bytes there.
+        /// </summary>
+        /// <remarks>
+        ///     <see cref="Save"/> for an index whose ids are not split by <see cref="CacheAddressing"/>,
+        ///     such as index 7, where the id is the group. The same comparison, and the same reading
+        ///     of an unreadable slot as a difference.
+        /// </remarks>
+        /// <param name="cache">The open cache.</param>
+        /// <param name="indexId">The index id.</param>
+        /// <param name="groupId">The group within the index.</param>
+        /// <param name="fileId">The file within the group.</param>
+        /// <param name="encoded">The file's encoded bytes.</param>
+        /// <returns>Whether anything was staged.</returns>
+        public static bool SaveFile(RSCache cache, int indexId, int groupId, int fileId, byte[] encoded) {
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+            if (encoded == null)
+                throw new ArgumentNullException(nameof(encoded));
 
             if (MatchesStoredBytes(cache, indexId, groupId, fileId, encoded))
                 return false;

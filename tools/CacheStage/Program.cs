@@ -1,4 +1,3 @@
-using System.Reflection;
 using FlashEditor;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Editing;
@@ -8,7 +7,7 @@ using FlashEditor.Utils;
 
 // Stands in for FlashEditor's "New model from OBJ" (twice) and "New item from selected" on 4718,
 // then the item-grid edits, then File > Save: the same public calls the UI makes
-// (EntityBrowserPanel), and RSCache.WriteCache by reflection as Editor.SaveCache calls it (minus
+// (EntityBrowserPanel), and RSCache.WriteCache as Editor.SaveCache calls it (minus
 // the JS5 reload handshake, which has no server to talk to here). The replace mode stands in for
 // "Replace from OBJ (rebuild)..." the same way.
 // usage: stage <cacheDir> <wornObj> <invObj>
@@ -81,8 +80,8 @@ static int Replace(string[] args) {
     return 0;
 }
 
-static void Save(RSCache c, string dir) =>
-    typeof(RSCache).GetMethod("WriteCache", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(c, new object[] { dir });
+//Internal, and reached through the InternalsVisibleTo FlashEditor.csproj grants this assembly.
+static void Save(RSCache c, string dir) => c.WriteCache(dir);
 
 static int Usage() {
     Console.WriteLine("usage: stage <cacheDir> <wornObj> <invObj>");

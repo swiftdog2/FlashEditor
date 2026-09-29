@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using FlashEditor.Cache;
-using FlashEditor.IO;
+using FlashEditor.Definitions.Editing;
 
 namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
@@ -120,11 +120,8 @@ namespace FlashEditor.Definitions.Models.Interchange {
             if (objPath == null)
                 throw new ArgumentNullException(nameof(objPath));
 
-            ObjMesh mesh = ObjParser.ParseFile(objPath);
-            IReadOnlyDictionary<string, int> materials = ReadLibraries(mesh, objPath);
-
             int modelId = cache.NextCreatableGroupId(RSConstants.MODELS_INDEX);
-            ModelImportResult result = Build(mesh, materials, modelId, vertexLabel);
+            ModelImportResult result = BuildFile(objPath, modelId, vertexLabel);
             if (!result.Succeeded)
                 return result;
 
@@ -149,8 +146,8 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     Written through <see cref="RSCache.WriteFile"/>, so the reference table changes only
         ///     as any file write changes it, and nothing is allocated: a model the table does not
         ///     declare is refused rather than created. A rebuild whose bytes equal the stored bytes
-        ///     stages nothing, because a re-stored payload re-encodes the container and moves the
-        ///     archive CRC.
+        ///     is compared before the write rather than left to <see cref="RSCache.WriteFile"/>, whose
+        ///     own drop of an unchanged payload is silent, so the caller can say nothing was staged.
         ///     </para>
         /// </remarks>
         /// <param name="cache">The open cache to stage into.</param>
@@ -173,36 +170,38 @@ namespace FlashEditor.Definitions.Models.Interchange {
             if (objPath == null)
                 throw new ArgumentNullException(nameof(objPath));
 
-            RSArchiveEntry? entry;
+            //Taken before the table lookup, so an id in the range is refused for what it is even
+            //in a cache that does not declare it.
             try {
                 ModelFileBuilder.RefuseNewProtocolId(modelId);
-                entry = cache.GetReferenceTable(RSConstants.MODELS_INDEX).GetArchiveEntry(modelId);
-                if (entry == null) {
-                    throw new ModelImportException(
-                        $"Model {modelId} does not exist in index 7, so there is nothing to replace. " +
-                        "New model from OBJ creates one at the next model id.");
-                }
             }
             catch (ModelImportException refusal) {
                 return ModelObjImporter.Refused(refusal.Message);
             }
+
+            RSArchiveEntry? entry = cache.GetReferenceTable(RSConstants.MODELS_INDEX).GetArchiveEntry(modelId);
+            if (entry == null) {
+                return ModelObjImporter.Refused(
+                    $"Model {modelId} does not exist in index 7, so there is nothing to replace. " +
+                    "New model from OBJ creates one at the next model id.");
+            }
             int fileId = entry.GetValidFileIds()[0];
 
-            ObjMesh mesh = ObjParser.ParseFile(objPath);
-            ModelImportResult result = Build(mesh, ReadLibraries(mesh, objPath), modelId, vertexLabel);
+            ModelImportResult result = BuildFile(objPath, modelId, vertexLabel);
             if (!result.Succeeded)
                 return result;
 
-            byte[] encoded = result.Model!.Encode().ToArray();
-            byte[] stored = cache.ReadFileBytes(RSConstants.MODELS_INDEX, modelId, fileId);
-            if (encoded.AsSpan().SequenceEqual(stored)) {
+            if (!DefinitionWriter.SaveFile(cache, RSConstants.MODELS_INDEX, modelId, fileId, result.Model!.Encode().ToArray())) {
                 return new ModelImportResult(true, false, result.Model,
                     $"Model {modelId}: the rebuild is byte-identical to the stored model, so nothing staged.",
                     result.Entries);
             }
-
-            cache.WriteFile(RSConstants.MODELS_INDEX, modelId, fileId, new JagStream(encoded));
             return result;
+        }
+
+        private static ModelImportResult BuildFile(string objPath, int modelId, int? vertexLabel) {
+            ObjMesh mesh = ObjParser.ParseFile(objPath);
+            return Build(mesh, ReadLibraries(mesh, objPath), modelId, vertexLabel);
         }
 
         /// <summary>

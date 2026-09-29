@@ -65,7 +65,8 @@ namespace FlashEditor.Tests.Cache.RealCache {
 
             using (var store = new RSFileStore(_workingCopy)) {
                 var cache = new RSCache(store);
-                ModelFile inventory = ModelCodec.Decode(cache.ReadFileBytes(Models, Inventory, 0), Inventory);
+                untouched = cache.ReadFileBytes(Models, Inventory, 0);
+                ModelFile inventory = ModelCodec.Decode(untouched, Inventory);
                 ModelFile worn = ModelCodec.Decode(cache.ReadFileBytes(Models, Worn, 0), Worn);
                 ModelObjExporter.Export(inventory).Save(objPath);
 
@@ -74,7 +75,6 @@ namespace FlashEditor.Tests.Cache.RealCache {
                 File.WriteAllLines(objPath, File.ReadAllLines(objPath)
                     .Where(line => !line.StartsWith("f ", StringComparison.Ordinal) || face++ % 2 == 0));
 
-                untouched = cache.ReadFileBytes(Models, Inventory, 0);
                 fileIds = cache.GetReferenceTable(Models).GetArchiveEntry(Worn).GetValidFileIds();
                 declared = cache.GetReferenceTable(Models).GetArchiveCount();
                 int next = cache.NextCreatableGroupId(Models);
@@ -97,14 +97,15 @@ namespace FlashEditor.Tests.Cache.RealCache {
                 Assert.Equal(fileIds, table.GetArchiveEntry(Worn).GetValidFileIds());
                 Assert.Equal(untouched, reopened.ReadFileBytes(Models, Inventory, 0));
 
-                ModelFile persisted = ModelCodec.Decode(reopened.ReadFileBytes(Models, Worn, fileIds[0]), Worn);
+                byte[] stored = reopened.ReadFileBytes(Models, Worn, fileIds[0]);
+                ModelFile persisted = ModelCodec.Decode(stored, Worn);
                 Assert.Equal(built.FaceCount, persisted.FaceCount);
                 Assert.True(ModelGeometry.FromFile(built).Matches(ModelGeometry.FromFile(persisted)));
                 Assert.Equal(built.FaceColours, persisted.FaceColours);
                 Assert.All(persisted.VertexSkins!, label => Assert.Equal(NewModelFromObj.WeaponVertexLabel, label.Value));
 
-                byte[] stored = reopened.ReadFileBytes(Models, Worn, fileIds[0]);
-                (int crc, int version) = (table.GetArchiveEntry(Worn).GetCrc(), table.GetArchiveEntry(Worn).GetVersion());
+                RSArchiveEntry before = table.GetArchiveEntry(Worn);
+                (int crc, int version) = (before.GetCrc(), before.GetVersion());
 
                 ModelImportResult repeat = NewModelFromObj.ReplaceFile(reopened, Worn, objPath, NewModelFromObj.WeaponVertexLabel);
 
