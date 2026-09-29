@@ -133,6 +133,24 @@ namespace FlashEditor.Definitions.Models.Interchange {
             return result;
         }
 
+        public static ModelImportResult ReplaceFile(RSCache cache, int modelId, string objPath, int? vertexLabel) {
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+            if (objPath == null)
+                throw new ArgumentNullException(nameof(objPath));
+
+            RSArchiveEntry entry = cache.GetReferenceTable(RSConstants.MODELS_INDEX).GetArchiveEntry(modelId);
+            int fileId = entry.GetValidFileIds()[0];
+
+            ObjMesh mesh = ObjParser.ParseFile(objPath);
+            ModelImportResult result = Build(mesh, ReadLibraries(mesh, objPath), modelId, vertexLabel);
+            if (!result.Succeeded)
+                return result;
+
+            cache.WriteFile(RSConstants.MODELS_INDEX, modelId, fileId, result.Model!.Encode());
+            return result;
+        }
+
         /// <summary>
         ///     Every <c>Kd</c> in the libraries an OBJ names, later libraries overriding earlier ones.
         /// </summary>

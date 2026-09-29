@@ -93,6 +93,32 @@ namespace FlashEditor.Tests.Definitions.Models {
             Assert.Equal(1, cache.NextCreatableGroupId(Models));
         }
 
+        [Fact]
+        public void ReplaceFile_RebuildsTheModelInPlace_AtItsOwnIdAndFile_AndItSurvivesACommit() {
+            (RSCache cache, _) = SeedOneModel();
+            string objPath = WritePair("axe");
+
+            ModelImportResult result = NewModelFromObj.ReplaceFile(cache, 0, objPath, NewModelFromObj.WeaponVertexLabel);
+
+            Assert.True(result.Succeeded, result.Message);
+            Assert.True(result.GeometryChanged);
+            Assert.Equal(0, result.Model!.ModelId);
+            Assert.Equal(1, cache.NextCreatableGroupId(Models));
+
+            RSCache reopened = Commit(cache);
+            RSReferenceTable table = reopened.GetReferenceTable(Models);
+            Assert.Equal(new[] { 0 }, table.validArchiveIds);
+            Assert.Equal(new[] { 0 }, table.GetArchiveEntry(0).GetValidFileIds());
+            Assert.Equal(1, reopened.NextCreatableGroupId(Models));
+
+            ModelFile replaced = ModelCodec.Decode(reopened.ReadFileBytes(Models, 0, 0), 0);
+            Assert.Equal(4, replaced.VertexCount);
+            Assert.Equal(2, replaced.FaceCount);
+            Assert.Equal(ModelColour.FromRgb((219 << 16) | (173 << 8) | 79), replaced.FaceColours[0]);
+            Assert.Equal(ModelColour.FromRgb((23 << 16) | (33 << 8) | 61), replaced.FaceColours[1]);
+            Assert.All(replaced.VertexSkins!, label => Assert.Equal(50, label.Value));
+        }
+
         // ===================================================================
         //  Helpers
         // ===================================================================
