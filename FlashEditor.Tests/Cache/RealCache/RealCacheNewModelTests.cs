@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Linq;
 using FlashEditor.Cache;
@@ -21,6 +22,9 @@ namespace FlashEditor.Tests.Cache.RealCache {
         /// <summary>Dharok's greataxe, worn.</summary>
         private const int Greataxe = 6702;
 
+        /// <summary>An id outside 63607-63613, so the built model is read as newer-format.</summary>
+        private const int NewModelId = 70000;
+
         private readonly RealCacheFixture _cache;
         private readonly ITestOutputHelper _output;
 
@@ -36,6 +40,41 @@ namespace FlashEditor.Tests.Cache.RealCache {
             ModelFile built = ModelFileBuilder.Build(BlueprintOf(decoded));
 
             Assert.Equal(stored, built.Encode().ToArray());
+        }
+
+        /// <summary>
+        ///     An exported model built back as a new one keeps its mesh and the colours the client
+        ///     draws, and takes the new-weapon attributes rather than the source's.
+        /// </summary>
+        /// <remarks>
+        ///     The export and the build are inverse conventions written separately - OBJ (x, y, z) is
+        ///     model (x, -y, -z), and Kd is the drawn colour - so this fails if either side drifts.
+        ///     Colours are compared as drawn rather than as words: several words draw alike, and the
+        ///     word the model stores is not recoverable from its colour.
+        /// </remarks>
+        [RealCacheFact]
+        public void NewModelFromObj_ExportedModel6702_RebuildsToTheSameGeometryAndDrawnColours() {
+            StoredGreataxe(out ModelFile source);
+            ObjDocument exported = ModelObjExporter.Export(source);
+
+            ModelImportResult result = NewModelFromObj.Build(ObjParser.Parse(exported.ObjText),
+                MtlParser.Parse(exported.MaterialText!), NewModelId, NewModelFromObj.WeaponVertexLabel);
+
+            Assert.True(result.Succeeded, result.Message);
+            ModelFile built = ModelCodec.Decode(result.Model!.Encode().ToArray(), NewModelId);
+
+            Assert.True(ModelGeometry.FromFile(source).Matches(ModelGeometry.FromFile(built)));
+            for (int i = 0; i < source.FaceCount; i++)
+                Assert.Equal(ModelDefinition.RawHslToRgb(source.FaceColours[i]), ModelDefinition.RawHslToRgb(built.FaceColours[i]));
+
+            Assert.Equal(ModelEncoding.Newer, built.Encoding);
+            Assert.Equal(15, built.FormatType);
+            Assert.Equal(10, built.PriorityFlag);
+            Assert.Null(built.FaceTypeBytes);
+            Assert.Equal(0, built.TexturedFaceCount);
+            Assert.Null(built.FaceTextureIds);
+            Assert.All(built.FaceSkins!, label => Assert.Equal(29, label.Value));
+            Assert.All(built.VertexSkins!, label => Assert.Equal(50, label.Value));
         }
 
         // ===================================================================

@@ -134,7 +134,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
         /// <param name="mesh">The parsed OBJ.</param>
         /// <param name="snapped">The largest distance any coordinate moved to reach an integer.</param>
         /// <returns>The mesh in the model's own space.</returns>
-        private static ModelGeometry ToGeometry(ObjMesh mesh, out double snapped) {
+        internal static ModelGeometry ToGeometry(ObjMesh mesh, out double snapped) {
             int count = mesh.Positions.Count;
             var x = new int[count];
             var y = new int[count];
