@@ -12,11 +12,12 @@ namespace FlashEditor.Map {
     /// </remarks>
     public static class MapToolLimits {
         /// <summary>
-        ///     The highest underlay id a tile can store.
+        ///     The highest underlay value a tile can store.
         /// </summary>
         /// <remarks>
-        ///     A tile writes its underlay as <c>id + 81</c> in a single byte
-        ///     (<c>RegionCodec.EncodeTile</c>), so 174 is the last id that survives the encoder. The
+        ///     A stored value, not a definition id: the tile holds definition id + 1 (see
+        ///     <see cref="FloorBrush"/>) and writes it as <c>value + 81</c> in a single byte
+        ///     (<c>RegionCodec.EncodeTile</c>), so 174 is the last value that survives the encoder. The
         ///     floor table declares more than that, which is why picking one past the cap has to
         ///     refuse out loud rather than clamp: the record the user pointed at exists and simply
         ///     cannot be put on a tile.
@@ -24,10 +25,11 @@ namespace FlashEditor.Map {
         public const int MaximumUnderlayId = 174;
 
         /// <summary>
-        ///     The highest overlay id a tile can store.
+        ///     The highest overlay value a tile can store.
         /// </summary>
         /// <remarks>
-        ///     Written as a bare byte, so the whole byte is available.
+        ///     A stored value, not a definition id, written as a bare byte, so the whole byte is
+        ///     available.
         /// </remarks>
         public const int MaximumOverlayId = 255;
 

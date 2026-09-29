@@ -51,7 +51,7 @@ namespace FlashEditor.Map {
     ///     mistakes look identical until the map redraws.
     ///     <para>
     ///     <b>So the label is the feature.</b> Every id box on this bar carries the noun it holds -
-    ///     "Underlay id", "Overlay id", "Object id" - and the boxes are separate controls rather than
+    ///     "Underlay value", "Overlay value", "Object id" - and the boxes are separate controls rather than
     ///     one relabelled box, so switching tools cannot carry an overlay id into an object field.
     ///     </para>
     ///     <para>
@@ -82,6 +82,10 @@ namespace FlashEditor.Map {
 
         private readonly NumericUpDown underlayId = Spin(0, MapToolLimits.MaximumUnderlayId, 1);
         private readonly NumericUpDown overlayId = Spin(0, MapToolLimits.MaximumOverlayId, 1);
+        //The two floor boxes hold the value a tile stores, which is the definition id + 1 with 0
+        //meaning none, so each carries a readout naming the definition the brush will draw.
+        private readonly Label underlayDrawn = Readout();
+        private readonly Label overlayDrawn = Readout();
         private readonly NumericUpDown objectId = Spin(0, MapToolLimits.MaximumLocationId, 0);
         private readonly NumericUpDown brushSize = Spin(1, MapBrush.MaximumSize, 1);
         private readonly NumericUpDown overlayShape = Spin(0, TileShapes.FileShapeCount - 1, 0);
@@ -118,8 +122,9 @@ namespace FlashEditor.Map {
             wandField.Items.AddRange(new object[] { "Underlay", "Overlay" });
             wandField.SelectedIndex = 0;
 
-            Add(MapToolOptions.UnderlayId, "Underlay id", underlayId);
-            Add(MapToolOptions.OverlayId, "Overlay id", overlayId);
+            Add(MapToolOptions.UnderlayId, "Underlay value", underlayId, underlayDrawn);
+            Add(MapToolOptions.OverlayId, "Overlay value", overlayId, overlayDrawn);
+            underlayDrawn.Margin = overlayDrawn.Margin = new Padding(0, 6, 4, 0);
             Add(MapToolOptions.ObjectId, "Object id", objectId, pickObject);
             Add(MapToolOptions.Brush, "Brush", brushSize, brushShape);
             Add(MapToolOptions.OverlayForm, "Shape", overlayShape, RotationLabel(), overlayRotation);
@@ -139,6 +144,15 @@ namespace FlashEditor.Map {
             brushShape.SelectedIndexChanged += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
             wandField.SelectedIndexChanged += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
             pickObject.Click += (_, _) => PickObjectRequested?.Invoke(this, EventArgs.Empty);
+
+            underlayId.ValueChanged += (_, _) => ShowDrawn();
+            overlayId.ValueChanged += (_, _) => ShowDrawn();
+            ShowDrawn();
+        }
+
+        private void ShowDrawn() {
+            underlayDrawn.Text = "= " + FloorBrush.Describe(FloorKind.Underlay, UnderlayId);
+            overlayDrawn.Text = "= " + FloorBrush.Describe(FloorKind.Overlay, OverlayId);
         }
 
         /// <summary>Raised when any option the armed tool reads has changed.</summary>
@@ -147,7 +161,7 @@ namespace FlashEditor.Map {
         /// <summary>Raised when the user asks to choose an object id by looking at one.</summary>
         public event EventHandler? PickObjectRequested;
 
-        /// <summary>The underlay id the brush paints.</summary>
+        /// <summary>The underlay value the brush writes into a tile: definition id + 1, 0 for none.</summary>
         [Browsable(false)]
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int UnderlayId {
@@ -155,7 +169,7 @@ namespace FlashEditor.Map {
             set => underlayId.Value = Clamp(underlayId, value);
         }
 
-        /// <summary>The overlay id the brush paints.</summary>
+        /// <summary>The overlay value the brush writes into a tile: definition id + 1, 0 for none.</summary>
         [Browsable(false)]
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int OverlayId {
@@ -281,6 +295,9 @@ namespace FlashEditor.Map {
 
         private static Label RotationLabel() =>
             new Label { Text = "Rotation", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(4, 6, 4, 0) };
+
+        private static Label Readout() =>
+            new Label { AutoSize = true, Anchor = AnchorStyles.Left };
 
         private static Label ToleranceLabel() =>
             new Label { Text = "Tolerance", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(4, 6, 4, 0) };

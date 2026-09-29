@@ -89,6 +89,15 @@ namespace FlashEditor.Tests.Map
             Assert.Equal(accepted, load.Refusal == null);
         }
 
+        [Theory]
+        [InlineData(FloorKind.Overlay, 19, "overlay 18")]
+        [InlineData(FloorKind.Underlay, 41, "underlay 40")]
+        [InlineData(FloorKind.Overlay, 0, "no overlay")]
+        public void AStoredValueIsNamedByTheDefinitionItDraws(FloorKind kind, int stored, string expected)
+        {
+            Assert.Equal(expected, FloorBrush.Describe(kind, stored));
+        }
+
         [Fact]
         public void EyedropperOnATileWithNoFloor_PicksNothing()
         {

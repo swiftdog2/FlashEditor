@@ -561,32 +561,30 @@ namespace FlashEditor.Map {
         ///     brush still set to "Toggle blocked flag" is the kind of surprise that makes a palette
         ///     feel unreliable.
         ///     <para>
-        ///     <b>The underlay cap is honoured here rather than routed around.</b> A tile stores an
-        ///     underlay as id + 81 in a single byte, so 174 is the highest that survives the
-        ///     encoder - and the palette shows every record the table declares, which on the vanilla
-        ///     capture runs past that. A swatch above the cap is refused out loud rather than
-        ///     silently clamped to something the user did not pick.
+        ///     <b>The pick is a definition id and the brush holds the stored tile value</b>, which is
+        ///     one more; <see cref="FloorBrush.Load"/> converts and refuses a swatch past what a tile
+        ///     can store. Every caption names the definition, so the number on screen is the number
+        ///     on the swatch.
         ///     </para>
         /// </remarks>
-        /// <param name="pick">What the user chose.</param>
+        /// <param name="pick">What the user chose, as a definition id.</param>
         private void LoadBrush(FloorPick pick) {
             bool underlay = pick.Kind == FloorKind.Underlay;
-            int cap = underlay ? MapToolLimits.MaximumUnderlayId : MapToolLimits.MaximumOverlayId;
 
             ArmTool(underlay ? MapTool.PaintUnderlay : MapTool.PaintOverlay);
 
-            if (pick.Id > cap) {
-                ShowMessage(pick.Kind + " " + pick.Id + " is past the " + cap +
-                    " a tile can store for it, so the brush was left where it was.");
+            FloorBrushLoad load = FloorBrush.Load(pick);
+            if (load.Refusal != null) {
+                ShowMessage(load.Refusal);
                 return;
             }
 
             if (underlay)
-                options.UnderlayId = pick.Id;
+                options.UnderlayId = load.StoredValue;
             else
-                options.OverlayId = pick.Id;
+                options.OverlayId = load.StoredValue;
 
-            ShowMessage("Brush set to " + pick.Kind.ToString().ToLowerInvariant() + " " + pick.Id);
+            ShowMessage("Brush set to " + FloorBrush.Describe(pick.Kind, load.StoredValue));
         }
 
         /// <summary>
@@ -632,33 +630,35 @@ namespace FlashEditor.Map {
         private void PickUpFloor(MapRegion square, TileHit hit) {
             int p = hit.Plane, x = hit.LocalX, y = hit.LocalY;
 
-            int overlay = square.GetOverlayId(p, x, y);
-            if (overlay != 0) {
-                LoadBrush(new FloorPick(FloorKind.Overlay, overlay));
-
-                byte shape = square.GetOverlayShape(p, x, y);
-                byte rotation = square.GetOverlayRotation(p, x, y);
-
-                options.OverlayShape = shape;
-                options.OverlayRotation = rotation;
-
-                ShowMessage("Picked up overlay " + overlay + ", shape " + shape +
-                    ", rotation " + rotation + " - the brush now paints all three");
-                view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Sampled, "overlay " + overlay);
-                return;
-            }
-
-            int underlay = square.GetUnderlayId(p, x, y);
-            if (underlay == 0) {
+            FloorPick? picked = FloorBrush.PickUp(square, p, x, y);
+            if (picked == null) {
                 view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Rejected, "no floor");
                 ShowMessage("That tile stores neither an overlay nor an underlay, so there is " +
                     "nothing to pick up.");
                 return;
             }
 
-            LoadBrush(new FloorPick(FloorKind.Underlay, underlay));
-            view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Sampled, "underlay " + underlay);
+            FloorPick pick = picked.Value;
+            string name = pick.Kind.ToString().ToLowerInvariant() + " " + pick.Id;
+            LoadBrush(pick);
+
+            if (pick.Kind == FloorKind.Overlay) {
+                byte shape = square.GetOverlayShape(p, x, y);
+                byte rotation = square.GetOverlayRotation(p, x, y);
+
+                options.OverlayShape = shape;
+                options.OverlayRotation = rotation;
+
+                ShowMessage("Picked up " + name + ", shape " + shape +
+                    ", rotation " + rotation + " - the brush now paints all three");
+            }
+
+            view.Flash(hit.WorldX, hit.WorldY, 1, 1, p, MapFlashKind.Sampled, name);
         }
+
+        /// <summary>A stored floor value as the inspector shows it: the definition, then the byte.</summary>
+        private static string StoredFloor(int stored) =>
+            stored == 0 ? "none" : (stored - 1) + "  (stored " + stored + ")";
 
         private MapTool SelectedTool => currentTool;
 
@@ -2501,8 +2501,8 @@ namespace FlashEditor.Map {
 
             AppendHeight(sb, scene, square, hit, sceneX, sceneY);
 
-            sb.AppendLine($"underlay  {scene.UnderlayId(hit.Plane, sceneX, sceneY)}");
-            sb.AppendLine($"overlay   {scene.OverlayId(hit.Plane, sceneX, sceneY)}" +
+            sb.AppendLine("underlay  " + StoredFloor(scene.UnderlayId(hit.Plane, sceneX, sceneY)));
+            sb.AppendLine("overlay   " + StoredFloor(scene.OverlayId(hit.Plane, sceneX, sceneY)) +
                           $"  shape {scene.OverlayShape(hit.Plane, sceneX, sceneY)}" +
                           $"  rot {scene.OverlayRotation(hit.Plane, sceneX, sceneY)}");
             sb.AppendLine($"flags     0x{scene.TileFlags(hit.Plane, sceneX, sceneY):X2}");

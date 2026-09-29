@@ -32,6 +32,14 @@ namespace FlashEditor.Map {
             return new FloorBrushLoad(stored, null);
         }
 
+        /// <summary>Names a stored floor value by the definition it draws.</summary>
+        /// <param name="kind">Which floor field the value came from.</param>
+        /// <param name="storedValue">The tile value.</param>
+        /// <returns>"overlay 18" for stored 19, or "no overlay" for 0.</returns>
+        public static string Describe(FloorKind kind, int storedValue) {
+            return storedValue == 0 ? "no " + Name(kind) : Name(kind) + " " + (storedValue - 1);
+        }
+
         private static string Name(FloorKind kind) => kind == FloorKind.Underlay ? "underlay" : "overlay";
 
         /// <summary>Reads a tile's floor as the pick that would reproduce it.</summary>
