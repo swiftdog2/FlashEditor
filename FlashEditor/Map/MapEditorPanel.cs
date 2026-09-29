@@ -478,15 +478,15 @@ namespace FlashEditor.Map {
 
             fitButton.Click += (_, _) => view.FitWorld();
 
-            undoButton.Click += (_, _) => StepHistory(history.Undo, "undone", reversed: true);
-            redoButton.Click += (_, _) => StepHistory(history.Redo, "redone", reversed: false);
+            undoButton.Click += (_, _) => Undo();
+            redoButton.Click += (_, _) => Redo();
             //Inside the store's exclusive section: MarkEdit only records the squares, it never
             //encodes or touches the network here.
             history.MapChanged += (_, edit) => liveEdit?.MarkEdit(edit);
             history.Changed += (_, _) => {
                 undoButton.Enabled = history.CanUndo;
                 redoButton.Enabled = history.CanRedo;
-                saveButton.Enabled = cache != null && history.Count > 0;
+                UpdateSaveButton();
             };
 
             saveButton.Click += (_, _) => SaveEdits();
@@ -775,11 +775,7 @@ namespace FlashEditor.Map {
             //remove that grows the live list between the snapshot's sizing and its CopyTo throws
             //on the render thread, and the blanket catch there turns that into a square that never
             //renders and stays a placeholder rectangle.
-            UnderStoreLock(() => { history.Apply(edit); return edit; });
-
-            //Pinned before anything else can evict it. The undo history holds this instance, and a
-            //reloaded copy would silently orphan every edit already recorded against it.
-            store.PinEdited(edit.Target);
+            ApplyEdit(edit);
 
             lastEditNote = EditNote(edit, "last edit");
             InvalidateFor(edit);
@@ -1390,6 +1386,36 @@ namespace FlashEditor.Map {
             ShowMessage($"{heading}: {edit.Description}");
         }
 
+        /// <summary>Records an edit to one square and pins that square against eviction.</summary>
+        /// <remarks>
+        ///     The pin follows the apply before anything else can evict the square: the undo history
+        ///     holds this instance, and a reloaded copy would silently orphan every edit already
+        ///     recorded against it.
+        /// </remarks>
+        /// <param name="edit">The edit to apply.</param>
+        internal void ApplyEdit(IMapEdit edit) {
+            UnderStoreLock(() => { history.Apply(edit); return edit; });
+            store?.PinEdited(edit.Target);
+        }
+
+        /// <summary>Reverses the most recent edit, as the Undo button does.</summary>
+        internal void Undo() => StepHistory(history.Undo, "undone", reversed: true);
+
+        /// <summary>Reapplies the most recently undone edit, as the Redo button does.</summary>
+        internal void Redo() => StepHistory(history.Redo, "redone", reversed: false);
+
+        /// <summary>Whether the Save button is enabled.</summary>
+        internal bool CanSave => saveButton.Enabled;
+
+        /// <summary>Whether the Undo button is enabled.</summary>
+        internal bool CanUndo => undoButton.Enabled;
+
+        /// <summary>Whether the Redo button is enabled.</summary>
+        internal bool CanRedo => redoButton.Enabled;
+
+        /// <summary>The bound square store, or <c>null</c> with no cache bound.</summary>
+        internal MapSquareStore? Store => store;
+
         /// <summary>
         ///     Runs a history operation holding the square store's lock.
         /// </summary>
@@ -1781,6 +1807,9 @@ namespace FlashEditor.Map {
         ///     <c>Region.Dirty</c> is never cleared by an undo, and the store is the only thing that
         ///     knows about every square that was ever touched.
         ///
+        ///     The undo history survives the save. An undo afterwards re-dirties its square, which
+        ///     is what puts the reverted state into the next save.
+        ///
         ///     The whole write runs under the store's lock, which is the same lock the render thread
         ///     decodes under. Two threads inside the JS5 path at once is not something the cache
         ///     survives.
@@ -1814,15 +1843,8 @@ namespace FlashEditor.Map {
                 //render thread, so holding it across a wait that can last the whole timeout would
                 //freeze the window from behind the progress dialog. With the handshake off this is
                 //the same single exclusive block it always was, run on the calling thread.
-                JS5ReloadProgressDialog.Save(FindForm(), cacheDirectory, () => store.RunExclusive(() => {
-                    foreach ((MapRegion Square, int RegionX, int RegionY) entry in dirty)
-                        loader.Save(entry.Square, entry.RegionX, entry.RegionY);
-
-                    cache.WriteCache(cacheDirectory);
-                }));
-
-                history.Clear();
-                ShowMessage($"Saved {dirty.Count} square(s) to {cacheDirectory}");
+                JS5ReloadProgressDialog.Save(FindForm(), cacheDirectory, () => WriteSquares(dirty));
+                OnSaved(dirty.Count);
             }
             catch (OperationCanceledException) {
                 //The user's own choice, and recoverable: the request has been withdrawn, the
@@ -1834,6 +1856,44 @@ namespace FlashEditor.Map {
                 ShowMessage("Save failed: " + ex.Message);
                 MessageBox.Show(ex.Message, "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        ///     Stages and commits every dirty square, with no confirmation and no JS5 handshake.
+        /// </summary>
+        /// <returns>How many squares were written.</returns>
+        /// <exception cref="InvalidOperationException">No cache is bound for saving.</exception>
+        internal int CommitEdits() {
+            if (store == null || cacheDirectory == null)
+                throw new InvalidOperationException("No cache is bound for saving.");
+
+            IReadOnlyList<(MapRegion Square, int RegionX, int RegionY)> dirty = store.DirtySquares();
+            WriteSquares(dirty);
+            OnSaved(dirty.Count);
+            return dirty.Count;
+        }
+
+        /// <summary>Enables Save exactly when a square holds unsaved changes.</summary>
+        /// <remarks>
+        ///     Asks the store rather than the history: the history outlives a save, so a non-empty
+        ///     history says nothing about whether anything is left to write.
+        /// </remarks>
+        private void UpdateSaveButton() =>
+            saveButton.Enabled = cache != null && store != null && store.DirtySquares().Count > 0;
+
+        private void WriteSquares(IReadOnlyList<(MapRegion Square, int RegionX, int RegionY)> dirty) =>
+            store!.RunExclusive(() => {
+                foreach ((MapRegion Square, int RegionX, int RegionY) entry in dirty)
+                    loader!.Save(entry.Square, entry.RegionX, entry.RegionY);
+
+                cache!.WriteCache(cacheDirectory!);
+            });
+
+        private void OnSaved(int count) {
+            //The history is kept: an undo after a save re-dirties its square, so the next save
+            //writes the reverted state.
+            UpdateSaveButton();
+            ShowMessage($"Saved {count} square(s) to {cacheDirectory}");
         }
 
         /// <summary>
@@ -2133,9 +2193,9 @@ namespace FlashEditor.Map {
 
             toolStrip.AddSeparator();
             toolStrip.AddAction(EditorIcon.Undo, "Undo the last edit", Keys.Control | Keys.Z,
-                (_, _) => StepHistory(history.Undo, "undone", reversed: true));
+                (_, _) => Undo());
             toolStrip.AddAction(EditorIcon.Redo, "Redo the last undone edit", Keys.Control | Keys.Y,
-                (_, _) => StepHistory(history.Redo, "redone", reversed: false));
+                (_, _) => Redo());
 
             toolStrip.AddSeparator();
             liveToggle = toolStrip.AddToggle(EditorIcon.Link,

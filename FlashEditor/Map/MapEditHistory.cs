@@ -85,8 +85,10 @@ namespace FlashEditor.Map {
         ///     Forgets all history without reversing anything.
         /// </summary>
         /// <remarks>
-        ///     For use after a save, when the applied state has become the baseline. It does not
-        ///     revert, so calling it with unsaved edits pending makes them permanent.
+        ///     For when the squares the edits refer to are gone, as on binding a different cache.
+        ///     Not for a save: the edits stay valid after one, and an undo then re-dirties its
+        ///     square. It does not revert, so calling it with unsaved edits pending makes them
+        ///     permanent.
         /// </remarks>
         public void Clear() {
             done.Clear();
