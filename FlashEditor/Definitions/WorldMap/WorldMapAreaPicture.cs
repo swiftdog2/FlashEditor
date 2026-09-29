@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Config;
-using FlashEditor.Definitions.Sprites;
 using FlashEditor.Map;
 
 namespace FlashEditor.Definitions.WorldMap {
@@ -522,32 +521,7 @@ namespace FlashEditor.Definitions.WorldMap {
             return definition;
         }
 
-        /// <summary>
-        ///     An overlay's colour, in the order the client picks it.
-        /// </summary>
-        /// <remarks>
-        ///     Secondary, then the texture's declared colour, then primary
-        ///     (<c>Node_Sub16.method1149</c>). The texture's <c>representativeHsl</c> is already packed HSL
-        ///     in the same space and is returned verbatim; routing it through the model palette
-        ///     instead turns the whole map flat green, which is a mistake this project has already
-        ///     made once in <c>MapRasteriser</c>.
-        /// </remarks>
-        /// <param name="overlay">The overlay definition.</param>
-        /// <returns>The packed HSL, or <see cref="MapPalette.NoColour"/>.</returns>
-        private static int ColourOf(FloorOverlayDefinition overlay) {
-            if (overlay.SecondaryRgb != -1)
-                return MapPalette.FromRgb(overlay.SecondaryRgb);
-
-            if (overlay.TextureId >= 0 &&
-                TextureManager.Textures.TryGetValue(overlay.TextureId, out TextureDefinition? texture) &&
-                texture != null && !texture.suppressTexture) {
-                //Both consumers clamp the lightness before the palette lookup, so a texture declaring
-                //either extreme would otherwise come out pure black or white.
-                int hsl = texture.representativeHsl & 0xFFFF;
-                return (hsl & 0xFF80) | Math.Clamp(hsl & 0x7F, 2, 126);
-            }
-
-            return overlay.HasPrimaryRgb ? MapPalette.FromRgb(overlay.PrimaryRgb) : MapPalette.NoColour;
-        }
+        private static int ColourOf(FloorOverlayDefinition overlay) =>
+            FloorColour.OverlayHsl(overlay, FloorColour.TextureHsl);
     }
 }

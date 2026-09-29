@@ -246,7 +246,7 @@ namespace FlashEditor.Definitions.Config {
             switch (shown.GroupId) {
                 case ConfigGroup.FloorUnderlay:
                 case ConfigGroup.FloorOverlay:
-                    return "Every floor in this table, in the colour the renderer uses. Click one to select it.";
+                    return "Every floor in this table, in the colour the top-down map draws. Click one to select it.";
                 case ConfigGroup.Cursor:
                     return "The pointer image, with the hotspot marked. The client draws no hotspot cross.";
                 case ConfigGroup.MapSceneIcon:

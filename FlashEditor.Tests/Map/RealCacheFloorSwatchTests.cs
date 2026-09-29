@@ -5,7 +5,6 @@ using FlashEditor.Definitions.Sprites;
 using FlashEditor.Map;
 using FlashEditor.Tests.Cache.RealCache;
 using Xunit;
-using Xunit.Abstractions;
 
 using MapRegion = FlashEditor.Cache.Region.Region;
 
@@ -28,12 +27,10 @@ namespace FlashEditor.Tests.Map
         private const int RegionY = 50;
 
         private readonly RealCacheFixture _fixture;
-        private readonly ITestOutputHelper _output;
 
-        public RealCacheFloorSwatchTests(RealCacheFixture fixture, ITestOutputHelper output)
+        public RealCacheFloorSwatchTests(RealCacheFixture fixture)
         {
             _fixture = fixture;
-            _output = output;
         }
 
         [RealCacheFact]
@@ -72,9 +69,6 @@ namespace FlashEditor.Tests.Map
                         Assert.Equal(MapPalette.NoColour, drawn);
                         break;
                 }
-
-                if (id == 18 || id == 152)
-                    _output.WriteLine(swatch.Caption);
             }
 
             //Without both, the sweep would pass over a cache whose overlays all took one branch.

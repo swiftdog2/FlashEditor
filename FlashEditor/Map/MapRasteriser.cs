@@ -87,6 +87,7 @@ namespace FlashEditor.Map {
         private readonly Dictionary<int, FloorOverlayDefinition> overlayCache = new Dictionary<int, FloorOverlayDefinition>();
         private readonly Dictionary<int, ObjectInfo> objectCache = new Dictionary<int, ObjectInfo>();
         private readonly Dictionary<int, int> textureColourCache = new Dictionary<int, int>();
+        private readonly Func<int, int> textureColour;
         private readonly Dictionary<int, Bitmap> iconCache = new Dictionary<int, Bitmap>();
         private readonly Dictionary<int, bool> iconStretch = new Dictionary<int, bool>();
         private readonly Dictionary<int, SolidBrush> brushCache = new Dictionary<int, SolidBrush>();
@@ -146,6 +147,10 @@ namespace FlashEditor.Map {
         /// <param name="cache">The cache to resolve floor and object definitions from.</param>
         public MapRasteriser(RSCache cache) {
             this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
+
+            //Bound once: a method group over an instance method allocates a delegate per use, and
+            //this one is used per overlay tile.
+            textureColour = ResolveTextureColour;
         }
 
         /// <summary>
@@ -762,7 +767,7 @@ namespace FlashEditor.Map {
         }
 
         private int ResolveOverlayColour(FloorOverlayDefinition overlay) =>
-            FloorColour.OverlayHsl(overlay, ResolveTextureColour);
+            FloorColour.OverlayHsl(overlay, textureColour);
 
         /// <summary>A texture's map colour, memoised.</summary>
         /// <remarks>

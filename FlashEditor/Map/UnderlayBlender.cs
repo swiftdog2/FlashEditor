@@ -166,17 +166,27 @@ namespace FlashEditor.Map {
                     if (y < output.Top || weight <= 0 || count <= 0)
                         continue;
 
-                    //Hue divides by the summed chroma weight, the others by the tile count. Using
-                    //the count for hue as well washes every blend toward red.
-                    blended[x - output.Left, y - output.Top] = MapPalette.Pack(
-                        hue * 256 / weight,
-                        saturation / count,
-                        lightness / count);
+                    blended[x - output.Left, y - output.Top] =
+                        PackAverage(hue, weight, saturation, lightness, count);
                 }
             }
 
             return blended;
         }
+
+        /// <summary>Packs summed blend components into the averaged map HSL.</summary>
+        /// <remarks>
+        ///     Hue divides by the summed chroma weight, the others by the tile count. Using the count
+        ///     for hue as well washes every blend toward red.
+        /// </remarks>
+        /// <param name="hueSum">Summed <see cref="UnderlayColour.WeightedHue"/>.</param>
+        /// <param name="weightSum">Summed <see cref="UnderlayColour.HueWeight"/>; above zero.</param>
+        /// <param name="saturationSum">Summed saturation.</param>
+        /// <param name="lightnessSum">Summed lightness.</param>
+        /// <param name="count">Tiles summed; above zero.</param>
+        /// <returns>Packed map HSL.</returns>
+        internal static int PackAverage(int hueSum, int weightSum, int saturationSum, int lightnessSum, int count) =>
+            MapPalette.Pack(hueSum * 256 / weightSum, saturationSum / count, lightnessSum / count);
 
         private static void Accumulate(
             int[,] underlayIds, Resolver resolve, int x, int y, int sign,

@@ -41,14 +41,14 @@ namespace FlashEditor.Map {
         ///     The colour a tile takes when every underlay in its blend window is this one.
         /// </summary>
         /// <remarks>
-        ///     The same pack <see cref="UnderlayBlender"/> performs, over a window of one colour. A
+        ///     <see cref="UnderlayBlender"/>'s own pack, over a window of one colour. A
         ///     real tile's colour also depends on its neighbours, so this is the underlay's own
         ///     colour rather than a promise about any particular tile.
         /// </remarks>
         /// <param name="colour">The underlay's blend components.</param>
         /// <returns>Packed map HSL.</returns>
         public static int UnderlayHsl(UnderlayColour colour) =>
-            MapPalette.Pack(colour.WeightedHue * 256 / colour.HueWeight, colour.Saturation, colour.Lightness);
+            UnderlayBlender.PackAverage(colour.WeightedHue, colour.HueWeight, colour.Saturation, colour.Lightness, 1);
 
         /// <summary>
         ///     Whether the overlay suppresses its tile completely, underlay included.
@@ -89,7 +89,7 @@ namespace FlashEditor.Map {
         /// <returns>Packed map HSL, or <see cref="MapPalette.NoColour"/>.</returns>
         public static int TextureHsl(int textureId) {
             if (textureId < 0
-                || !TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def)
+                || !TextureManager.Textures.TryGetValue(textureId, out TextureDefinition? def)
                 || def == null || def.suppressTexture)
                 return MapPalette.NoColour;
 
