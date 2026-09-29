@@ -106,6 +106,40 @@ namespace FlashEditor.Tests.Cache.RealCache {
             _cache.Profile.AssertCensus(_output, "item.nextId", next);
         }
 
+        /// <summary>
+        ///     Every item's text cells parse back to the values they show, so editing one cell of a
+        ///     real item cannot quietly change another value held in the same cell.
+        /// </summary>
+        [RealCacheFact]
+        public void EveryItem_TextCellsParseBackToTheValuesTheyShow() {
+            RSCache cache = _cache.OpenCache();
+            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+            int checkedItems = 0;
+
+            foreach ((int group, int file) in cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX)) {
+                int id = addressing.DefinitionId(group, file);
+                ItemDefinition item = Decode(id, cache.ReadFileBytes(RSConstants.ITEM_DEFINITIONS_INDEX, group, file));
+
+                Assert.Equal(item.groundOptions, ItemFieldText.ParseOptions(ItemFieldText.FormatOptions(item.groundOptions)));
+                Assert.Equal(item.inventoryOptions, ItemFieldText.ParseOptions(ItemFieldText.FormatOptions(item.inventoryOptions)));
+
+                var recolours = ItemFieldText.ParseRecolours(
+                    ItemFieldText.FormatRecolours(item.originalModelColors, item.modifiedModelColors));
+                Assert.Equal(item.originalModelColors, recolours?.From);
+                Assert.Equal(item.modifiedModelColors, recolours?.To);
+
+                Assert.Equal(item.itemParams, ItemFieldText.ParseParams(ItemFieldText.FormatParams(item.itemParams!)));
+
+                Assert.Equal((item.manWearXOffset, item.manWearYOffset, item.manWearZOffset), ItemFieldText.ParseOffset(
+                    ItemFieldText.FormatOffset(item.manWearXOffset, item.manWearYOffset, item.manWearZOffset)));
+                Assert.Equal((item.womanWearXOffset, item.womanWearYOffset, item.womanWearZOffset), ItemFieldText.ParseOffset(
+                    ItemFieldText.FormatOffset(item.womanWearXOffset, item.womanWearYOffset, item.womanWearZOffset)));
+                checkedItems++;
+            }
+
+            Assert.Equal(_cache.DeclaredFiles(RSConstants.ITEM_DEFINITIONS_INDEX), checkedItems);
+        }
+
         private byte[] StoredBytes(int itemId) {
             CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
             return _cache.OpenCache().ReadFileBytes(RSConstants.ITEM_DEFINITIONS_INDEX,
