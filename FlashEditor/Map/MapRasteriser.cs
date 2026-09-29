@@ -296,11 +296,7 @@ namespace FlashEditor.Map {
                     int overlayHsl = overlay == null ? MapPalette.NoColour : ResolveOverlayColour(overlay);
                     int shape = overlayId > 0 ? scene.OverlayShape(plane, x, y) : TileShapes.ShapeFullUnderlay;
 
-                    //The hole rule: an overlay with neither colour suppresses the tile completely,
-                    //and the underlay does NOT show through. This is what makes cave mouths and
-                    //dungeon voids read correctly instead of appearing as solid ground.
-                    if (overlay != null && overlayHsl == MapPalette.NoColour && overlay.SecondaryRgb == -1
-                        && overlay.PrimaryRgb == FloorOverlayDefinition.TransparentRgb)
+                    if (overlay != null && FloorColour.IsHole(overlay, overlayHsl))
                         continue;
 
                     RectangleF tile = TileRect(window, x, y);
@@ -700,8 +696,7 @@ namespace FlashEditor.Map {
             FloorOverlayDefinition overlay = overlayId > 0 ? ResolveOverlay(overlayId - 1) : null;
             int overlayHsl = overlay == null ? MapPalette.NoColour : ResolveOverlayColour(overlay);
 
-            if (overlay != null && overlayHsl == MapPalette.NoColour && overlay.SecondaryRgb == -1
-                && overlay.PrimaryRgb == FloorOverlayDefinition.TransparentRgb) {
+            if (overlay != null && FloorColour.IsHole(overlay, overlayHsl)) {
                 isHole = true;
                 return MapPalette.NoColour;
             }
@@ -766,68 +761,19 @@ namespace FlashEditor.Map {
             return def;
         }
 
-        /// <summary>
-        ///     Picks a tile's overlay colour the way the client does.
-        /// </summary>
+        private int ResolveOverlayColour(FloorOverlayDefinition overlay) =>
+            FloorColour.OverlayHsl(overlay, ResolveTextureColour);
+
+        /// <summary>A texture's map colour, memoised.</summary>
         /// <remarks>
-        ///     Secondary colour, then the texture's representative colour, then primary
-        ///     (Node_Sub16.method1149).
+        ///     The resolved colour is cached, never the definition: reopening a cache calls
+        ///     <c>TextureManager.Clear()</c>, which disposes every <c>TextureDefinition</c> it holds.
         /// </remarks>
-        private int ResolveOverlayColour(FloorOverlayDefinition overlay) {
-            if (overlay.SecondaryRgb != -1)
-                return MapPalette.FromRgb(overlay.SecondaryRgb);
-
-            int textured = ResolveTextureColour(overlay.TextureId);
-            if (textured != MapPalette.NoColour)
-                return textured;
-
-            if (!overlay.HasPrimaryRgb)
-                return MapPalette.NoColour;
-
-            return MapPalette.FromRgb(overlay.PrimaryRgb);
-        }
-
-        /// <summary>
-        ///     A texture's declared colour, as packed map HSL.
-        /// </summary>
-        /// <remarks>
-        ///     <c>representativeHsl</c> is already a packed HSL in the same space as an overlay's primary
-        ///     and secondary colours, and the client returns it verbatim
-        ///     (Node_Sub16.java:75-80, <c>return class238.aShort1831</c>). It must not be routed
-        ///     through <c>TextureManager.RepresentativeRgb</c>, which converts it to RGB through the
-        ///     <em>model</em> palette for the renderer's benefit; doing that and folding the result
-        ///     back through the map palette turns the whole world flat green and drains the colour
-        ///     out of water.
-        ///
-        ///     <c>suppressTexture</c> is the client's <c>aBoolean1825</c> gate: when set, the texture
-        ///     declines to stand in for a colour and the tile falls through to its primary.
-        ///
-        ///     Texture metadata is loaded by <c>GLTextureCache</c> at cache-open. A renderer used
-        ///     before that, or in a headless test, sees an empty table and every textured tile falls
-        ///     back to its primary colour rather than failing.
-        /// </remarks>
-        /// <param name="textureId">A texture id, or -1 for none.</param>
-        /// <returns>Packed map HSL, or <see cref="MapPalette.NoColour"/>.</returns>
         private int ResolveTextureColour(int textureId) {
-            if (textureId < 0)
-                return MapPalette.NoColour;
-
             if (textureColourCache.TryGetValue(textureId, out int known))
                 return known;
 
-            int colour = MapPalette.NoColour;
-            if (TextureManager.Textures.TryGetValue(textureId, out TextureDefinition def)
-                && def != null && !def.suppressTexture) {
-                //Both consumers clamp the lightness before the palette lookup (Class345.method3825,
-                //reached from Class278.java:731 and from the scene path). A texture whose declared
-                //lightness sits at either extreme would otherwise come out pure black or white.
-                int hsl = def.representativeHsl & 0xFFFF;
-                int lightness = Math.Clamp(hsl & 0x7F, 2, 126);
-                colour = (hsl & 0xFF80) | lightness;
-            }
-
-            //The resolved colour is cached, never the definition: reopening a cache calls
-            //TextureManager.Clear(), which disposes every TextureDefinition it holds.
+            int colour = FloorColour.TextureHsl(textureId);
             textureColourCache[textureId] = colour;
             return colour;
         }
