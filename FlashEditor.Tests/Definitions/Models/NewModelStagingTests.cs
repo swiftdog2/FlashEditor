@@ -119,6 +119,47 @@ namespace FlashEditor.Tests.Definitions.Models {
             Assert.All(replaced.VertexSkins!, label => Assert.Equal(50, label.Value));
         }
 
+        [Fact]
+        public void ReplaceFile_OfTheBytesAlreadyStored_StagesNothing_AndSaysSo() {
+            (RSCache seeded, _) = SeedOneModel();
+            string objPath = WritePair("axe");
+            Assert.True(NewModelFromObj.ReplaceFile(seeded, 0, objPath, null).Succeeded);
+            RSCache cache = Commit(seeded);
+
+            byte[] stored = cache.ReadFileBytes(Models, 0, 0);
+            RSArchiveEntry before = cache.GetReferenceTable(Models).GetArchiveEntry(0);
+            (int crc, int version) = (before.GetCrc(), before.GetVersion());
+
+            ModelImportResult result = NewModelFromObj.ReplaceFile(cache, 0, objPath, null);
+
+            Assert.True(result.Succeeded, result.Message);
+            Assert.False(result.GeometryChanged);
+            Assert.Contains("nothing staged", result.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(cache.HasUnsavedChanges);
+            Assert.Equal(stored, cache.ReadFileBytes(Models, 0, 0));
+            RSArchiveEntry after = cache.GetReferenceTable(Models).GetArchiveEntry(0);
+            Assert.Equal((crc, version), (after.GetCrc(), after.GetVersion()));
+        }
+
+        [Theory]
+        [InlineData(ModelCodec.FirstNewProtocolModelId, "63607-63613")]
+        [InlineData(ModelCodec.LastNewProtocolModelId, "63607-63613")]
+        [InlineData(1, "does not exist")]
+        public void ReplaceFile_RefusesTheNewProtocolIds_AndAModelThatDoesNotExist_StagingNothing(
+                int modelId, string reason) {
+            (RSCache seeded, _) = SeedOneModel();
+            RSCache cache = Commit(seeded);
+            string objPath = WritePair("axe");
+
+            ModelImportResult result = NewModelFromObj.ReplaceFile(cache, modelId, objPath, null);
+
+            Assert.False(result.Succeeded);
+            Assert.Null(result.Model);
+            Assert.Contains(reason, result.Message);
+            Assert.False(cache.HasUnsavedChanges);
+            Assert.Equal(1, cache.NextCreatableGroupId(Models));
+        }
+
         // ===================================================================
         //  Helpers
         // ===================================================================

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using FlashEditor.Cache;
+using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
@@ -133,13 +134,58 @@ namespace FlashEditor.Definitions.Models.Interchange {
             return result;
         }
 
+        /// <summary>
+        ///     Builds a model from an OBJ on disk and its material libraries, exactly as
+        ///     <see cref="StageFile"/> does, and stages it over an existing model at that model's
+        ///     own group and file.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     Not <see cref="ModelObjImporter"/>: that one keeps the stored model's attributes and so
+        ///     needs its face count, and this one keeps nothing of the stored model but its address.
+        ///     Every attribute OBJ cannot state is fixed as for a new model.
+        ///     </para>
+        ///     <para>
+        ///     Written through <see cref="RSCache.WriteFile"/>, so the reference table changes only
+        ///     as any file write changes it, and nothing is allocated: a model the table does not
+        ///     declare is refused rather than created. A rebuild whose bytes equal the stored bytes
+        ///     stages nothing, because a re-stored payload re-encodes the container and moves the
+        ///     archive CRC.
+        ///     </para>
+        /// </remarks>
+        /// <param name="cache">The open cache to stage into.</param>
+        /// <param name="modelId">The model to overwrite.</param>
+        /// <param name="objPath">The OBJ. Its <c>mtllib</c> files are read from beside it.</param>
+        /// <param name="vertexLabel">
+        ///     The label every vertex carries, or null for none; <see cref="WeaponVertexLabel"/> for
+        ///     a worn weapon.
+        /// </param>
+        /// <returns>
+        ///     The rebuilt model, or a refusal that staged nothing.
+        ///     <see cref="ModelImportResult.GeometryChanged"/> is false when the rebuild matched the
+        ///     stored bytes and nothing was staged.
+        /// </returns>
+        /// <exception cref="IOException">The OBJ or a library it names cannot be read.</exception>
+        /// <exception cref="ModelImportException">The OBJ or a library is malformed.</exception>
         public static ModelImportResult ReplaceFile(RSCache cache, int modelId, string objPath, int? vertexLabel) {
             if (cache == null)
                 throw new ArgumentNullException(nameof(cache));
             if (objPath == null)
                 throw new ArgumentNullException(nameof(objPath));
 
-            RSArchiveEntry entry = cache.GetReferenceTable(RSConstants.MODELS_INDEX).GetArchiveEntry(modelId);
+            RSArchiveEntry? entry;
+            try {
+                ModelFileBuilder.RefuseNewProtocolId(modelId);
+                entry = cache.GetReferenceTable(RSConstants.MODELS_INDEX).GetArchiveEntry(modelId);
+                if (entry == null) {
+                    throw new ModelImportException(
+                        $"Model {modelId} does not exist in index 7, so there is nothing to replace. " +
+                        "New model from OBJ creates one at the next model id.");
+                }
+            }
+            catch (ModelImportException refusal) {
+                return ModelObjImporter.Refused(refusal.Message);
+            }
             int fileId = entry.GetValidFileIds()[0];
 
             ObjMesh mesh = ObjParser.ParseFile(objPath);
@@ -147,7 +193,15 @@ namespace FlashEditor.Definitions.Models.Interchange {
             if (!result.Succeeded)
                 return result;
 
-            cache.WriteFile(RSConstants.MODELS_INDEX, modelId, fileId, result.Model!.Encode());
+            byte[] encoded = result.Model!.Encode().ToArray();
+            byte[] stored = cache.ReadFileBytes(RSConstants.MODELS_INDEX, modelId, fileId);
+            if (encoded.AsSpan().SequenceEqual(stored)) {
+                return new ModelImportResult(true, false, result.Model,
+                    $"Model {modelId}: the rebuild is byte-identical to the stored model, so nothing staged.",
+                    result.Entries);
+            }
+
+            cache.WriteFile(RSConstants.MODELS_INDEX, modelId, fileId, new JagStream(encoded));
             return result;
         }
 
