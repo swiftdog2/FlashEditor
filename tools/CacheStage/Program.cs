@@ -12,10 +12,12 @@ using FlashEditor.Utils;
 // "Replace from OBJ (rebuild)..." the same way.
 // usage: stage <cacheDir> <wornObj> <invObj>
 //        stage <cacheDir> replace <modelId> <obj> [--label <n> | --no-label]
+//        stage <cacheDir> item <itemId> set <name=value>...
 //        stage dump <cacheDir> <itemId>
 if (args.Length == 0) return Usage();
 if (args[0] == "dump") { Dump(new RSCache(new RSFileStore(args[1])), int.Parse(args[2])); return 0; }
 if (args.Length >= 2 && args[1] == "replace") return Replace(args);
+if (args.Length >= 2 && args[1] == "item") return EditItem(args);
 if (args.Length != 3) return Usage();
 
 string dir = args[0];
@@ -80,12 +82,42 @@ static int Replace(string[] args) {
     return 0;
 }
 
+static int EditItem(string[] args) {
+    if (args.Length < 5 || !int.TryParse(args[2], out int itemId) || args[3] != "set") return Usage();
+
+    DebugUtil.LOG_LEVEL = DebugUtil.LOG_DETAIL.NONE;
+    string dir = args[0];
+    var cache = new RSCache(new RSFileStore(dir));
+    ItemEditOutcome outcome;
+    try {
+        outcome = ItemViewEdit.Apply(cache, itemId, args.Skip(4));
+    }
+    catch (FormatException e) {
+        Console.WriteLine(e.Message);
+        Console.WriteLine("refused; nothing staged");
+        return 1;
+    }
+
+    Console.WriteLine($"item {itemId} before: {outcome.Before}");
+    Console.WriteLine($"item {itemId} after:  {outcome.After}");
+    if (!outcome.Staged) { Console.WriteLine("staged: no (identical bytes); nothing saved"); return 0; }
+
+    Console.WriteLine("staged: yes");
+    Save(cache, dir);
+    var reopened = new RSCache(new RSFileStore(dir));
+    Console.WriteLine($"saved through RSCache.WriteCache to {Path.GetFullPath(dir)}; on reopen: " +
+                      ItemViewEdit.Describe(reopened.GetItemDefinition(itemId >> 8, itemId & 0xff)));
+    return 0;
+}
+
 //Internal, and reached through the InternalsVisibleTo FlashEditor.csproj grants this assembly.
 static void Save(RSCache c, string dir) => c.WriteCache(dir);
 
 static int Usage() {
     Console.WriteLine("usage: stage <cacheDir> <wornObj> <invObj>");
     Console.WriteLine("       stage <cacheDir> replace <modelId> <obj> [--label <n> | --no-label]");
+    Console.WriteLine("       stage <cacheDir> item <itemId> set <name=value>...");
+    Console.WriteLine("         names: zoom xan2d yan2d zan2d xoff2d yoff2d param.<key> (value an int or a \"quoted\" string)");
     Console.WriteLine("       stage dump <cacheDir> <itemId>");
     return 2;
 }
