@@ -77,6 +77,36 @@ namespace FlashEditor.Tests.Definitions.Entities {
             Assert.Equal(expected, Commit(cache).ReadFileBytes(Items, 0, 1));
         }
 
+        [Fact]
+        public void Apply_OfTheValuesTheItemAlreadyHolds_StagesNothing() {
+            RSCache cache = Seed();
+
+            ItemEditOutcome outcome = ItemViewEdit.Apply(cache, 1,
+                new[] { "zoom=1710", "yoff2d=51", "zan2d=0", "param.644=1580" });
+
+            Assert.False(outcome.Staged);
+            Assert.Equal(outcome.Before, outcome.After);
+            Assert.False(cache.HasUnsavedChanges);
+        }
+
+        [Theory]
+        [InlineData("zoom", "zoom")]
+        [InlineData("scale=5", "scale")]
+        [InlineData("zoom=65536", "65535")]
+        [InlineData("xoff2d=-32769", "-32768")]
+        [InlineData("xan2d=abc", "xan2d")]
+        [InlineData("param.x=1", "param key")]
+        [InlineData("param.687=one", "687")]
+        public void Apply_OfAnAssignmentTheItemCannotStore_IsRefusedAndStagesNothing(string bad, string named) {
+            RSCache cache = Seed();
+
+            var refusal = Assert.Throws<FormatException>(() =>
+                ItemViewEdit.Apply(cache, 1, new[] { "zoom=1850", bad }));
+
+            Assert.Contains(named, refusal.Message);
+            Assert.False(cache.HasUnsavedChanges);
+        }
+
         // ===================================================================
         //  Helpers
         // ===================================================================
