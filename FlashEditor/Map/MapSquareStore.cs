@@ -294,6 +294,22 @@ namespace FlashEditor.Map {
             return dirty;
         }
 
+        /// <summary>Whether <see cref="DirtySquares"/> would return anything.</summary>
+        /// <remarks>Runs on every edit, undo and redo, so it stops at the first dirty square.</remarks>
+        public bool HasDirtySquares() {
+            lock (gate) {
+                foreach (MapRegion square in pinned.Values)
+                    if (square.Dirty)
+                        return true;
+
+                foreach (MapRegion square in resident.Values)
+                    if (square.Dirty)
+                        return true;
+            }
+
+            return false;
+        }
+
         /// <summary>
         ///     Runs an action holding the store's lock.
         /// </summary>

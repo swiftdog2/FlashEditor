@@ -25,7 +25,6 @@ namespace FlashEditor.Tests.Map
         private const int RegionX = 50, RegionY = 50;
 
         private readonly string workingCopy;
-        private readonly bool available;
 
         public MapPanelSaveHistoryTests()
         {
@@ -41,24 +40,20 @@ namespace FlashEditor.Tests.Map
             foreach (string file in Directory.GetFiles(source, "main_file_cache.*"))
                 File.Copy(file, Path.Combine(workingCopy, Path.GetFileName(file)));
 
+            //Into the copy, not beside it: a key file left in a shared place by a run against one
+            //cache would silently supply keys to a run against the other.
             string keys = XTEAKeyTable.FindKeyFile(source);
             if (keys != null)
                 File.Copy(keys, Path.Combine(workingCopy, Path.GetFileName(keys)), true);
-
-            available = true;
         }
 
         /// <summary>
-        ///     Saving used to clear the history, so every edit made before a save could no longer be
-        ///     undone. The history now survives; an undo after a save dirties the square and
+        ///     The undo history outlives a save: an undo after a save dirties the square and
         ///     re-enables Save, and the save that follows writes the reverted state.
         /// </summary>
         [RealCacheFact]
         public void SavingKeepsTheHistory_AndSaveIsEnabledExactlyWhenASquareIsDirty()
         {
-            if (!available)
-                return;
-
             int original, edited;
 
             using (var fileStore = new RSFileStore(workingCopy))
@@ -70,7 +65,7 @@ namespace FlashEditor.Tests.Map
 
                 MapRegion square = panel.Store!.GetOrLoad(RegionX, RegionY);
                 original = square.GetUnderlayId(0, 10, 10);
-                edited = original == 77 ? 78 : 77;
+                edited = OtherThan(original);
 
                 panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, edited));
                 Assert.True(panel.CanSave);
@@ -120,16 +115,13 @@ namespace FlashEditor.Tests.Map
         [RealCacheFact]
         public void UndoThenRedoToTheSavedState_IsDirtyButEncodesTheCommittedTerrain()
         {
-            if (!available)
-                return;
-
             using var fileStore = new RSFileStore(workingCopy);
             using var panel = new MapEditorPanel();
             RSCache cache = Open(fileStore);
             panel.Bind(cache, workingCopy);
 
             MapRegion square = panel.Store!.GetOrLoad(RegionX, RegionY);
-            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            panel.ApplyEdit(ChangeUnderlay(square));
             panel.ApplyEdit(new SetHeightEdit(square, 0, 20, 20,
                 square.GetTileHeight(0, 20, 20) - MapRegion.HEIGHT_UNITS_PER_STEP));
             Assert.Equal(1, panel.CommitEdits());
@@ -154,15 +146,12 @@ namespace FlashEditor.Tests.Map
         [RealCacheFact]
         public void BindingAnotherCacheClearsTheHistory()
         {
-            if (!available)
-                return;
-
             using var fileStore = new RSFileStore(workingCopy);
             using var panel = new MapEditorPanel();
 
             panel.Bind(Open(fileStore), workingCopy);
             MapRegion square = panel.Store!.GetOrLoad(RegionX, RegionY);
-            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            panel.ApplyEdit(ChangeUnderlay(square));
             Assert.True(panel.CanUndo);
 
             panel.Bind(Open(fileStore), workingCopy);
@@ -170,11 +159,16 @@ namespace FlashEditor.Tests.Map
             Assert.False(panel.CanSave);
 
             square = panel.Store!.GetOrLoad(RegionX, RegionY);
-            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            panel.ApplyEdit(ChangeUnderlay(square));
             panel.Bind(null);
             Assert.False(panel.CanUndo);
             Assert.False(panel.CanSave);
         }
+
+        private static int OtherThan(int underlay) => underlay == 77 ? 78 : 77;
+
+        private static SetUnderlayEdit ChangeUnderlay(MapRegion square) =>
+            new SetUnderlayEdit(square, 0, 10, 10, OtherThan(square.GetUnderlayId(0, 10, 10)));
 
         private RSCache Open(RSFileStore fileStore)
         {

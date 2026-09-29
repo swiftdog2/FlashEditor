@@ -1879,7 +1879,7 @@ namespace FlashEditor.Map {
         ///     history says nothing about whether anything is left to write.
         /// </remarks>
         private void UpdateSaveButton() =>
-            saveButton.Enabled = cache != null && store != null && store.DirtySquares().Count > 0;
+            saveButton.Enabled = store?.HasDirtySquares() == true;
 
         private void WriteSquares(IReadOnlyList<(MapRegion Square, int RegionX, int RegionY)> dirty) =>
             store!.RunExclusive(() => {
@@ -1890,8 +1890,6 @@ namespace FlashEditor.Map {
             });
 
         private void OnSaved(int count) {
-            //The history is kept: an undo after a save re-dirties its square, so the next save
-            //writes the reverted state.
             UpdateSaveButton();
             ShowMessage($"Saved {count} square(s) to {cacheDirectory}");
         }
@@ -2400,7 +2398,6 @@ namespace FlashEditor.Map {
                 loader = null;
                 navigator.Build(null);
                 ShowMessage("No cache loaded");
-                saveButton.Enabled = false;
                 return;
             }
 
