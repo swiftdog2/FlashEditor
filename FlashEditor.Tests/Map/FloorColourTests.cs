@@ -26,6 +26,31 @@ namespace FlashEditor.Tests.Map
 
         private static int NoTextureResolves(int textureId) => MapPalette.NoColour;
 
+        /// <summary>
+        ///     A lone underlay's colour is what the blender produces for a field of nothing else.
+        /// </summary>
+        /// <remarks>
+        ///     Red-hue included because its weighted hue is negative, and the blender divides sums
+        ///     where the single colour divides one term.
+        /// </remarks>
+        [Theory]
+        [InlineData(0x4C7A2B)]
+        [InlineData(0xC02040)]
+        [InlineData(0x808080)]
+        [InlineData(0x000000)]
+        public void Underlay_ColourIsAUniformFieldOfItself(int rgb)
+        {
+            UnderlayColour colour = UnderlayColour.FromRgb(rgb);
+            var field = new int[12, 12];
+            for (int x = 0; x < 12; x++)
+                for (int y = 0; y < 12; y++)
+                    field[x, y] = 1;
+
+            int[,] blended = UnderlayBlender.Blend(field, _ => colour);
+
+            Assert.Equal(blended[6, 6], FloorColour.UnderlayHsl(colour));
+        }
+
         [Fact]
         public void Overlay_SecondaryWinsOverTextureAndPrimary()
         {
