@@ -28,7 +28,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
 
         /// <summary>
         ///     One render type per face (0 Gouraud, 1 flat, 2 not drawn), or null for no block, which
-        ///     the client reads as 0 on every face.
+        ///     the client reads as 0 on every face (Renderable_Sub2.java:622, Renderable_Sub3.java:349).
         /// </summary>
         public byte[]? FaceRenderTypes { get; init; }
 
