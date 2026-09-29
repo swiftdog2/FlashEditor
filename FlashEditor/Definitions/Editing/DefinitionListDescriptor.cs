@@ -450,14 +450,27 @@ namespace FlashEditor.Definitions.Editing {
         /// <param name="read">Reads the value off a row.</param>
         /// <param name="write">Writes an edited number back, or null for a read-only column.</param>
         /// <param name="width">The column width.</param>
+        /// <param name="min">The smallest value the record can store.</param>
+        /// <param name="max">The largest value the record can store.</param>
         /// <returns>The column.</returns>
+        /// <remarks>
+        ///     A value outside <paramref name="min"/> to <paramref name="max"/> is refused with a
+        ///     <see cref="FormatException"/> rather than written, because the encoder would otherwise
+        ///     wrap it into the field's width and save a different number.
+        /// </remarks>
         public static DefinitionColumn Number<TRow>(string header, Func<TRow, object?> read,
-            Action<TRow, int>? write = null, int width = 90) where TRow : class {
+            Action<TRow, int>? write = null, int width = 90, int min = int.MinValue, int max = int.MaxValue)
+            where TRow : class {
             return new DefinitionColumn(header, width,
                 row => Cast<TRow>(row) is TRow typed ? read(typed) : null,
                 write == null ? null : (row, value) => {
-                    if (Cast<TRow>(row) is TRow typed)
-                        write(typed, ToInt(value));
+                    if (Cast<TRow>(row) is not TRow typed)
+                        return;
+                    int number = ToInt(value);
+                    if (number < min || number > max)
+                        throw new FormatException(header + " must be from " + min + " to " + max +
+                                                  " to be stored; " + number + " cannot be saved.");
+                    write(typed, number);
                 });
         }
 

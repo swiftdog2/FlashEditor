@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using FlashEditor.Cache;
+using FlashEditor.Definitions.Editing;
 using FlashEditor.IO;
 
 namespace FlashEditor.Definitions.Entities {
@@ -15,9 +15,6 @@ namespace FlashEditor.Definitions.Entities {
     ///     stand for a different item.
     /// </remarks>
     public static class NewItemFromTemplate {
-        /// <summary>The link opcodes a copy drops: 97 names the item's note, 121 its lent copy.</summary>
-        public static readonly IReadOnlyList<int> DroppedLinkOpcodes = new[] { 97, 121 };
-
         /// <summary>
         ///     Copies <paramref name="template"/> as item <paramref name="newId"/>, without its note
         ///     and lend links.
@@ -50,9 +47,9 @@ namespace FlashEditor.Definitions.Entities {
             ItemDefinition copy = ItemDefinition.DecodeFromStream(template.Encode());
             copy.id = newId;
 
-            foreach (int opcode in DroppedLinkOpcodes)
-                copy.Opcodes.Remove(opcode);
+            copy.Opcodes.Remove(97);
             copy.notedId = 0;
+            copy.Opcodes.Remove(121);
             copy.lendId = 0;
 
             return copy;
@@ -128,7 +125,7 @@ namespace FlashEditor.Definitions.Entities {
             if (file == 0)
                 cache.CreateGroup(RSConstants.ITEM_DEFINITIONS_INDEX, group, new[] { new RSGroupFile(file, copy.Encode()) });
             else
-                cache.WriteFile(RSConstants.ITEM_DEFINITIONS_INDEX, group, file, copy.Encode());
+                DefinitionWriter.Save(cache, RSConstants.ITEM_DEFINITIONS_INDEX, itemId, copy.Encode().ToArray());
 
             return copy;
         }

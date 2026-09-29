@@ -75,26 +75,16 @@ namespace FlashEditor.Definitions.Entities {
         };
 
         /// <summary>A column over a field the record stores as an unsigned short.</summary>
-        /// <remarks>Refuses what the short cannot hold rather than letting the encoder wrap it.</remarks>
         private static DefinitionColumn UShort(string header, Func<ItemDefinition, int> read,
             Action<ItemDefinition, int> write, int width) {
-            return Ranged(header, read, write, width, 0, ushort.MaxValue);
+            return DefinitionColumn.Number<ItemDefinition>(header, row => read(row), write, width, 0, ushort.MaxValue);
         }
 
         /// <summary>A column over a field the record stores as a signed short.</summary>
         private static DefinitionColumn Short(string header, Func<ItemDefinition, int> read,
             Action<ItemDefinition, int> write, int width) {
-            return Ranged(header, read, write, width, short.MinValue, short.MaxValue);
-        }
-
-        private static DefinitionColumn Ranged(string header, Func<ItemDefinition, int> read,
-            Action<ItemDefinition, int> write, int width, int min, int max) {
-            return DefinitionColumn.Number<ItemDefinition>(header, row => read(row), (row, value) => {
-                if (value < min || value > max)
-                    throw new FormatException(header + " is stored in two bytes, so it must be from " + min +
-                                              " to " + max + "; " + value + " cannot be saved.");
-                write(row, value);
-            }, width);
+            return DefinitionColumn.Number<ItemDefinition>(header, row => read(row), write, width,
+                short.MinValue, short.MaxValue);
         }
 
         /// <inheritdoc/>

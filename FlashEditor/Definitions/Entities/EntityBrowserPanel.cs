@@ -770,13 +770,12 @@ namespace FlashEditor.Definitions.Entities {
             /* Mark what a selection costs, because none of it is visible on screen. Picking a row
                decodes its models out of index 7 and re-uploads the viewport's buffers; picking an
                NPC or an object picks up several models at once. */
-            noticeLabel.Text = kind == EntityKind.Model
-                ? "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. A new model from OBJ takes the next model id. Staged, not written."
-                : kind == EntityKind.Item
-                    ? "Index 19. Picking a row decodes its models and rebuilds the viewport. A new item from the selected one takes the next item id without its note and lend links. An edit is staged, not written."
-                : descriptor.IsEditable
-                    ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
-                    : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
+            noticeLabel.Text = kind switch {
+                EntityKind.Model => "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. A new model from OBJ takes the next model id. Staged, not written.",
+                EntityKind.Item => "Index 19. Picking a row decodes its models and rebuilds the viewport. A new item from the selected one takes the next item id without its note and lend links. An edit is staged, not written.",
+                _ when descriptor.IsEditable => "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written.",
+                _ => "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport."
+            };
 
             UpdateActions();
 

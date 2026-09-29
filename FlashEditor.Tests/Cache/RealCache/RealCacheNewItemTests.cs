@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using FlashEditor.Cache;
 using FlashEditor.Definitions.Entities;
 using FlashEditor.IO;
@@ -63,10 +64,7 @@ namespace FlashEditor.Tests.Cache.RealCache {
 
         [RealCacheFact]
         public void Duplicate_OfTheFirstLendableItem_ReEncodesToItsStoredBytesMinusBothLinks() {
-            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
-            foreach ((int group, int file) in _cache.OpenCache().EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX)) {
-                int id = addressing.DefinitionId(group, file);
-                byte[] stored = StoredBytes(id);
+            foreach ((int id, byte[] stored) in EveryItem()) {
                 ItemDefinition template = Decode(id, stored);
                 if (!template.Opcodes.Has(97) || !template.Opcodes.Has(121) || template.notedTemplateId != 0 ||
                     template.lendTemplateId != 0)
@@ -112,13 +110,10 @@ namespace FlashEditor.Tests.Cache.RealCache {
         /// </summary>
         [RealCacheFact]
         public void EveryItem_TextCellsParseBackToTheValuesTheyShow() {
-            RSCache cache = _cache.OpenCache();
-            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
             int checkedItems = 0;
 
-            foreach ((int group, int file) in cache.EnumerateFiles(RSConstants.ITEM_DEFINITIONS_INDEX)) {
-                int id = addressing.DefinitionId(group, file);
-                ItemDefinition item = Decode(id, cache.ReadFileBytes(RSConstants.ITEM_DEFINITIONS_INDEX, group, file));
+            foreach ((int id, byte[] stored) in EveryItem()) {
+                ItemDefinition item = Decode(id, stored);
 
                 Assert.Equal(item.groundOptions, ItemFieldText.ParseOptions(ItemFieldText.FormatOptions(item.groundOptions)));
                 Assert.Equal(item.inventoryOptions, ItemFieldText.ParseOptions(ItemFieldText.FormatOptions(item.inventoryOptions)));
@@ -138,6 +133,15 @@ namespace FlashEditor.Tests.Cache.RealCache {
             }
 
             Assert.Equal(_cache.DeclaredFiles(RSConstants.ITEM_DEFINITIONS_INDEX), checkedItems);
+        }
+
+        /// <summary>Every declared item with its stored bytes, one group decode per group.</summary>
+        private IEnumerable<(int Id, byte[] Stored)> EveryItem() {
+            RSCache cache = _cache.OpenCache();
+            CacheAddressing addressing = CacheAddressing.For(RSConstants.ITEM_DEFINITIONS_INDEX);
+            foreach (int group in cache.EnumerateGroups(RSConstants.ITEM_DEFINITIONS_INDEX))
+                foreach (KeyValuePair<int, JagStream> file in cache.ReadGroup(RSConstants.ITEM_DEFINITIONS_INDEX, group))
+                    yield return (addressing.DefinitionId(group, file.Key), file.Value.ToArray());
         }
 
         private byte[] StoredBytes(int itemId) {

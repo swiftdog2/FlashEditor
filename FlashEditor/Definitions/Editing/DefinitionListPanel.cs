@@ -1024,18 +1024,17 @@ namespace FlashEditor.Definitions.Editing {
             if (row == null || cache == null || descriptor == null || !descriptor.IsEditable)
                 return;
 
-            //The row was left as it was, so there is nothing to stage and the reason is the news.
-            if (refusedEdit != null) {
-                status.Text = "Edit refused: " + refusedEdit;
-                refusedEdit = null;
-                RowCommitted?.Invoke(this, EventArgs.Empty);
-                return;
-            }
-
             //Raised on every path out of the try, including the one that stages nothing: a companion
             //view has to be able to redraw after an edit that was undone just as much as after one
             //that took.
             try {
+                //The row was left as it was, so there is nothing to stage and the reason is the news.
+                if (refusedEdit != null) {
+                    status.Text = "Edit refused: " + refusedEdit;
+                    refusedEdit = null;
+                    return;
+                }
+
                 DefinitionAddress address = descriptor.AddressOf(row);
                 byte[] encoded = descriptor.Encode(row).ToArray();
                 byte[] stored = cache.ReadFileBytes(descriptor.IndexId, address.GroupId, address.FileId);
