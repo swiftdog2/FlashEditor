@@ -106,7 +106,7 @@ static int EditItem(string[] args) {
     Save(cache, dir);
     var reopened = new RSCache(new RSFileStore(dir));
     Console.WriteLine($"saved through RSCache.WriteCache to {Path.GetFullPath(dir)}; on reopen: " +
-                      ItemViewEdit.Describe(reopened.GetItemDefinition(itemId >> 8, itemId & 0xff)));
+                      ItemViewEdit.Describe(reopened, itemId));
     return 0;
 }
 
@@ -117,7 +117,7 @@ static int Usage() {
     Console.WriteLine("usage: stage <cacheDir> <wornObj> <invObj>");
     Console.WriteLine("       stage <cacheDir> replace <modelId> <obj> [--label <n> | --no-label]");
     Console.WriteLine("       stage <cacheDir> item <itemId> set <name=value>...");
-    Console.WriteLine("         names: zoom xan2d yan2d zan2d xoff2d yoff2d param.<key> (value an int or a \"quoted\" string)");
+    Console.WriteLine($"         names: {string.Join(" ", ItemViewEdit.FieldNames)} param.<key> (value an int or a \"quoted\" string)");
     Console.WriteLine("       stage dump <cacheDir> <itemId>");
     return 2;
 }
