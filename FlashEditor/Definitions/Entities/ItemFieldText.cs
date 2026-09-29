@@ -21,7 +21,7 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>Shows five menu slots separated by <c>|</c>, an empty slot being no option.</summary>
         /// <param name="options">The five slots; a null slot has no option.</param>
         /// <returns>The cell text.</returns>
-        public static string FormatOptions(string[] options) {
+        public static string FormatOptions(string?[] options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
             return string.Join(OptionSeparator, options);
@@ -31,14 +31,14 @@ namespace FlashEditor.Definitions.Entities {
         /// <param name="text">The cell text.</param>
         /// <returns>The five slots.</returns>
         /// <exception cref="FormatException">The text does not hold exactly five slots.</exception>
-        public static string[] ParseOptions(string text) {
+        public static string?[] ParseOptions(string text) {
             string[] parts = (text ?? string.Empty).Split(OptionSeparator);
             if (parts.Length != 5)
                 throw new FormatException(
                     "An item has 5 menu slots, written separated by |, with an empty slot for none - " +
                     "for example |Wield|||drop. This has " + parts.Length + ".");
 
-            var options = new string[5];
+            var options = new string?[5];
             for (int i = 0; i < parts.Length; i++) {
                 string option = parts[i].Trim();
                 options[i] = option.Length == 0 ? null : option;
@@ -52,7 +52,7 @@ namespace FlashEditor.Definitions.Entities {
         /// <param name="from">The colours the model carries, or null for no recolour.</param>
         /// <param name="to">What each is drawn as instead.</param>
         /// <returns>The cell text, empty for no recolour.</returns>
-        public static string FormatRecolours(short[] from, short[] to) {
+        public static string FormatRecolours(short[]? from, short[]? to) {
             if (from == null)
                 return string.Empty;
 
@@ -60,7 +60,7 @@ namespace FlashEditor.Definitions.Entities {
             for (int i = 0; i < from.Length; i++) {
                 if (i > 0)
                     text.Append(", ");
-                text.Append((ushort) from[i]).Append('>').Append((ushort) to[i]);
+                text.Append((ushort) from[i]).Append('>').Append((ushort) to![i]);
             }
             return text.ToString();
         }
@@ -95,7 +95,7 @@ namespace FlashEditor.Definitions.Entities {
         /// </summary>
         /// <param name="parameters">The params, or null for none.</param>
         /// <returns>The cell text, empty for none.</returns>
-        public static string FormatParams(IReadOnlyDictionary<int, object> parameters) {
+        public static string FormatParams(IReadOnlyDictionary<int, object>? parameters) {
             if (parameters == null)
                 return string.Empty;
 
@@ -122,7 +122,7 @@ namespace FlashEditor.Definitions.Entities {
         /// <exception cref="FormatException">
         ///     A param is malformed, a key is out of range or repeated, or there are over 255.
         /// </exception>
-        public static SortedDictionary<int, object> ParseParams(string text) {
+        public static SortedDictionary<int, object>? ParseParams(string text) {
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 

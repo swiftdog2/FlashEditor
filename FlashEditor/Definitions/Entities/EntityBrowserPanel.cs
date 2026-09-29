@@ -87,7 +87,8 @@ namespace FlashEditor.Definitions.Entities {
         //One descriptor instance per family, held rather than rebuilt. DefinitionListPanel treats a
         //different descriptor object as a different thing to show, so building one per switch would
         //reload the index every time the selector moved and throw away the sort with it.
-        private readonly ItemListDescriptor items = new ItemListDescriptor();
+        //Replaced rather than reused after an item is created, for the reason models is below.
+        private ItemListDescriptor items = new ItemListDescriptor();
         private readonly NPCListDescriptor npcs = new NPCListDescriptor();
         private readonly ObjectListDescriptor objects = new ObjectListDescriptor();
         //Replaced rather than reused after a model is created: the grid's Bind treats the same
@@ -123,6 +124,7 @@ namespace FlashEditor.Definitions.Entities {
         private readonly Button exportObjButton = new Button { AutoSize = true, Text = "Export .obj..." };
         private readonly Button importObjButton = new Button { AutoSize = true, Text = "Import .obj..." };
         private readonly Button newModelButton = new Button { AutoSize = true, Text = "New model from OBJ..." };
+        private readonly Button newItemButton = new Button { AutoSize = true, Text = "New item from selected" };
 
         private readonly Label noticeLabel = new Label { AutoSize = true };
 
@@ -208,6 +210,7 @@ namespace FlashEditor.Definitions.Entities {
             exportObjButton.Click += ExportObjButton_Click;
             importObjButton.Click += ImportObjButton_Click;
             newModelButton.Click += NewModelButton_Click;
+            newItemButton.Click += NewItemButton_Click;
 
             animationSelector.SelectedIndexChanged += AnimationSelector_SelectedIndexChanged;
             previousAnimation.Click += (_, _) => StepAnimation(-1);
@@ -231,6 +234,7 @@ namespace FlashEditor.Definitions.Entities {
             toolStrip.Controls.Add(exportObjButton);
             toolStrip.Controls.Add(importObjButton);
             toolStrip.Controls.Add(newModelButton);
+            toolStrip.Controls.Add(newItemButton);
             toolStrip.Controls.Add(noticeLabel);
 
             /* The two cycle buttons sit between the caption and the box rather than after it. The
@@ -369,8 +373,8 @@ namespace FlashEditor.Definitions.Entities {
         ///     <para>
         ///     The <b>widest</b> family, not the selected one, because the splitter must not jump
         ///     every time the type selector moves - a viewport that resized itself under the cursor
-        ///     as the user browsed would be worse than one column too narrow. Items is the widest at
-        ///     most columns, but that is measured rather than assumed here so a new column
+        ///     as the user browsed would be worse than one column too narrow. Items is the widest,
+        ///     but that is measured rather than assumed here so a new column
         ///     anywhere widens it.
         ///     </para>
         /// </remarks>
@@ -768,6 +772,8 @@ namespace FlashEditor.Definitions.Entities {
                NPC or an object picks up several models at once. */
             noticeLabel.Text = kind == EntityKind.Model
                 ? "Index 7. Cells are read only, but an OBJ round trip is not: an export carries vertices and faces only, and an import replaces those and keeps the rest. A new model from OBJ takes the next model id. Staged, not written."
+                : kind == EntityKind.Item
+                    ? "Index 19. Picking a row decodes its models and rebuilds the viewport. A new item from the selected one takes the next item id without its note and lend links. An edit is staged, not written."
                 : descriptor.IsEditable
                     ? "Index " + descriptor.IndexId + ". Picking a row decodes its models and rebuilds the viewport. An edit is staged, not written."
                     : "Index " + descriptor.IndexId + ". Listed from the reference table without decoding, so it is read only. Picking a row decodes the model and rebuilds the viewport.";
@@ -802,6 +808,7 @@ namespace FlashEditor.Definitions.Entities {
             exportObjButton.Enabled = ready && isModel;
             importObjButton.Enabled = ready && isModel;
             newModelButton.Enabled = ready && isModel;
+            newItemButton.Enabled = ready && kind == EntityKind.Item;
         }
 
         private void List_SelectedRowChanged(object? sender, EventArgs e) {
@@ -1481,6 +1488,54 @@ namespace FlashEditor.Definitions.Entities {
                 ReportStatus("New model failed: " + failure.Message);
                 MessageBox.Show(this, "Could not build a model from that OBJ:" + Environment.NewLine +
                     failure.Message, "New model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        ///     Copies the selected item into the next item id, without its note and lend links, and
+        ///     stages it.
+        /// </summary>
+        /// <remarks>
+        ///     The id is not chosen: new items go one past the highest, and the confirmation names it
+        ///     before it is spent. Nothing reaches disk until Save.
+        /// </remarks>
+        private void NewItemButton_Click(object? sender, EventArgs e) {
+            if (cache == null || kind != EntityKind.Item)
+                return;
+
+            if (list.SelectedRow is not ItemDefinition template) {
+                ReportStatus("Pick the item to copy first.");
+                return;
+            }
+
+            try {
+                int nextId = NewItemFromTemplate.NextItemId(cache);
+                NewItemFromTemplate.RefuseReservedId(nextId);
+
+                if (MessageBox.Show(this,
+                        "Copy item " + template.id + " (" + template.name + ") as new item " + nextId + "?" +
+                        Environment.NewLine + Environment.NewLine +
+                        "Every field is copied except its note and lend links (opcodes 97 and 121). " +
+                        "Nothing is written until you save.",
+                        "New item", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+                    return;
+
+                ItemDefinition created = NewItemFromTemplate.Stage(cache, template.id);
+
+                items = new ItemListDescriptor();
+                list.Bind(cache, items);
+                list.SelectRecord(created.id);
+                ReportStatus("Staged new item " + created.id + " copied from " + template.id + ". Save to write it.");
+            }
+            catch (NewItemRefusedException refusal) {
+                ReportStatus("New item refused - " + refusal.Message);
+                MessageBox.Show(this, refusal.Message, "New item", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception failure) {
+                Debug("New item from template failed: " + failure);
+                ReportStatus("New item failed: " + failure.Message);
+                MessageBox.Show(this, "Could not make a new item:" + Environment.NewLine + failure.Message,
+                    "New item", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

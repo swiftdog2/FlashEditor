@@ -24,6 +24,8 @@ namespace FlashEditor.Definitions.Entities {
     ///     </para>
     /// </remarks>
     public sealed class ItemListDescriptor : DefinitionListDescriptor<ItemDefinition> {
+        //The item record's list fields are declared non-nullable but hold null for "absent" by
+        //design, hence the null-forgiving writes below.
         private static readonly IReadOnlyList<DefinitionColumn> ItemColumns = new[] {
             /* The id is the address, not a field: the commit folds it back into a group and a file
                through CacheAddressing, so an edited id would write the definition over a different
@@ -53,15 +55,15 @@ namespace FlashEditor.Definitions.Entities {
                 (row, value) => (row.womanWearXOffset, row.womanWearYOffset, row.womanWearZOffset) =
                     ItemFieldText.ParseOffset(value), 100),
             DefinitionColumn.Text<ItemDefinition>("Ground", row => ItemFieldText.FormatOptions(row.groundOptions),
-                (row, value) => row.groundOptions = ItemFieldText.ParseOptions(value), 140),
+                (row, value) => row.groundOptions = ItemFieldText.ParseOptions(value)!, 140),
             DefinitionColumn.Text<ItemDefinition>("Inventory", row => ItemFieldText.FormatOptions(row.inventoryOptions),
-                (row, value) => row.inventoryOptions = ItemFieldText.ParseOptions(value), 140),
+                (row, value) => row.inventoryOptions = ItemFieldText.ParseOptions(value)!, 140),
             DefinitionColumn.Text<ItemDefinition>("Recolours",
                 row => ItemFieldText.FormatRecolours(row.originalModelColors, row.modifiedModelColors),
                 (row, value) => (row.originalModelColors, row.modifiedModelColors) =
-                    ItemFieldText.ParseRecolours(value) ?? (null, null), 140),
+                    ItemFieldText.ParseRecolours(value) ?? (null!, null!), 140),
             DefinitionColumn.Text<ItemDefinition>("Params", row => ItemFieldText.FormatParams(row.itemParams),
-                (row, value) => row.itemParams = ItemFieldText.ParseParams(value), 200),
+                (row, value) => row.itemParams = ItemFieldText.ParseParams(value)!, 200),
             DefinitionColumn.Number<ItemDefinition>("Value", row => row.value,
                 (row, value) => row.value = value, 85),
             //A flag rather than a number: opcode 11 carries no payload, so any value but set or clear
