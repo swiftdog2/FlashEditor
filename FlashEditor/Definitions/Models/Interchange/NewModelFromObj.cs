@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using FlashEditor.Cache;
 
 namespace FlashEditor.Definitions.Models.Interchange {
     /// <summary>
@@ -83,6 +85,89 @@ namespace FlashEditor.Definitions.Models.Interchange {
                     new ModelImportEntry("new model", ModelImportDisposition.Refused, failure.Message)
                 });
             }
+        }
+
+        /// <summary>
+        ///     Builds a model from an OBJ on disk and its material libraries, and stages it into
+        ///     index 7 as a new group at the next model id.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///     The id is not a choice: an idx file cannot express a hole, so
+        ///     <see cref="RSCache.NextCreatableGroupId"/> is the only id a group can be created at.
+        ///     When that id is one of 63607-63613 the build is refused, and no model can be created
+        ///     in that cache until the range is behind it - which is where the vanilla b639 capture
+        ///     stands, since it ends at 63606.
+        ///     </para>
+        ///     <para>
+        ///     Staged like any edit: nothing reaches the disk until the cache is saved. Each call
+        ///     takes the next id, so a second call creates a second model.
+        ///     </para>
+        /// </remarks>
+        /// <param name="cache">The open cache to stage into.</param>
+        /// <param name="objPath">The OBJ. Its <c>mtllib</c> files are read from beside it.</param>
+        /// <param name="vertexLabel">
+        ///     The label every vertex carries, or null for none; <see cref="WeaponVertexLabel"/> for
+        ///     a worn weapon.
+        /// </param>
+        /// <returns>
+        ///     The model staged, whose <see cref="ModelFile.ModelId"/> is the id it took, or a refusal
+        ///     that staged nothing.
+        /// </returns>
+        /// <exception cref="IOException">The OBJ or a library it names cannot be read.</exception>
+        /// <exception cref="ModelImportException">The OBJ or a library is malformed.</exception>
+        public static ModelImportResult StageFile(RSCache cache, string objPath, int? vertexLabel) {
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+            if (objPath == null)
+                throw new ArgumentNullException(nameof(objPath));
+
+            string objText = File.ReadAllText(objPath);
+            ObjMesh mesh = ObjParser.Parse(objText);
+            IReadOnlyDictionary<string, int> materials = ReadLibraries(objText, objPath);
+
+            int modelId = cache.NextCreatableGroupId(RSConstants.MODELS_INDEX);
+            ModelImportResult result = Build(mesh, materials, modelId, vertexLabel);
+            if (!result.Succeeded)
+                return result;
+
+            cache.CreateGroup(RSConstants.MODELS_INDEX, modelId, new[] {
+                new RSGroupFile(0, result.Model!.Encode())
+            });
+            return result;
+        }
+
+        /// <summary>
+        ///     Every <c>Kd</c> in the libraries an OBJ names, later libraries overriding earlier ones.
+        /// </summary>
+        /// <remarks>
+        ///     Read from the OBJ text here because <see cref="ObjMesh"/> carries only the mesh. A
+        ///     library that is named and missing throws rather than yielding no colours, so the failure
+        ///     names the file instead of every face.
+        /// </remarks>
+        private static IReadOnlyDictionary<string, int> ReadLibraries(string objText, string objPath) {
+            string directory = Path.GetDirectoryName(Path.GetFullPath(objPath)) ?? string.Empty;
+            var merged = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (string raw in objText.Split('\n')) {
+                string line = raw.Trim();
+                if (!line.StartsWith("mtllib ", StringComparison.Ordinal) && !line.StartsWith("mtllib\t", StringComparison.Ordinal))
+                    continue;
+
+                //The format allows several names on one line, and Blender writes a name with
+                //spaces as it stands, so a single name is taken whole when it exists.
+                string rest = line.Substring("mtllib".Length).Trim();
+                string[] names = File.Exists(Path.Combine(directory, rest))
+                    ? new[] { rest }
+                    : rest.Split((char[]?) null, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (string name in names) {
+                    foreach (KeyValuePair<string, int> entry in MtlParser.ParseFile(Path.Combine(directory, name)))
+                        merged[entry.Key] = entry.Value;
+                }
+            }
+
+            return merged;
         }
 
         /// <summary>

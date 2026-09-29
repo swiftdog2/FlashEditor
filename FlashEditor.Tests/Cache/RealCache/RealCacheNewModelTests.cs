@@ -97,6 +97,7 @@ namespace FlashEditor.Tests.Cache.RealCache {
                               ", textured triangle types: " + Distinct(decoded.TextureTypes?.Select(t => (int) t)) +
                               ", projection slack: " + BitConverter.ToString(decoded.SlackTextureScale));
             _output.WriteLine("render types: " + Distinct(decoded.FaceTypeBytes?.Select(b => (int) b)));
+            _output.WriteLine("next creatable model id: " + open.NextCreatableGroupId(RSConstants.MODELS_INDEX));
             return stored;
         }
 
