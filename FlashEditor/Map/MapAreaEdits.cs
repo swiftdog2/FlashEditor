@@ -206,13 +206,13 @@ namespace FlashEditor.Map {
             switch (tool) {
                 case MapAreaTool.Underlay:
                     return value < 0 || value > MapToolLimits.MaximumUnderlayId
-                        ? $"Underlay {value} is past the {MapToolLimits.MaximumUnderlayId} a tile can " +
-                          "store - it is written as id + 81 in one byte - so nothing was filled."
+                        ? $"Underlay value {value} is past the {MapToolLimits.MaximumUnderlayId} a tile can " +
+                          "store - it is written as value + 81 in one byte - so nothing was filled."
                         : null;
 
                 case MapAreaTool.Overlay:
                     return value < 0 || value > MapToolLimits.MaximumOverlayId
-                        ? $"Overlay {value} is past the {MapToolLimits.MaximumOverlayId} a tile can " +
+                        ? $"Overlay value {value} is past the {MapToolLimits.MaximumOverlayId} a tile can " +
                           "store in its one byte, so nothing was filled."
                         : null;
 
@@ -299,8 +299,8 @@ namespace FlashEditor.Map {
 
         private static string Describe(MapAreaTool tool, MapAreaOptions options, int tiles, int squares) {
             string what = tool switch {
-                MapAreaTool.Underlay => "underlay " + options.Value,
-                MapAreaTool.Overlay => "overlay " + options.Value,
+                MapAreaTool.Underlay => FloorBrush.Describe(FloorKind.Underlay, options.Value),
+                MapAreaTool.Overlay => FloorBrush.Describe(FloorKind.Overlay, options.Value),
                 MapAreaTool.BlockedFlag => options.Blocked ? "blocked" : "unblocked",
                 MapAreaTool.RaiseHeight => "raised",
                 MapAreaTool.LowerHeight => "lowered",

@@ -639,7 +639,7 @@ namespace FlashEditor.Map {
             }
 
             FloorPick pick = picked.Value;
-            string name = pick.Kind.ToString().ToLowerInvariant() + " " + pick.Id;
+            string name = FloorBrush.Describe(pick);
             LoadBrush(pick);
 
             if (pick.Kind == FloorKind.Overlay) {
@@ -658,7 +658,7 @@ namespace FlashEditor.Map {
 
         /// <summary>A stored floor value as the inspector shows it: the definition, then the byte.</summary>
         private static string StoredFloor(int stored) =>
-            stored == 0 ? "none" : (stored - 1) + "  (stored " + stored + ")";
+            stored == 0 ? "none" : FloorBrush.DefinitionText(stored) + "  (stored " + stored + ")";
 
         private MapTool SelectedTool => currentTool;
 
@@ -1020,7 +1020,7 @@ namespace FlashEditor.Map {
             }
 
             view.Flash(hit.WorldX, hit.WorldY, 1, 1, hit.Plane, MapFlashKind.Sampled,
-                options.WandField + " " + wand.MatchedValue);
+                options.WandField + " " + FloorBrush.DefinitionText(wand.MatchedValue));
 
             string limit = wand.ReachedTileLimit
                 ? $"  -  stopped at the {MapWand.DefaultTileLimit:N0} tile limit, so the run continues past this"
@@ -1029,7 +1029,7 @@ namespace FlashEditor.Map {
                     : "";
 
             ShowMessage($"Wand took {wand.Tiles.Count:N0} tile(s) matching {options.WandField.ToString().ToLowerInvariant()} " +
-                        $"{wand.MatchedValue}{limit}. {SelectionClause()}");
+                        $"{FloorBrush.DefinitionText(wand.MatchedValue)}{limit}. {SelectionClause()}");
         }
 
         /// <summary>
@@ -1319,15 +1319,15 @@ namespace FlashEditor.Map {
                 case SetUnderlayEdit underlay:
                     return new[] {
                         reversed
-                            ? $"underlay {underlay.NewId} -> {underlay.OldId} {where}"
-                            : $"underlay {underlay.OldId} -> {underlay.NewId} {where}"
+                            ? $"underlay {FloorBrush.DefinitionText(underlay.NewId)} -> {FloorBrush.DefinitionText(underlay.OldId)} {where}"
+                            : $"underlay {FloorBrush.DefinitionText(underlay.OldId)} -> {FloorBrush.DefinitionText(underlay.NewId)} {where}"
                     };
 
                 case SetOverlayEdit overlay:
                     return new[] {
                         reversed
-                            ? $"overlay {overlay.NewId} -> {overlay.OldId} {where}"
-                            : $"overlay {overlay.OldId} -> {overlay.NewId} {where}"
+                            ? $"overlay {FloorBrush.DefinitionText(overlay.NewId)} -> {FloorBrush.DefinitionText(overlay.OldId)} {where}"
+                            : $"overlay {FloorBrush.DefinitionText(overlay.OldId)} -> {FloorBrush.DefinitionText(overlay.NewId)} {where}"
                               + $"  shape {overlay.NewShape}  rot {overlay.NewRotation}"
                     };
 
@@ -1750,9 +1750,9 @@ namespace FlashEditor.Map {
         private static string? FlashLabel(IMapEdit edit, bool reversed) {
             switch (edit) {
                 case SetUnderlayEdit underlay:
-                    return $"underlay {(reversed ? underlay.OldId : underlay.NewId)}";
+                    return FloorBrush.Describe(FloorKind.Underlay, reversed ? underlay.OldId : underlay.NewId);
                 case SetOverlayEdit overlay:
-                    return $"overlay {(reversed ? overlay.OldId : overlay.NewId)}";
+                    return FloorBrush.Describe(FloorKind.Overlay, reversed ? overlay.OldId : overlay.NewId);
                 case SetTileFlagsEdit flags:
                     return $"flags 0x{(reversed ? flags.OldFlags : flags.NewFlags):X2}";
                 case AddLocationEdit add:

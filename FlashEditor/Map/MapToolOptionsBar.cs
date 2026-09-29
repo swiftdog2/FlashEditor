@@ -124,7 +124,6 @@ namespace FlashEditor.Map {
 
             Add(MapToolOptions.UnderlayId, "Underlay value", underlayId, underlayDrawn);
             Add(MapToolOptions.OverlayId, "Overlay value", overlayId, overlayDrawn);
-            underlayDrawn.Margin = overlayDrawn.Margin = new Padding(0, 6, 4, 0);
             Add(MapToolOptions.ObjectId, "Object id", objectId, pickObject);
             Add(MapToolOptions.Brush, "Brush", brushSize, brushShape);
             Add(MapToolOptions.OverlayForm, "Shape", overlayShape, RotationLabel(), overlayRotation);

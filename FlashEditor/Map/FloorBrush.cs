@@ -26,7 +26,7 @@ namespace FlashEditor.Map {
                 : MapToolLimits.MaximumOverlayId;
 
             if (stored > cap)
-                return new FloorBrushLoad(0, Name(pick.Kind) + " " + pick.Id +
+                return new FloorBrushLoad(0, Describe(pick) +
                     " is past the " + (cap - 1) + " a tile can store for it, so the brush was left where it was.");
 
             return new FloorBrushLoad(stored, null);
@@ -37,8 +37,24 @@ namespace FlashEditor.Map {
         /// <param name="storedValue">The tile value.</param>
         /// <returns>"overlay 18" for stored 19, or "no overlay" for 0.</returns>
         public static string Describe(FloorKind kind, int storedValue) {
-            return storedValue == 0 ? "no " + Name(kind) : Name(kind) + " " + (storedValue - 1);
+            return storedValue == 0 ? "no " + Name(kind) : Describe(new FloorPick(kind, DefinitionOf(storedValue)));
         }
+
+        /// <summary>Names a pick by its definition, as the palette shows it.</summary>
+        /// <param name="pick">The pick.</param>
+        /// <returns>"overlay 18" for overlay definition 18.</returns>
+        public static string Describe(FloorPick pick) => Name(pick.Kind) + " " + pick.Id;
+
+        /// <summary>The definition a non-zero stored floor value draws.</summary>
+        /// <param name="storedValue">The tile value; 0 means none and has no definition.</param>
+        /// <returns>The definition id.</returns>
+        public static int DefinitionOf(int storedValue) => storedValue - 1;
+
+        /// <summary>A stored floor value as the definition it draws, or "none" for 0.</summary>
+        /// <param name="storedValue">The tile value.</param>
+        /// <returns>"18" for stored 19.</returns>
+        public static string DefinitionText(int storedValue) =>
+            storedValue == 0 ? "none" : DefinitionOf(storedValue).ToString();
 
         private static string Name(FloorKind kind) => kind == FloorKind.Underlay ? "underlay" : "overlay";
 
@@ -56,11 +72,11 @@ namespace FlashEditor.Map {
         public static FloorPick? PickUp(FlashEditor.Cache.Region.Region square, int plane, int x, int y) {
             int overlay = square.GetOverlayId(plane, x, y);
             if (overlay != 0)
-                return new FloorPick(FloorKind.Overlay, overlay - 1);
+                return new FloorPick(FloorKind.Overlay, DefinitionOf(overlay));
 
             int underlay = square.GetUnderlayId(plane, x, y);
             if (underlay != 0)
-                return new FloorPick(FloorKind.Underlay, underlay - 1);
+                return new FloorPick(FloorKind.Underlay, DefinitionOf(underlay));
 
             return null;
         }
