@@ -154,7 +154,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
 
         /// <summary>Refuses a mesh whose faces name vertices it does not contain.</summary>
         /// <param name="geometry">The incoming mesh.</param>
-        private static void RefuseOutOfRangeIndices(ModelGeometry geometry) {
+        internal static void RefuseOutOfRangeIndices(ModelGeometry geometry) {
             for (int i = 0; i < geometry.FaceCount; i++) {
                 Check(geometry, i, geometry.FaceA[i]);
                 Check(geometry, i, geometry.FaceB[i]);
@@ -214,7 +214,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     wrote, which is why an unchanged mesh keeps its original bytes rather than coming
         ///     through here.
         /// </remarks>
-        private static void EncodeVertices(ModelGeometry geometry, out byte[] vertexFlags,
+        internal static void EncodeVertices(ModelGeometry geometry, out byte[] vertexFlags,
             out StoredSmart[] deltasX, out StoredSmart[] deltasY, out StoredSmart[] deltasZ,
             out int lengthX, out int lengthY, out int lengthZ) {
             int count = geometry.VertexCount;
@@ -272,7 +272,7 @@ namespace FlashEditor.Definitions.Models.Interchange {
         ///     <c>(a, c)</c>, opcode 3 keeps <c>(c, b)</c> and opcode 4 keeps <c>(b, a)</c>
         ///     (Model.java, the four <c>if</c> arms the projection replays).
         /// </remarks>
-        private static void EncodeFaces(ModelGeometry geometry, out byte[] opcodes,
+        internal static void EncodeFaces(ModelGeometry geometry, out byte[] opcodes,
             out StoredSmart[] faceDeltas, out int length) {
             int count = geometry.FaceCount;
             opcodes = new byte[count];
