@@ -123,6 +123,7 @@ namespace FlashEditor.Definitions.Entities {
         //the first row.
         private readonly Button exportObjButton = new Button { AutoSize = true, Text = "Export .obj..." };
         private readonly Button importObjButton = new Button { AutoSize = true, Text = "Import .obj..." };
+        private readonly Button replaceModelButton = new Button { AutoSize = true, Text = "Replace from OBJ (rebuild)..." };
         private readonly Button newModelButton = new Button { AutoSize = true, Text = "New model from OBJ..." };
         private readonly Button newItemButton = new Button { AutoSize = true, Text = "New item from selected" };
 
@@ -209,6 +210,7 @@ namespace FlashEditor.Definitions.Entities {
             importButton.Click += ImportButton_Click;
             exportObjButton.Click += ExportObjButton_Click;
             importObjButton.Click += ImportObjButton_Click;
+            replaceModelButton.Click += ReplaceModelButton_Click;
             newModelButton.Click += NewModelButton_Click;
             newItemButton.Click += NewItemButton_Click;
 
@@ -233,6 +235,7 @@ namespace FlashEditor.Definitions.Entities {
             toolStrip.Controls.Add(importButton);
             toolStrip.Controls.Add(exportObjButton);
             toolStrip.Controls.Add(importObjButton);
+            toolStrip.Controls.Add(replaceModelButton);
             toolStrip.Controls.Add(newModelButton);
             toolStrip.Controls.Add(newItemButton);
             toolStrip.Controls.Add(noticeLabel);
@@ -806,6 +809,7 @@ namespace FlashEditor.Definitions.Entities {
             exportButton.Enabled = ready;
             exportObjButton.Enabled = ready && isModel;
             importObjButton.Enabled = ready && isModel;
+            replaceModelButton.Enabled = ready && isModel;
             newModelButton.Enabled = ready && isModel;
             newItemButton.Enabled = ready && kind == EntityKind.Item;
         }
@@ -1454,7 +1458,7 @@ namespace FlashEditor.Definitions.Entities {
             if (picker.ShowDialog(this) != DialogResult.OK)
                 return;
 
-            if (!TryAskVertexLabel(nextId, out int? vertexLabel))
+            if (!TryAskVertexLabel("New model from OBJ", "Vertex labels for model " + nextId, out int? vertexLabel))
                 return;
 
             try {
@@ -1487,6 +1491,82 @@ namespace FlashEditor.Definitions.Entities {
                 ReportStatus("New model failed: " + failure.Message);
                 MessageBox.Show(this, "Could not build a model from that OBJ:" + Environment.NewLine +
                     failure.Message, "New model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        ///     Rebuilds the selected model from an OBJ and its material library, at the selected
+        ///     model's own id, whatever its face count.
+        /// </summary>
+        /// <remarks>
+        ///     Separate from <see cref="ImportObjButton_Click"/>, which keeps the stored model's
+        ///     attributes and so refuses a face-count change: this one keeps nothing of the stored
+        ///     model but its id, and fixes the rest as <see cref="NewModelButton_Click"/> does.
+        /// </remarks>
+        private void ReplaceModelButton_Click(object? sender, EventArgs e) {
+            if (cache == null || kind != EntityKind.Model)
+                return;
+
+            if (list.SelectedRow is not ModelListing listing) {
+                ReportStatus("Select the model to replace first.");
+                return;
+            }
+
+            int modelId = listing.ModelId;
+            try {
+                ModelFileBuilder.RefuseNewProtocolId(modelId);
+            }
+            catch (ModelImportException refusal) {
+                ReportStatus("Replace refused - " + refusal.Message);
+                MessageBox.Show(this, refusal.Message, "Replace model", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using OpenFileDialog picker = new OpenFileDialog {
+                Title = "Rebuild model " + modelId + " from an OBJ (its MTL is read from beside it)",
+                Filter = "Wavefront OBJ (*.obj)|*.obj|All files (*.*)|*.*"
+            };
+
+            if (picker.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            if (!TryAskVertexLabel("Replace model from OBJ (rebuild)",
+                    "Overwrite model " + modelId + " - vertex labels", out int? vertexLabel))
+                return;
+
+            try {
+                ModelImportResult result = NewModelFromObj.ReplaceFile(cache, modelId, picker.FileName, vertexLabel);
+
+                foreach (ModelImportEntry entry in result.Entries)
+                    Debug("model " + modelId + " rebuild: " + entry);
+
+                if (!result.Succeeded) {
+                    ReportStatus("Replace refused for model " + modelId + " - " + result.Message);
+                    MessageBox.Show(this, Account(result), "Replace model",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (!result.GeometryChanged) {
+                    ReportStatus(result.Message);
+                    return;
+                }
+
+                //Evicted before the reselect, or the viewport redraws the memoised model unchanged.
+                cache.models.Remove(modelId);
+                EntitySelected?.Invoke(this, new EntitySelectionEventArgs(kind, listing));
+
+                ReportStatus("Staged model " + modelId + " rebuilt from " + Path.GetFileName(picker.FileName) +
+                    " - " + result.Message + " Save to write it.");
+                MessageBox.Show(this, Account(result), "Model " + modelId + " rebuilt",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception failure) {
+                //A malformed or missing file must cost the replace and nothing else.
+                Debug("Replace model from OBJ failed: " + failure);
+                ReportStatus("Replace failed: " + failure.Message);
+                MessageBox.Show(this, "Could not rebuild model " + modelId + " from that OBJ:" +
+                    Environment.NewLine + failure.Message, "Replace model", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1541,10 +1621,11 @@ namespace FlashEditor.Definitions.Entities {
         /// <summary>
         ///     Asks whether every vertex of the new model carries the weapon label, or none does.
         /// </summary>
-        /// <param name="modelId">The id the model will take, shown so the user knows it before it is spent.</param>
+        /// <param name="caption">The dialog's caption, naming the action.</param>
+        /// <param name="heading">The heading, naming the model id before anything is written to it.</param>
         /// <param name="label">The label, or null for none.</param>
         /// <returns>False when the user cancelled.</returns>
-        private bool TryAskVertexLabel(int modelId, out int? label) {
+        private bool TryAskVertexLabel(string caption, string heading, out int? label) {
             var weapon = new TaskDialogRadioButton(
                 "Worn weapon: vertex label " + NewModelFromObj.WeaponVertexLabel + " on every vertex, as Dharok's greataxe (6702)") {
                 Checked = true
@@ -1552,8 +1633,8 @@ namespace FlashEditor.Definitions.Entities {
             var none = new TaskDialogRadioButton("No vertex labels: nothing animates it (an inventory or ground model)");
 
             var page = new TaskDialogPage {
-                Caption = "New model from OBJ",
-                Heading = "Vertex labels for model " + modelId,
+                Caption = caption,
+                Heading = heading,
                 Text = "Face label " + NewModelFromObj.FaceLabel + ", priority " + NewModelFromObj.Priority +
                        ", render type 0 and format type " + NewModelFromObj.FormatType + " are fixed.",
                 RadioButtons = { weapon, none },
