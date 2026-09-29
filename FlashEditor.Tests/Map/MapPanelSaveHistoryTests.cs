@@ -105,6 +105,77 @@ namespace FlashEditor.Tests.Map
             }
         }
 
+        /// <summary>
+        ///     An undo then a redo back to the saved state leaves the square dirty, so the next Save
+        ///     rewrites it, but the terrain it would write is byte-identical to what the save
+        ///     committed.
+        /// </summary>
+        /// <remarks>
+        ///     Pins the limit of "a save that changes nothing writes nothing" for this flow: the save
+        ///     path decides by <c>Region.Dirty</c> and does not compare bytes, so the rewrite still
+        ///     re-encodes the container and moves the archive CRC. The payload staying identical is
+        ///     what keeps that rewrite harmless to the data. A height edit is included because the
+        ///     edited-height flag it sets is not reset by the undo.
+        /// </remarks>
+        [RealCacheFact]
+        public void UndoThenRedoToTheSavedState_IsDirtyButEncodesTheCommittedTerrain()
+        {
+            if (!available)
+                return;
+
+            using var fileStore = new RSFileStore(workingCopy);
+            using var panel = new MapEditorPanel();
+            RSCache cache = Open(fileStore);
+            panel.Bind(cache, workingCopy);
+
+            MapRegion square = panel.Store!.GetOrLoad(RegionX, RegionY);
+            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            panel.ApplyEdit(new SetHeightEdit(square, 0, 20, 20,
+                square.GetTileHeight(0, 20, 20) - MapRegion.HEIGHT_UNITS_PER_STEP));
+            Assert.Equal(1, panel.CommitEdits());
+
+            var loader = new MapSquareLoader(cache);
+            byte[] committed = loader.ReadGroupBytes(loader.ResolveGroup(MapSquareNames.Terrain(RegionX, RegionY)));
+
+            panel.Undo();
+            panel.Undo();
+            panel.Redo();
+            panel.Redo();
+
+            Assert.True(square.Dirty);
+            Assert.True(panel.CanSave);
+            Assert.Equal(committed, RegionCodec.EncodeTerrain(square));
+        }
+
+        /// <summary>
+        ///     The history is cleared where the squares its edits refer to are gone: unbinding, and
+        ///     binding a freshly opened cache.
+        /// </summary>
+        [RealCacheFact]
+        public void BindingAnotherCacheClearsTheHistory()
+        {
+            if (!available)
+                return;
+
+            using var fileStore = new RSFileStore(workingCopy);
+            using var panel = new MapEditorPanel();
+
+            panel.Bind(Open(fileStore), workingCopy);
+            MapRegion square = panel.Store!.GetOrLoad(RegionX, RegionY);
+            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            Assert.True(panel.CanUndo);
+
+            panel.Bind(Open(fileStore), workingCopy);
+            Assert.False(panel.CanUndo);
+            Assert.False(panel.CanSave);
+
+            square = panel.Store!.GetOrLoad(RegionX, RegionY);
+            panel.ApplyEdit(new SetUnderlayEdit(square, 0, 10, 10, square.GetUnderlayId(0, 10, 10) == 77 ? 78 : 77));
+            panel.Bind(null);
+            Assert.False(panel.CanUndo);
+            Assert.False(panel.CanSave);
+        }
+
         private RSCache Open(RSFileStore fileStore)
         {
             var cache = new RSCache(fileStore);
