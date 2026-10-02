@@ -9,9 +9,6 @@ namespace FlashEditor.Map {
         /// <summary>Esc: abandon the selection drag in progress, or clear the selection when there is none.</summary>
         CancelDragOrClearSelection,
 
-        /// <summary>Ctrl+D: empty the selection.</summary>
-        ClearSelection,
-
         /// <summary>Ctrl+Up: raise every selected tile one height step, whatever tool is armed.</summary>
         RaiseSelection,
 
@@ -28,7 +25,8 @@ namespace FlashEditor.Map {
     /// <remarks>
     ///     Matched on the exact combination, modifiers included, so a key that carries an extra
     ///     modifier falls through to whoever else wants it. Bare arrows in particular must fall
-    ///     through: the canvas pans on them.
+    ///     through: the canvas pans on them. Keys that are a palette button's own shortcut - Ctrl+D
+    ///     for Clear, G for Fill - are not here; the palette routes those.
     /// </remarks>
     public static class MapKeyCommands {
         /// <summary>The command a key combination issues.</summary>
@@ -37,7 +35,6 @@ namespace FlashEditor.Map {
         public static MapKeyCommand For(Keys keyData) {
             switch (keyData) {
                 case Keys.Escape: return MapKeyCommand.CancelDragOrClearSelection;
-                case Keys.Control | Keys.D: return MapKeyCommand.ClearSelection;
                 case Keys.Control | Keys.Up: return MapKeyCommand.RaiseSelection;
                 case Keys.Control | Keys.Down: return MapKeyCommand.LowerSelection;
                 case Keys.Enter: return MapKeyCommand.FillSelection;

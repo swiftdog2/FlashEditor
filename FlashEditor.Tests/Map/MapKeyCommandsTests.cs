@@ -11,7 +11,6 @@ namespace FlashEditor.Tests.Map
     {
         [Theory]
         [InlineData(Keys.Escape, MapKeyCommand.CancelDragOrClearSelection)]
-        [InlineData(Keys.Control | Keys.D, MapKeyCommand.ClearSelection)]
         [InlineData(Keys.Control | Keys.Up, MapKeyCommand.RaiseSelection)]
         [InlineData(Keys.Control | Keys.Down, MapKeyCommand.LowerSelection)]
         [InlineData(Keys.Enter, MapKeyCommand.FillSelection)]
@@ -22,7 +21,7 @@ namespace FlashEditor.Tests.Map
 
         /// <summary>
         ///     Keys owned by something else stay with it: the canvas pans on a bare arrow, the
-        ///     palette arms tools on letters and owns Ctrl+Z / Ctrl+Y, and a plain D no longer
+        ///     palette arms tools on letters and owns Ctrl+D, Ctrl+Z and Ctrl+Y, and a plain D no longer
         ///     clears anything.
         /// </summary>
         [Theory]
@@ -30,6 +29,7 @@ namespace FlashEditor.Tests.Map
         [InlineData(Keys.Down)]
         [InlineData(Keys.Left)]
         [InlineData(Keys.D)]
+        [InlineData(Keys.Control | Keys.D)]
         [InlineData(Keys.G)]
         [InlineData(Keys.Control | Keys.Z)]
         [InlineData(Keys.Control | Keys.Y)]

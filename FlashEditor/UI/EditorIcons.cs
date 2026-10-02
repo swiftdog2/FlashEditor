@@ -523,8 +523,7 @@ namespace FlashEditor.UI {
                        right - the two verbs are close enough that they must not be the same
                        picture, and the gap is where the difference is legible at 16px. */
                     Smooth(g, () => {
-                        g.DrawArc(pen, 3f, 3f, 10f, 10f, 300f, 290f);
-                        Arrowhead(g, pen, 8f, 2.6f, 1f, -0.2f);
+                        TurnArc(g, pen);
                     });
                     break;
 
@@ -568,8 +567,7 @@ namespace FlashEditor.UI {
                 case EditorIcon.OverlayRotate:
                     //Rotate's arc around a solid half-tile.
                     Smooth(g, () => {
-                        g.DrawArc(pen, 3f, 3f, 10f, 10f, 300f, 290f);
-                        Arrowhead(g, pen, 8f, 2.6f, 1f, -0.2f);
+                        TurnArc(g, pen);
                         g.FillPolygon(brush, new[] {
                             new PointF(5.5f, 10.5f), new PointF(10.5f, 10.5f), new PointF(10.5f, 5.5f)
                         });
@@ -817,6 +815,12 @@ namespace FlashEditor.UI {
                 Line(g, pen, x, at, x, end);
                 Line(g, pen, right, at, right, end);
             }
+        }
+
+        /// <summary>The quarter-turn arc shared by the object and overlay rotate marks.</summary>
+        private static void TurnArc(Graphics g, Pen pen) {
+            g.DrawArc(pen, 3f, 3f, 10f, 10f, 300f, 290f);
+            Arrowhead(g, pen, 8f, 2.6f, 1f, -0.2f);
         }
 
         /// <summary>

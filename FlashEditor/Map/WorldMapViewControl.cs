@@ -754,11 +754,7 @@ namespace FlashEditor.Map {
             bool wasDrag = dragExceeded;
             bool wasSelecting = dragSelecting;
 
-            leftDown = false;
-            dragExceeded = false;
-            dragSelecting = false;
-            lastDragTile = null;
-            Cursor = Cursors.Default;
+            ResetLeftGesture();
 
             if (wasSelecting) {
                 //Raised even for a press and release on one tile, which is a one-tile rectangle and
@@ -788,11 +784,15 @@ namespace FlashEditor.Map {
             if (!dragSelecting)
                 return;
 
-            dragSelecting = false;
+            ResetLeftGesture();
+            Capture = false;
+        }
+
+        private void ResetLeftGesture() {
             leftDown = false;
             dragExceeded = false;
+            dragSelecting = false;
             lastDragTile = null;
-            Capture = false;
             Cursor = Cursors.Default;
         }
 
@@ -874,9 +874,8 @@ namespace FlashEditor.Map {
             double stepX = Width / 10.0;
             double stepY = Height / 10.0;
 
-            //Ctrl+Up and Ctrl+Down raise and lower the selection in the panel. Ctrl+Left and
-            //Ctrl+Right do nothing, rather than panning with Ctrl+Up and Ctrl+Down left out.
-            if (e.Control && e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
+            //Only a bare arrow pans. A modified one belongs to whatever hosts the canvas.
+            if (e.Modifiers != Keys.None && e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
                 return;
 
             switch (e.KeyCode) {
