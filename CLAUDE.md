@@ -52,7 +52,7 @@ which one is loaded is not an implementation detail - they disagree on eleven in
 `OpenRS2/<capture>/cache` over `cache`. Override it to run against a particular one:
 
 ```
-FLASHEDITOR_TEST_CACHE=C:\Users\CJ\Desktop\FlashEditor\cache
+FLASHEDITOR_TEST_CACHE=C:\Users\CJ\source\repos\FlashEditor\cache
 FLASHEDITOR_TEST_CACHE_FULL=1     # sweep every archive rather than a per-index sample
 ```
 

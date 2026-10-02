@@ -43,9 +43,9 @@ namespace FlashEditor.Cache {
            the machine the editor was written on and because they name three distinct roles, but
            they are consulted last and only when their parent directory exists - a fallback that
            names a directory whose parent is absent is a guess, not a default. */
-        private const string FallbackInput = "C:/Users/CJ/Desktop/RSPS/Hydra/cache/";
-        private const string FallbackOutput = "C:/Users/CJ/Desktop/RSPS/Hydra/cache2/";
-        private const string FallbackPristine = "C:/Users/CJ/Desktop/RSPS/Hydra/cache0/";
+        private const string FallbackInput = "C:/Users/CJ/source/repos/HydraScape/cache/";
+        private const string FallbackOutput = "C:/Users/CJ/source/repos/HydraScape/cache-output/";
+        private const string FallbackPristine = "C:/Users/CJ/source/repos/HydraScape/cache-pristine/";
 
         /// <summary>The two files every JS5 cache directory has, whatever else it holds.</summary>
         private const string DataFile = "main_file_cache.dat2";
