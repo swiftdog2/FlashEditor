@@ -64,11 +64,14 @@ namespace FlashEditor.Map {
         ///     compound: only the armed tool is visible, so the set is not discoverable at all
         ///     without opening it, and switching tools is a click, a scan and a second click where a
         ///     palette is one click or one key. The tools are grouped by what they operate on -
-        ///     inspect, selection, floors, terrain, flags, objects - with a separator between each
+        ///     inspect, selection, floors, terrain and flags, objects - with a separator between each
         ///     group, because "which of these thirteen changes an object" was previously answerable
         ///     only by reading all thirteen labels.
         /// </remarks>
         private readonly EditorToolStrip toolStrip = new EditorToolStrip { Dock = DockStyle.Fill };
+
+        /// <summary>The tool palette as built, for tests that read its order and tooltips.</summary>
+        internal EditorToolStrip Palette => toolStrip;
 
         /// <summary>What each tool's option bar shows, and the note it carries.</summary>
         private readonly MapToolOptionsBar options = new MapToolOptionsBar();
@@ -226,10 +229,27 @@ namespace FlashEditor.Map {
         private readonly record struct ToolSpec(MapTool Tool, EditorIcon Icon, string Tooltip,
             Keys Shortcut, MapToolOptions Options, InfoKind NoteKind, string NoteCaption, string NoteBody);
 
-        /// <summary>Where a separator falls in <see cref="ToolSpecs"/>, by the tool that follows it.</summary>
-        private static readonly MapTool[] GroupStarts = {
-            MapTool.SelectRectangle, MapTool.PaintUnderlay, MapTool.RaiseHeight,
-            MapTool.ToggleBlockedFlag, MapTool.PlaceLocation
+        /// <summary>
+        ///     The palette's tool groups, in order, with a separator between each.
+        /// </summary>
+        /// <remarks>
+        ///     The selection group also carries the Fill and Clear actions, which are added after its
+        ///     tools by <see cref="BuildToolPalette"/>. The two overlay cycle tools and the three
+        ///     object tools stay tools rather than becoming brush settings: each acts on what is
+        ///     already on the clicked tile, so each needs a click to say which tile.
+        /// </remarks>
+        private static readonly MapTool[][] ToolGroups = {
+            new[] { MapTool.Inspect, MapTool.Eyedropper },
+            new[] { MapTool.SelectRectangle, MapTool.SelectFreehand, MapTool.SelectSimilar },
+            new[] {
+                MapTool.PaintUnderlay, MapTool.PaintOverlay,
+                MapTool.CycleOverlayShape, MapTool.CycleOverlayRotation
+            },
+            new[] { MapTool.RaiseHeight, MapTool.LowerHeight, MapTool.ToggleBlockedFlag },
+            new[] {
+                MapTool.PlaceLocation, MapTool.RotateTopLocation,
+                MapTool.CycleTopLocationShape, MapTool.DeleteTopLocation
+            }
         };
 
         private static readonly ToolSpec[] ToolSpecs = {
@@ -275,22 +295,24 @@ namespace FlashEditor.Map {
                 MapToolOptions.OverlayId | MapToolOptions.Brush | MapToolOptions.OverlayForm,
                 InfoKind.Cost, "What painting costs", PaintCostNote),
 
-            new ToolSpec(MapTool.CycleOverlayShape, EditorIcon.Shape,
+            new ToolSpec(MapTool.CycleOverlayShape, EditorIcon.OverlayShape,
                 "Step the overlay already on this tile to its next shape", Keys.S,
                 MapToolOptions.None, InfoKind.Help, "Cycle overlay shape",
                 "Adjusts what is already on the tile. To lay a shaped overlay in the first place, " +
                 "set Shape on the overlay brush instead - that is what it is there for."),
 
-            new ToolSpec(MapTool.CycleOverlayRotation, EditorIcon.Rotate,
+            new ToolSpec(MapTool.CycleOverlayRotation, EditorIcon.OverlayRotate,
                 "Turn the overlay already on this tile a quarter turn", Keys.T,
                 MapToolOptions.None, InfoKind.Help, "Cycle overlay rotation",
                 "Adjusts what is already on the tile. To lay a rotated overlay in the first place, " +
                 "set Rotation on the overlay brush."),
 
-            new ToolSpec(MapTool.RaiseHeight, EditorIcon.Raise, "Raise terrain", Keys.R,
+            new ToolSpec(MapTool.RaiseHeight, EditorIcon.Raise,
+                "Raise terrain. Ctrl+Up raises every selected tile, whatever tool is armed", Keys.R,
                 MapToolOptions.Brush, InfoKind.Cost, "What a height change costs", HeightCostNote),
 
-            new ToolSpec(MapTool.LowerHeight, EditorIcon.Lower, "Lower terrain", Keys.F,
+            new ToolSpec(MapTool.LowerHeight, EditorIcon.Lower,
+                "Lower terrain. Ctrl+Down lowers every selected tile, whatever tool is armed", Keys.F,
                 MapToolOptions.Brush, InfoKind.Cost, "What a height change costs", HeightCostNote),
 
             new ToolSpec(MapTool.ToggleBlockedFlag, EditorIcon.Block,
@@ -2172,22 +2194,18 @@ namespace FlashEditor.Map {
         private EditorToolStrip BuildToolPalette() {
             object group = new object();
 
-            foreach (ToolSpec spec in ToolSpecs) {
-                if (Array.IndexOf(GroupStarts, spec.Tool) >= 0)
+            for (int index = 0; index < ToolGroups.Length; index++) {
+                if (index > 0)
                     toolStrip.AddSeparator();
 
-                toolButtons[spec.Tool] = toolStrip.AddTool(group, spec.Icon, spec.Tooltip, spec.Shortcut);
+                foreach (MapTool tool in ToolGroups[index]) {
+                    ToolSpec spec = SpecFor(tool);
+                    toolButtons[tool] = toolStrip.AddTool(group, spec.Icon, spec.Tooltip, spec.Shortcut);
+                }
+
+                if (Array.IndexOf(ToolGroups[index], MapTool.SelectRectangle) >= 0)
+                    AddSelectionActions();
             }
-
-            toolStrip.AddSeparator();
-
-            fillButton = toolStrip.AddAction(EditorIcon.FillArea,
-                "Apply the armed tool to every selected tile, as one undo step", Keys.G,
-                (_, _) => FillSelection());
-            fillButton.Enabled = false;
-
-            toolStrip.AddAction(EditorIcon.Remove, "Clear the selection", Keys.D,
-                (_, _) => ClearSelection());
 
             toolStrip.AddSeparator();
             toolStrip.AddAction(EditorIcon.Undo, "Undo the last edit", Keys.Control | Keys.Z,
@@ -2205,6 +2223,18 @@ namespace FlashEditor.Map {
             currentTool = MapTool.Inspect;
 
             return toolStrip;
+        }
+
+        /// <summary>Adds Fill and Clear beside the selection tools they act on.</summary>
+        private void AddSelectionActions() {
+            fillButton = toolStrip.AddAction(EditorIcon.FillArea,
+                "Apply the armed tool to every selected tile, as one undo step. Enter does the same",
+                Keys.G, (_, _) => FillSelection());
+            fillButton.Enabled = false;
+
+            toolStrip.AddAction(EditorIcon.ClearSelection,
+                "Clear the selection. Esc does the same, or abandons a selection drag in progress",
+                Keys.Control | Keys.D, (_, _) => ClearSelection());
         }
 
         /// <summary>

@@ -155,6 +155,15 @@ namespace FlashEditor.UI {
         /// <summary>Step whatever is under the pointer on to its next shape.</summary>
         Shape,
 
+        /// <summary>Empty the selection, leaving the tiles it covered untouched.</summary>
+        ClearSelection,
+
+        /// <summary>Step the floor overlay under the pointer on to its next tile shape.</summary>
+        OverlayShape,
+
+        /// <summary>Turn the floor overlay under the pointer a quarter turn.</summary>
+        OverlayRotate,
+
         /* The transport set. Named for what the control does rather than for the glyph, which
            matters more here than anywhere else in the set: the double triangle means "previous
            track" on one player and "rewind" on the next, and the two are different verbs. These

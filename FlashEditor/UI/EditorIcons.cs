@@ -536,6 +536,44 @@ namespace FlashEditor.UI {
                     Box(g, pen, 9, 8, 6, 6);
                     break;
 
+                case EditorIcon.ClearSelection:
+                    //The marquee with a cross in it: the selection goes, the tiles under it stay.
+                    MarqueeBox(g, pen, 2, 3, 12, 10);
+                    Smooth(g, () => {
+                        g.DrawLine(pen, 5.5f, 5.5f, 10.5f, 10.5f);
+                        g.DrawLine(pen, 10.5f, 5.5f, 5.5f, 10.5f);
+                    });
+                    break;
+
+                /* The overlay pair carry the Overlay icon's solid half-tile, which is the only
+                   thing that separates them from the object Shape and Rotate beside them on the
+                   same strip. Without it the two pairs are the same pictures. */
+
+                case EditorIcon.OverlayShape:
+                    //Two tiles stepping down and to the right, each with a different half covered.
+                    Box(g, pen, 1, 1, 8, 8);
+                    Box(g, pen, 7, 7, 8, 8);
+                    Smooth(g, () => {
+                        g.FillPolygon(brush, new[] {
+                            new PointF(2f, 2f), new PointF(2f, 8f), new PointF(8f, 8f)
+                        });
+                        g.FillPolygon(brush, new[] {
+                            new PointF(8f, 8f), new PointF(14f, 8f), new PointF(14f, 14f)
+                        });
+                    });
+                    break;
+
+                case EditorIcon.OverlayRotate:
+                    //Rotate's arc around a solid half-tile.
+                    Smooth(g, () => {
+                        g.DrawArc(pen, 3f, 3f, 10f, 10f, 300f, 290f);
+                        Arrowhead(g, pen, 8f, 2.6f, 1f, -0.2f);
+                        g.FillPolygon(brush, new[] {
+                            new PointF(5.5f, 10.5f), new PointF(10.5f, 10.5f), new PointF(10.5f, 5.5f)
+                        });
+                    });
+                    break;
+
                 /* The transport four are the only solid glyphs in the set apart from the pointer
                    and the dropper bulb, and that is deliberate rather than a lapse. Outlined at
                    16px a play triangle is a 1px wireframe arrow that reads as Forward, which is
