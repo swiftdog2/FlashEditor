@@ -754,26 +754,28 @@ namespace FlashEditor.Definitions.Config {
         ///     both.
         /// </remarks>
         private sealed class FieldListing {
-            private readonly ConfigField field;
+            //Not called "field": from C# 14 that word inside a property accessor is the property's
+            //own backing field, so "field.Name" stops compiling on a .NET 10 SDK.
+            private readonly ConfigField source;
 
             internal FieldListing(ConfigField field) {
-                this.field = field;
+                source = field;
             }
 
             /// <summary>The field's name.</summary>
-            internal string Name => field.Name;
+            internal string Name => source.Name;
 
             /// <summary>The field's value, rendered.</summary>
-            internal string Value => field.Value;
+            internal string Value => source.Value;
 
             /// <summary>What kind of editor the value wants.</summary>
-            internal ConfigFieldEditor Editor => field.Editor;
+            internal ConfigFieldEditor Editor => source.Editor;
 
             /// <summary>Whether an edit to this field can be written back.</summary>
-            internal bool IsEditable => field.IsEditable;
+            internal bool IsEditable => source.IsEditable;
 
             /// <summary>Applies an edited value to the decoded record, or null when read only.</summary>
-            internal Action<string>? Write => field.Write;
+            internal Action<string>? Write => source.Write;
         }
 
         /// <summary>One opcode occurrence of the selected record, as a grid row.</summary>
