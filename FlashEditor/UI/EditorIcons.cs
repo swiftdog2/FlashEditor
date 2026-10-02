@@ -550,7 +550,9 @@ namespace FlashEditor.UI {
                    same strip. Without it the two pairs are the same pictures. */
 
                 case EditorIcon.OverlayShape:
-                    //Two tiles stepping down and to the right, each with a different half covered.
+                    /* Two tiles stepping down and to the right, each with a different half covered.
+                       The halves are chosen so the solids do not meet at the shared corner, where
+                       they merged into one bow-tie blob at 16px. */
                     Box(g, pen, 1, 1, 8, 8);
                     Box(g, pen, 7, 7, 8, 8);
                     Smooth(g, () => {
@@ -558,7 +560,7 @@ namespace FlashEditor.UI {
                             new PointF(2f, 2f), new PointF(2f, 8f), new PointF(8f, 8f)
                         });
                         g.FillPolygon(brush, new[] {
-                            new PointF(8f, 8f), new PointF(14f, 8f), new PointF(14f, 14f)
+                            new PointF(14f, 8f), new PointF(14f, 14f), new PointF(8f, 14f)
                         });
                     });
                     break;
