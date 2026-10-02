@@ -149,6 +149,33 @@ namespace FlashEditor.Map {
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
+        /// <summary>Copies the selection as it stands, for a later <see cref="Restore"/>.</summary>
+        /// <returns>The copy.</returns>
+        public MapSelectionSnapshot Snapshot() {
+            var packed = new long[tiles.Count];
+            tiles.CopyTo(packed);
+            return new MapSelectionSnapshot(plane, packed);
+        }
+
+        /// <summary>
+        ///     Puts back a selection taken by <see cref="Snapshot"/>, plane included.
+        /// </summary>
+        /// <remarks>
+        ///     Bypasses the cap in <see cref="Apply"/> because the snapshot was itself a selection
+        ///     that had already passed it.
+        /// </remarks>
+        /// <param name="snapshot">What to restore.</param>
+        public void Restore(MapSelectionSnapshot snapshot) {
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+
+            plane = snapshot.Plane;
+            tiles.Clear();
+            tiles.UnionWith(snapshot.PackedTiles);
+
+            ResetBounds();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
         /// <summary>
         ///     Moves the selection to a plane, dropping it when the plane actually changes.
         /// </summary>
@@ -313,6 +340,18 @@ namespace FlashEditor.Map {
 
             boundsValid = true;
         }
+    }
+
+    /// <summary>A selection's tiles and plane at one moment, opaque to everything but <see cref="MapSelection"/>.</summary>
+    public sealed class MapSelectionSnapshot {
+        internal MapSelectionSnapshot(int plane, long[] packedTiles) {
+            Plane = plane;
+            PackedTiles = packedTiles;
+        }
+
+        internal int Plane { get; }
+
+        internal long[] PackedTiles { get; }
     }
 
     /// <summary>

@@ -20,6 +20,46 @@ namespace FlashEditor.Tests.Map
     /// </remarks>
     public sealed class MapSelectionTests
     {
+        /// <summary>
+        ///     What Esc during a drag relies on: the selection as it stood before the drag comes
+        ///     back exactly, tiles and plane, and the change is announced so the canvas redraws.
+        /// </summary>
+        [Fact]
+        public void RestoringASnapshotPutsBackTheTilesAndPlaneItWasTakenFrom()
+        {
+            var selection = new MapSelection();
+            selection.SetPlane(1);
+            selection.Apply(MapSelection.RectangleTiles(10, 10, 11, 11), MapSelectionMode.Replace);
+
+            MapSelectionSnapshot before = selection.Snapshot();
+
+            selection.Apply(MapSelection.RectangleTiles(10, 10, 40, 40), MapSelectionMode.Add);
+            int changes = 0;
+            selection.Changed += (_, _) => changes++;
+
+            selection.Restore(before);
+
+            Assert.Equal(4, selection.Count);
+            Assert.True(selection.Contains(11, 11));
+            Assert.False(selection.Contains(12, 12));
+            Assert.Equal(1, selection.Plane);
+            Assert.Equal(new Rectangle(10, 10, 2, 2), selection.Bounds);
+            Assert.Equal(1, changes);
+        }
+
+        [Fact]
+        public void RestoringAnEmptySnapshotEmptiesTheSelection()
+        {
+            var selection = new MapSelection();
+            MapSelectionSnapshot empty = selection.Snapshot();
+
+            selection.Apply(MapSelection.RectangleTiles(0, 0, 3, 3), MapSelectionMode.Replace);
+            selection.Restore(empty);
+
+            Assert.True(selection.IsEmpty);
+            Assert.Equal(Rectangle.Empty, selection.Bounds);
+        }
+
         [Fact]
         public void ARectangleTakesBothCornersWhicheverWayItWasDragged()
         {
