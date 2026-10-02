@@ -73,6 +73,12 @@ namespace FlashEditor.Map {
         /// <summary>The tool palette as built, for tests that read its order and tooltips.</summary>
         internal EditorToolStrip Palette => toolStrip;
 
+        /// <summary>The canvas, for tests that need it at an editing zoom.</summary>
+        internal WorldMapViewControl View => view;
+
+        /// <summary>The selection the area operations act on.</summary>
+        internal MapSelection Selection => selection;
+
         /// <summary>What each tool's option bar shows, and the note it carries.</summary>
         private readonly MapToolOptionsBar options = new MapToolOptionsBar();
 
@@ -90,6 +96,9 @@ namespace FlashEditor.Map {
         //Where the current selection drag started, and how it combines with what was selected.
         private TileHit? dragAnchor;
         private MapSelectionMode dragMode = MapSelectionMode.Replace;
+
+        //The selection as it stood when the drag began, which Esc puts back.
+        private MapSelectionSnapshot? beforeDrag;
 
         /* Every floor material in the cache, as swatches. */
         private readonly FloorMaterialPalette materials = new FloorMaterialPalette();
@@ -367,6 +376,10 @@ namespace FlashEditor.Map {
             "pinned for as long as the edit is undoable. At the fully zoomed-out view that would " +
             "be all 1684 of them.\n\n" +
             "Shift adds to the selection, Ctrl takes away, and a plain drag replaces it.\n\n" +
+            "Enter or G fills it with the armed tool. Ctrl+Up and Ctrl+Down raise or lower every " +
+            "selected tile one height step whatever tool is armed, which rebuilds relief shading " +
+            "around each square touched. Esc abandons a drag in progress and otherwise clears the " +
+            "selection, as Ctrl+D does.\n\n" +
             "Middle-drag or hold space and drag to pan while a selection tool is armed - a plain " +
             "left drag now draws.";
 
@@ -896,7 +909,7 @@ namespace FlashEditor.Map {
                 return;
             }
 
-            ApplyArea(covered, hit.Plane, "brush");
+            ApplyArea(covered, hit.Plane, "brush", AreaToolFor(SelectedTool)!.Value);
         }
 
         /// <summary>
@@ -917,7 +930,8 @@ namespace FlashEditor.Map {
                 return;
             }
 
-            if (AreaToolFor(SelectedTool) == null) {
+            MapAreaTool? area = AreaToolFor(SelectedTool);
+            if (area == null) {
                 ShowMessage(SpecFor(SelectedTool).Tooltip + " has no area form - it acts on whatever " +
                     "is already on one tile. Arm a paint, height or flag tool to fill.");
                 return;
@@ -928,7 +942,37 @@ namespace FlashEditor.Map {
                 return;
             }
 
-            ApplyArea(new List<(int WorldX, int WorldY)>(selection.Tiles), selection.Plane, "selection");
+            ApplyArea(new List<(int WorldX, int WorldY)>(selection.Tiles), selection.Plane, "selection",
+                area.Value);
+        }
+
+        /// <summary>
+        ///     Raises or lowers every selected tile one step, whichever tool is armed: Ctrl+Up and
+        ///     Ctrl+Down.
+        /// </summary>
+        /// <param name="tool">
+        ///     <see cref="MapTool.RaiseHeight"/> or <see cref="MapTool.LowerHeight"/>, standing in
+        ///     for the armed tool.
+        /// </param>
+        private void StepSelectedHeights(MapTool tool) {
+            if (store == null)
+                return;
+
+            string verb = tool == MapTool.RaiseHeight ? "raise" : "lower";
+
+            if (selection.IsEmpty) {
+                ShowMessage($"Nothing is selected, so there is nothing to {verb}. Draw an area with " +
+                    "the rectangle, freehand or wand tool first.");
+                return;
+            }
+
+            if (!view.EditingEnabled) {
+                ShowMessage(ZoomRefusal(tool));
+                return;
+            }
+
+            ApplyArea(new List<(int WorldX, int WorldY)>(selection.Tiles), selection.Plane, "selection",
+                AreaToolFor(tool)!.Value);
         }
 
         /// <summary>
@@ -953,13 +997,13 @@ namespace FlashEditor.Map {
         /// <param name="tiles">The tiles to cover.</param>
         /// <param name="plane">The plane to write on.</param>
         /// <param name="what">What to call the operation in the status line.</param>
-        private void ApplyArea(IReadOnlyCollection<(int WorldX, int WorldY)> tiles, int plane, string what) {
-            MapAreaTool? area = AreaToolFor(SelectedTool);
-            if (area == null || store == null)
+        /// <param name="area">The operation, which is the armed tool's except for Ctrl+Up and Ctrl+Down.</param>
+        private void ApplyArea(IReadOnlyCollection<(int WorldX, int WorldY)> tiles, int plane, string what,
+            MapAreaTool area) {
+            if (store == null)
                 return;
 
-            MapAreaEditResult result = MapAreaEdits.Build(tiles, plane, area.Value,
-                AreaOptions(area.Value), SquareAtWorld);
+            MapAreaEditResult result = MapAreaEdits.Build(tiles, plane, area, AreaOptions(area), SquareAtWorld);
 
             if (result.WasRefused) {
                 ShowMessage(result.Refusal!);
@@ -1076,6 +1120,7 @@ namespace FlashEditor.Map {
 
             dragAnchor = hit;
             dragMode = ModeFromModifiers();
+            beforeDrag = selection.Snapshot();
 
             //Committed on the first move rather than here, so a click that turns out to be a pan
             //gesture on another tool has not already thrown the selection away.
@@ -1137,7 +1182,25 @@ namespace FlashEditor.Map {
                 return;
 
             dragAnchor = null;
+            beforeDrag = null;
             UpdateStatus();
+        }
+
+        /// <summary>
+        ///     Abandons a selection drag in progress and puts the selection back as it was.
+        /// </summary>
+        /// <returns>Whether there was a drag to abandon.</returns>
+        private bool CancelSelectionDrag() {
+            if (dragAnchor == null || beforeDrag == null)
+                return false;
+
+            view.CancelDrag();
+            dragAnchor = null;
+            selection.Restore(beforeDrag);
+            beforeDrag = null;
+
+            ShowMessage("Selection drag abandoned - the selection is as it was before the drag.");
+            return true;
         }
 
         /// <summary>Empties the selection and says so.</summary>
@@ -2310,10 +2373,47 @@ namespace FlashEditor.Map {
         /// <param name="keyData">The key combination.</param>
         /// <returns>Whether it was consumed.</returns>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
-            if (!IsTyping() && toolStrip.HandleShortcut(keyData))
+            if (!IsTyping() && HandleKey(keyData))
                 return true;
 
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>
+        ///     Runs a selection key, or else a palette shortcut, and says whether either took it.
+        /// </summary>
+        /// <remarks>
+        ///     The selection keys go first and are consumed even when they find nothing to do, so
+        ///     Ctrl+Up with no selection does not fall through to the canvas and pan it instead.
+        /// </remarks>
+        /// <param name="keyData">The key combination.</param>
+        /// <returns>Whether it was consumed.</returns>
+        internal bool HandleKey(Keys keyData) {
+            switch (MapKeyCommands.For(keyData)) {
+                case MapKeyCommand.CancelDragOrClearSelection:
+                    if (!CancelSelectionDrag())
+                        ClearSelection();
+                    return true;
+
+                case MapKeyCommand.ClearSelection:
+                    ClearSelection();
+                    return true;
+
+                case MapKeyCommand.RaiseSelection:
+                    StepSelectedHeights(MapTool.RaiseHeight);
+                    return true;
+
+                case MapKeyCommand.LowerSelection:
+                    StepSelectedHeights(MapTool.LowerHeight);
+                    return true;
+
+                case MapKeyCommand.FillSelection:
+                    FillSelection();
+                    return true;
+
+                default:
+                    return toolStrip.HandleShortcut(keyData);
+            }
         }
 
         /// <summary>

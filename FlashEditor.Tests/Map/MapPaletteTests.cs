@@ -67,7 +67,7 @@ namespace FlashEditor.Tests.Map
         [InlineData(EditorIcon.Rotate, "(K)", null)]
         [InlineData(EditorIcon.Shape, "(J)", null)]
         [InlineData(EditorIcon.Remove, "(X)", null)]
-        public void Palette_TooltipsNameTheirKeys(EditorIcon icon, string shortcut, string? alsoMentions)
+        public void Palette_TooltipsNameTheirKeys(EditorIcon icon, string shortcut, string alsoMentions)
         {
             using var panel = new MapEditorPanel();
 

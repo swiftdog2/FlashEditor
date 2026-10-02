@@ -777,6 +777,26 @@ namespace FlashEditor.Map {
         }
 
         /// <summary>
+        ///     Ends a selection drag without raising <see cref="DragFinished"/>, for Esc.
+        /// </summary>
+        /// <remarks>
+        ///     The button is still down, so the release that follows must find nothing to finish:
+        ///     <c>leftDown</c> is cleared too, or the release would be read as a click and fire the
+        ///     armed tool.
+        /// </remarks>
+        public void CancelDrag() {
+            if (!dragSelecting)
+                return;
+
+            dragSelecting = false;
+            leftDown = false;
+            dragExceeded = false;
+            lastDragTile = null;
+            Capture = false;
+            Cursor = Cursors.Default;
+        }
+
+        /// <summary>
         ///     How far the mouse has to move before a click becomes a pan.
         /// </summary>
         /// <remarks>
@@ -853,6 +873,11 @@ namespace FlashEditor.Map {
 
             double stepX = Width / 10.0;
             double stepY = Height / 10.0;
+
+            //Ctrl+Up and Ctrl+Down raise and lower the selection in the panel. Ctrl+Left and
+            //Ctrl+Right do nothing, rather than panning with Ctrl+Up and Ctrl+Down left out.
+            if (e.Control && e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
+                return;
 
             switch (e.KeyCode) {
                 case Keys.Left: Camera.PanByPixels(-stepX, 0); break;
